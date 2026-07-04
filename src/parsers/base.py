@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import ClassVar
 from urllib.parse import parse_qs, unquote
 
@@ -128,13 +128,21 @@ def find_all_links(text: str) -> list[str]:
 _PLACEHOLDER_PATTERNS = re.compile(
     r"(?i)"
     r"\bUUID\b"  # literal "UUID" instead of real uuid
-    r"|\bSERVER_IP"  # SERVER_IP_1, SERVER_IP_2...
-    r"|\bPUBLIC_KEY\b"  # PUBLIC_KEY_1
-    r"|\bSHORT_ID\b"  # SHORT_ID_1
+    r"|\bSERVER_IP"  # SERVER_IP, SERVER_IP_1, SERVER_IP_2... (no trailing \b: _ is a word char)
+    r"|\bPUBLIC_KEY"  # PUBLIC_KEY, PUBLIC_KEY_1, ... (no trailing \b: would block _N suffix)
+    r"|\bSHORT_ID"  # SHORT_ID, SHORT_ID_1, ... (no trailing \b: would block _N suffix)
     r"|\bPASSWORD\b"  # literal "PASSWORD"
-    r"|your[_-]?domain"  # yourdomain.com, your-domain.com
-    r"|example\.com"  # example.com (IANA reserved)
-    r"|SERVER_IP_\d"  # SERVER_IP_1
+    r"|\byour[_-]?domain\b"  # yourdomain.com, your-domain.com (word-bounded: not yourdomains.com)
+    r"|\bexample\.com\b"  # example.com (IANA reserved; word-bounded: not bestexample.com)
+)
+
+# Valid UUID format (8-4-4-4-12 hex, hyphens optional). Module-level so it is
+# compiled once, not looked up in re's internal cache on every is_garbage_config()
+# call.  Accepts both hyphenated (b831381d-4cfa-...) and non-hyphenated
+# (b831381d4cfa...) forms — some vmess/vless sources emit 32 hex chars without
+# hyphens, which is a valid RFC 4122 representation.
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$"
 )
 
 
@@ -145,30 +153,60 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
     - Literal placeholders: UUID, SERVER_IP_1, PUBLIC_KEY, SHORT_ID, PASSWORD
     - Example domains: example.com, yourdomain.com
     - Template remarks: "Replace ... with your ..."
+
+    Returns ``True`` for ``None`` input (treat as garbage — safer to filter
+    out than to crash on ``str(None)``).
     """
+    if link_or_config is None:
+        return True
+
+    # Empty/whitespace-only strings are garbage (no real config is empty).
+    if isinstance(link_or_config, str) and not link_or_config.strip():
+        return True
+
     if isinstance(link_or_config, Config):
         cfg = link_or_config
-        # Check address, uuid, sni, host, pbk, sid for placeholders.
+        # Check address, sni, host, pbk, sid for placeholders.
+        # NOTE: uuid_or_password AND remark are deliberately EXCLUDED from the
+        # combined regex check because ``\bUUID\b`` and ``\bPASSWORD\b`` would
+        # false-positive on real credentials/remarks that contain those words
+        # (e.g. trojan password "not-a-uuid-password", remark "free-password-vpn").
+        # Both are validated separately below with exact-match checks only.
         fields_to_check = [
-            cfg.address,
-            cfg.uuid_or_password,
+            cfg.address or "",
             cfg.sni or "",
             cfg.host or "",
             cfg.pbk or "",
             cfg.sid or "",
-            cfg.remark,
         ]
         combined = " ".join(str(f) for f in fields_to_check)
         if _PLACEHOLDER_PATTERNS.search(combined):
             return True
-        # UUID must look like a real UUID (8-4-4-4-12 hex), not literal "UUID".
-        if cfg.protocol in ("vless", "vmess") and cfg.uuid_or_password:
-            if cfg.uuid_or_password.upper() == "UUID":
-                return True
-            if not re.match(
-                r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                cfg.uuid_or_password,
+        # remark: check for literal placeholder values only (not word-boundary).
+        if cfg.remark:
+            remark_upper = cfg.remark.upper().strip()
+            if remark_upper in (
+                "UUID",
+                "PASSWORD",
+                "SERVER_IP",
+                "PUBLIC_KEY",
+                "SHORT_ID",
             ):
+                return True
+        # uuid_or_password: check for literal placeholder values only.
+        if cfg.uuid_or_password:
+            uop_upper = cfg.uuid_or_password.upper()
+            if uop_upper in ("UUID", "PASSWORD"):
+                return True
+            # UUID must look like a real UUID (8-4-4-4-12 hex, hyphens optional),
+            # not literal "UUID". Accepts both hyphenated and non-hyphenated forms
+            # (some vmess/vless sources emit 32 hex chars without hyphens).
+            if cfg.protocol in ("vless", "vmess"):
+                if not _UUID_RE.match(cfg.uuid_or_password):
+                    return True
+        else:
+            # vless/vmess with empty uuid = garbage.
+            if cfg.protocol in ("vless", "vmess"):
                 return True
         return False
 

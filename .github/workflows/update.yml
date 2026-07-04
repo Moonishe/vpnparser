@@ -1,5 +1,5 @@
 # Auto-update VPN configs pipeline.
-# Runs on schedule (every 6 hours), on manual dispatch, and on push to main
+# Runs on schedule (every hour), on manual dispatch, and on push to main
 # (so changes to the pipeline itself are validated end-to-end).
 name: Update Configs
 
@@ -56,9 +56,11 @@ jobs:
           # Set VALIDATOR_PROXY secret to e.g. socks5://user:pass@host:port
           VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
 
-      - name: Verify publish
+      - name: Verify output
         run: |
-          echo "Pipeline published output/subscription.txt via GitHub Contents API."
+          test -f output/subscription.txt || { echo "ERROR: output/subscription.txt not created!"; exit 1; }
+          lines=$(wc -l < output/subscription.txt)
+          echo "Output file: output/subscription.txt ($lines lines)"
           echo "Subscription URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output/subscription.txt"
           # File is already committed by --publish (GitHubPublisher.publish_file).
           # No git commit/push needed — that caused a race condition with the API publish.

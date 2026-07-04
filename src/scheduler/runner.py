@@ -328,8 +328,6 @@ class PipelineRunner:
         if not lcfg.get("enabled", False):
             return []
 
-        import os
-
         api_key_env = lcfg.get("api_key_env", "LLM_API_KEY")
         api_key = os.environ.get(api_key_env, "")
         if not api_key:
@@ -407,7 +405,7 @@ class PipelineRunner:
                     cfg.protocol,
                     cfg.address,
                     cfg.port,
-                    cfg.remark[:50],
+                    (cfg.remark or "")[:50],
                 )
             else:
                 clean.append(cfg)

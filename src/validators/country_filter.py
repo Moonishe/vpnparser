@@ -66,7 +66,8 @@ _NAME_TO_CODE: dict[str, str] = {
     "usa": "US",
     "united states": "US",
     "america": "US",
-    "us": "US",
+    # NOTE: "us" and "uk" removed — too many false positives ("contact us", "about us").
+    # US/GB are detected via _CODE_RE (uppercase) and emoji flags.
     "uk": "GB",
     "united kingdom": "GB",
     "england": "GB",
@@ -224,15 +225,38 @@ _CITY_TO_CODE: dict[str, str] = {
 
 # Regex: standalone 2-letter country code (DE, FI, NL, US) surrounded by
 # non-alpha boundaries. Matches patterns like "DE-01", "US-1", "[DE]", "NL01".
+# Case-SENSITIVE (no IGNORECASE) — otherwise common English words match:
+# "in" → IN (India), "at" → AT (Austria), "be" → BE (Belgium), "es" → ES (Spain).
+# VPN configs use UPPERCASE country codes in remarks (DE-01, US-1, [FI]).
 _CODE_RE = re.compile(
-    r"(?:^|[^A-Z])(DE|FI|NL|US|GB|FR|JP|SG|CA|AU|KR|HK|TW|IN|RU|TR|IR|PL|SE|CH|AT|BE|ES|IT|CZ|UA|BR|MX)(?:[^A-Z]|$)",
-    re.IGNORECASE,
+    r"(?:^|[^A-Za-z])(DE|FI|NL|US|GB|FR|JP|SG|CA|AU|KR|HK|TW|IN|RU|TR|IR|PL|SE|CH|AT|BE|ES|IT|CZ|UA|BR|MX|ID)(?:[^A-Za-z]|$)",
 )
 
 # Hostname prefix patterns: de01.vpn.com, us-east.server.net, nl-ams.vpn.net
 # Matches 2-letter country code at start of a hostname segment followed by digit or hyphen.
+# Case-insensitive — hostnames are case-insensitive.
 _HOST_COUNTRY_RE = re.compile(
-    r"(?:^|\.|[-_])(DE|FI|NL|US|GB|FR|JP|SG|CA|AU|KR|HK|TW|IN|RU|TR|IR|PL|SE|CH|AT|BE|ES|IT|CZ|UA|BR|MX)[-\d]",
+    r"(?:^|\.|[-_])(DE|FI|NL|US|GB|FR|JP|SG|CA|AU|KR|HK|TW|IN|RU|TR|IR|PL|SE|CH|AT|BE|ES|IT|CZ|UA|BR|MX|ID)[-\d]",
+    re.IGNORECASE,
+)
+
+# Precompiled word-boundary regexes for city and country-name matching.
+# Sorting alternatives by length (descending) ensures longer names are
+# preferred when multiple could match at the same position (e.g.
+# "los angeles" before "la").  The ``\b`` anchors prevent substring false
+# positives like "la" in "flash", "us" in "trust", "paris" in "parisian",
+# or "rome" in "romero".
+_CITY_PATTERN = re.compile(
+    r"\b("
+    + "|".join(re.escape(city) for city in sorted(_CITY_TO_CODE, key=len, reverse=True))
+    + r")\b",
+    re.IGNORECASE,
+)
+
+_NAME_PATTERN = re.compile(
+    r"\b("
+    + "|".join(re.escape(name) for name in sorted(_NAME_TO_CODE, key=len, reverse=True))
+    + r")\b",
     re.IGNORECASE,
 )
 
@@ -241,45 +265,53 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
     """Detect a 2-letter ISO country code from a remark string.
 
     Tries in order:
-    1. Flag emoji match (🇩🇪 → DE)
-    2. Full country name (case-insensitive)
-    3. Standalone 2-letter code (DE, US-01, [FI])
+    1. Flag emoji (🇩🇪 → DE)
+    2. City names (frankfurt, amsterdam, tokyo...)
+    3. Full country names (germany, usa, russia...)
+    4. Standalone 2-letter code (DE, US-01, [FI])
+    5. Hostname country prefix (de01.vpn.com, us-east.server.net)
+
+    All non-empty text fields (remark + extra_fields) are combined into a
+    single string so each regex runs **once** instead of once per field.
+    A ``\\n`` separator prevents cross-field false positives (no city or
+    country name spans a newline, and ``\\b`` word-boundaries treat ``\\n``
+    as a non-word character).
 
     Returns ``None`` if no country could be determined.
     """
-    if not remark:
+    # Early exit only if there is nothing to search at all — both the remark
+    # and all extra_fields are empty/None.  When the remark is empty but
+    # extra_fields (e.g. address, sni) contain a country indicator, we must
+    # still run the hostname-based detection below.
+    if not remark and not any(f for f in extra_fields if f):
         return None
 
-    # Collect all text we'll search through.
-    texts = [remark]
-    for field in extra_fields:
-        if field:
-            texts.append(field)
+    # Combine all non-empty text fields into one string.
+    # "\n" separator: safe for \b-anchored regexes and substring checks.
+    # Filter out None/empty to avoid TypeError in str.join().
+    texts = [t for t in [remark, *extra_fields] if t]
+    combined = "\n".join(texts)
 
-    # 1. Emoji flags (highest confidence) — check all fields.
-    for text in texts:
-        for emoji, code in _EMOJI_TO_CODE.items():
-            if emoji in text:
-                return code
+    # 1. Emoji flags (highest confidence).
+    for emoji, code in _EMOJI_TO_CODE.items():
+        if emoji in combined:
+            return code
 
-    # 2. City names — check all fields (very common in VPN remarks).
-    for text in texts:
-        lower = text.lower()
-        for city, code in _CITY_TO_CODE.items():
-            if city in lower:
-                return code
+    # 2. City names — single regex search on combined text.
+    m = _CITY_PATTERN.search(combined)
+    if m:
+        return _CITY_TO_CODE[m.group(1).lower()]
 
-    # 3. Full country names — check all fields.
-    for text in texts:
-        lower = text.lower()
-        for name, code in _NAME_TO_CODE.items():
-            if name in lower:
-                return code
+    # 3. Full country names — single regex search on combined text.
+    m = _NAME_PATTERN.search(combined)
+    if m:
+        return _NAME_TO_CODE[m.group(1).lower()]
 
     # 4. Standalone 2-letter codes — check remark first (most reliable).
-    m = _CODE_RE.search(remark)
-    if m:
-        return m.group(1).upper()
+    if remark:
+        m = _CODE_RE.search(remark)
+        if m:
+            return m.group(1).upper()
 
     # 5. Hostname country prefix — check address/sni/host.
     for field in extra_fields:
