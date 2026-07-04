@@ -8,14 +8,17 @@ sources:
 
 # --- Validator ---
 validator:
+  # SOCKS5 proxy for validation connections (optional)
+  # Set via env VALIDATOR_PROXY or here. Example: socks5://user:pass@host:port
+  # proxy_url: "socks5://127.0.0.1:1080"
+  
   # L1: TCP connect check
-  tcp_timeout_seconds: 3
-  tcp_concurrency: 200
+  tcp_timeout_seconds: 5
+  tcp_concurrency: 300
   # Stop TCP validation once this many alive configs are found (0 = check all)
   tcp_max_alive: 50
   # If more configs than this are parsed, randomly sample before validation
-  # (620K configs would take hours; 5000 sample takes ~30s)
-  max_configs_to_validate: 5000
+  max_configs_to_validate: 20000
   
   # L2: TLS handshake check
   tls_timeout_seconds: 5

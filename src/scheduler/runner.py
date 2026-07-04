@@ -386,13 +386,20 @@ class PipelineRunner:
         stage's output is passed through) but is logged.
         """
         vcfg = self._section("validator")
-        tcp_timeout = float(vcfg.get("tcp_timeout_seconds", 3.0))
-        tcp_concurrency = int(vcfg.get("tcp_concurrency", 200))
+        tcp_timeout = float(vcfg.get("tcp_timeout_seconds", 5.0))
+        tcp_concurrency = int(vcfg.get("tcp_concurrency", 300))
         tcp_max_alive = int(vcfg.get("tcp_max_alive", 50))
         tls_timeout = float(vcfg.get("tls_timeout_seconds", 5.0))
         tls_concurrency = int(vcfg.get("tls_concurrency", 100))
         geoip_enabled = bool(vcfg.get("geoip_enabled", True))
         geoip_url = vcfg.get("geoip_api_url", "http://ip-api.com/json/{ip}")
+
+        # SOCKS5 proxy for validation (optional, read from env or settings).
+        import os as _os
+
+        proxy_url = _os.environ.get("VALIDATOR_PROXY") or vcfg.get("proxy_url") or None
+        if proxy_url:
+            logger.info("Using SOCKS5 proxy for validation: %s", proxy_url)
 
         # L1: TCP (with early termination once tcp_max_alive alive configs found).
         configs = await self._run_validator(
@@ -402,6 +409,7 @@ class PipelineRunner:
             timeout=tcp_timeout,
             concurrency=tcp_concurrency,
             max_alive=tcp_max_alive,
+            proxy_url=proxy_url,
             stage_name="TCP",
         )
         if not configs:
@@ -415,6 +423,7 @@ class PipelineRunner:
             configs,
             timeout=tls_timeout,
             concurrency=tls_concurrency,
+            proxy_url=proxy_url,
             stage_name="TLS",
         )
         if not configs:

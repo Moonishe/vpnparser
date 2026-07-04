@@ -6,6 +6,10 @@ and is run before the more expensive TLS handshake (L2) test.
 
 Supports **early termination**: once enough alive configs with low
 latency are found, remaining checks are cancelled to save time.
+
+Supports **SOCKS5 proxy**: when a proxy URL is provided, TCP connections
+are routed through it. This is essential when running from a data center
+(GitHub Actions) where VPN servers may block data-center IPs.
 """
 
 from __future__ import annotations
@@ -13,35 +17,68 @@ from __future__ import annotations
 import asyncio
 import socket
 import time
+from typing import Any
 
 from src.parsers.base import Config
 
 
+async def _open_connection_direct(host: str, port: int) -> tuple[Any, Any]:
+    """Direct TCP connection (no proxy)."""
+    return await asyncio.open_connection(host, port)
+
+
+async def _open_connection_via_socks(
+    host: str, port: int, proxy_url: str
+) -> tuple[Any, Any]:
+    """TCP connection routed through a SOCKS5 proxy.
+
+    Uses python-socks which returns a raw socket; we wrap it into
+    asyncio streams.
+    """
+    from python_socks.async_.asyncio import Proxy
+
+    proxy = Proxy.from_url(proxy_url)
+    sock = await proxy.connect(dest_host=host, dest_port=port, timeout=None)
+    # python-socks returns a connected socket; wrap into streams.
+    reader, writer = await asyncio.open_connection(sock=sock)
+    return reader, writer
+
+
 async def tcp_check(
-    host: str, port: int, timeout: float = 3.0
+    host: str,
+    port: int,
+    timeout: float = 3.0,
+    proxy_url: str | None = None,
 ) -> tuple[bool, float | None]:
-    """TCP connect to host:port.
+    """TCP connect to host:port, optionally through a SOCKS5 proxy.
+
+    Args:
+        host: Target hostname or IP.
+        port: Target port.
+        timeout: Connect timeout in seconds.
+        proxy_url: Optional SOCKS5 proxy URL (e.g. ``socks5://host:port``).
+            When provided, the connection is routed through the proxy.
 
     Returns (is_alive, latency_ms).
-    - latency_ms is measured from connect start to successful connect,
-      using a monotonic clock.
-    - Returns (False, None) on timeout, connection refused, DNS failure,
-      or any other OSError.
     """
     start = time.monotonic()
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port),
-            timeout=timeout,
-        )
+        if proxy_url:
+            reader, writer = await asyncio.wait_for(
+                _open_connection_via_socks(host, port, proxy_url),
+                timeout=timeout,
+            )
+        else:
+            reader, writer = await asyncio.wait_for(
+                _open_connection_direct(host, port),
+                timeout=timeout,
+            )
     except (ConnectionRefusedError, asyncio.TimeoutError, socket.gaierror, OSError):
         return (False, None)
     except Exception:
-        # Defensive: never raise from a validator.
         return (False, None)
 
     latency_ms = (time.monotonic() - start) * 1000.0
-    # Close the connection cleanly, ignoring close-time errors.
     try:
         writer.close()
         try:
@@ -59,8 +96,9 @@ async def validate_configs_tcp(
     timeout: float = 3.0,
     concurrency: int = 200,
     max_alive: int = 0,
+    proxy_url: str | None = None,
 ) -> list[Config]:
-    """Check configs via TCP with optional early termination.
+    """Check configs via TCP with optional early termination and SOCKS5 proxy.
 
     Args:
         configs: List of Config objects to check.
@@ -68,9 +106,7 @@ async def validate_configs_tcp(
         concurrency: Maximum concurrent connections.
         max_alive: Stop once this many alive configs are found.
             0 = no limit (check everything).
-
-    Sets is_alive and latency_ms on each Config that was actually checked.
-    Configs that were cancelled (not checked) remain unchanged.
+        proxy_url: Optional SOCKS5 proxy URL to route connections through.
 
     Returns alive configs sorted by latency_ms ascending.
     """
@@ -88,7 +124,9 @@ async def validate_configs_tcp(
         async with semaphore:
             if done_event.is_set():
                 return
-            is_alive, latency_ms = await tcp_check(cfg.address, cfg.port, timeout)
+            is_alive, latency_ms = await tcp_check(
+                cfg.address, cfg.port, timeout=timeout, proxy_url=proxy_url
+            )
             cfg.is_alive = is_alive
             cfg.latency_ms = latency_ms
             if is_alive:
@@ -99,19 +137,15 @@ async def validate_configs_tcp(
 
     tasks = [asyncio.create_task(_check_one(c)) for c in configs]
 
-    # Wait until either all done or we have enough alive.
-    # Use as_completed to check periodically.
     await asyncio.wait(
         [asyncio.create_task(done_event.wait()), *tasks],
         return_when=asyncio.FIRST_COMPLETED,
     )
 
     if done_event.is_set():
-        # Cancel all remaining tasks.
         for t in tasks:
             if not t.done():
                 t.cancel()
-        # Wait for cancellations to settle.
         await asyncio.gather(*tasks, return_exceptions=True)
 
     alive_list.sort(

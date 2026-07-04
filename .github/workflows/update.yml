@@ -52,6 +52,9 @@ jobs:
           GITHUB_REPO: ${{ github.event.repository.name }}
           # Optional — only needed when llm.enabled is true in settings.yaml.
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          # Optional — SOCKS5 proxy for validation (when running from data center).
+          # Set VALIDATOR_PROXY secret to e.g. socks5://user:pass@host:port
+          VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
 
       - name: Commit changes
         run: |

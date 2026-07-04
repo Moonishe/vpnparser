@@ -1,18 +1,48 @@
 """L2 validator: TLS handshake check.
 
 For configs that use TLS or REALITY security, performs a real TLS
-handshake against the server to confirm it presents a valid certificate
-chain (or at least completes a handshake against the configured SNI).
-Configs with security='none' pass through unchanged — they don't claim
-to use TLS so we don't penalize them.
+handshake against the server to confirm it is reachable and responds.
+Configs with security='none' pass through unchanged.
+
+Supports **SOCKS5 proxy**: when a proxy URL is provided, TLS handshakes
+are routed through it (same rationale as TCP check).
 """
 
 from __future__ import annotations
 
 import asyncio
 import ssl
+from typing import Any
 
 from src.parsers.base import Config
+
+
+async def _open_connection_direct(
+    host: str, port: int, ssl_context: ssl.SSLContext, server_hostname: str
+) -> tuple[Any, Any]:
+    """Direct TLS connection."""
+    return await asyncio.open_connection(
+        host, port, ssl=ssl_context, server_hostname=server_hostname
+    )
+
+
+async def _open_connection_via_socks(
+    host: str,
+    port: int,
+    ssl_context: ssl.SSLContext,
+    server_hostname: str,
+    proxy_url: str,
+) -> tuple[Any, Any]:
+    """TLS connection routed through a SOCKS5 proxy."""
+    from python_socks.async_.asyncio import Proxy
+
+    proxy = Proxy.from_url(proxy_url)
+    sock = await proxy.connect(dest_host=host, dest_port=port, timeout=None)
+    # Wrap the raw socket into an SSL-wrapped asyncio connection.
+    reader, writer = await asyncio.open_connection(
+        sock=sock, ssl=ssl_context, server_hostname=server_hostname
+    )
+    return reader, writer
 
 
 async def tls_check(
@@ -20,39 +50,38 @@ async def tls_check(
     port: int,
     sni: str | None = None,
     timeout: float = 5.0,
+    proxy_url: str | None = None,
 ) -> bool:
-    """TLS handshake to host:port.
+    """TLS handshake to host:port, optionally through a SOCKS5 proxy.
 
-    Returns True if the handshake completes successfully, False on any
-    error (timeout, refused, DNS failure, certificate error, etc.).
-
-    The SNI (server_hostname) is set to `sni` if provided, otherwise `host`.
+    Returns True if the handshake completes successfully, False on any error.
     """
     server_hostname = sni if sni else host
     try:
         ssl_context = ssl.create_default_context()
-        # Liveness check, not a trust check: VPN servers (especially REALITY
-        # and self-signed) would be incorrectly rejected with verify=True.
-        # check_hostname must be False *before* setting CERT_NONE.
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
     except Exception:
-        # Extremely unlikely, but never raise from a validator.
         return False
 
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(
-                host, port, ssl=ssl_context, server_hostname=server_hostname
-            ),
-            timeout=timeout,
-        )
+        if proxy_url:
+            reader, writer = await asyncio.wait_for(
+                _open_connection_via_socks(
+                    host, port, ssl_context, server_hostname, proxy_url
+                ),
+                timeout=timeout,
+            )
+        else:
+            reader, writer = await asyncio.wait_for(
+                _open_connection_direct(host, port, ssl_context, server_hostname),
+                timeout=timeout,
+            )
     except (ssl.SSLError, ConnectionRefusedError, asyncio.TimeoutError, OSError):
         return False
     except Exception:
         return False
 
-    # Handshake already completed by open_connection with ssl=... — close cleanly.
     try:
         writer.close()
         try:
@@ -69,24 +98,32 @@ async def validate_configs_tls(
     configs: list[Config],
     timeout: float = 5.0,
     concurrency: int = 100,
+    proxy_url: str | None = None,
 ) -> list[Config]:
     """Filter configs by TLS handshake.
 
     Only checks configs with security='tls' or 'reality'. Configs with
-    security='none' (or any other value) pass through unchanged — their
-    is_alive is left as-is (typically set by the preceding TCP check).
+    security='none' pass through unchanged.
 
-    For TLS/reality configs that fail the handshake, is_alive is set to
-    False. Returns the list of configs that are still alive.
+    Args:
+        configs: List of Config objects.
+        timeout: TLS handshake timeout.
+        concurrency: Max concurrent checks.
+        proxy_url: Optional SOCKS5 proxy URL.
     """
     semaphore = asyncio.Semaphore(concurrency)
 
     async def _check_one(cfg: Config) -> None:
-        # Non-TLS configs are not tested here.
         if cfg.security not in ("tls", "reality"):
             return
         async with semaphore:
-            ok = await tls_check(cfg.address, cfg.port, sni=cfg.sni, timeout=timeout)
+            ok = await tls_check(
+                cfg.address,
+                cfg.port,
+                sni=cfg.sni,
+                timeout=timeout,
+                proxy_url=proxy_url,
+            )
             if not ok:
                 cfg.is_alive = False
 
