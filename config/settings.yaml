@@ -13,8 +13,9 @@ validator:
   # Empty list = keep all. Common: DE, FI, NL, US, GB, FR, JP, SG, CA
   allowed_countries: ["DE", "FI", "NL", "US"]
   
-  # If more configs than this are parsed, randomly sample before filtering
-  max_configs_to_validate: 20000
+  # If more configs than this are parsed, randomly sample before filtering.
+  # Set to 0 to process ALL configs (country filter is instant — no network).
+  max_configs_to_validate: 0
   
   # SOCKS5 proxy for TCP/TLS validation (optional, only when tcp/tls enabled)
   # proxy_url: "socks5://127.0.0.1:1080"

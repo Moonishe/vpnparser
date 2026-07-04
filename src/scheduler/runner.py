@@ -111,7 +111,6 @@ class PipelineRunner:
                 "Sampling %d configs from %d for processing.",
                 max_to_process,
                 len(configs),
-                max_to_process,
             )
             configs = random.sample(configs, max_to_process)
 
@@ -404,7 +403,12 @@ class PipelineRunner:
 
             for cfg in configs:
                 if cfg.country is None:
-                    cfg.country = detect_country(cfg.remark)
+                    cfg.country = detect_country(
+                        cfg.remark,
+                        getattr(cfg, "address", None),
+                        getattr(cfg, "sni", None),
+                        getattr(cfg, "host", None),
+                    )
             return configs
 
         allowed_list = [str(c).upper() for c in allowed]

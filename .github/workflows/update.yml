@@ -56,15 +56,9 @@ jobs:
           # Set VALIDATOR_PROXY secret to e.g. socks5://user:pass@host:port
           VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
 
-      - name: Commit changes
+      - name: Verify publish
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add output/subscription.txt
-          # Only commit when the staged file actually changed.
-          if git diff --staged --quiet; then
-            echo "No changes to output/subscription.txt — skipping commit."
-          else
-            git commit -m "auto-update configs $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
-          fi
+          echo "Pipeline published output/subscription.txt via GitHub Contents API."
+          echo "Subscription URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output/subscription.txt"
+          # File is already committed by --publish (GitHubPublisher.publish_file).
+          # No git commit/push needed — that caused a race condition with the API publish.
