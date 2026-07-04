@@ -3,6 +3,9 @@
 Measures whether a proxy server's host:port accepts TCP connections
 and how long the connect takes. This is the cheapest liveness check
 and is run before the more expensive TLS handshake (L2) test.
+
+Supports **early termination**: once enough alive configs with low
+latency are found, remaining checks are cancelled to save time.
 """
 
 from __future__ import annotations
@@ -41,8 +44,6 @@ async def tcp_check(
     # Close the connection cleanly, ignoring close-time errors.
     try:
         writer.close()
-        # Don't await full drain — we only care that the connect succeeded.
-        # Some transports raise on await after close; guard it.
         try:
             await writer.wait_closed()
         except (OSError, Exception):
@@ -57,29 +58,63 @@ async def validate_configs_tcp(
     configs: list[Config],
     timeout: float = 3.0,
     concurrency: int = 200,
+    max_alive: int = 0,
 ) -> list[Config]:
-    """Check all configs via TCP.
+    """Check configs via TCP with optional early termination.
 
-    Sets is_alive and latency_ms on each Config (even ones that fail,
-    which get is_alive=False and latency_ms=None).
+    Args:
+        configs: List of Config objects to check.
+        timeout: TCP connect timeout in seconds.
+        concurrency: Maximum concurrent connections.
+        max_alive: Stop once this many alive configs are found.
+            0 = no limit (check everything).
 
-    Returns only alive configs, sorted by latency_ms ascending.
-    Failed configs (latency_ms is None) are kept out of the returned list
-    but remain mutated in the input list.
+    Sets is_alive and latency_ms on each Config that was actually checked.
+    Configs that were cancelled (not checked) remain unchanged.
+
+    Returns alive configs sorted by latency_ms ascending.
     """
+    if not configs:
+        return []
+
     semaphore = asyncio.Semaphore(concurrency)
+    alive_list: list[Config] = []
+    alive_lock = asyncio.Lock()
+    done_event = asyncio.Event()
 
     async def _check_one(cfg: Config) -> None:
+        if done_event.is_set():
+            return
         async with semaphore:
+            if done_event.is_set():
+                return
             is_alive, latency_ms = await tcp_check(cfg.address, cfg.port, timeout)
             cfg.is_alive = is_alive
             cfg.latency_ms = latency_ms
+            if is_alive:
+                async with alive_lock:
+                    alive_list.append(cfg)
+                    if max_alive > 0 and len(alive_list) >= max_alive:
+                        done_event.set()
 
-    # Run all checks concurrently (bounded by the semaphore).
-    await asyncio.gather(*(_check_one(c) for c in configs))
+    tasks = [asyncio.create_task(_check_one(c)) for c in configs]
 
-    alive = [c for c in configs if c.is_alive]
-    # Sort by latency ascending; None should never appear here since alive
-    # implies a measured latency, but guard defensively.
-    alive.sort(key=lambda c: c.latency_ms if c.latency_ms is not None else float("inf"))
-    return alive
+    # Wait until either all done or we have enough alive.
+    # Use as_completed to check periodically.
+    await asyncio.wait(
+        [asyncio.create_task(done_event.wait()), *tasks],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    if done_event.is_set():
+        # Cancel all remaining tasks.
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        # Wait for cancellations to settle.
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    alive_list.sort(
+        key=lambda c: c.latency_ms if c.latency_ms is not None else float("inf")
+    )
+    return alive_list

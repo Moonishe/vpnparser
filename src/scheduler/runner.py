@@ -101,6 +101,20 @@ class PipelineRunner:
             self._write_empty_output(output_file)
             return 0
 
+        # 2b. Sample if too many configs (620K is not feasible to validate).
+        vcfg = self._section("validator")
+        max_to_validate = int(vcfg.get("max_configs_to_validate", 5000))
+        if max_to_validate > 0 and len(configs) > max_to_validate:
+            import random
+
+            logger.info(
+                "Sampling %d configs from %d for validation (max_configs_to_validate=%d).",
+                max_to_validate,
+                len(configs),
+                max_to_validate,
+            )
+            configs = random.sample(configs, max_to_validate)
+
         # 3. Validate: TCP -> TLS -> GeoIP.
         configs = await self._validate(configs)
 
@@ -374,18 +388,20 @@ class PipelineRunner:
         vcfg = self._section("validator")
         tcp_timeout = float(vcfg.get("tcp_timeout_seconds", 3.0))
         tcp_concurrency = int(vcfg.get("tcp_concurrency", 200))
+        tcp_max_alive = int(vcfg.get("tcp_max_alive", 50))
         tls_timeout = float(vcfg.get("tls_timeout_seconds", 5.0))
         tls_concurrency = int(vcfg.get("tls_concurrency", 100))
         geoip_enabled = bool(vcfg.get("geoip_enabled", True))
         geoip_url = vcfg.get("geoip_api_url", "http://ip-api.com/json/{ip}")
 
-        # L1: TCP.
+        # L1: TCP (with early termination once tcp_max_alive alive configs found).
         configs = await self._run_validator(
             "src.validators.tcp_check",
             "validate_configs_tcp",
             configs,
             timeout=tcp_timeout,
             concurrency=tcp_concurrency,
+            max_alive=tcp_max_alive,
             stage_name="TCP",
         )
         if not configs:

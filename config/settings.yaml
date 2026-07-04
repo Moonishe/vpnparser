@@ -11,6 +11,11 @@ validator:
   # L1: TCP connect check
   tcp_timeout_seconds: 3
   tcp_concurrency: 200
+  # Stop TCP validation once this many alive configs are found (0 = check all)
+  tcp_max_alive: 50
+  # If more configs than this are parsed, randomly sample before validation
+  # (620K configs would take hours; 5000 sample takes ~30s)
+  max_configs_to_validate: 5000
   
   # L2: TLS handshake check
   tls_timeout_seconds: 5
