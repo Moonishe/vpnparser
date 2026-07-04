@@ -101,22 +101,28 @@ class PipelineRunner:
             self._write_empty_output(output_file)
             return 0
 
-        # 2b. Sample if too many configs (620K is not feasible to validate).
+        # 2b. Sample if too many configs (620K is not feasible to process).
         vcfg = self._section("validator")
-        max_to_validate = int(vcfg.get("max_configs_to_validate", 5000))
-        if max_to_validate > 0 and len(configs) > max_to_validate:
+        max_to_process = int(vcfg.get("max_configs_to_validate", 20000))
+        if max_to_process > 0 and len(configs) > max_to_process:
             import random
 
             logger.info(
-                "Sampling %d configs from %d for validation (max_configs_to_validate=%d).",
-                max_to_validate,
+                "Sampling %d configs from %d for processing.",
+                max_to_process,
                 len(configs),
-                max_to_validate,
+                max_to_process,
             )
-            configs = random.sample(configs, max_to_validate)
+            configs = random.sample(configs, max_to_process)
 
-        # 3. Validate: TCP -> TLS -> GeoIP.
-        configs = await self._validate(configs)
+        # 3. Country filter (no network — instant for 620K configs).
+        configs = self._filter_countries(configs)
+        logger.info("After country filter: %d configs.", len(configs))
+
+        if not configs:
+            logger.warning("No configs matched allowed countries.")
+            self._write_empty_output(output_file)
+            return 0
 
         # 4. Aggregate: dedup -> sort -> limit.
         configs = self._aggregate(configs)
@@ -377,72 +383,36 @@ class PipelineRunner:
                 continue
         return None
 
-    # --- stage 3: validate ---
+    # --- stage 3: country filter ---
 
-    async def _validate(self, configs: list[Config]) -> list[Config]:
-        """Run TCP -> TLS -> GeoIP validation stages.
+    def _filter_countries(self, configs: list[Config]) -> list[Config]:
+        """Filter configs by allowed countries (no network — instant).
 
-        Each stage is independent: a failure degrades gracefully (the previous
-        stage's output is passed through) but is logged.
+        Detects country from each config's remark using emoji flags,
+        country names, and ISO codes. Only configs matching the
+        ``allowed_countries`` list are kept.
+
+        When ``allowed_countries`` is empty, all configs pass through.
         """
         vcfg = self._section("validator")
-        tcp_timeout = float(vcfg.get("tcp_timeout_seconds", 5.0))
-        tcp_concurrency = int(vcfg.get("tcp_concurrency", 300))
-        tcp_max_alive = int(vcfg.get("tcp_max_alive", 50))
-        tls_timeout = float(vcfg.get("tls_timeout_seconds", 5.0))
-        tls_concurrency = int(vcfg.get("tls_concurrency", 100))
-        geoip_enabled = bool(vcfg.get("geoip_enabled", True))
-        geoip_url = vcfg.get("geoip_api_url", "http://ip-api.com/json/{ip}")
+        allowed = vcfg.get("allowed_countries", [])
 
-        # SOCKS5 proxy for validation (optional, read from env or settings).
-        import os as _os
+        if not allowed:
+            logger.info("No country filter configured — keeping all configs.")
+            # Still try to detect country for sorting purposes.
+            from src.validators.country_filter import detect_country
 
-        proxy_url = _os.environ.get("VALIDATOR_PROXY") or vcfg.get("proxy_url") or None
-        if proxy_url:
-            logger.info("Using SOCKS5 proxy for validation: %s", proxy_url)
+            for cfg in configs:
+                if cfg.country is None:
+                    cfg.country = detect_country(cfg.remark)
+            return configs
 
-        # L1: TCP (with early termination once tcp_max_alive alive configs found).
-        configs = await self._run_validator(
-            "src.validators.tcp_check",
-            "validate_configs_tcp",
-            configs,
-            timeout=tcp_timeout,
-            concurrency=tcp_concurrency,
-            max_alive=tcp_max_alive,
-            proxy_url=proxy_url,
-            stage_name="TCP",
-        )
-        if not configs:
-            logger.warning("No configs survived TCP validation.")
-            return []
+        allowed_list = [str(c).upper() for c in allowed]
+        logger.info("Filtering to allowed countries: %s", allowed_list)
 
-        # L2: TLS.
-        configs = await self._run_validator(
-            "src.validators.tls_check",
-            "validate_configs_tls",
-            configs,
-            timeout=tls_timeout,
-            concurrency=tls_concurrency,
-            proxy_url=proxy_url,
-            stage_name="TLS",
-        )
-        if not configs:
-            logger.warning("No configs survived TLS validation.")
-            return []
+        from src.validators.country_filter import filter_by_country
 
-        # L3: GeoIP (enrichment, never filters out).
-        if geoip_enabled:
-            configs = await self._run_validator(
-                "src.validators.geoip",
-                "enrich_configs_geoip",
-                configs,
-                api_url=geoip_url,
-                stage_name="GeoIP",
-            )
-        else:
-            logger.info("GeoIP enrichment disabled by settings.")
-
-        return configs
+        return filter_by_country(configs, allowed_list)
 
     async def _run_validator(
         self,
