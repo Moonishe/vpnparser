@@ -26,7 +26,7 @@ from typing import Any
 import yaml
 
 from src.parsers import ALL_PARSERS
-from src.parsers.base import Config, find_all_links
+from src.parsers.base import Config, find_all_links, is_garbage_config
 from src.parsers.subscription import SubscriptionParser
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,16 @@ class PipelineRunner:
             self._write_empty_output(output_file)
             return 0
 
-        # 2b. Sample if too many configs (620K is not feasible to process).
+        # 2b. Filter out garbage/placeholder configs (UUID, SERVER_IP, etc).
+        configs, garbage_count = self._filter_garbage(configs)
+        if garbage_count:
+            logger.info("Filtered %d garbage/placeholder configs.", garbage_count)
+        if not configs:
+            logger.warning("All configs were garbage — pipeline produced nothing.")
+            self._write_empty_output(output_file)
+            return 0
+
+        # 2c. Sample if too many configs (620K is not feasible to process).
         vcfg = self._section("validator")
         max_to_process = int(vcfg.get("max_configs_to_validate", 20000))
         if max_to_process > 0 and len(configs) > max_to_process:
@@ -381,6 +390,28 @@ class PipelineRunner:
                 logger.debug("Parser %s raised on link: %s", type(parser).__name__, exc)
                 continue
         return None
+
+    @staticmethod
+    def _filter_garbage(configs: list[Config]) -> tuple[list[Config], int]:
+        """Remove placeholder/template configs (UUID, SERVER_IP, example.com).
+
+        Returns (clean_configs, garbage_count).
+        """
+        clean: list[Config] = []
+        garbage = 0
+        for cfg in configs:
+            if is_garbage_config(cfg):
+                garbage += 1
+                logger.debug(
+                    "Garbage filtered: %s://%s:%d (%s)",
+                    cfg.protocol,
+                    cfg.address,
+                    cfg.port,
+                    cfg.remark[:50],
+                )
+            else:
+                clean.append(cfg)
+        return clean, garbage
 
     # --- stage 3: country filter ---
 

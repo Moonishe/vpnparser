@@ -120,3 +120,57 @@ PROTOCOL_PATTERN = re.compile(
 def find_all_links(text: str) -> list[str]:
     """Find all proxy links in arbitrary text."""
     return PROTOCOL_PATTERN.findall(text)
+
+
+# --- garbage / placeholder detection ---
+
+# Placeholders used in example/template configs (not real servers).
+_PLACEHOLDER_PATTERNS = re.compile(
+    r"(?i)"
+    r"\bUUID\b"  # literal "UUID" instead of real uuid
+    r"|\bSERVER_IP"  # SERVER_IP_1, SERVER_IP_2...
+    r"|\bPUBLIC_KEY\b"  # PUBLIC_KEY_1
+    r"|\bSHORT_ID\b"  # SHORT_ID_1
+    r"|\bPASSWORD\b"  # literal "PASSWORD"
+    r"|your[_-]?domain"  # yourdomain.com, your-domain.com
+    r"|example\.com"  # example.com (IANA reserved)
+    r"|SERVER_IP_\d"  # SERVER_IP_1
+)
+
+
+def is_garbage_config(link_or_config: str | Config) -> bool:
+    """Check if a link or Config is a placeholder/template, not a real server.
+
+    Detects:
+    - Literal placeholders: UUID, SERVER_IP_1, PUBLIC_KEY, SHORT_ID, PASSWORD
+    - Example domains: example.com, yourdomain.com
+    - Template remarks: "Replace ... with your ..."
+    """
+    if isinstance(link_or_config, Config):
+        cfg = link_or_config
+        # Check address, uuid, sni, host, pbk, sid for placeholders.
+        fields_to_check = [
+            cfg.address,
+            cfg.uuid_or_password,
+            cfg.sni or "",
+            cfg.host or "",
+            cfg.pbk or "",
+            cfg.sid or "",
+            cfg.remark,
+        ]
+        combined = " ".join(str(f) for f in fields_to_check)
+        if _PLACEHOLDER_PATTERNS.search(combined):
+            return True
+        # UUID must look like a real UUID (8-4-4-4-12 hex), not literal "UUID".
+        if cfg.protocol in ("vless", "vmess") and cfg.uuid_or_password:
+            if cfg.uuid_or_password.upper() == "UUID":
+                return True
+            if not re.match(
+                r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                cfg.uuid_or_password,
+            ):
+                return True
+        return False
+
+    # String link — check raw text for placeholders.
+    return bool(_PLACEHOLDER_PATTERNS.search(str(link_or_config)))
