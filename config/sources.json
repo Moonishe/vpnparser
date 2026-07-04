@@ -1,0 +1,85 @@
+{
+  "sources": [
+    {
+      "name": "epodonios-all-configs",
+      "type": "subscription",
+      "owner": "Epodonios",
+      "repo": "v2ray-configs",
+      "path": "All_Configs_Sub.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "epodonios-vless-split",
+      "type": "subscription",
+      "owner": "Epodonios",
+      "repo": "v2ray-configs",
+      "path": "Splitted-By-Protocol/vless.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "epodonios-trojan-split",
+      "type": "subscription",
+      "owner": "Epodonios",
+      "repo": "v2ray-configs",
+      "path": "Splitted-By-Protocol/trojan.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "igareck-black-vless-mobile",
+      "type": "subscription",
+      "owner": "igareck",
+      "repo": "vpn-configs-for-russia",
+      "path": "BLACK_VLESS_RUS_mobile.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "igareck-black-ss-all",
+      "type": "subscription",
+      "owner": "igareck",
+      "repo": "vpn-configs-for-russia",
+      "path": "BLACK_SS+All_RUS.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "ebrasha-all-extracted",
+      "type": "subscription",
+      "owner": "ebrasha",
+      "repo": "free-v2ray-public-list",
+      "path": "all_extracted_configs.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "ebrasha-all-type",
+      "type": "subscription",
+      "owner": "ebrasha",
+      "repo": "free-v2ray-public-list",
+      "path": "V2Ray-Config-By-EbraSha-All-Type.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "avencores-goida-configs",
+      "type": "raw",
+      "owner": "AvenCores",
+      "repo": "goida-vpn-configs",
+      "path": "",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "flat447-v2ray-lists",
+      "type": "raw",
+      "owner": "FLAT447",
+      "repo": "v2ray-lists",
+      "path": "",
+      "branch": "main",
+      "enabled": true
+    }
+  ]
+}

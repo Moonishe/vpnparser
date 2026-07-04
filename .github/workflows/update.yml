@@ -1,0 +1,67 @@
+# Auto-update VPN configs pipeline.
+# Runs on schedule (every 6 hours), on manual dispatch, and on push to main
+# (so changes to the pipeline itself are validated end-to-end).
+name: Update Configs
+
+on:
+  schedule:
+    # Every hour, at minute 0 (UTC)
+    - cron: "0 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "config/**"
+      - "requirements.txt"
+      - ".github/workflows/update.yml"
+
+# Cancel a previous run if a new one starts on the same ref.
+concurrency:
+  group: update-configs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update-configs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to push the updated subscription back to the repo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip" # caches the pip download cache between runs
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        run: python -m src.main --run --publish
+        env:
+          # Auto-provided by GitHub Actions; used for both fetching sources
+          # (higher API rate limits) and publishing the commit.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Repo owner/name — derived from the workflow context so the
+          # publisher knows where to commit the subscription file.
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+          # Optional — only needed when llm.enabled is true in settings.yaml.
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/subscription.txt
+          # Only commit when the staged file actually changed.
+          if git diff --staged --quiet; then
+            echo "No changes to output/subscription.txt — skipping commit."
+          else
+            git commit -m "auto-update configs $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
