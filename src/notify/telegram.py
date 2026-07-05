@@ -31,8 +31,9 @@ logger = logging.getLogger(__name__)
 # e.g. "123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 _TOKEN_MIN_LEN = 20
 
-# Gemini OpenAI-compatible endpoint.
-_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+# LLM endpoint — OpenAI-compatible. DashScope (Alibaba) qwen-flash is fast and free.
+_LLM_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+_LLM_MODEL = "qwen-flash"
 
 # Default subscription URL (kept in one place — referenced by both the
 # send_notification() default and the CLI --url default below).
@@ -218,7 +219,7 @@ def _call_gemini(api_key: str, prompt: str) -> str | None:
     try:
         body = json.dumps(
             {
-                "model": "gemini-2.0-flash",
+                "model": _LLM_MODEL,
                 "messages": [
                     {
                         "role": "system",
@@ -232,7 +233,7 @@ def _call_gemini(api_key: str, prompt: str) -> str | None:
         ).encode("utf-8")
 
         req = urllib.request.Request(
-            _GEMINI_URL,
+            _LLM_URL,
             data=body,
             headers={
                 "Content-Type": "application/json",
