@@ -36,9 +36,9 @@ validator:
 
 # --- Aggregator ---
 aggregator:
-  max_configs_in_output: 500
+  max_configs_in_output: 75
   sort_by: "country"
-  max_per_country: 50
+  max_per_country: 10
 
 # --- Publisher ---
 publisher:
