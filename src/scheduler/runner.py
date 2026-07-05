@@ -543,6 +543,8 @@ class PipelineRunner:
             return configs[:max_configs]
 
         try:
+            # Filter out configs with no country detected — they waste output slots.
+            configs = [c for c in configs if c.country is not None]
             sorted_configs = sort_configs(configs, sort_by=sort_by)
             if max_per_country > 0:
                 sorted_configs = limit_per_country(sorted_configs, max_per_country)

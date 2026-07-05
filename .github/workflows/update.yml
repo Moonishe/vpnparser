@@ -59,8 +59,37 @@ jobs:
       - name: Verify output
         run: |
           test -f output/subscription.txt || { echo "ERROR: output/subscription.txt not created!"; exit 1; }
-          lines=$(wc -l < output/subscription.txt)
-          echo "Output file: output/subscription.txt ($lines lines)"
-          echo "Subscription URL: https://raw.githubusercontent.com/${{ github.repository }}/main/output/subscription.txt"
-          # File is already committed by --publish (GitHubPublisher.publish_file).
-          # No git commit/push needed — that caused a race condition with the API publish.
+          # Decode base64 and count configs
+          CONFIGS=$(python3 -c "
+          import base64
+          data = open('output/subscription.txt').read().strip()
+          try:
+              decoded = base64.b64decode(data).decode()
+              lines = [l for l in decoded.strip().split('\n') if '://' in l]
+              print(len(lines))
+          except:
+              print(0)
+          ")
+          echo "configs_count=$CONFIGS" >> $GITHUB_ENV
+          echo "Output: $CONFIGS configs"
+
+      - name: Telegram notify
+        if: env.configs_count != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # Skip if no bot token configured
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+            echo "No TELEGRAM_BOT_TOKEN secret — skipping notification"
+            exit 0
+          fi
+          MSG="📡 vpnparser обновлён
+          ✅ Конфигов: ${{ env.configs_count }}
+          🌍 Страны: DE FI NL US GB FR JP SG CA
+          🔗 https://raw.githubusercontent.com/${{ github.repository }}/main/output/subscription.txt"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            -d text="$MSG" \
+            -d parse_mode="HTML" \
+            || echo "Telegram notify failed (non-fatal)"
