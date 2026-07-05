@@ -123,7 +123,13 @@ class PipelineRunner:
             )
             configs = random.sample(configs, max_to_process)
 
-        # 3. Country filter (no network — instant for 620K configs).
+        # 3. Dedup FIRST — one server = one config (address, port).
+        #    Deduping before country detection saves CPU: detect_country is
+        #    the most expensive step (~12µs/call), so fewer configs = faster.
+        configs = self._dedup_only(configs)
+        logger.info("After dedup: %d configs.", len(configs))
+
+        # 4. Country filter (no network — instant for remaining configs).
         configs = self._filter_countries(configs)
         logger.info("After country filter: %d configs.", len(configs))
 
@@ -132,8 +138,8 @@ class PipelineRunner:
             self._write_empty_output(output_file)
             return 0
 
-        # 4. Aggregate: dedup -> sort -> limit.
-        configs = self._aggregate(configs)
+        # 5. Aggregate: sort -> limit (dedup already done).
+        configs = self._sort_and_limit(configs)
         logger.info("After aggregation: %d configs.", len(configs))
 
         # 5. Write output.
@@ -508,7 +514,42 @@ class PipelineRunner:
         )
         return list(result) if result else []
 
-    # --- stage 4: aggregate ---
+    # --- stage 3+5: aggregate (split into dedup + sort/limit) ---
+
+    def _dedup_only(self, configs: list[Config]) -> list[Config]:
+        """Deduplicate configs by (address, port). Called before country filter."""
+        try:
+            from src.aggregator.merger import deduplicate
+        except (ImportError, AttributeError) as exc:
+            logger.error("Cannot import deduplicate: %s — skipping dedup.", exc)
+            return configs
+        try:
+            return deduplicate(configs)
+        except Exception as exc:
+            logger.error("deduplicate failed: %s — passing through.", exc)
+            return configs
+
+    def _sort_and_limit(self, configs: list[Config]) -> list[Config]:
+        """Sort and limit configs (dedup already done). Called after country filter."""
+        acfg = self._section("aggregator")
+        max_configs = int(acfg.get("max_configs_in_output", 500))
+        sort_by = str(acfg.get("sort_by", "country"))
+        max_per_country = int(acfg.get("max_per_country", 0))
+
+        try:
+            from src.aggregator.merger import sort_configs, limit_per_country
+        except (ImportError, AttributeError) as exc:
+            logger.error("Cannot import sort_configs: %s — skipping sort.", exc)
+            return configs[:max_configs]
+
+        try:
+            sorted_configs = sort_configs(configs, sort_by=sort_by)
+            if max_per_country > 0:
+                sorted_configs = limit_per_country(sorted_configs, max_per_country)
+            return sorted_configs[:max_configs]
+        except Exception as exc:
+            logger.error("sort_and_limit failed: %s — passing through.", exc)
+            return configs[:max_configs]
 
     def _aggregate(self, configs: list[Config]) -> list[Config]:
         """Dedup -> sort -> limit via ``merge_and_filter``."""

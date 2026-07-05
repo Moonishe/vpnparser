@@ -14,7 +14,8 @@ Query parameters:
 
 from __future__ import annotations
 
-from urllib.parse import urlparse, unquote
+from typing import ClassVar
+from urllib.parse import unquote
 
 from src.parsers.base import BaseParser, Config, extract_remark, parse_qs_single
 
@@ -22,7 +23,7 @@ from src.parsers.base import BaseParser, Config, extract_remark, parse_qs_single
 class Hysteria2Parser(BaseParser):
     """Parser for hysteria2:// and hy2:// links."""
 
-    protocol: str = "hysteria2"
+    protocol: ClassVar[str] = "hysteria2"
 
     def can_parse(self, link: str) -> bool:
         """Check if this parser handles the given link scheme."""
@@ -35,10 +36,19 @@ class Hysteria2Parser(BaseParser):
         Returns None if the link is malformed.
         """
         try:
-            # Normalize hy2:// -> hysteria2://
+            # Normalize hy2:// -> hysteria2://.  "hy2://" is 6 chars
+            # (h,y,2,:,/,/) so we slice [6:] to skip the whole scheme;
+            # [5:] would leave the second "/" and corrupt the password
+            # with a leading "/" (e.g. "pass" -> "/pass").
             normalized = link.strip()
-            if normalized.lower().startswith("hy2://"):
-                normalized = "hysteria2://" + normalized[5:]
+            low = normalized.lower()
+            # Validate scheme — parse() must be self-guarding even if
+            # can_parse() was not called (defence in depth: prevents
+            # http://, hysteria://, etc. from being silently accepted).
+            if not (low.startswith("hysteria2://") or low.startswith("hy2://")):
+                return None
+            if low.startswith("hy2://"):
+                normalized = "hysteria2://" + normalized[6:]
 
             # urlparse doesn't extract userinfo for non-standard schemes,
             # so we parse manually: hysteria2://PASS@HOST:PORT?QUERY#REMARK
@@ -87,9 +97,7 @@ class Hysteria2Parser(BaseParser):
 
             sni = query.get("sni")
             alpn = query.get("alpn")
-            insecure = query.get("insecure", "0")
-            obfs = query.get("obfs")
-            obfs_password = query.get("obfs-password")
+            # obfs/obfs-password/insecure stay in raw_link — not stored in Config.
 
             # Hysteria2 is always TLS-based.
             cfg = Config(
@@ -110,12 +118,11 @@ class Hysteria2Parser(BaseParser):
                 raw_link=link,
             )
 
-            # Store obfs info in path/host fields if present.
-            if obfs:
-                cfg.path = obfs
-            if obfs_password:
-                cfg.host = obfs_password
-
+            # obfs/obfs_password are NOT stored in Config fields — they stay
+            # encoded in raw_link (used by output generator).  Storing them in
+            # cfg.path/cfg.host would break is_garbage_config (false positive on
+            # "password" in obfs_password) and detect_country (false country
+            # from obfs-password substring).
             return cfg
         except Exception:
             return None
