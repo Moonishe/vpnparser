@@ -52,6 +52,9 @@ _FACT_PROMPT = (
     "С лёгким юмором. Без emoji. Просто текст."
 )
 
+_FACT_HISTORY_FILE = "facts_history.json"
+_FACT_HISTORY_MAX = 50  # keep last 50 facts
+
 _FACT_FALLBACK_NO_KEY = (
     "VPN расшифровывается как Very Private Network "
     "(шутка, на самом деле Virtual Private Network)."
@@ -172,19 +175,32 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
     return dict(countries.most_common())
 
 
-def _generate_fun_fact(api_key: str) -> str:
-    """Call Gemini API to generate a fun VPN fact.
+def _load_facts_history() -> list[str]:
+    """Load previously generated facts from cache file."""
+    try:
+        with open(_FACT_HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    except Exception:
+        return []
 
-    Returns a plain text fact, or a fallback if API fails.
-    ``api_key`` is coerced to ``str``; non-string values (e.g. ``None``)
-    are treated as missing and yield the fallback rather than sending
-    a literal ``"Bearer None"`` header.
-    """
-    if not api_key or not str(api_key).strip():
-        return _FACT_FALLBACK_NO_KEY
 
-    api_key = str(api_key).strip()
+def _save_fact(fact: str) -> None:
+    """Append fact to history file, keeping last _FACT_HISTORY_MAX entries."""
+    history = _load_facts_history()
+    history.append(fact)
+    history = history[-_FACT_HISTORY_MAX:]
+    try:
+        with open(_FACT_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        logger.warning("Could not save fact history: %s", exc)
 
+
+def _call_gemini(api_key: str, prompt: str) -> str | None:
+    """Single Gemini API call. Returns text or None on failure."""
     try:
         body = json.dumps(
             {
@@ -194,7 +210,7 @@ def _generate_fun_fact(api_key: str) -> str:
                         "role": "system",
                         "content": "Ты — забавный ассистент, который знает факты о VPN. Отвечай кратко на русском.",
                     },
-                    {"role": "user", "content": _FACT_PROMPT},
+                    {"role": "user", "content": prompt},
                 ],
                 "temperature": 0.9,
                 "max_tokens": 150,
@@ -214,28 +230,60 @@ def _generate_fun_fact(api_key: str) -> str:
 
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            # Tolerate malformed / unexpected Gemini shapes without raising.
             choices = data.get("choices") or []
             if not choices:
-                raise ValueError("Gemini response has no choices")
+                return None
             content = choices[0].get("message", {}).get("content")
             if not isinstance(content, str) or not content.strip():
-                raise ValueError("Gemini response has no content")
-            # Normalise whitespace: collapse internal newlines/tabs/multi-spaces
-            # to single spaces so the fact stays on one line in the message.
+                return None
             return " ".join(content.split())
-    except urllib.error.HTTPError as exc:
-        logger.warning("Gemini API returned HTTP %d — using fallback", exc.code)
-        return _FACT_FALLBACK
-    except urllib.error.URLError as exc:
-        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
-            logger.warning("Gemini API timed out after 15s — using fallback")
-        else:
-            logger.warning("Gemini API network error: %s — using fallback", exc.reason)
-        return _FACT_FALLBACK
     except Exception as exc:
-        logger.warning("Gemini fact generation failed: %s — using fallback", exc)
-        return _FACT_FALLBACK
+        logger.warning("Gemini API call failed: %s", exc)
+        return None
+
+
+def _generate_fun_fact(api_key: str) -> str:
+    """Call Gemini API to generate a fun VPN fact.
+
+    Loads history of previous facts, tells Gemini not to repeat them,
+    retries up to 3 times if the generated fact is a duplicate.
+    Saves the new fact to history.
+    Returns a fallback if API fails or no API key.
+    """
+    if not api_key or not str(api_key).strip():
+        return _FACT_FALLBACK_NO_KEY
+
+    api_key = str(api_key).strip()
+    history = _load_facts_history()
+
+    # Build prompt with "don't repeat" list.
+    dont_repeat = ""
+    if history:
+        recent = history[-10:]  # show last 10 to Gemini
+        dont_repeat = "\n\nНе повторяй эти факты:\n" + "\n".join(
+            f"- {h}" for h in recent
+        )
+
+    prompt = _FACT_PROMPT + dont_repeat
+
+    # Try up to 3 times to get a non-duplicate fact.
+    for attempt in range(3):
+        fact = _call_gemini(api_key, prompt)
+        if fact is None:
+            break
+        # Check if it's a duplicate (case-insensitive, stripped).
+        fact_lower = fact.lower().strip()
+        if any(fact_lower == h.lower().strip() for h in history):
+            logger.info(
+                "Gemini returned duplicate fact (attempt %d) — retrying", attempt + 1
+            )
+            continue
+        # Found a unique fact — save and return.
+        _save_fact(fact)
+        return fact
+
+    # All retries failed or API unavailable — use fallback.
+    return _FACT_FALLBACK
 
 
 def _send_telegram(token: str, chat_id: str, text: str) -> bool:

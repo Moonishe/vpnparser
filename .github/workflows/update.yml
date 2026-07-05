@@ -40,6 +40,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore facts cache
+        uses: actions/cache/restore@v4
+        with:
+          path: facts_history.json
+          key: facts-history
+          restore-keys: |
+            facts-history
+
       - name: Run pipeline
         run: python -m src.main --run --publish
         env:
@@ -80,3 +88,10 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+
+      - name: Save facts cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: facts_history.json
+          key: facts-history-${{ github.run_id }}
