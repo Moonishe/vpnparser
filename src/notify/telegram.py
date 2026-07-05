@@ -363,20 +363,14 @@ def send_notification(
         country_section = html.escape(countries)
 
     # Build message.
-    configs_label = (
-        "Нет новых конфигов" if configs_count == 0 else f"Всего: {configs_count}"
-    )
     message = (
-        f"{_BOT_INTRO}\n"
-        f"\n"
-        f"✅ Конфиг обновлён!\n"
-        f"📊 {html.escape(configs_label)}\n"
-        f"\n"
-        f"🌍 По странам:\n{country_section}\n"
+        f"Конфиг обновился, обновите конфигурацию.\n"
+        f"Страны которые обновились:\n"
+        f"{country_section}\n"
         f"\n"
         f"🔮 Факт: {html.escape(fact)}\n"
         f"\n"
-        f"🔗 {html.escape(subscription_url)}"
+        f"ссылка для вставки - 🔗 {html.escape(subscription_url)}"
     )
 
     return _send_telegram(token, chat_id, message)
