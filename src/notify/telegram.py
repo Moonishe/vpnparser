@@ -10,26 +10,38 @@ Usage (standalone, from CLI):
 
 Usage (imported):
     from src.notify.telegram import send_notification
-    await send_notification(configs_count=50, countries="DE FI NL US")
+    send_notification(configs_count=50, countries="DE FI NL US")
 """
 
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import os
 import sys
+import socket
 import urllib.request
 import urllib.error
 
 logger = logging.getLogger(__name__)
 
+# Telegram bot tokens have format: <digits>:<alphanumeric_hash>
+# e.g. "123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+_TOKEN_MIN_LEN = 20
+
 # Gemini OpenAI-compatible endpoint.
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
+# Default subscription URL (kept in one place — referenced by both the
+# send_notification() default and the CLI --url default below).
+_SUBSCRIPTION_URL = (
+    "https://raw.githubusercontent.com/Moonishe/vpnparser/main/output/subscription.txt"
+)
+
 _BOT_INTRO = (
-    "🤖 Я — vpnparser бот от @Moonishe\n"
+    "🤖 Я — vpnparser бот от @dutysissy\n"
     "📡 Парсю публичные VPN конфиги каждый час\n"
     "🔗 https://github.com/Moonishe/vpnparser"
 )
@@ -40,14 +52,138 @@ _FACT_PROMPT = (
     "С лёгким юмором. Без emoji. Просто текст."
 )
 
+_FACT_FALLBACK_NO_KEY = (
+    "VPN расшифровывается как Very Private Network "
+    "(шутка, на самом деле Virtual Private Network)."
+)
+
+_FACT_FALLBACK = (
+    "Первый VPN был создан в 1996 году компанией Microsoft. "
+    "С тех пор мы прячемся от провайдеров уже 30 лет."
+)
+
+# Country flag emojis for prettier output.
+_COUNTRY_FLAGS = {
+    "DE": "🇩🇪",
+    "FI": "🇫🇮",
+    "NL": "🇳🇱",
+    "US": "🇺🇸",
+    "GB": "🇬🇧",
+    "FR": "🇫🇷",
+    "JP": "🇯🇵",
+    "SG": "🇸🇬",
+    "CA": "🇨🇦",
+    "RU": "🇷🇺",
+    "TR": "🇹🇷",
+    "PL": "🇵🇱",
+    "SE": "🇸🇪",
+    "CH": "🇨🇭",
+    "AT": "🇦🇹",
+    "ES": "🇪🇸",
+}
+
+
+def _count_countries_from_file(filepath: str) -> dict[str, int]:
+    """Decode subscription.txt and count configs per country.
+
+    Returns a dict {country_code: count}, sorted by count descending.
+    Returns empty dict if file can't be read or decoded.
+    """
+    import re
+    from collections import Counter
+
+    try:
+        raw = open(filepath, "r", encoding="utf-8").read().strip()
+    except Exception:
+        return {}
+
+    try:
+        import base64
+
+        text = base64.b64decode(raw).decode("utf-8")
+    except Exception:
+        text = raw
+
+    lines = [l.strip() for l in text.strip().split("\n") if "://" in l]
+
+    # Skip watermark (first vmess with 0.0.0.0).
+    countries = Counter()
+    for l in lines:
+        # Skip watermark
+        if "0.0.0.0" in l and "vmess://" in l:
+            continue
+        if "#" in l:
+            rem = l.split("#")[-1].strip()
+            # Try to detect country from remark
+            from urllib.parse import unquote
+
+            rem = unquote(rem)
+            m = re.search(
+                r"(?:^|[^A-Za-z])(DE|FI|NL|US|GB|FR|JP|SG|CA)(?:[^A-Za-z]|$)",
+                rem,
+            )
+            if m:
+                countries[m.group(1)] += 1
+                continue
+            # Try city names
+            lower = rem.lower()
+            cities = {
+                "frankfurt": "DE",
+                "munich": "DE",
+                "berlin": "DE",
+                "amsterdam": "NL",
+                "rotterdam": "NL",
+                "helsinki": "FI",
+                "tampere": "FI",
+                "paris": "FR",
+                "london": "GB",
+                "tokyo": "JP",
+                "seoul": "KR",
+                "singapore": "SG",
+                "toronto": "CA",
+                "new york": "US",
+                "miami": "US",
+                "los angeles": "US",
+                "seattle": "US",
+                "chicago": "US",
+                "dallas": "US",
+            }
+            found = False
+            for city, code in cities.items():
+                if city in lower:
+                    countries[code] += 1
+                    found = True
+                    break
+            if not found:
+                # Try hostname prefix
+                body = l.split("://")[1] if "://" in l else ""
+                if "@" in body:
+                    host = body.split("@")[1].split(":")[0].split("?")[0]
+                else:
+                    host = body.split(":")[0].split("?")[0]
+                m2 = re.search(
+                    r"(?:^|\.|[-_])(DE|FI|NL|US|GB|FR|JP|SG|CA)[-\d]",
+                    host,
+                    re.IGNORECASE,
+                )
+                if m2:
+                    countries[m2.group(1).upper()] += 1
+
+    return dict(countries.most_common())
+
 
 def _generate_fun_fact(api_key: str) -> str:
     """Call Gemini API to generate a fun VPN fact.
 
     Returns a plain text fact, or a fallback if API fails.
+    ``api_key`` is coerced to ``str``; non-string values (e.g. ``None``)
+    are treated as missing and yield the fallback rather than sending
+    a literal ``"Bearer None"`` header.
     """
-    if not api_key:
-        return "VPN расшифровывается как Very Private Network (шутка, на самом деле Virtual Private Network)."
+    if not api_key or not str(api_key).strip():
+        return _FACT_FALLBACK_NO_KEY
+
+    api_key = str(api_key).strip()
 
     try:
         body = json.dumps(
@@ -71,17 +207,35 @@ def _generate_fun_fact(api_key: str) -> str:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
+                "User-Agent": "vpnparser/1.0",
             },
             method="POST",
         )
 
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            fact = data["choices"][0]["message"]["content"].strip()
-            return fact
+            # Tolerate malformed / unexpected Gemini shapes without raising.
+            choices = data.get("choices") or []
+            if not choices:
+                raise ValueError("Gemini response has no choices")
+            content = choices[0].get("message", {}).get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("Gemini response has no content")
+            # Normalise whitespace: collapse internal newlines/tabs/multi-spaces
+            # to single spaces so the fact stays on one line in the message.
+            return " ".join(content.split())
+    except urllib.error.HTTPError as exc:
+        logger.warning("Gemini API returned HTTP %d — using fallback", exc.code)
+        return _FACT_FALLBACK
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+            logger.warning("Gemini API timed out after 15s — using fallback")
+        else:
+            logger.warning("Gemini API network error: %s — using fallback", exc.reason)
+        return _FACT_FALLBACK
     except Exception as exc:
         logger.warning("Gemini fact generation failed: %s — using fallback", exc)
-        return "Первый VPN был создан в 1996 году компанией Microsoft. С тех пор мы прячемся от провайдеров уже 30 лет."
+        return _FACT_FALLBACK
 
 
 def _send_telegram(token: str, chat_id: str, text: str) -> bool:
@@ -89,6 +243,35 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
 
     Returns True on success, False on failure.
     """
+    # Fail fast on empty credentials — otherwise we make a guaranteed-to-fail
+    # network request that blocks for the full timeout (10s) before returning
+    # False.  A negative ``chat_id`` is legitimate (Telegram groups/supergroups),
+    # so only emptiness is rejected here.
+    if not token or not str(token).strip() or not chat_id or not str(chat_id).strip():
+        logger.warning("Telegram send skipped — empty token or chat_id")
+        return False
+
+    token = str(token).strip()
+    chat_id = str(chat_id).strip()
+    text = text or ""
+
+    # Telegram sendMessage rejects text longer than 4096 chars with a 400.
+    # Truncate defensively — the fact is bounded by max_tokens, but a future
+    # prompt change or a huge countries list could otherwise blow the limit.
+    if len(text) > 4096:
+        text = text[:4093] + "..."
+        logger.warning("Telegram message truncated to 4096 chars")
+
+    # Validate token format — fail fast instead of a 10s network timeout.
+    # Telegram bot tokens: 123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+    if (
+        ":" not in token
+        or len(token) < _TOKEN_MIN_LEN
+        or not token.split(":", 1)[0].isdigit()
+    ):
+        logger.warning("Telegram token has invalid format — expected '<digits>:<hash>'")
+        return False
+
     try:
         data = json.dumps(
             {
@@ -101,48 +284,99 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{token}/sendMessage",
             data=data,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "vpnparser/1.0",
+            },
             method="POST",
         )
 
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             return result.get("ok", False)
+    except urllib.error.HTTPError as exc:
+        # HTTPError is file-like — read Telegram's error description.
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:200]
+        except Exception:
+            body = ""
+        logger.warning("Telegram API returned HTTP %d: %s", exc.code, body)
+        return False
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+            logger.warning("Telegram send timed out after 10s — API unreachable")
+        else:
+            logger.warning("Telegram send network error: %s", exc.reason)
+        return False
     except Exception as exc:
-        logger.warning("Telegram send failed: %s", exc)
+        logger.warning("Telegram send failed unexpectedly: %s", exc)
         return False
 
 
 def send_notification(
     configs_count: int,
     countries: str = "DE FI NL US GB FR JP SG CA",
-    subscription_url: str = "https://raw.githubusercontent.com/Moonishe/vpnparser/main/output/subscription.txt",
+    subscription_url: str = _SUBSCRIPTION_URL,
+    subscription_file: str = "",
 ) -> bool:
     """Send a Telegram notification with config count + fun fact.
 
     Reads TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, LLM_API_KEY from env.
+    If subscription_file is provided, parses it for per-country breakdown.
     Returns True if sent, False if skipped or failed.
     """
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat_id = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
 
     if not token or not chat_id:
         logger.info("Telegram credentials not set — skipping notification")
         return False
 
+    # Normalise inputs.
+    if not isinstance(configs_count, int):
+        try:
+            configs_count = int(configs_count)
+        except (TypeError, ValueError):
+            configs_count = 0
+    if configs_count < 0:
+        configs_count = 0
+
+    subscription_url = (subscription_url or "").strip() or "—"
+
+    # Get per-country breakdown from subscription file if available.
+    country_counts: dict[str, int] = {}
+    if subscription_file:
+        country_counts = _count_countries_from_file(subscription_file)
+
     # Generate fun fact via Gemini.
     api_key = os.environ.get("LLM_API_KEY", "")
     fact = _generate_fun_fact(api_key)
 
+    # Build country breakdown lines.
+    if country_counts:
+        country_lines = []
+        for code, count in country_counts.items():
+            flag = _COUNTRY_FLAGS.get(code, "🌍")
+            country_lines.append(f"  {flag} {code}: {count}")
+        country_section = "\n".join(country_lines)
+    else:
+        country_section = html.escape(countries)
+
     # Build message.
+    configs_label = (
+        "Нет новых конфигов" if configs_count == 0 else f"Всего: {configs_count}"
+    )
     message = (
         f"{_BOT_INTRO}\n"
         f"\n"
-        f"✅ Конфигов: {configs_count}\n"
-        f"🌍 Страны: {countries}\n"
-        f"🔮 Факт: {fact}\n"
+        f"✅ Конфиг обновлён!\n"
+        f"📊 {html.escape(configs_label)}\n"
         f"\n"
-        f"🔗 {subscription_url}"
+        f"🌍 По странам:\n{country_section}\n"
+        f"\n"
+        f"🔮 Факт: {html.escape(fact)}\n"
+        f"\n"
+        f"🔗 {html.escape(subscription_url)}"
     )
 
     return _send_telegram(token, chat_id, message)
@@ -156,9 +390,18 @@ def main() -> int:
     parser.add_argument(
         "--url",
         type=str,
-        default="https://raw.githubusercontent.com/Moonishe/vpnparser/main/output/subscription.txt",
+        default=_SUBSCRIPTION_URL,
+    )
+    parser.add_argument(
+        "--file",
+        type=str,
+        default="output/subscription.txt",
+        help="Path to subscription.txt for per-country breakdown",
     )
     args = parser.parse_args()
+
+    if args.configs < 0:
+        parser.error(f"--configs must be >= 0 (got {args.configs})")
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -166,12 +409,13 @@ def main() -> int:
         configs_count=args.configs,
         countries=args.countries,
         subscription_url=args.url,
+        subscription_file=args.file,
     )
     if ok:
-        print("Notification sent!")
+        logger.info("Notification sent")
         return 0
     else:
-        print("Notification skipped or failed (non-fatal)")
+        logger.info("Notification skipped or failed (non-fatal)")
         return 0  # Non-fatal — don't fail the workflow.
 
 
