@@ -75,21 +75,8 @@ jobs:
 
       - name: Telegram notify
         if: env.configs_count != ''
+        run: python -m src.notify.telegram --configs ${{ env.configs_count }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          # Skip if no bot token configured
-          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-            echo "No TELEGRAM_BOT_TOKEN secret — skipping notification"
-            exit 0
-          fi
-          MSG="📡 vpnparser обновлён
-          ✅ Конфигов: ${{ env.configs_count }}
-          🌍 Страны: DE FI NL US GB FR JP SG CA
-          🔗 https://raw.githubusercontent.com/${{ github.repository }}/main/output/subscription.txt"
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d chat_id="$TELEGRAM_CHAT_ID" \
-            -d text="$MSG" \
-            -d parse_mode="HTML" \
-            || echo "Telegram notify failed (non-fatal)"
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
