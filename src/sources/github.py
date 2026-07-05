@@ -37,11 +37,17 @@ class GitHubClient:
 
     USER_AGENT = "vpn-config-parser/1.0"
 
+    # Default cap on concurrent API requests.  Prevents triggering GitHub's
+    # secondary rate limit (which fires on too many simultaneous requests,
+    # even when the primary hourly quota is fine).
+    DEFAULT_MAX_CONCURRENT_API = 10
+
     def __init__(
         self,
         token: str | None = None,
         api_base: str = "https://api.github.com",
         timeout: float = 30.0,
+        max_concurrent_api: int = DEFAULT_MAX_CONCURRENT_API,
     ) -> None:
         self.token = token
         self.api_base = api_base.rstrip("/")
@@ -49,6 +55,10 @@ class GitHubClient:
         self._timeout = timeout
         # Lock to avoid creating multiple clients on concurrent first calls.
         self._lock = asyncio.Lock()
+        # Semaphore to bound concurrent HTTP requests across all operations
+        # (file fetches, directory listings).  Prevents overwhelming the API
+        # when fetch_directory recurses into a large repo tree.
+        self._api_semaphore = asyncio.Semaphore(max(1, max_concurrent_api))
 
     # --- client lifecycle ---
 
@@ -238,16 +248,37 @@ class GitHubClient:
         path: str,
         branch: str = "main",
         max_depth: int = 3,
+        max_files: int = 200,
     ) -> list[tuple[str, str]]:
         """Fetch all files in a directory, recursing into subdirectories.
 
         Recursion is bounded by ``max_depth`` (default 3) to prevent
         exhausting the API rate limit on very large repository trees.
+        ``max_files`` (default 200) caps the total number of files fetched
+        across the entire recursion — once reached, remaining entries are
+        skipped with a warning.  This prevents a root-level fetch on a
+        large repo from making hundreds of API calls.
+
+        Files at each directory level and subdirectory recursions are
+        fetched **concurrently** (bounded by the client's internal
+        semaphore) rather than sequentially, dramatically reducing wall
+        time for repos with many files.
 
         Returns a list of ``(filename, content)`` tuples. Files in
         subdirectories are flattened to just their basename. Empty list on
         404 or empty dir.
         """
+        # Warn on potentially expensive root-level fetches.
+        if not path.strip("/") and max_depth > 1:
+            logger.warning(
+                "fetch_directory on root of %s/%s with max_depth=%d — "
+                "this may make many API calls. Consider reducing max_depth "
+                "or specifying a subdirectory path.",
+                owner,
+                repo,
+                max_depth,
+            )
+
         if max_depth <= 0:
             logger.debug(
                 "max_depth reached for %s/%s/%s — skipping.", owner, repo, path
@@ -256,39 +287,100 @@ class GitHubClient:
 
         entries = await self.list_repo_contents(owner, repo, path, branch)
         results: list[tuple[str, str]] = []
+
+        # Separate files and directories for concurrent processing.
+        file_entries: list[dict] = []
+        dir_entries: list[dict] = []
         for entry in entries:
             etype = entry.get("type", "file")
-            name = entry.get("name", "")
             if etype == "file":
-                download_url = entry.get("download_url")
-                if not download_url:
-                    # Fallback to Contents API fetch_file (handles base64 payload).
-                    try:
+                file_entries.append(entry)
+            elif etype == "dir":
+                dir_entries.append(entry)
+
+        # --- Concurrent file fetches at this level ---
+        async def _fetch_one_file(entry: dict) -> tuple[str, str] | None:
+            name = entry.get("name", "")
+            download_url = entry.get("download_url")
+            if not download_url:
+                # Fallback to Contents API fetch_file (handles base64 payload).
+                try:
+                    async with self._api_semaphore:
                         content = await self.fetch_file(
                             owner, repo, entry.get("path", name), branch
                         )
-                    except Exception as exc:
-                        logger.warning("Failed to fetch %s: %s", name, exc)
-                        continue
-                else:
-                    try:
-                        content = await self.fetch_raw_file(download_url)
-                    except Exception as exc:
-                        logger.warning("Failed to fetch raw %s: %s", download_url, exc)
-                        continue
-                if content:
-                    results.append((name, content))
-            elif etype == "dir":
-                # Recurse into subdirectories with decremented depth.
-                try:
-                    sub = await self.fetch_directory(
-                        owner,
-                        repo,
-                        entry.get("path", name),
-                        branch,
-                        max_depth=max_depth - 1,
-                    )
-                    results.extend(sub)
                 except Exception as exc:
-                    logger.warning("Failed to recurse into %s: %s", name, exc)
+                    logger.warning("Failed to fetch %s: %s", name, exc)
+                    return None
+            else:
+                try:
+                    async with self._api_semaphore:
+                        content = await self.fetch_raw_file(download_url)
+                except Exception as exc:
+                    logger.warning("Failed to fetch raw %s: %s", download_url, exc)
+                    return None
+            if content:
+                return (name, content)
+            return None
+
+        # Respect max_files: only fetch up to the remaining budget.
+        remaining_budget = max_files
+        if remaining_budget <= 0:
+            logger.warning(
+                "max_files budget exhausted in %s/%s/%s — skipping %d files.",
+                owner,
+                repo,
+                path,
+                len(file_entries),
+            )
+        else:
+            files_to_fetch = file_entries[:remaining_budget]
+            skipped = len(file_entries) - len(files_to_fetch)
+            if skipped > 0:
+                logger.warning(
+                    "max_files cap reached in %s/%s/%s — skipping %d of %d files.",
+                    owner,
+                    repo,
+                    path,
+                    skipped,
+                    len(file_entries),
+                )
+            file_results = await asyncio.gather(
+                *(_fetch_one_file(e) for e in files_to_fetch)
+            )
+            for item in file_results:
+                if item is not None:
+                    results.append(item)
+            remaining_budget -= len(files_to_fetch)
+
+        # --- Concurrent subdirectory recursion ---
+        if remaining_budget > 0 and dir_entries:
+            subdir_tasks = [
+                self.fetch_directory(
+                    owner,
+                    repo,
+                    entry.get("path", entry.get("name", "")),
+                    branch,
+                    max_depth=max_depth - 1,
+                    max_files=remaining_budget,
+                )
+                for entry in dir_entries
+            ]
+            subdir_results = await asyncio.gather(*subdir_tasks, return_exceptions=True)
+            for sub in subdir_results:
+                if isinstance(sub, BaseException):
+                    logger.warning("Subdirectory recursion failed: %s", sub)
+                    continue
+                # Track how many files the sub-fetch consumed.
+                results.extend(sub)
+                remaining_budget -= len(sub)
+        elif remaining_budget <= 0 and dir_entries:
+            logger.warning(
+                "max_files budget exhausted — skipping %d subdirectories in %s/%s/%s.",
+                len(dir_entries),
+                owner,
+                repo,
+                path,
+            )
+
         return results

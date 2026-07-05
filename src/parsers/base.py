@@ -115,8 +115,13 @@ def extract_remark(fragment: str) -> str:
     return unquote(fragment)
 
 
+# Scheme alternation: vmess, vless, trojan, ss, hysteria2, hy2.
+# "hysteria2" requires the literal "2" (Hysteria v1 is a different protocol
+# with no parser here). "hy2" is the short alias and must be listed explicitly
+# — otherwise hy2:// links in source text are silently dropped by
+# find_all_links and never reach the parser.
 PROTOCOL_PATTERN = re.compile(
-    r"(?:vmess|vless|trojan|ss|hysteria2?)://[^\s<>'\"]+",
+    r"(?:vmess|vless|trojan|ss|hysteria2|hy2)://[^\s<>'\"]+",
     re.IGNORECASE,
 )
 
