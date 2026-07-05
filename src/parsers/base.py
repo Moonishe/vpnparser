@@ -48,9 +48,13 @@ class Config:
     is_alive: bool | None = None
 
     @property
-    def dedup_key(self) -> tuple[str, str, int, str]:
-        """Key for deduplication: (protocol, host, port, credential)."""
-        return (self.protocol, self.address, self.port, self.uuid_or_password)
+    def dedup_key(self) -> tuple[str, int]:
+        """Key for deduplication: (address, port).
+
+        One server = one config, regardless of protocol/uuid.
+        This avoids cluttering output with multiple configs for the same server.
+        """
+        return (self.address, self.port)
 
     def to_dict(self) -> dict:
         return {
@@ -112,7 +116,7 @@ def extract_remark(fragment: str) -> str:
 
 
 PROTOCOL_PATTERN = re.compile(
-    r"(?:vmess|vless|trojan|ss)://[^\s<>'\"]+",
+    r"(?:vmess|vless|trojan|ss|hysteria2?)://[^\s<>'\"]+",
     re.IGNORECASE,
 )
 

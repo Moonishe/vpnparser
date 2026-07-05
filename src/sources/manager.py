@@ -148,10 +148,16 @@ class SourceManager:
         path = source.get("path", "")
         branch = source.get("branch", "main")
 
-        if not (owner and repo and path):
+        # subscription requires path; raw allows empty path (= root directory).
+        if not (owner and repo):
             return SourceResult(
                 source_name=name,
-                error=f"source '{name}' is missing owner/repo/path",
+                error=f"source '{name}' is missing owner/repo",
+            )
+        if stype == "subscription" and not path:
+            return SourceResult(
+                source_name=name,
+                error=f"subscription source '{name}' requires a file path",
             )
 
         try:

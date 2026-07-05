@@ -27,10 +27,10 @@ def _latency_sort_key(config: Config) -> tuple[int, float]:
 def deduplicate(configs: list[Config]) -> list[Config]:
     """Remove duplicate configs by dedup_key.
 
-    dedup_key is (protocol, address, port, uuid_or_password).
-    When duplicates are found, keep the one with the lowest latency_ms.
-    latency_ms=None counts as infinity (worst), so a config with a real
-    latency always wins over one without.
+    dedup_key is (address, port) — one server = one config, regardless of
+    protocol/uuid. When duplicates are found, keep the one with the lowest
+    latency_ms. latency_ms=None counts as infinity (worst), so a config with
+    a real latency always wins over one without.
 
     Preserves first-seen insertion order for the surviving config of each key.
     Returns an empty list for empty input.
@@ -38,8 +38,8 @@ def deduplicate(configs: list[Config]) -> list[Config]:
     if not configs:
         return []
 
-    seen: dict[tuple[str, str, int, str], Config] = {}
-    order: list[tuple[str, str, int, str]] = []
+    seen: dict[tuple, Config] = {}
+    order: list[tuple] = []
 
     for config in configs:
         key = config.dedup_key

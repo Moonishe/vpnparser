@@ -5,6 +5,7 @@ from src.parsers.vmess import VmessParser
 from src.parsers.vless import VlessParser
 from src.parsers.trojan import TrojanParser
 from src.parsers.shadowsocks import ShadowsocksParser
+from src.parsers.hysteria2 import Hysteria2Parser
 from src.parsers.subscription import SubscriptionParser
 
 ALL_PARSERS: list[BaseParser] = [
@@ -12,6 +13,7 @@ ALL_PARSERS: list[BaseParser] = [
     VlessParser(),
     TrojanParser(),
     ShadowsocksParser(),
+    Hysteria2Parser(),
 ]
 
 __all__ = [
@@ -24,5 +26,6 @@ __all__ = [
     "VlessParser",
     "TrojanParser",
     "ShadowsocksParser",
+    "Hysteria2Parser",
     "SubscriptionParser",
 ]

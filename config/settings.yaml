@@ -11,7 +11,7 @@ validator:
   # Country filter — only keep configs from these countries (by remark).
   # No network calls — instant for 620K+ configs.
   # Empty list = keep all. Common: DE, FI, NL, US, GB, FR, JP, SG, CA
-  allowed_countries: ["DE", "FI", "NL", "US"]
+  allowed_countries: ["DE", "FI", "NL", "US", "GB", "FR", "JP", "SG", "CA"]
   
   # If more configs than this are parsed, randomly sample before filtering.
   # Set to 0 to process ALL configs (country filter is instant — no network).
@@ -37,7 +37,7 @@ validator:
 # --- Aggregator ---
 aggregator:
   max_configs_in_output: 500
-  sort_by: "latency"
+  sort_by: "country"
   max_per_country: 50
 
 # --- Publisher ---
