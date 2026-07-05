@@ -62,24 +62,24 @@ _FACT_FALLBACK = (
     "С тех пор мы прячемся от провайдеров уже 30 лет."
 )
 
-# Country flag emojis for prettier output.
-_COUNTRY_FLAGS = {
-    "DE": "🇩🇪",
-    "FI": "🇫🇮",
-    "NL": "🇳🇱",
-    "US": "🇺🇸",
-    "GB": "🇬🇧",
-    "FR": "🇫🇷",
-    "JP": "🇯🇵",
-    "SG": "🇸🇬",
-    "CA": "🇨🇦",
-    "RU": "🇷🇺",
-    "TR": "🇹🇷",
-    "PL": "🇵🇱",
-    "SE": "🇸🇪",
-    "CH": "🇨🇭",
-    "AT": "🇦🇹",
-    "ES": "🇪🇸",
+# Country flag emojis + Russian names for output.
+_COUNTRY_INFO = {
+    "DE": ("🇩🇪", "Германия"),
+    "FI": ("🇫🇮", "Финляндия"),
+    "NL": ("🇳🇱", "Нидерланды"),
+    "US": ("🇺🇸", "США"),
+    "GB": ("🇬🇧", "Великобритания"),
+    "FR": ("🇫🇷", "Франция"),
+    "JP": ("🇯🇵", "Япония"),
+    "SG": ("🇸🇬", "Сингапур"),
+    "CA": ("🇨🇦", "Канада"),
+    "RU": ("🇷🇺", "Россия"),
+    "TR": ("🇹🇷", "Турция"),
+    "PL": ("🇵🇱", "Польша"),
+    "SE": ("🇸🇪", "Швеция"),
+    "CH": ("🇨🇭", "Швейцария"),
+    "AT": ("🇦🇹", "Австрия"),
+    "ES": ("🇪🇸", "Испания"),
 }
 
 
@@ -356,8 +356,8 @@ def send_notification(
     if country_counts:
         country_lines = []
         for code, count in country_counts.items():
-            flag = _COUNTRY_FLAGS.get(code, "🌍")
-            country_lines.append(f"  {flag} {code}: {count}")
+            flag, name = _COUNTRY_INFO.get(code, ("🌍", code))
+            country_lines.append(f"  {flag} {name}: {count}")
         country_section = "\n".join(country_lines)
     else:
         country_section = html.escape(countries)
