@@ -8,35 +8,53 @@ Happ (and most VPN clients) consume subscriptions in two formats:
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 
 from src.parsers.base import Config
+
+# Watermark config — shown first in Happ as a "title" entry.
+# Uses a dummy vmess link with LO's GitHub repo name as remark.
+# The server (0.0.0.0:1) is not real — it's just a display marker.
+_WATERMARK_REMARK = "Moonishe/vpnparser"
+_WATERMARK_LINK = "vmess://" + base64.b64encode(
+    json.dumps(
+        {
+            "v": "2",
+            "ps": _WATERMARK_REMARK,
+            "add": "0.0.0.0",
+            "port": "1",
+            "id": "00000000-0000-0000-0000-000000000000",
+            "aid": 0,
+            "scy": "auto",
+            "net": "tcp",
+            "type": "none",
+            "tls": "none",
+        }
+    ).encode("utf-8")
+).decode("utf-8")
 
 
 def generate_plain(configs: list[Config]) -> str:
     """Generate plain text subscription (one link per line).
 
+    Prepends a watermark entry (Moonishe/vpnparser) as the first line so
+    it shows up first in Happ's server list.
     Joins raw_link fields with newline. Filters out configs with empty
-    raw_link. Returns an empty string for empty input or when no config
-    has a raw_link.
+    raw_link. Returns just the watermark for empty input.
     """
-    if not configs:
-        return ""
-
-    links = [config.raw_link for config in configs if config.raw_link]
+    links = [_WATERMARK_LINK]
+    links.extend(config.raw_link for config in configs if config.raw_link)
     return "\n".join(links)
 
 
 def generate_base64(configs: list[Config]) -> str:
     """Generate base64-encoded subscription (Happ format).
 
-    Base64-encodes the plain text output and returns it as a utf-8 string.
-    Returns an empty string for empty input (no point encoding empty text).
+    Base64-encodes the plain text output (including watermark) and returns
+    it as a utf-8 string.
     """
     plain = generate_plain(configs)
-    if not plain:
-        return ""
-
     return base64.b64encode(plain.encode("utf-8")).decode("utf-8")
 
 
