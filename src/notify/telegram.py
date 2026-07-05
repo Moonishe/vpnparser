@@ -60,10 +60,24 @@ _FACT_FALLBACK_NO_KEY = (
     "(шутка, на самом деле Virtual Private Network)."
 )
 
-_FACT_FALLBACK = (
-    "Первый VPN был создан в 1996 году компанией Microsoft. "
-    "С тех пор мы прячемся от провайдеров уже 30 лет."
-)
+# Multiple fallback facts — rotate so they don't repeat when Gemini is unavailable.
+_FACT_FALLBACKS = [
+    "Первый VPN был создан в 1996 году компанией Microsoft. С тех пор мы прячемся от провайдеров уже 30 лет.",
+    "Слово VPN на латыни звучит бы как 'privatus iter', что примерно переводится как 'тайный путь'. Римляне бы оценили.",
+    "Если бы VPN был человеком, он бы носил плащ, шляпу и говорил бы 'я не был здесь' каждому встречному.",
+    "В некоторых странах за использование VPN можно получить штраф. В других — просто нормальный интернет.",
+    "VPN не делает вас анонимным. Он делает вас 'труднодоступным'. Это как прятаться за ширмой — видно ноги, но не лицо.",
+    "Самый популярный пароль для WiFi в 2024 году — '12345678'. VPN хотя бы пытается вас защитить.",
+    "Без VPN ваш провайдер знает каждый сайт, который вы посещаете. С VPN — он знает только что вы зашли в туннель.",
+    "VPN-протокол WireGuard состоит всего из 4000 строк кода. OpenVPN — из 70 000. Иногда меньше — значит лучше.",
+    "Первый протокол VPN (PPTP) был создан Microsoft в 1996 году. Сейчас его не рекомендуют даже сами разработчики.",
+    "Tor и VPN — это не одно и то же. Tor — это лук, VPN — это труба. Оба прячут, но по-разному.",
+    "В Китае более 700 миллионов пользователей VPN. Это больше, чем население всей Европы.",
+    "VPN-серверы в Швейцарии и Исландии популярны из-за строгих законов о приватности. Банки данных — не банки денег.",
+    "Самый дорогой VPN стоит около $15 в месяц. Самый дешёвый — ваш сосед с OpenVPN на Raspberry Pi.",
+    "Слово 'туннелирование' в VPN — это не метафора. Ваш трафик реально упаковывается в другой пакет, как матрёшка.",
+    "Если вы используете бесплатный VPN, вы — товар. Ваш данные могут продаваться. К счастью, наш парсер находит бесплатные серверы, а не бесплатный VPN-сервис.",
+]
 
 # Country flag emojis + Russian names for output.
 _COUNTRY_INFO = {
@@ -251,7 +265,21 @@ def _generate_fun_fact(api_key: str) -> str:
     Returns a fallback if API fails or no API key.
     """
     if not api_key or not str(api_key).strip():
-        return _FACT_FALLBACK_NO_KEY
+        # No API key — use rotating fallback, not the same static one every time.
+        import random
+
+        history = _load_facts_history()
+        all_fallbacks = [_FACT_FALLBACK_NO_KEY] + _FACT_FALLBACKS
+        available = [
+            f
+            for f in all_fallbacks
+            if f.lower().strip() not in {h.lower().strip() for h in history}
+        ]
+        if not available:
+            available = all_fallbacks
+        fallback = random.choice(available)
+        _save_fact(fallback)
+        return fallback
 
     api_key = str(api_key).strip()
     history = _load_facts_history()
@@ -282,8 +310,20 @@ def _generate_fun_fact(api_key: str) -> str:
         _save_fact(fact)
         return fact
 
-    # All retries failed or API unavailable — use fallback.
-    return _FACT_FALLBACK
+    # All retries failed or API unavailable — pick a fallback not in history.
+    import random
+
+    available = [
+        f
+        for f in _FACT_FALLBACKS
+        if f.lower().strip() not in {h.lower().strip() for h in history}
+    ]
+    if not available:
+        # All fallbacks used — pick random one.
+        available = _FACT_FALLBACKS
+    fallback = random.choice(available)
+    _save_fact(fallback)
+    return fallback
 
 
 def _send_telegram(token: str, chat_id: str, text: str) -> bool:
