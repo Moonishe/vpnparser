@@ -124,9 +124,12 @@ async def validate_configs_tls(
                 timeout=timeout,
                 proxy_url=proxy_url,
             )
-            if not ok:
-                cfg.is_alive = False
+            cfg.is_alive = ok
 
     await asyncio.gather(*(_check_one(c) for c in configs))
 
-    return [c for c in configs if c.is_alive]
+    return [
+        c
+        for c in configs
+        if c.security not in ("tls", "reality") or c.is_alive is True
+    ]

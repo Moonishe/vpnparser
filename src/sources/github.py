@@ -223,7 +223,25 @@ class GitHubClient:
         """
         path = path.strip("/")
         url = f"/repos/{owner}/{repo}/contents/{path}"
-        data = await self._request("GET", url, params={"ref": branch}, parse_json=True)
+        try:
+            data = await self._request(
+                "GET",
+                url,
+                params={"ref": branch},
+                parse_json=True,
+            )
+        except GitHubRateLimitError:
+            raw_url = (
+                "https://raw.githubusercontent.com/"
+                f"{owner}/{repo}/{branch}/{path}"
+            )
+            logger.warning(
+                "GitHub Contents API rate-limited for %s/%s/%s; falling back to raw URL.",
+                owner,
+                repo,
+                path,
+            )
+            return await self.fetch_raw_file(raw_url)
         if not isinstance(data, dict):
             logger.warning("Unexpected GitHub file response for %s: %r", url, data)
             return ""
@@ -355,23 +373,24 @@ class GitHubClient:
 
         # --- Concurrent subdirectory recursion ---
         if remaining_budget > 0 and dir_entries:
-            subdir_tasks = [
-                self.fetch_directory(
-                    owner,
-                    repo,
-                    entry.get("path", entry.get("name", "")),
-                    branch,
-                    max_depth=max_depth - 1,
-                    max_files=remaining_budget,
-                )
-                for entry in dir_entries
-            ]
-            subdir_results = await asyncio.gather(*subdir_tasks, return_exceptions=True)
-            for sub in subdir_results:
-                if isinstance(sub, BaseException):
-                    logger.warning("Subdirectory recursion failed: %s", sub)
+            # Recurse sequentially so max_files remains a true global budget.
+            # Passing the same remaining_budget to parallel subdirectories lets
+            # each one consume the full allowance and can explode API calls.
+            for entry in dir_entries:
+                if remaining_budget <= 0:
+                    break
+                try:
+                    sub = await self.fetch_directory(
+                        owner,
+                        repo,
+                        entry.get("path", entry.get("name", "")),
+                        branch,
+                        max_depth=max_depth - 1,
+                        max_files=remaining_budget,
+                    )
+                except Exception as exc:
+                    logger.warning("Subdirectory recursion failed: %s", exc)
                     continue
-                # Track how many files the sub-fetch consumed.
                 results.extend(sub)
                 remaining_budget -= len(sub)
         elif remaining_budget <= 0 and dir_entries:

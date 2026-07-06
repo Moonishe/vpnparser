@@ -17,6 +17,7 @@ from pathlib import Path
 import yaml
 
 from src.sources.github import GitHubClient
+from src.sources.list_types import infer_source_list_type
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class SourceResult:
     source_name: str
     files: list[tuple[str, str]] = field(default_factory=list)
     error: str | None = None
+    list_type: str = "mixed"
 
     @property
     def ok(self) -> bool:
@@ -147,17 +149,20 @@ class SourceManager:
         repo = source.get("repo", "")
         path = source.get("path", "")
         branch = source.get("branch", "main")
+        list_type = infer_source_list_type(source)
 
         # subscription requires path; raw allows empty path (= root directory).
         if not (owner and repo):
             return SourceResult(
                 source_name=name,
                 error=f"source '{name}' is missing owner/repo",
+                list_type=list_type,
             )
         if stype == "subscription" and not path:
             return SourceResult(
                 source_name=name,
                 error=f"subscription source '{name}' requires a file path",
+                list_type=list_type,
             )
 
         try:
@@ -167,30 +172,82 @@ class SourceManager:
                     return SourceResult(
                         source_name=name,
                         error=f"subscription file '{path}' is empty or not found",
+                        list_type=list_type,
                     )
                 filename = path.rsplit("/", 1)[-1] or f"{name}.txt"
                 return SourceResult(
                     source_name=name,
                     files=[(filename, content)],
+                    list_type=list_type,
                 )
 
             if stype == "raw":
-                files = await self._github.fetch_directory(owner, repo, path, branch)
+                max_depth = self._int_source_value(source, "max_depth", 3)
+                max_files = self._int_source_value(source, "max_files", 200)
+                files = await self._github.fetch_directory(
+                    owner,
+                    repo,
+                    path,
+                    branch,
+                    max_depth=max_depth,
+                    max_files=max_files,
+                )
+                files = self._filter_files(source, files)
                 if not files:
                     return SourceResult(
                         source_name=name,
                         error=f"directory '{path}' is empty or not found",
+                        list_type=list_type,
                     )
-                return SourceResult(source_name=name, files=files)
+                return SourceResult(source_name=name, files=files, list_type=list_type)
 
             return SourceResult(
                 source_name=name,
                 error=f"unknown source type '{stype}' (expected 'subscription' or 'raw')",
+                list_type=list_type,
             )
         except Exception as exc:
             # Isolate failures: log and surface as a structured error.
             logger.error("Failed to fetch source '%s': %s", name, exc, exc_info=True)
-            return SourceResult(source_name=name, error=str(exc))
+            return SourceResult(source_name=name, error=str(exc), list_type=list_type)
+
+    @staticmethod
+    def _int_source_value(source: dict, key: str, default: int) -> int:
+        """Read a positive integer source setting."""
+        try:
+            value = int(source.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        return max(1, value)
+
+    @staticmethod
+    def _filter_files(
+        source: dict,
+        files: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        """Apply optional include_files/exclude_files filters to raw sources."""
+        include = {
+            str(item).strip().lower()
+            for item in source.get("include_files", []) or []
+            if str(item).strip()
+        }
+        exclude = {
+            str(item).strip().lower()
+            for item in source.get("exclude_files", []) or []
+            if str(item).strip()
+        }
+        if not include and not exclude:
+            return files
+
+        filtered: list[tuple[str, str]] = []
+        for filename, content in files:
+            key = str(filename).strip().lower()
+            if include and key not in include:
+                continue
+            if key in exclude:
+                continue
+            filtered.append((filename, content))
+        return filtered
 
     # --- cleanup ---
 

@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Run tests
+        run: python -m pytest -q -p no:cacheprovider
+
       - name: Restore facts cache
         uses: actions/cache/restore@v4
         with:
@@ -67,13 +70,17 @@ jobs:
       - name: Verify output
         run: |
           test -f output/subscription.txt || { echo "ERROR: output/subscription.txt not created!"; exit 1; }
-          # Decode base64 and count configs
+          test -f output/subscription-blacklist.txt || { echo "ERROR: output/subscription-blacklist.txt not created!"; exit 1; }
+          test -f output/subscription-whitelist.txt || { echo "ERROR: output/subscription-whitelist.txt not created!"; exit 1; }
+          # Decode base64 and count configs in the combined subscription.
           CONFIGS=$(python3 -c "
           import base64
           data = open('output/subscription.txt').read().strip()
           try:
               decoded = base64.b64decode(data).decode()
               lines = [l for l in decoded.strip().split('\n') if '://' in l]
+              if lines and lines[0].startswith('vmess://'):
+                  lines = lines[1:]
               print(len(lines))
           except:
               print(0)

@@ -2,6 +2,7 @@
   "sources": [
     {
       "name": "igareck-black-vless-mobile",
+      "list_type": "blacklist",
       "type": "subscription",
       "owner": "igareck",
       "repo": "vpn-configs-for-russia",
@@ -10,7 +11,18 @@
       "enabled": true
     },
     {
+      "name": "igareck-black-vless-full",
+      "list_type": "blacklist",
+      "type": "subscription",
+      "owner": "igareck",
+      "repo": "vpn-configs-for-russia",
+      "path": "BLACK_VLESS_RUS.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
       "name": "igareck-black-ss-all",
+      "list_type": "blacklist",
       "type": "subscription",
       "owner": "igareck",
       "repo": "vpn-configs-for-russia",
@@ -19,11 +31,122 @@
       "enabled": true
     },
     {
-      "name": "avencores-goida-configs",
-      "type": "raw",
+      "name": "igareck-white-mobile",
+      "list_type": "whitelist",
+      "type": "subscription",
+      "owner": "igareck",
+      "repo": "vpn-configs-for-russia",
+      "path": "Vless-Reality-White-Lists-Rus-Mobile.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "igareck-white-cidr-checked",
+      "list_type": "whitelist",
+      "type": "subscription",
+      "owner": "igareck",
+      "repo": "vpn-configs-for-russia",
+      "path": "WHITE-CIDR-RU-checked.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "igareck-white-cidr-all",
+      "list_type": "whitelist",
+      "type": "subscription",
+      "owner": "igareck",
+      "repo": "vpn-configs-for-russia",
+      "path": "WHITE-CIDR-RU-all.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "avencores-mirror-1",
+      "list_type": "blacklist",
+      "type": "subscription",
       "owner": "AvenCores",
       "repo": "goida-vpn-configs",
-      "path": "",
+      "path": "githubmirror/1.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "avencores-mirror-6",
+      "list_type": "blacklist",
+      "type": "subscription",
+      "owner": "AvenCores",
+      "repo": "goida-vpn-configs",
+      "path": "githubmirror/6.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "avencores-mirror-22",
+      "list_type": "blacklist",
+      "type": "subscription",
+      "owner": "AvenCores",
+      "repo": "goida-vpn-configs",
+      "path": "githubmirror/22.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "avencores-mirror-24",
+      "list_type": "blacklist",
+      "type": "subscription",
+      "owner": "AvenCores",
+      "repo": "goida-vpn-configs",
+      "path": "githubmirror/24.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "avencores-mirror-25",
+      "list_type": "blacklist",
+      "type": "subscription",
+      "owner": "AvenCores",
+      "repo": "goida-vpn-configs",
+      "path": "githubmirror/25.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "avencores-white-sni-cidr",
+      "list_type": "whitelist",
+      "type": "subscription",
+      "owner": "AvenCores",
+      "repo": "goida-vpn-configs",
+      "path": "githubmirror/26.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "hiztin-vless-po-gribi",
+      "list_type": "blacklist",
+      "type": "subscription",
+      "owner": "hiztin",
+      "repo": "VLESS-PO-GRIBI",
+      "path": "deploy/sub.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "val41k-obhod-bl",
+      "list_type": "blacklist",
+      "type": "subscription",
+      "owner": "VAL41K",
+      "repo": "bypass-rkn-blocks",
+      "path": "configs/obhod_BL",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "val41k-obhod-wl",
+      "list_type": "whitelist",
+      "type": "subscription",
+      "owner": "VAL41K",
+      "repo": "bypass-rkn-blocks",
+      "path": "configs/obhod_WL",
       "branch": "main",
       "enabled": true
     }

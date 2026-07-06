@@ -44,6 +44,9 @@ aggregator:
 publisher:
   mode: "repo"
   output_file: "output/subscription.txt"
+  split_output_files:
+    blacklist: "output/subscription-blacklist.txt"
+    whitelist: "output/subscription-whitelist.txt"
   commit_message: "auto-update configs [{timestamp}]"
 
 # --- LLM Fallback ---

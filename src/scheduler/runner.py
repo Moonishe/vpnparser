@@ -28,6 +28,7 @@ import yaml
 from src.parsers import ALL_PARSERS, PARSER_BY_SCHEME
 from src.parsers.base import Config, find_all_links, is_garbage_config
 from src.parsers.subscription import SubscriptionParser
+from src.sources.list_types import normalize_list_type
 
 logger = logging.getLogger(__name__)
 
@@ -89,16 +90,23 @@ class PipelineRunner:
         if not results:
             logger.warning("No source results fetched — pipeline produced nothing.")
             self._write_empty_output(output_file)
+            self._write_empty_split_outputs(output_file)
             return 0
 
-        # 2. Parse all content into Config objects.
-        configs = await self._parse_all(results)
-        logger.info("Parsed %d configs total.", len(configs))
+        # 2. Parse all content into Config objects grouped by source list type.
+        configs_by_list = await self._parse_all_by_list(results)
+        configs = self._flatten_config_groups(configs_by_list)
+        logger.info(
+            "Parsed %d configs total across %d list group(s).",
+            len(configs),
+            len(configs_by_list),
+        )
         if not configs:
             logger.warning(
                 "No configs parsed from sources — pipeline produced nothing."
             )
             self._write_empty_output(output_file)
+            self._write_empty_split_outputs(output_file)
             return 0
 
         # 2b. Filter out garbage/placeholder configs (UUID, SERVER_IP, etc).
@@ -108,6 +116,7 @@ class PipelineRunner:
         if not configs:
             logger.warning("All configs were garbage — pipeline produced nothing.")
             self._write_empty_output(output_file)
+            self._write_empty_split_outputs(output_file)
             return 0
 
         # 2c. Sample if too many configs (620K is not feasible to process).
@@ -136,6 +145,7 @@ class PipelineRunner:
         if not configs:
             logger.warning("No configs matched allowed countries.")
             self._write_empty_output(output_file)
+            self._write_empty_split_outputs(output_file)
             return 0
 
         # 5. Aggregate: sort -> limit (dedup already done).
@@ -145,10 +155,19 @@ class PipelineRunner:
         # 5. Write output.
         count = self._write_output(configs, output_file)
         logger.info("Wrote %d configs to %s.", count, output_file)
+        output_files = [output_file]
+
+        for list_type, split_file in self._split_output_files(output_file).items():
+            self._process_and_write_configs(
+                list(configs_by_list.get(list_type, [])),
+                split_file,
+                label=list_type,
+            )
+            output_files.append(split_file)
 
         # 6. Publish (optional).
         if publish:
-            await self._publish(output_file)
+            await self._publish_files(output_files)
 
         elapsed = time.monotonic() - start
         logger.info("Pipeline finished in %.2fs with %d configs.", elapsed, count)
@@ -234,6 +253,53 @@ class PipelineRunner:
                 )
 
         return configs
+
+    async def _parse_all_by_list(
+        self,
+        results: list[Any],
+    ) -> dict[str, list[Config]]:
+        """Parse all source results grouped by normalized list type."""
+        grouped: dict[str, list[Config]] = {}
+        sub_parser = SubscriptionParser()
+
+        for result in results:
+            list_type = normalize_list_type(getattr(result, "list_type", "mixed"))
+            files = self._result_files(result)
+            source_name = self._result_name(result)
+
+            for filename, content in files:
+                if not content or not content.strip():
+                    continue
+
+                links = await self._extract_links(
+                    sub_parser, content, filename, source_name
+                )
+                if not links:
+                    logger.debug("No links found in %s (%s).", filename, source_name)
+                    continue
+
+                parsed_here = 0
+                bucket = grouped.setdefault(list_type, [])
+                for link in links:
+                    cfg = self._parse_one_link(link)
+                    if cfg is not None:
+                        bucket.append(cfg)
+                        parsed_here += 1
+                logger.debug(
+                    "Parsed %d/%d links from %s (%s, %s).",
+                    parsed_here,
+                    len(links),
+                    filename,
+                    source_name,
+                    list_type,
+                )
+
+        return grouped
+
+    @staticmethod
+    def _flatten_config_groups(configs_by_list: dict[str, list[Config]]) -> list[Config]:
+        """Flatten grouped configs preserving source group insertion order."""
+        return [cfg for group in configs_by_list.values() for cfg in group]
 
     @staticmethod
     def _result_files(result: Any) -> list[tuple[str, str]]:
@@ -590,6 +656,86 @@ class PipelineRunner:
 
         return list(result) if result else []
 
+    def _process_and_write_configs(
+        self,
+        configs: list[Config],
+        output_file: str,
+        *,
+        label: str,
+    ) -> int:
+        """Filter, aggregate, and write a single output file."""
+        logger.info("Processing %s output with %d parsed configs.", label, len(configs))
+
+        if not configs:
+            logger.warning("No configs for %s output.", label)
+            self._write_empty_output(output_file)
+            return 0
+
+        configs, garbage_count = self._filter_garbage(configs)
+        if garbage_count:
+            logger.info(
+                "Filtered %d garbage/placeholder configs for %s.",
+                garbage_count,
+                label,
+            )
+        if not configs:
+            logger.warning("All configs were garbage for %s output.", label)
+            self._write_empty_output(output_file)
+            return 0
+
+        vcfg = self._section("validator")
+        max_to_process = int(vcfg.get("max_configs_to_validate", 20000))
+        if max_to_process > 0 and len(configs) > max_to_process:
+            import random
+
+            logger.info(
+                "Sampling %d configs from %d for %s processing.",
+                max_to_process,
+                len(configs),
+                label,
+            )
+            configs = random.sample(configs, max_to_process)
+
+        configs = self._dedup_only(configs)
+        logger.info("%s after dedup: %d configs.", label, len(configs))
+
+        configs = self._filter_countries(configs)
+        logger.info("%s after country filter: %d configs.", label, len(configs))
+        if not configs:
+            logger.warning("No configs matched allowed countries for %s.", label)
+            self._write_empty_output(output_file)
+            return 0
+
+        configs = self._sort_and_limit(configs)
+        logger.info("%s after aggregation: %d configs.", label, len(configs))
+
+        count = self._write_output(configs, output_file)
+        logger.info("Wrote %d %s configs to %s.", count, label, output_file)
+        return count
+
+    def _split_output_files(self, combined_output_file: str) -> dict[str, str]:
+        """Return configured split output files keyed by normalized list type."""
+        pcfg = self._section("publisher")
+        raw = pcfg.get("split_output_files", {})
+        if not isinstance(raw, dict):
+            return {}
+
+        result: dict[str, str] = {}
+        for key, path in raw.items():
+            list_type = normalize_list_type(key)
+            if list_type == "mixed" or not path:
+                continue
+            path_str = str(path)
+            if path_str == combined_output_file:
+                continue
+            result[list_type] = path_str
+        return result
+
+    def _write_empty_split_outputs(self, combined_output_file: str) -> None:
+        """Clear configured split outputs on empty runs."""
+        for split_file in self._split_output_files(combined_output_file).values():
+            self._write_empty_output(split_file)
+
     # --- stage 5: write ---
 
     def _write_output(self, configs: list[Config], output_file: str) -> int:
@@ -635,6 +781,11 @@ class PipelineRunner:
 
     # --- stage 6: publish ---
 
+    async def _publish_files(self, output_files: list[str]) -> None:
+        """Publish multiple output files, preserving each repo path."""
+        for output_file in dict.fromkeys(output_files):
+            await self._publish(output_file)
+
     async def _publish(self, output_file: str) -> None:
         """Publish the output file to a GitHub repo via ``GitHubPublisher``."""
         if not self.github_token:
@@ -645,7 +796,7 @@ class PipelineRunner:
         owner = pcfg.get("owner") or os.environ.get("GITHUB_OWNER")
         repo = pcfg.get("repo") or os.environ.get("GITHUB_REPO")
         branch = pcfg.get("branch") or os.environ.get("GITHUB_BRANCH") or "main"
-        repo_path = pcfg.get("output_file") or output_file
+        repo_path = output_file
         commit_tpl = pcfg.get("commit_message", "auto-update configs [{timestamp}]")
 
         if not owner or not repo:

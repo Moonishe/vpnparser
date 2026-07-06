@@ -23,6 +23,8 @@ import logging
 import os
 import sys
 
+from src.env import load_dotenv_if_available
+
 
 def _setup_logging(verbose: bool) -> None:
     """Configure the root logger with a stream handler on stderr/stdout."""
@@ -86,6 +88,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     """CLI entry point. Returns a process exit code (0 = success)."""
+    load_dotenv_if_available()
+
     args = _build_parser().parse_args()
     _setup_logging(args.verbose)
     logger = logging.getLogger("src.main")
