@@ -143,9 +143,14 @@ class PipelineRunner:
             return 0
 
         # 4. Build combined output: interleave blacklist + whitelist for balance.
-        #    Taking 75 from each then dedup leaves blacklist dominating because
-        #    it has more unique servers.  Interleaving ensures fair representation.
+        #    Each list is pre-sorted + per-country limited so no single country
+        #    dominates the combined output.
         max_total = self._max_configs()
+        acfg = self._section("aggregator")
+        try:
+            max_per_country = int(acfg.get("max_per_country", 0))
+        except (TypeError, ValueError):
+            max_per_country = 0
 
         lists = list(preprocessed_by_list.values())
         combined: list[Config] = []
@@ -156,9 +161,16 @@ class PipelineRunner:
                     combined.append(configs[i])
             i += 1
 
-        # Dedup (same server in both lists) + final sort.
+        # Dedup (same server in both lists).
         combined = self._dedup_only(combined)
-        combined = self._sort_and_limit(combined)
+
+        # Sort + limit per country so all countries are represented.
+        from src.aggregator.merger import limit_per_country, sort_configs
+
+        combined = sort_configs(combined, sort_by="country")
+        if max_per_country > 0:
+            combined = limit_per_country(combined, max_per_country)
+        combined = combined[:max_total]
         logger.info("Combined after interleave+dedup+sort: %d configs.", len(combined))
 
         # 5. Write combined output.
