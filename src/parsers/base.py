@@ -151,6 +151,11 @@ def split_host_port(hostport: str) -> tuple[str, int] | None:
     if not hostport:
         return None
 
+    # Strip the whole input so a padded bracketed IPv6 (e.g. ``  [::1]:443  ``)
+    # is detected by the ``startswith("[")`` branch instead of falling through
+    # to the bare-hostname branch and being rejected for having ``!= 1`` colons.
+    hostport = hostport.strip()
+
     # Bracketed IPv6: [addr]:port
     if hostport.startswith("["):
         close = hostport.find("]")
@@ -233,12 +238,17 @@ def parse_password_host_port(
         # truncated at the first "/" and lose the "@" separator.
         if "@" in hostport:
             userinfo, hostport = hostport.rsplit("@", 1)
-            password = unquote(userinfo)
+            # Strip leading/trailing whitespace after percent-decoding: an
+            # encoded leading/trailing space (``%20``) is almost always a
+            # copy-paste/templating artifact, not an intentional credential
+            # char, and storing it would break authentication.  Mirrors
+            # TuicParser which does ``unquote(userinfo).strip()``.
+            password = unquote(userinfo).strip()
         else:
             password = ""
 
         # Reject empty / whitespace-only passwords.
-        if not password or not password.strip():
+        if not password:
             return None
 
         # Strip path component from host:port only (e.g. trailing "/").
@@ -276,7 +286,11 @@ def parse_password_host_port(
 # — otherwise hy2:// links in source text are silently dropped by
 # find_all_links and never reach the parser.
 PROTOCOL_PATTERN = re.compile(
-    r"(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)://[^\s<>'\"]+",
+    # Leading \b: scheme names all start with a word char, so \b anchors the
+    # match to a scheme boundary.  Without it, substrings matched the ``ss``
+    # alternative inside unrelated words — e.g. ``boss://x``, ``sss://x`` and
+    # ``less://x`` were all extracted as ``ss://x`` false positives.
+    r"\b(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)://[^\s<>'\"]+",
     re.IGNORECASE,
 )
 
@@ -303,7 +317,12 @@ _PLACEHOLDER_PATTERNS = re.compile(
 # Advertising in remark — Telegram handles, URLs, promotional text.
 # These configs are real servers but the remark is an ad for a channel/site.
 # We filter them out so the subscription stays clean.
+# Case-insensitive: ad remarks frequently use mixed case ("OneClickVPN",
+# "V2Ray Pool", "Gozargah", "OPENPROXYLIST").  Without (?i) these slipped
+# through the filter — _PLACEHOLDER_PATTERNS already used (?i), this one
+# did not, which was an inconsistency that silently let mixed-case ads in.
 _AD_PATTERNS = re.compile(
+    r"(?i)"
     r"@"
     r"|https?://"
     r"|\.com\b"
@@ -381,20 +400,53 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
                 return True
         # uuid_or_password: check for literal placeholder values only.
         if cfg.uuid_or_password:
-            uop_upper = cfg.uuid_or_password.upper()
+            uop = cfg.uuid_or_password
+            uop_upper = uop.upper()
             if uop_upper in ("UUID", "PASSWORD"):
                 return True
             # UUID must look like a real UUID (8-4-4-4-12 hex, hyphens optional),
             # not literal "UUID". Accepts both hyphenated and non-hyphenated forms
             # (some vmess/vless sources emit 32 hex chars without hyphens).
             if cfg.protocol in ("vless", "vmess"):
-                if not _UUID_RE.match(cfg.uuid_or_password):
+                if not _UUID_RE.match(uop):
+                    return True
+            # TUIC v4 uses ``UUID:PASSWORD`` — the uuid half before the first
+            # colon must be a real UUID.  Without this, a placeholder like
+            # ``UUID:pass`` slipped through (exact-match only checked the whole
+            # string, never "UUID:pass").  TUIC v5 uses a bare token (no colon)
+            # which is arbitrary, so it is not format-validated here.
+            elif cfg.protocol == "tuic" and ":" in uop:
+                uuid_part = uop.split(":", 1)[0]
+                if uuid_part.upper() in ("UUID", "PASSWORD"):
+                    return True
+                if not _UUID_RE.match(uuid_part):
                     return True
         else:
-            # vless/vmess with empty uuid = garbage.
-            if cfg.protocol in ("vless", "vmess"):
+            # vless/vmess/tuic with empty credential = garbage (parsers reject
+            # these, but is_garbage_config must be safe if called directly).
+            if cfg.protocol in ("vless", "vmess", "tuic"):
                 return True
         return False
 
     # String link — check raw text for placeholders.
-    return bool(_PLACEHOLDER_PATTERNS.search(str(link_or_config)))
+    # Mirror the Config path: ``\bUUID\b`` / ``\bPASSWORD\b`` are NOT run on the
+    # URL fragment (remark) because they false-positive on real remarks such as
+    # ``free-password-vpn``.  The fragment is judged only by literal-placeholder
+    # exact-match + the ad filter — exactly what the Config path does.
+    raw = str(link_or_config)
+    body, _, remark = raw.partition("#")
+    if _PLACEHOLDER_PATTERNS.search(body):
+        return True
+    if remark:
+        decoded_remark = unquote(remark)
+        if decoded_remark.upper().strip() in (
+            "UUID",
+            "PASSWORD",
+            "SERVER_IP",
+            "PUBLIC_KEY",
+            "SHORT_ID",
+        ):
+            return True
+        if _AD_PATTERNS.search(decoded_remark):
+            return True
+    return False

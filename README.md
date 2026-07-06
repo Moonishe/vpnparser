@@ -37,12 +37,10 @@ Currently included upstream pools:
   - White: `Vless-Reality-White-Lists-Rus-Mobile.txt`, `WHITE-CIDR-RU-checked.txt`, `WHITE-CIDR-RU-all.txt`
 - `AvenCores/goida-vpn-configs`
   - Selected mirrors: `githubmirror/1.txt`, `6.txt`, `22.txt`, `24.txt`, `25.txt`
-  - White/SNI-CIDR: `githubmirror/26.txt`
 - `hiztin/VLESS-PO-GRIBI`
   - `deploy/sub.txt`
 - `VAL41K/bypass-rkn-blocks`
   - Black: `configs/obhod_BL`
-  - White: `configs/obhod_WL`
 
 `AvenCores/goida-vpn-configs` is intentionally not fetched from repo root and
 does not include every mirror file. Some mirrors are huge or duplicate other

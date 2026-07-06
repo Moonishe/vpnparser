@@ -301,20 +301,67 @@ _SUPPORTED_CODES: tuple[str, ...] = (
     "AR",
 )
 
-# Regex: standalone 2-letter country code (DE, FI, NL, US) surrounded by
-# non-alpha boundaries. Matches patterns like "DE-01", "US-1", "[DE]", "NL01".
-# Case-SENSITIVE (no IGNORECASE) — otherwise common English words match:
-# "in" → IN (India), "at" → AT (Austria), "be" → BE (Belgium), "es" → ES (Spain).
-# VPN configs use UPPERCASE country codes in remarks (DE-01, US-1, [FI]).
-_CODE_RE = re.compile(
-    r"(?:^|[^A-Za-z])(" + "|".join(_SUPPORTED_CODES) + r")(?:[^A-Za-z]|$)",
+# Codes that double as common English words / abbreviations when uppercased
+# (US, IN, ID, AT, BE, IT, MY, ES) or as ordinal suffixes (TH → "5TH").
+# These need a *structural delimiter* right after the code (hyphen, digit,
+# bracket, pipe, slash) — otherwise "CONTACT US", "SERVER ID", "SIGN IN",
+# "5TH FLOOR", "MY SERVER", "DO IT" are misread as countries.
+_AMBIGUOUS_CODES: frozenset[str] = frozenset(
+    {"US", "IN", "ID", "AT", "BE", "IT", "MY", "TH", "ES"}
 )
 
-# Hostname prefix patterns: de01.vpn.com, us-east.server.net, nl-ams.vpn.net
-# Matches 2-letter country code at start of a hostname segment followed by digit or hyphen.
+# Import-time sanity check: every value in the detection dicts must be a
+# supported code, otherwise detect_country() could return a code that
+# filter_by_country() would silently drop.  This makes the "subset of
+# _SUPPORTED_CODES" promise enforced rather than merely documented.
+_DICT_VALUES = (
+    set(_EMOJI_TO_CODE.values())
+    | set(_NAME_TO_CODE.values())
+    | set(_CITY_TO_CODE.values())
+)
+_UNKNOWN_DICT_CODES = _DICT_VALUES - set(_SUPPORTED_CODES)
+if _UNKNOWN_DICT_CODES:
+    raise RuntimeError(
+        "country_filter: detection dict maps to code(s) not in "
+        f"_SUPPORTED_CODES: {sorted(_UNKNOWN_DICT_CODES)}"
+    )
+
+# Safe codes = supported minus ambiguous.  A 2-letter combo like "DE" or
+# "JP" is never a common English word, so any standalone uppercased
+# occurrence is the country and the loose non-alpha boundary rule is safe.
+_SAFE_CODES = tuple(c for c in _SUPPORTED_CODES if c not in _AMBIGUOUS_CODES)
+
+# Regex: standalone 2-letter country code (DE, FI, NL, ...) surrounded by
+# non-alpha boundaries. Matches "DE-01", "[DE]", "NL01", "JP server".
+# Case-SENSITIVE (no IGNORECASE) — otherwise common English words match:
+# "in" → IN, "at" → AT, "be" → BE, "es" → ES.  VPN remarks use UPPERCASE
+# codes (DE-01, [FI]).  Only SAFE codes use this loose boundary rule.
+_CODE_RE = re.compile(
+    r"(?:^|[^A-Za-z])(" + "|".join(_SAFE_CODES) + r")(?:[^A-Za-z]|$)",
+)
+
+# Ambiguous codes: same case-sensitive boundaries, but the code MUST be
+# immediately followed by a structural delimiter — hyphen, digit, closing
+# bracket/paren, pipe, or slash.  Accepts "US-01", "ID01", "[US]", "US|DE",
+# "US/01" and rejects "CONTACT US", "SERVER ID", "SIGN IN", "5TH FLOOR",
+# "MY SERVER", "DO IT" (code followed by space or end-of-string).
+_AMBIGUOUS_CODE_RE = re.compile(
+    r"(?:^|[^A-Za-z])(" + "|".join(_AMBIGUOUS_CODES) + r")(?=[-\d\]/|)])",
+)
+
+# Hostname prefix patterns: de01.vpn.com, nl-ams.vpn.net, us01.server.net
+# Matches a 2-letter country code at the start of a hostname segment.
 # Case-insensitive — hostnames are case-insensitive.
+# Safe codes accept hyphen-or-digit after (nl-ams, de01); ambiguous codes
+# require a DIGIT after, so reverse DNS "in-addr.arpa", "my-server.",
+# "it-support." don't false-positive as IN / MY / IT.  Ambiguous codes
+# with a hyphen (e.g. "id-jakarta") are still detected via the city regex.
 _HOST_COUNTRY_RE = re.compile(
-    r"(?:^|\.|[-_])(" + "|".join(_SUPPORTED_CODES) + r")[-\d]",
+    r"(?:^|\.|[-_])(" + "|".join(_SAFE_CODES) + r")[-\d]",
+    re.IGNORECASE,
+)
+_HOST_AMBIGUOUS_RE = re.compile(
+    r"(?:^|\.|[-_])(" + "|".join(_AMBIGUOUS_CODES) + r")\d",
     re.IGNORECASE,
 )
 
@@ -386,15 +433,20 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
         return _NAME_TO_CODE[m.group(1).lower()]
 
     # 4. Standalone 2-letter codes — check remark first (most reliable).
+    #    Safe codes (DE, JP, NL ...) use the loose boundary rule; ambiguous
+    #    codes (US, IN, ID, AT, BE, IT, MY, TH, ES) require a structural
+    #    delimiter after, to avoid "CONTACT US" / "SERVER ID" / "5TH FLOOR".
     if remark:
-        m = _CODE_RE.search(remark)
+        m = _CODE_RE.search(remark) or _AMBIGUOUS_CODE_RE.search(remark)
         if m:
             return m.group(1).upper()
 
     # 5. Hostname country prefix — check address/sni/host.
+    #    Ambiguous codes require a digit after (not hyphen) so that reverse
+    #    DNS like "in-addr.arpa" or "my-server.example.com" don't match.
     for field in extra_fields:
         if field:
-            m = _HOST_COUNTRY_RE.search(field)
+            m = _HOST_COUNTRY_RE.search(field) or _HOST_AMBIGUOUS_RE.search(field)
             if m:
                 return m.group(1).upper()
 

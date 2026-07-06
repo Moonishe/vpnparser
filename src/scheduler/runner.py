@@ -69,6 +69,22 @@ class PipelineRunner:
         section = self.settings.get(key, {})
         return section if isinstance(section, dict) else {}
 
+    def _max_configs(self) -> int:
+        """Canonical ``max_configs_in_output`` (single source of truth).
+
+        Both ``run()`` (interleave cap) and ``_sort_and_limit`` (final cap)
+        read ``aggregator.max_configs_in_output``.  Previously they used
+        different defaults (75 vs 500), so when the setting was absent the
+        interleave capped at 150 while the sort capped at 500 — producing
+        ~150 configs instead of a consistent value.  This helper guarantees
+        every call site agrees.  The default (500) matches
+        :func:`src.aggregator.merger.merge_and_filter`.
+        """
+        try:
+            return int(self._section("aggregator").get("max_configs_in_output", 500))
+        except (TypeError, ValueError):
+            return 500
+
     # --- main entry point ---
 
     async def run(
@@ -110,16 +126,18 @@ class PipelineRunner:
             self._write_empty_split_outputs(output_file)
             return 0
 
-        # 3. Process each list type through the pipeline independently.
-        #    This gives a fair share to each list in the combined output
-        #    (blacklist + whitelist balanced 50/50 instead of blacklist dominating).
-        processed_by_list: dict[str, list[Config]] = {}
+        # 3. Preprocess each list type: garbage -> sample -> dedup -> country.
+        #    Sorting is deferred to step 4 (combined) and step 7 (splits) so
+        #    each config is sorted exactly once, not twice.  This gives a fair
+        #    share to each list in the combined output (blacklist + whitelist
+        #    balanced 50/50 instead of blacklist dominating).
+        preprocessed_by_list: dict[str, list[Config]] = {}
         for list_type, group in configs_by_list.items():
-            processed = self._process_configs(list(group), label=list_type)
-            if processed:
-                processed_by_list[list_type] = processed
+            preprocessed = self._preprocess_configs(list(group), label=list_type)
+            if preprocessed:
+                preprocessed_by_list[list_type] = preprocessed
 
-        if not processed_by_list:
+        if not preprocessed_by_list:
             logger.warning("No configs matched allowed countries.")
             self._write_empty_output(output_file)
             self._write_empty_split_outputs(output_file)
@@ -128,10 +146,9 @@ class PipelineRunner:
         # 4. Build combined output: interleave blacklist + whitelist for balance.
         #    Taking 75 from each then dedup leaves blacklist dominating because
         #    it has more unique servers.  Interleaving ensures fair representation.
-        acfg = self._section("aggregator")
-        max_total = int(acfg.get("max_configs_in_output", 75))
+        max_total = self._max_configs()
 
-        lists = list(processed_by_list.values())
+        lists = list(preprocessed_by_list.values())
         combined: list[Config] = []
         i = 0
         while len(combined) < max_total * 2 and any(i < len(l) for l in lists):
@@ -150,10 +167,12 @@ class PipelineRunner:
         logger.info("Wrote %d configs to %s.", count, output_file)
         output_files = [output_file]
 
-        # 6. Write split outputs (already processed — just write).
+        # 6. Write split outputs — sort+limit each preprocessed list now
+        #    (deferred from step 3 so the combined path sorts only once).
         for list_type, split_file in self._split_output_files(output_file).items():
-            split_configs = processed_by_list.get(list_type, [])
-            if split_configs:
+            split_pre = preprocessed_by_list.get(list_type, [])
+            if split_pre:
+                split_configs = self._sort_and_limit(split_pre)
                 split_count = self._write_output(split_configs, split_file)
                 logger.info(
                     "Wrote %d %s configs to %s.", split_count, list_type, split_file
@@ -163,9 +182,9 @@ class PipelineRunner:
                 logger.warning("No configs for %s output.", list_type)
             output_files.append(split_file)
 
-        # 6. Publish (optional).
+        # 7. Publish (optional).
         if publish:
-            await self._publish_files(output_files)
+            await self._publish_files(output_files, combined_output_file=output_file)
 
         elapsed = time.monotonic() - start
         logger.info("Pipeline finished in %.2fs with %d configs.", elapsed, count)
@@ -408,7 +427,10 @@ class PipelineRunner:
 
         provider = lcfg.get("provider", "gemini")
         model = lcfg.get("model", "gemini-2.0-flash")
-        min_text_length = int(lcfg.get("min_text_length", 100))
+        try:
+            min_text_length = int(lcfg.get("min_text_length", 100))
+        except (TypeError, ValueError):
+            min_text_length = 100
 
         from src.parsers.llm_fallback import LLMFallbackParser, should_use_llm
 
@@ -505,6 +527,10 @@ class PipelineRunner:
         """
         vcfg = self._section("validator")
         allowed = vcfg.get("allowed_countries", [])
+        # Guard: YAML scalar string (e.g. "RU" instead of ["RU"]) would
+        # iterate character-by-character → ["R","U"] → 0 matches.
+        if isinstance(allowed, str):
+            allowed = [allowed]
 
         if not allowed:
             logger.info("No country filter configured — keeping all configs.")
@@ -607,9 +633,12 @@ class PipelineRunner:
     def _sort_and_limit(self, configs: list[Config]) -> list[Config]:
         """Sort and limit configs (dedup already done). Called after country filter."""
         acfg = self._section("aggregator")
-        max_configs = int(acfg.get("max_configs_in_output", 500))
+        max_configs = self._max_configs()
         sort_by = str(acfg.get("sort_by", "country"))
-        max_per_country = int(acfg.get("max_per_country", 0))
+        try:
+            max_per_country = int(acfg.get("max_per_country", 0))
+        except (TypeError, ValueError):
+            max_per_country = 0
 
         try:
             from src.aggregator.merger import sort_configs, limit_per_country
@@ -631,9 +660,12 @@ class PipelineRunner:
     def _aggregate(self, configs: list[Config]) -> list[Config]:
         """Dedup -> sort -> limit via ``merge_and_filter``."""
         acfg = self._section("aggregator")
-        max_configs = int(acfg.get("max_configs_in_output", 500))
+        max_configs = self._max_configs()
         sort_by = str(acfg.get("sort_by", "latency"))
-        max_per_country = int(acfg.get("max_per_country", 0))
+        try:
+            max_per_country = int(acfg.get("max_per_country", 0))
+        except (TypeError, ValueError):
+            max_per_country = 0
 
         try:
             from src.aggregator.merger import merge_and_filter
@@ -656,16 +688,26 @@ class PipelineRunner:
 
         return list(result) if result else []
 
-    def _process_configs(
+    def _preprocess_configs(
         self,
         configs: list[Config],
         *,
         label: str,
     ) -> list[Config]:
-        """Run configs through the pipeline: garbage -> sample -> dedup -> country -> sort.
+        """Preprocess configs: garbage -> sample -> dedup -> country filter.
 
-        Returns processed configs (or empty list if nothing survived).
-        Does NOT write to disk — caller handles output.
+        This is the per-list ``process`` stage of the pipeline.  It does NOT
+        sort or limit — sorting is deferred so the combined output (step 4 of
+        :meth:`run`) and each split output (step 6) sort exactly once instead
+        of twice (previously ``_process_configs`` sorted per-list and
+        :meth:`run` re-sorted the combined list).
+
+        Dedup is kept here (before the country filter) so intra-list
+        duplicates are removed early; the combined path in :meth:`run` then
+        dedups cross-list duplicates after interleaving.
+
+        Returns preprocessed configs (or empty list if nothing survived).
+        Preserves insertion order (no sort).
         """
         if not configs:
             return []
@@ -681,7 +723,10 @@ class PipelineRunner:
             return []
 
         vcfg = self._section("validator")
-        max_to_process = int(vcfg.get("max_configs_to_validate", 20000))
+        try:
+            max_to_process = int(vcfg.get("max_configs_to_validate", 20000))
+        except (TypeError, ValueError):
+            max_to_process = 20000
         if max_to_process > 0 and len(configs) > max_to_process:
             import random
 
@@ -701,6 +746,28 @@ class PipelineRunner:
         if not configs:
             return []
 
+        return configs
+
+    def _process_configs(
+        self,
+        configs: list[Config],
+        *,
+        label: str,
+    ) -> list[Config]:
+        """Run configs through the full pipeline: preprocess -> sort -> limit.
+
+        This is the *standalone* path used by :meth:`_process_and_write_configs`
+        (and tests) when a single list is processed and written directly,
+        without interleaving.  The combined path in :meth:`run` calls
+        :meth:`_preprocess_configs` instead and defers sort/limit to avoid
+        double-sorting.
+
+        Returns processed, sorted, limited configs (or empty list if nothing
+        survived).  Does NOT write to disk — caller handles output.
+        """
+        configs = self._preprocess_configs(configs, label=label)
+        if not configs:
+            return []
         configs = self._sort_and_limit(configs)
         logger.info("%s after aggregation: %d configs.", label, len(configs))
         return configs
@@ -801,9 +868,19 @@ class PipelineRunner:
         return int(count) if count else 0
 
     def _write_empty_output(self, output_file: str) -> None:
-        """Ensure the output file exists (empty) so the publish step is a no-op."""
+        """Ensure the output file exists as a valid base64 subscription.
+
+        Even on empty / early-exit runs the file must be a decodable base64
+        subscription (containing at least the watermark entry) so that
+        consumers like Happ can always decode it and the CI ``verify output``
+        step counts configs consistently with the normal path.  Previously
+        this wrote a 0-byte plain file via ``_write_plain_fallback``, which
+        diverged from the normal path's ``write_subscription`` (base64 +
+        watermark) and left Happ with an undecodable file.  Falls back to a
+        plain empty file only if the subscription writer is unavailable.
+        """
         try:
-            self._write_plain_fallback([], output_file)
+            self._write_output([], output_file)
         except Exception as exc:
             logger.warning("Could not write empty output %s: %s", output_file, exc)
 
@@ -825,12 +902,23 @@ class PipelineRunner:
 
     # --- stage 6: publish ---
 
-    async def _publish_files(self, output_files: list[str]) -> None:
+    async def _publish_files(
+        self,
+        output_files: list[str],
+        *,
+        combined_output_file: str | None = None,
+    ) -> None:
         """Publish multiple output files, preserving each repo path."""
-        for output_file in dict.fromkeys(output_files):
-            await self._publish(output_file)
+        pcfg = self._section("publisher")
+        configured_combined_path = pcfg.get("output_file")
 
-    async def _publish(self, output_file: str) -> None:
+        for output_file in dict.fromkeys(output_files):
+            repo_path = output_file
+            if combined_output_file is not None and output_file == combined_output_file:
+                repo_path = str(configured_combined_path or output_file)
+            await self._publish(output_file, repo_path=repo_path)
+
+    async def _publish(self, output_file: str, repo_path: str | None = None) -> None:
         """Publish the output file to a GitHub repo via ``GitHubPublisher``."""
         if not self.github_token:
             logger.warning("Publish requested but GITHUB_TOKEN is not set — skipping.")
@@ -840,7 +928,7 @@ class PipelineRunner:
         owner = pcfg.get("owner") or os.environ.get("GITHUB_OWNER")
         repo = pcfg.get("repo") or os.environ.get("GITHUB_REPO")
         branch = pcfg.get("branch") or os.environ.get("GITHUB_BRANCH") or "main"
-        repo_path = output_file
+        repo_path = repo_path or str(pcfg.get("output_file") or output_file)
         commit_tpl = pcfg.get("commit_message", "auto-update configs [{timestamp}]")
 
         if not owner or not repo:
@@ -850,9 +938,13 @@ class PipelineRunner:
             )
             return
 
-        # Read the output file content.
+        # Read the output file content in a worker thread so a slow/disk-bound
+        # read does not block the event loop (publish may run concurrently with
+        # other coroutines, and _publish_files could later be parallelised).
         try:
-            content = Path(output_file).read_text(encoding="utf-8")
+            content = await asyncio.to_thread(
+                Path(output_file).read_text, encoding="utf-8"
+            )
         except FileNotFoundError:
             logger.error("Cannot publish: output file %s does not exist.", output_file)
             return

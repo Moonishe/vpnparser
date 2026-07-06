@@ -19,6 +19,7 @@ import base64
 import logging
 import time
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -28,6 +29,26 @@ logger = logging.getLogger(__name__)
 _DEFAULT_RATELIMIT_WAIT = 60.0
 # Upper bound on a single rate-limit sleep to avoid blocking the pipeline forever.
 _RATELIMIT_WAIT_CAP = 300.0
+
+
+def _clean_repo_path(path: str) -> str:
+    """Normalize and validate a GitHub repository path."""
+    path = (path or "").strip().replace("\\", "/").strip("/")
+    if not path:
+        raise ValueError("repository path must not be empty")
+    parts = [part for part in path.split("/") if part]
+    if any(part in (".", "..") for part in parts):
+        raise ValueError(f"unsafe repository path: {path!r}")
+    return "/".join(parts)
+
+
+def _contents_url(owner: str, repo: str, path: str) -> str:
+    """Build a safe GitHub Contents API URL path."""
+    owner_q = quote(str(owner).strip(), safe="")
+    repo_q = quote(str(repo).strip(), safe="")
+    clean_path = _clean_repo_path(path)
+    path_q = "/".join(quote(part, safe="") for part in clean_path.split("/"))
+    return f"/repos/{owner_q}/{repo_q}/contents/{path_q}"
 
 
 class GitHubPublishError(Exception):
@@ -110,7 +131,7 @@ class GitHubPublisher:
 
         Uses GET /repos/{owner}/{repo}/contents/{path}?ref={branch}.
         """
-        url = f"/repos/{self.owner}/{self.repo}/contents/{path.lstrip('/')}"
+        url = _contents_url(self.owner, self.repo, path)
         client = await self._get_client()
         response = await client.get(url, params={"ref": self.branch})
 
@@ -188,8 +209,7 @@ class GitHubPublisher:
             network error). Raises ``GitHubPublishError`` on non-recoverable
             failures (rate limit beyond cap, missing auth).
         """
-        if not path:
-            raise ValueError("publish_file: path must not be empty.")
+        path = _clean_repo_path(path)
 
         try:
             content_bytes = content.encode("utf-8")
@@ -212,7 +232,7 @@ class GitHubPublisher:
             return False
 
         # Step 2: PUT the file.
-        url = f"/repos/{self.owner}/{self.repo}/contents/{path.lstrip('/')}"
+        url = _contents_url(self.owner, self.repo, path)
         body: dict[str, Any] = {
             "message": commit_message,
             "content": content_b64,

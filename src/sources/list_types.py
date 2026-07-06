@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 DEFAULT_LIST_TYPE = "mixed"
+
+# Word-boundary-anchored patterns for abbreviated hyphenated tags like
+# ``obhod-bl`` / ``source-wl``.  Using ``\b`` after the tag prevents false
+# positives such as ``-bl`` inside ``-blocks`` or ``-wl`` inside ``-wlock``.
+_BL_TAG = re.compile(r"-bl\b")
+_WL_TAG = re.compile(r"-wl\b")
 
 _ALIASES = {
     "black": "blacklist",
@@ -52,8 +59,8 @@ def infer_source_list_type(source: dict[str, Any]) -> str:
     haystack = " ".join(
         str(source.get(key, "")) for key in ("name", "path", "repo")
     ).lower()
-    if "black" in haystack or "obhod_bl" in haystack or "-bl" in haystack:
+    if "black" in haystack or "obhod_bl" in haystack or _BL_TAG.search(haystack):
         return "blacklist"
-    if "white" in haystack or "obhod_wl" in haystack or "-wl" in haystack:
+    if "white" in haystack or "obhod_wl" in haystack or _WL_TAG.search(haystack):
         return "whitelist"
     return DEFAULT_LIST_TYPE

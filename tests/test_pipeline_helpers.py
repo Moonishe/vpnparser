@@ -6,10 +6,18 @@ import builtins
 import sys
 import types
 
+import httpx
+import pytest
+
 from src.env import load_dotenv_if_available
 from src.parsers.base import Config
 from src.scheduler.runner import PipelineRunner
-from src.sources.github import GitHubClient, GitHubRateLimitError
+from src.publisher.github import _contents_url as publisher_contents_url
+from src.sources.github import (
+    GitHubClient,
+    GitHubRateLimitError,
+    _contents_url as source_contents_url,
+)
 from src.sources.list_types import infer_source_list_type, normalize_list_type
 from src.sources.manager import SourceManager, SourceResult
 from src.validators import tls_check as tls_module
@@ -124,6 +132,181 @@ def test_github_fetch_file_falls_back_to_raw_url_on_rate_limit(monkeypatch) -> N
     assert result == "raw-content"
     assert raw_urls == [
         "https://raw.githubusercontent.com/owner/repo/feature/dir/file.txt"
+    ]
+
+
+def test_github_request_raises_rate_limit_after_retry(monkeypatch) -> None:
+    client = GitHubClient()
+
+    class FakeResponse:
+        status_code = 403
+        headers = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "0"}
+
+        def raise_for_status(self):
+            raise AssertionError("rate limit should be raised before HTTPStatusError")
+
+    class FakeClient:
+        async def request(self, *args, **kwargs):
+            return FakeResponse()
+
+    async def fake_get_client():
+        return FakeClient()
+
+    async def fake_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(client, "_get_client", fake_get_client)
+    monkeypatch.setattr("src.sources.github.asyncio.sleep", fake_sleep)
+
+    with pytest.raises(GitHubRateLimitError):
+        asyncio.run(client._request("GET", "/repos/o/r/contents/file.txt"))
+
+
+def test_github_fetch_raw_file_rejects_untrusted_hosts(monkeypatch) -> None:
+    client = GitHubClient(token="secret")
+
+    async def fail_get_client():
+        raise AssertionError("untrusted raw URL should not be fetched")
+
+    monkeypatch.setattr(client, "_get_client", fail_get_client)
+
+    result = asyncio.run(client.fetch_raw_file("https://example.com/file.txt"))
+
+    assert result == ""
+
+
+def test_github_fetch_raw_file_does_not_send_authorization(monkeypatch) -> None:
+    client = GitHubClient(token="secret")
+    captured_headers = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = "raw-content"
+
+        def raise_for_status(self):
+            return None
+
+    class FakeRawClient:
+        def __init__(self, *args, **kwargs):
+            captured_headers.update(kwargs.get("headers") or {})
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url, headers=None):
+            captured_headers.update(headers or {})
+            return FakeResponse()
+
+    monkeypatch.setattr("src.sources.github.httpx.AsyncClient", FakeRawClient)
+
+    result = asyncio.run(
+        client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/file.txt")
+    )
+
+    assert result == "raw-content"
+    assert "Authorization" not in captured_headers
+
+
+def test_github_fetch_raw_file_returns_empty_on_network_error(monkeypatch) -> None:
+    client = GitHubClient()
+
+    class FakeRawClient:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, *args, **kwargs):
+            raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr("src.sources.github.httpx.AsyncClient", FakeRawClient)
+
+    async def fake_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr("src.sources.github.asyncio.sleep", fake_sleep)
+
+    result = asyncio.run(
+        client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/file.txt")
+    )
+
+    assert result == ""
+
+
+def test_github_fetch_raw_file_retries_transient_network_error(monkeypatch) -> None:
+    client = GitHubClient()
+    attempts = {"count": 0}
+
+    class FakeResponse:
+        status_code = 200
+        text = "raw-content"
+
+        def raise_for_status(self):
+            return None
+
+    class FakeRawClient:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, *args, **kwargs):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise httpx.ConnectError("temporary")
+            return FakeResponse()
+
+    async def fake_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr("src.sources.github.httpx.AsyncClient", FakeRawClient)
+    monkeypatch.setattr("src.sources.github.asyncio.sleep", fake_sleep)
+
+    result = asyncio.run(
+        client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/file.txt")
+    )
+
+    assert result == "raw-content"
+    assert attempts["count"] == 2
+
+
+def test_github_contents_urls_quote_and_reject_unsafe_paths() -> None:
+    assert source_contents_url("owner", "repo", "dir/file+name.txt") == (
+        "/repos/owner/repo/contents/dir/file%2Bname.txt"
+    )
+    assert publisher_contents_url("owner", "repo", "output/subscription.txt") == (
+        "/repos/owner/repo/contents/output/subscription.txt"
+    )
+
+    with pytest.raises(ValueError):
+        source_contents_url("owner", "repo", "../secret.txt")
+    with pytest.raises(ValueError):
+        publisher_contents_url("owner", "repo", "../secret.txt")
+
+
+def test_filter_files_matches_full_repo_path_and_basename() -> None:
+    files = [
+        ("githubmirror/1.txt", "black"),
+        ("githubmirror/26.txt", "white"),
+        ("other/26.txt", "other"),
+    ]
+
+    assert SourceManager._filter_files(
+        {"include_files": ["githubmirror/26.txt"]}, files
+    ) == [("githubmirror/26.txt", "white")]
+    assert SourceManager._filter_files({"exclude_files": ["26.txt"]}, files) == [
+        ("githubmirror/1.txt", "black")
     ]
 
 

@@ -12,12 +12,12 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
 from src.sources.github import GitHubClient
-from src.sources.list_types import infer_source_list_type
+from src.sources.list_types import DEFAULT_LIST_TYPE, infer_source_list_type
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class SourceResult:
     source_name: str
     files: list[tuple[str, str]] = field(default_factory=list)
     error: str | None = None
-    list_type: str = "mixed"
+    list_type: str = DEFAULT_LIST_TYPE
 
     @property
     def ok(self) -> bool:
@@ -126,9 +126,30 @@ class SourceManager:
             return []
 
         tasks = [self._fetch_with_semaphore(s) for s in enabled]
-        results = await asyncio.gather(*tasks, return_exceptions=False)
-        # gather preserves order of the input tasks.
-        return list(results)
+        # return_exceptions=True so one raising task can never discard the
+        # results of all the others — fulfils the "never propagate" contract.
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        results: list[SourceResult] = []
+        for source, raw in zip(enabled, raw_results):
+            if isinstance(raw, Exception):
+                name = (
+                    source.get("name", "<unnamed>")
+                    if isinstance(source, dict)
+                    else "<unnamed>"
+                )
+                logger.error(
+                    "Unhandled error fetching source '%s': %s",
+                    name,
+                    raw,
+                    exc_info=raw,
+                )
+                results.append(SourceResult(source_name=name, error=str(raw)))
+            elif isinstance(raw, BaseException):
+                # Cancellation / system exit — must propagate, not be swallowed.
+                raise raw
+            else:
+                results.append(raw)
+        return results
 
     async def _fetch_with_semaphore(self, source: dict) -> SourceResult:
         async with self._semaphore:
@@ -143,29 +164,32 @@ class SourceManager:
             * ``raw`` — fetch all files in the directory at ``path``; each file
               may contain one or more proxy config links.
         """
-        name = source.get("name", "<unnamed>")
-        stype = source.get("type", "")
-        owner = source.get("owner", "")
-        repo = source.get("repo", "")
-        path = source.get("path", "")
-        branch = source.get("branch", "main")
-        list_type = infer_source_list_type(source)
-
-        # subscription requires path; raw allows empty path (= root directory).
-        if not (owner and repo):
-            return SourceResult(
-                source_name=name,
-                error=f"source '{name}' is missing owner/repo",
-                list_type=list_type,
-            )
-        if stype == "subscription" and not path:
-            return SourceResult(
-                source_name=name,
-                error=f"subscription source '{name}' requires a file path",
-                list_type=list_type,
-            )
-
+        name = (
+            source.get("name", "<unnamed>") if isinstance(source, dict) else "<unnamed>"
+        )
+        list_type: str = DEFAULT_LIST_TYPE
         try:
+            stype = source.get("type", "")
+            owner = source.get("owner", "")
+            repo = source.get("repo", "")
+            path = source.get("path", "")
+            branch = source.get("branch", "main")
+            list_type = infer_source_list_type(source)
+
+            # subscription requires path; raw allows empty path (= root directory).
+            if not (owner and repo):
+                return SourceResult(
+                    source_name=name,
+                    error=f"source '{name}' is missing owner/repo",
+                    list_type=list_type,
+                )
+            if stype == "subscription" and not path:
+                return SourceResult(
+                    source_name=name,
+                    error=f"subscription source '{name}' requires a file path",
+                    list_type=list_type,
+                )
+
             if stype == "subscription":
                 content = await self._github.fetch_file(owner, repo, path, branch)
                 if not content:
@@ -213,9 +237,18 @@ class SourceManager:
 
     @staticmethod
     def _int_source_value(source: dict, key: str, default: int) -> int:
-        """Read a positive integer source setting."""
+        """Read a positive integer source setting.
+
+        Booleans are explicitly rejected — ``bool`` is a subclass of ``int``
+        in Python (``int(True) == 1``), so without this guard a config value
+        like ``max_files: false`` would silently become ``1`` instead of
+        falling back to the default.
+        """
+        raw = source.get(key, default)
+        if isinstance(raw, bool):
+            return default
         try:
-            value = int(source.get(key, default))
+            value = int(raw)
         except (TypeError, ValueError):
             return default
         return max(1, value)
@@ -231,16 +264,22 @@ class SourceManager:
         lists are iterated.  ``None`` items inside a list are skipped so they
         cannot become the literal string ``"none"`` and accidentally filter
         out every file.
+
+        Filter entries are normalized identically to filenames (backslashes
+        converted to forward slashes, leading/trailing slashes stripped,
+        lowercased) so that ``"/keep.txt"`` or ``"dir\\\\file.txt"`` in the
+        config match the corresponding file.
         """
+
+        def _norm(value: object) -> str:
+            return str(value).strip().replace("\\", "/").strip("/").lower()
 
         def _to_filter_set(key: str) -> set[str]:
             raw = source.get(key)
             if not isinstance(raw, list):
                 return set()
             return {
-                str(item).strip().lower()
-                for item in raw
-                if item is not None and str(item).strip()
+                _norm(item) for item in raw if item is not None and str(item).strip()
             }
 
         include = _to_filter_set("include_files")
@@ -250,10 +289,12 @@ class SourceManager:
 
         filtered: list[tuple[str, str]] = []
         for filename, content in files:
-            key = str(filename).strip().lower()
-            if include and key not in include:
+            key = _norm(filename)
+            basename = PurePosixPath(key).name
+            match_keys = {key, basename}
+            if include and not (include & match_keys):
                 continue
-            if key in exclude:
+            if exclude & match_keys:
                 continue
             filtered.append((filename, content))
         return filtered

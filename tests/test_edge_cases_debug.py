@@ -336,8 +336,8 @@ def test_edge7_publish_files_dedup(monkeypatch):
 
     published = []
 
-    async def fake_publish(output_file):
-        published.append(output_file)
+    async def fake_publish(output_file, repo_path=None):
+        published.append((output_file, repo_path))
 
     monkeypatch.setattr(runner, "_publish", fake_publish)
 
@@ -351,9 +351,10 @@ def test_edge7_publish_files_dedup(monkeypatch):
     asyncio.run(runner._publish_files(files))
 
     print(f"  published files: {published}")
-    assert published == ["output/subscription.txt", "output/bl.txt"], (
-        f"Expected dedup, got {published}"
-    )
+    assert published == [
+        ("output/subscription.txt", "output/subscription.txt"),
+        ("output/bl.txt", "output/bl.txt"),
+    ], f"Expected dedup, got {published}"
     print("EDGE 7: PASS - dict.fromkeys deduplicates correctly")
 
 
@@ -476,6 +477,165 @@ aggregator:
     # could still appear in split outputs (or vice versa)
     print("  NOTED: split outputs are processed independently from combined")
     print("  This means sampling/dedup/limit may differ between combined and split")
+
+
+# --- FIXED: _publish reads file via asyncio.to_thread (no event-loop block) ---
+
+
+def test_bonus_publish_reads_file_via_to_thread(monkeypatch, tmp_path):
+    """FIXED: _publish must not block the event loop on file I/O.
+
+    Before the fix, ``_publish`` called ``Path.read_text`` synchronously inside
+    an async function.  Now it uses ``asyncio.to_thread``.  This test verifies
+    the file content is still read correctly and handed to the publisher.
+    """
+    output_file = tmp_path / "subscription.txt"
+    output_file.write_text(
+        "vless://dead-beef@example.com:443#DE-01\n", encoding="utf-8"
+    )
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+publisher:
+  owner: owner
+  repo: repo
+  branch: main
+  output_file: output/subscription.txt
+  commit_message: "auto-update [{timestamp}]"
+""",
+        encoding="utf-8",
+    )
+
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+        github_token="fake-token",
+    )
+
+    captured = {}
+
+    class FakePublisher:
+        def __init__(self, *args, **kwargs):
+            captured["init_kwargs"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def publish_file(self, path, content, commit_message):
+            captured["path"] = path
+            captured["content"] = content
+            captured["commit_message"] = commit_message
+            return True
+
+    monkeypatch.setattr("src.publisher.github.GitHubPublisher", FakePublisher)
+
+    asyncio.run(runner._publish(str(output_file), repo_path="output/subscription.txt"))
+
+    assert captured.get("content") == "vless://dead-beef@example.com:443#DE-01\n", (
+        f"Expected file content read via to_thread, got {captured.get('content')!r}"
+    )
+    assert captured.get("path") == "output/subscription.txt"
+    assert "auto-update" in captured.get("commit_message", "")
+    print(
+        "  FIXED: _publish reads file via asyncio.to_thread, content reaches publisher"
+    )
+
+
+def test_bonus_publish_missing_file_skips_cleanly(tmp_path):
+    """_publish must log + skip when the output file does not exist (no crash)."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+publisher:
+  owner: owner
+  repo: repo
+  branch: main
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+        github_token="fake-token",
+    )
+
+    # Should return without raising — FileNotFoundError is caught.
+    asyncio.run(runner._publish(str(tmp_path / "nope.txt"), repo_path="output/x.txt"))
+    print("  FIXED: missing output file -> logged + skipped, no exception")
+
+
+# --- FIXED: interleave max_total default matches _sort_and_limit (500) -------
+
+
+def test_bonus_interleave_default_matches_sort_cap(monkeypatch, tmp_path):
+    """FIXED: interleave max_total default must match _sort_and_limit (500).
+
+    Before the fix, ``run()`` read ``max_configs_in_output`` with default 75
+    while ``_sort_and_limit`` used 500.  With NO aggregator config and 100
+    configs per list, the interleave pre-capped to 150 (75 from each) even
+    though 200 unique configs were available and the real cap was 500.
+    Now both default to 500 -> all 200 flow through.
+    """
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  max_configs_to_validate: 0
+""",
+        # NO aggregator section -> framework defaults apply
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+
+    def make_configs(n, addr_prefix):
+        return [
+            Config(
+                protocol="vless",
+                address=f"{addr_prefix}.net",
+                port=443 + i,
+                uuid_or_password="11111111-1111-4111-8111-111111111111",
+                remark=f"DE-{i:03d}",
+                raw_link=(
+                    f"vless://11111111-1111-4111-8111-111111111111@"
+                    f"{addr_prefix}.net:{443 + i}#DE-{i:03d}"
+                ),
+                country="DE",
+            )
+            for i in range(n)
+        ]
+
+    configs_by_list = {
+        "blacklist": make_configs(100, "bl"),
+        "whitelist": make_configs(100, "wl"),
+    }
+
+    async def fake_fetch_sources():
+        return ["dummy-result"]
+
+    async def fake_parse_all_by_list(results):
+        return configs_by_list
+
+    monkeypatch.setattr(runner, "_fetch_sources", fake_fetch_sources)
+    monkeypatch.setattr(runner, "_parse_all_by_list", fake_parse_all_by_list)
+
+    output_file = str(tmp_path / "combined.txt")
+    count = asyncio.run(runner.run(output_file=output_file, publish=False))
+
+    # 100 blacklist + 100 whitelist = 200 unique; default cap 500 -> 200.
+    # Before the fix (interleave default 75) this was 150 (75 from each).
+    assert count == 200, (
+        f"Expected 200 configs (default 500 cap), got {count} — "
+        f"interleave default may still be 75 (under-production bug)"
+    )
+    print(f"  FIXED: interleave default=500 -> {count} configs flow through (was 150)")
 
 
 if __name__ == "__main__":

@@ -125,7 +125,12 @@ def merge_and_filter(
     3. limit per country (only if max_per_country > 0)
     4. limit total to max_total (only if max_total > 0, take first N)
 
-    Defaults match config/settings.yaml aggregator section.
+    The defaults below are generic library defaults, NOT the deployed
+    values. The pipeline runner reads ``config/settings.yaml`` and passes
+    the real values explicitly (``max_configs_in_output``, ``sort_by``,
+    ``max_per_country``). As of settings.yaml the deploy values are
+    max_total=75, sort_by="country", max_per_country=50; only
+    ``max_per_country`` happens to coincide with the default below.
     Returns an empty list for empty input.
     """
     deduped = deduplicate(configs)

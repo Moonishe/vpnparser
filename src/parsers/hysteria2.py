@@ -86,7 +86,7 @@ class Hysteria2Parser(BaseParser):
             # Split userinfo (password)
             if "@" in hostport:
                 userinfo, hostport = hostport.rsplit("@", 1)
-                password = unquote(userinfo)
+                password = unquote(userinfo).strip()
             else:
                 password = ""
 

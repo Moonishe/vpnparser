@@ -95,7 +95,13 @@ def main() -> int:
     logger = logging.getLogger("src.main")
 
     if not args.run:
-        logger.error("No action specified. Use --run to execute the pipeline.")
+        if args.publish:
+            logger.error(
+                "--publish requires --run — it only publishes the result of "
+                "a pipeline run, it does not run the pipeline itself."
+            )
+        else:
+            logger.error("No action specified. Use --run to execute the pipeline.")
         logger.info(
             "Example: python -m src.main --run [--publish] [--output path] [-v]"
         )

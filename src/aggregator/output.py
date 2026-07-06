@@ -63,7 +63,9 @@ def generate_output(configs: list[Config], fmt: str = "base64") -> str:
 
     fmt: "base64" (default, Happ format) or "plain".
     Unknown fmt values fall back to base64.
-    Returns an empty string for empty input.
+    Never returns an empty string: the watermark entry is always the
+    first line, even when *configs* is empty (the plain form is then
+    just the single watermark link; the base64 form is its encoding).
     """
     if fmt == "plain":
         return generate_plain(configs)

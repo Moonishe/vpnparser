@@ -60,10 +60,19 @@ class TrojanParser(BaseParser):
             password = parsed.username
             host = parsed.hostname
             port = parsed.port
-            if not password or not host or not port:
+            if not password or not host or port is None:
                 return None
 
-            password = unquote(password)
+            password = unquote(password).strip()
+            # Reject empty / whitespace-only passwords after percent-decoding
+            # (e.g. ``trojan://%20@host:port`` decodes to a single space).
+            if not password:
+                return None
+            # Explicit port range check (defence in depth). CPython's urlparse
+            # raises for out-of-range ports, but that is implicit; vmess
+            # validates the range explicitly, so we do too for consistency.
+            if not (1 <= port <= 65535):
+                return None
 
             query = parse_qs_single(parsed.query)
 

@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 from typing import ClassVar
 
-from src.parsers.base import BaseParser, Config, safe_b64decode
+from src.parsers.base import BaseParser, Config, _UUID_RE, safe_b64decode
 
 
 class VmessParser(BaseParser):
@@ -66,17 +66,30 @@ class VmessParser(BaseParser):
             if not isinstance(obj, dict):
                 return None
 
-            address = obj.get("add") or ""
+            address = (obj.get("add") or "").strip()
             port_raw = obj.get("port")
-            uuid = obj.get("id") or ""
+            uuid = (obj.get("id") or "").strip()
             if not address or port_raw is None or not uuid:
                 return None
+            # A vmess ``id`` must be a valid UUID (8-4-4-4-12 hex, hyphens
+            # optional). Rejecting here honours the documented contract
+            # ("invalid JSON fields → None") and stops garbage early. Uses
+            # the same regex as is_garbage_config for consistency.
+            if not _UUID_RE.match(uuid):
+                return None
 
+            # Reject bool ports: ``int(True) == 1`` would silently accept a
+            # meaningless boolean as port 1. Reject non-integral floats too:
+            # ``int(443.5) == 443`` silently truncates, corrupting the port.
+            if isinstance(port_raw, bool):
+                return None
             try:
                 port = int(port_raw)
             except (TypeError, ValueError):
                 return None
-            if port <= 0 or port > 65535:
+            if isinstance(port_raw, float) and not port_raw.is_integer():
+                return None
+            if not (1 <= port <= 65535):
                 return None
 
             tls_field = obj.get("tls")

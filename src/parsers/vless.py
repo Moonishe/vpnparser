@@ -30,7 +30,13 @@ from __future__ import annotations
 from typing import ClassVar
 from urllib.parse import urlparse
 
-from src.parsers.base import BaseParser, Config, extract_remark, parse_qs_single
+from src.parsers.base import (
+    BaseParser,
+    Config,
+    _UUID_RE,
+    extract_remark,
+    parse_qs_single,
+)
 
 
 class VlessParser(BaseParser):
@@ -53,10 +59,21 @@ class VlessParser(BaseParser):
             if parsed.scheme.lower() != "vless":
                 return None
 
-            uuid = parsed.username
+            uuid = (parsed.username or "").strip()
             host = parsed.hostname
             port = parsed.port
-            if not uuid or not host or not port:
+            if not uuid or not host or port is None:
+                return None
+            # Explicit port range check (defence in depth). CPython's urlparse
+            # raises for out-of-range ports, but relying on that is implicit
+            # and fragile; vmess validates the range explicitly, so we do too.
+            if not (1 <= port <= 65535):
+                return None
+            # A vless userinfo must be a valid UUID (8-4-4-4-12 hex, hyphens
+            # optional). Same regex as is_garbage_config — a non-UUID userinfo
+            # is malformed and would be filtered as garbage downstream anyway,
+            # so rejecting it here is safe and matches the documented contract.
+            if not _UUID_RE.match(uuid):
                 return None
 
             query = parse_qs_single(parsed.query)

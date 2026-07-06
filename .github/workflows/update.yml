@@ -83,7 +83,7 @@ jobs:
               if lines and lines[0].startswith('vmess://'):
                   lines = lines[1:]
               print(len(lines))
-          except:
+          except Exception:
               print(0)
           ")
           echo "configs_count=$CONFIGS" >> $GITHUB_ENV
@@ -98,7 +98,11 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
       - name: Save facts cache
-        if: always()
+        # Only save when the file actually exists. On forks without
+        # TELEGRAM_BOT_TOKEN (or when the pipeline fails before the notify
+        # step runs) facts_history.json is never created, and cache/save
+        # raises a "Path Validation Error" that turns a green run red.
+        if: always() && hashFiles('facts_history.json') != ''
         uses: actions/cache/save@v4
         with:
           path: facts_history.json

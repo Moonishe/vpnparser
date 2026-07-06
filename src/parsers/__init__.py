@@ -46,6 +46,7 @@ __all__ = [
     "BaseParser",
     "Config",
     "ALL_PARSERS",
+    "PARSER_BY_SCHEME",
     "find_all_links",
     "parse_password_host_port",
     "safe_b64decode",

@@ -52,7 +52,10 @@ _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0  # seconds; doubled per attempt (1, 2, 4)
 
 # Per-response max-tokens defaults per method type.
-_MAX_TOKENS_EXTRACT = 4000  # many links possible
+# 2000 is safe for DashScope qwen-flash (max output ~2000 tokens) and still
+# fits ~25-65 proxy links (each ~30-100 tokens).  Was 4000 for Gemini (8192
+# output limit) but that exceeds qwen-flash's limit → 400 error → silent fail.
+_MAX_TOKENS_EXTRACT = 2000  # many links possible
 _MAX_TOKENS_REMARK = 100  # short name
 _MAX_TOKENS_CATEGORIZE = 10  # single word
 
@@ -304,8 +307,13 @@ class LLMFallbackParser:
     async def _call_api(self, request_body: dict[str, Any]) -> str:
         """Call the LLM chat-completions API and return the assistant's text.
 
-        Returns the empty string on any error (network, HTTP, JSON parse).
-        Never raises.
+        Retries up to :data:`_MAX_RETRIES` times on transient errors (429
+        rate-limit, 5xx server errors, network timeouts) with exponential
+        backoff (:data:`_RETRY_BASE_DELAY` seconds, doubled per attempt:
+        1s, 2s, 4s).  Non-retryable errors (401 auth, 4xx client errors,
+        malformed JSON, missing ``choices``) return ``""`` immediately.
+
+        Returns the empty string on any error.  Never raises.
         """
         if not self.api_key:
             logger.error("LLM API call skipped: no API key configured")
@@ -321,43 +329,88 @@ class LLMFallbackParser:
             headers.setdefault("HTTP-Referer", "https://github.com/vpn-config-parser")
             headers.setdefault("X-Title", "vpn-config-parser")
 
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    self.api_base, headers=headers, json=request_body
+        last_error = ""
+        for attempt in range(_MAX_RETRIES):
+            # --- network attempt ---
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(
+                        self.api_base, headers=headers, json=request_body
+                    )
+            except httpx.TimeoutException:
+                last_error = f"timeout after {self.timeout}s"
+                logger.warning(
+                    "LLM API attempt %d/%d timed out", attempt + 1, _MAX_RETRIES
                 )
-        except httpx.TimeoutException:
-            logger.error("LLM API request timed out after %ss", self.timeout)
-            return ""
-        except httpx.HTTPError as exc:
-            logger.error("LLM API request failed: %s", exc)
-            return ""
+            except httpx.HTTPError as exc:
+                last_error = str(exc)
+                logger.warning(
+                    "LLM API attempt %d/%d network error: %s",
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    exc,
+                )
+            else:
+                # --- HTTP response received ---
+                status = response.status_code
+                if status == 401:
+                    # Non-retryable: auth error is permanent.
+                    logger.error("LLM API returned 401 — invalid or missing API key")
+                    return ""
+                if status == 429:
+                    last_error = "429 rate limited"
+                    logger.warning(
+                        "LLM API attempt %d/%d rate limited (429)",
+                        attempt + 1,
+                        _MAX_RETRIES,
+                    )
+                elif status >= 500:
+                    last_error = f"server error {status}"
+                    logger.warning(
+                        "LLM API attempt %d/%d server error %d: %s",
+                        attempt + 1,
+                        _MAX_RETRIES,
+                        status,
+                        response.text[:200],
+                    )
+                elif status >= 400:
+                    # Non-retryable: 4xx client error (bad request, etc.).
+                    logger.error(
+                        "LLM API client error %d: %s", status, response.text[:200]
+                    )
+                    return ""
+                else:
+                    # --- success: parse the response body ---
+                    try:
+                        payload = response.json()
+                    except ValueError:
+                        logger.error(
+                            "LLM API returned non-JSON response: %s",
+                            response.text[:200],
+                        )
+                        return ""
+                    try:
+                        return payload["choices"][0]["message"]["content"] or ""
+                    except (KeyError, IndexError, TypeError) as exc:
+                        logger.error(
+                            "LLM API response missing choices[0].message.content: %s",
+                            exc,
+                        )
+                        return ""
 
-        status = response.status_code
-        if status == 401:
-            logger.error("LLM API returned 401 — invalid or missing API key")
-            return ""
-        if status == 429:
-            logger.warning("LLM API returned 429 — rate limited")
-            return ""
-        if status >= 500:
-            logger.error("LLM API server error %d: %s", status, response.text[:200])
-            return ""
-        if status >= 400:
-            logger.error("LLM API client error %d: %s", status, response.text[:200])
-            return ""
+            # --- exponential backoff before next retry (1, 2, 4 seconds) ---
+            if attempt < _MAX_RETRIES - 1:
+                delay = _RETRY_BASE_DELAY * (2**attempt)
+                logger.info(
+                    "LLM API retrying in %.1fs (attempt %d/%d)",
+                    delay,
+                    attempt + 2,
+                    _MAX_RETRIES,
+                )
+                await asyncio.sleep(delay)
 
-        try:
-            payload = response.json()
-        except ValueError:
-            logger.error("LLM API returned non-JSON response: %s", response.text[:200])
-            return ""
-
-        try:
-            return payload["choices"][0]["message"]["content"] or ""
-        except (KeyError, IndexError, TypeError) as exc:
-            logger.error("LLM API response missing choices[0].message.content: %s", exc)
-            return ""
+        logger.error("LLM API failed after %d retries: %s", _MAX_RETRIES, last_error)
+        return ""
 
 
 def should_use_llm(
