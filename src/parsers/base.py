@@ -300,6 +300,25 @@ _PLACEHOLDER_PATTERNS = re.compile(
     r"|\bexample\.com\b"  # example.com (IANA reserved; word-bounded: not bestexample.com)
 )
 
+# Advertising in remark — Telegram handles, URLs, promotional text.
+# These configs are real servers but the remark is an ad for a channel/site.
+# We filter them out so the subscription stays clean.
+_AD_PATTERNS = re.compile(
+    r"@"
+    r"|https?://"
+    r"|\.com\b"
+    r"|\.net\b"
+    r"|\.org\b"
+    r"|\.ru\b"
+    r"|\.ir\b"
+    r"|\.io\b"
+    r"|openproxylist"
+    r"|oneclickvpn"
+    r"|v2ray.*pool"
+    r"|shadowproxy"
+    r"|gozargah"
+)
+
 # Valid UUID format (8-4-4-4-12 hex, hyphens optional). Module-level so it is
 # compiled once, not looked up in re's internal cache on every is_garbage_config()
 # call.  Accepts both hyphenated (b831381d-4cfa-...) and non-hyphenated
@@ -356,6 +375,9 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
                 "PUBLIC_KEY",
                 "SHORT_ID",
             ):
+                return True
+            # Filter advertising: @channel, http://, .com, .net, etc.
+            if _AD_PATTERNS.search(cfg.remark):
                 return True
         # uuid_or_password: check for literal placeholder values only.
         if cfg.uuid_or_password:
