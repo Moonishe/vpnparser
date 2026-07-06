@@ -31,36 +31,6 @@
       "enabled": true
     },
     {
-      "name": "igareck-white-mobile",
-      "list_type": "whitelist",
-      "type": "subscription",
-      "owner": "igareck",
-      "repo": "vpn-configs-for-russia",
-      "path": "Vless-Reality-White-Lists-Rus-Mobile.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "igareck-white-cidr-checked",
-      "list_type": "whitelist",
-      "type": "subscription",
-      "owner": "igareck",
-      "repo": "vpn-configs-for-russia",
-      "path": "WHITE-CIDR-RU-checked.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "igareck-white-cidr-all",
-      "list_type": "whitelist",
-      "type": "subscription",
-      "owner": "igareck",
-      "repo": "vpn-configs-for-russia",
-      "path": "WHITE-CIDR-RU-all.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
       "name": "avencores-mirror-1",
       "list_type": "blacklist",
       "type": "subscription",
@@ -111,16 +81,6 @@
       "enabled": true
     },
     {
-      "name": "avencores-white-sni-cidr",
-      "list_type": "whitelist",
-      "type": "subscription",
-      "owner": "AvenCores",
-      "repo": "goida-vpn-configs",
-      "path": "githubmirror/26.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
       "name": "hiztin-vless-po-gribi",
       "list_type": "blacklist",
       "type": "subscription",
@@ -141,12 +101,42 @@
       "enabled": true
     },
     {
+      "name": "avencores-white-sni-cidr",
+      "list_type": "whitelist",
+      "type": "subscription",
+      "owner": "AvenCores",
+      "repo": "goida-vpn-configs",
+      "path": "githubmirror/26.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
       "name": "val41k-obhod-wl",
       "list_type": "whitelist",
       "type": "subscription",
       "owner": "VAL41K",
       "repo": "bypass-rkn-blocks",
       "path": "configs/obhod_WL",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "aviamastersgh-verified",
+      "list_type": "whitelist",
+      "type": "subscription",
+      "owner": "aviamastersgh",
+      "repo": "vpn-free-russia",
+      "path": "verified_configs.txt",
+      "branch": "main",
+      "enabled": true
+    },
+    {
+      "name": "aviamastersgh-ru-cidr",
+      "list_type": "whitelist",
+      "type": "subscription",
+      "owner": "aviamastersgh",
+      "repo": "vpn-free-russia",
+      "path": "ru_configs.txt",
       "branch": "main",
       "enabled": true
     }
