@@ -33,7 +33,7 @@ _TOKEN_MIN_LEN = 20
 
 # LLM endpoint — OpenAI-compatible. DashScope (Alibaba) qwen-flash is fast and free.
 _LLM_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-_LLM_MODEL = "qwen-flash"
+_LLM_MODEL = "qwen-plus"
 
 _BOT_INTRO = (
     "🤖 Я — vpnparser бот от @dutysissy\n"
