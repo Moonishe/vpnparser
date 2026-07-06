@@ -91,14 +91,34 @@ _COUNTRY_INFO = {
     "JP": ("🇯🇵", "Япония"),
     "SG": ("🇸🇬", "Сингапур"),
     "CA": ("🇨🇦", "Канада"),
-    "RU": ("🇷🇺", "Россия"),
+    "AE": ("🇦🇪", "ОАЭ"),
     "TR": ("🇹🇷", "Турция"),
+    "ID": ("🇮🇩", "Индонезия"),
+    "RU": ("🇷🇺", "Россия"),
     "PL": ("🇵🇱", "Польша"),
     "SE": ("🇸🇪", "Швеция"),
     "CH": ("🇨🇭", "Швейцария"),
     "AT": ("🇦🇹", "Австрия"),
     "ES": ("🇪🇸", "Испания"),
+    "IT": ("🇮🇹", "Италия"),
+    "AU": ("🇦🇺", "Австралия"),
+    "KR": ("🇰🇷", "Корея"),
+    "HK": ("🇭🇰", "Гонконг"),
+    "TW": ("🇹🇼", "Тайвань"),
+    "IN": ("🇮🇳", "Индия"),
+    "TH": ("🇹🇭", "Таиланд"),
+    "VN": ("🇻🇳", "Вьетнам"),
+    "BR": ("🇧🇷", "Бразилия"),
+    "MX": ("🇲🇽", "Мексика"),
 }
+
+# Subscription URLs — combined + split outputs.
+_SUBSCRIPTION_URLS = {
+    "combined": "https://raw.githubusercontent.com/Moonishe/vpnparser/main/output/subscription.txt",
+    "blacklist": "https://raw.githubusercontent.com/Moonishe/vpnparser/main/output/subscription-blacklist.txt",
+    "whitelist": "https://raw.githubusercontent.com/Moonishe/vpnparser/main/output/subscription-whitelist.txt",
+}
+_SUBSCRIPTION_URL = _SUBSCRIPTION_URLS["combined"]
 
 
 def _count_countries_from_file(filepath: str) -> dict[str, int]:
@@ -107,8 +127,8 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
     Returns a dict {country_code: count}, sorted by count descending.
     Returns empty dict if file can't be read or decoded.
     """
-    import re
     from collections import Counter
+    from src.validators.country_filter import detect_country
 
     try:
         raw = open(filepath, "r", encoding="utf-8").read().strip()
@@ -124,68 +144,26 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
 
     lines = [l.strip() for l in text.strip().split("\n") if "://" in l]
 
-    # Skip watermark (first vmess with 0.0.0.0).
     countries = Counter()
     for l in lines:
         # Skip watermark
         if "0.0.0.0" in l and "vmess://" in l:
             continue
+        # Extract remark from fragment
+        remark = ""
         if "#" in l:
-            rem = l.split("#")[-1].strip()
-            # Try to detect country from remark
             from urllib.parse import unquote
 
-            rem = unquote(rem)
-            m = re.search(
-                r"(?:^|[^A-Za-z])(DE|FI|NL|US|GB|FR|JP|SG|CA)(?:[^A-Za-z]|$)",
-                rem,
-            )
-            if m:
-                countries[m.group(1)] += 1
-                continue
-            # Try city names
-            lower = rem.lower()
-            cities = {
-                "frankfurt": "DE",
-                "munich": "DE",
-                "berlin": "DE",
-                "amsterdam": "NL",
-                "rotterdam": "NL",
-                "helsinki": "FI",
-                "tampere": "FI",
-                "paris": "FR",
-                "london": "GB",
-                "tokyo": "JP",
-                "seoul": "KR",
-                "singapore": "SG",
-                "toronto": "CA",
-                "new york": "US",
-                "miami": "US",
-                "los angeles": "US",
-                "seattle": "US",
-                "chicago": "US",
-                "dallas": "US",
-            }
-            found = False
-            for city, code in cities.items():
-                if city in lower:
-                    countries[code] += 1
-                    found = True
-                    break
-            if not found:
-                # Try hostname prefix
-                body = l.split("://")[1] if "://" in l else ""
-                if "@" in body:
-                    host = body.split("@")[1].split(":")[0].split("?")[0]
-                else:
-                    host = body.split(":")[0].split("?")[0]
-                m2 = re.search(
-                    r"(?:^|\.|[-_])(DE|FI|NL|US|GB|FR|JP|SG|CA)[-\d]",
-                    host,
-                    re.IGNORECASE,
-                )
-                if m2:
-                    countries[m2.group(1).upper()] += 1
+            remark = unquote(l.split("#")[-1].strip())
+        # Extract host from link body
+        host = ""
+        body = l.split("://", 1)[1] if "://" in l else ""
+        if "@" in body:
+            host = body.split("@", 1)[1].split(":")[0].split("?")[0].strip("[]")
+        # Use detect_country from country_filter (same logic as pipeline)
+        code = detect_country(remark, host)
+        if code:
+            countries[code] += 1
 
     return dict(countries.most_common())
 
@@ -459,7 +437,10 @@ def send_notification(
         f"\n"
         f"🔮 Факт: {html.escape(fact)}\n"
         f"\n"
-        f"ссылка для вставки - 🔗 {html.escape(subscription_url)}"
+        f"📋 Подписки:\n"
+        f"  🔗 Комбинированная: {html.escape(_SUBSCRIPTION_URLS['combined'])}\n"
+        f"  ⚫ Чёрный список: {html.escape(_SUBSCRIPTION_URLS['blacklist'])}\n"
+        f"  ⚪ Белый список: {html.escape(_SUBSCRIPTION_URLS['whitelist'])}"
     )
 
     return _send_telegram(token, chat_id, message)
