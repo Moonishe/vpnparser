@@ -11,7 +11,14 @@ This module extracts a 2-letter ISO country code from the remark string
 
 from __future__ import annotations
 
+import logging
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.parsers.base import Config
+
+logger = logging.getLogger(__name__)
 
 # --- emoji flag → ISO code map ---
 # Flag emojis are built from regional indicator pairs. We map the common ones.
@@ -73,14 +80,10 @@ _NAME_TO_CODE: dict[str, str] = {
     "england": "GB",
     "france": "FR",
     "japan": "JP",
-    "singapore": "SG",
     "canada": "CA",
     "australia": "AU",
     "korea": "KR",
     "south korea": "KR",
-    "hong kong": "HK",
-    "hongkong": "HK",
-    "taiwan": "TW",
     "india": "IN",
     "russia": "RU",
     "россия": "RU",
@@ -98,6 +101,16 @@ _NAME_TO_CODE: dict[str, str] = {
     "ukraine": "UA",
     "brazil": "BR",
     "mexico": "MX",
+    "indonesia": "ID",
+    "thailand": "TH",
+    "vietnam": "VN",
+    "philippines": "PH",
+    "malaysia": "MY",
+    "uae": "AE",
+    "united arab emirates": "AE",
+    "emirates": "AE",
+    "south africa": "ZA",
+    "argentina": "AR",
 }
 
 # --- city name → ISO code ---
@@ -221,7 +234,72 @@ _CITY_TO_CODE: dict[str, str] = {
     # Czech
     "prague": "CZ",
     "praha": "CZ",
+    # Indonesia
+    "jakarta": "ID",
+    # Thailand
+    "bangkok": "TH",
+    # Vietnam
+    "hanoi": "VN",
+    "ho chi minh": "VN",
+    "saigon": "VN",
+    # Philippines
+    "manila": "PH",
+    # Malaysia
+    "kuala lumpur": "MY",
+    "kl": "MY",
+    # UAE
+    "dubai": "AE",
+    "abu dhabi": "AE",
+    # South Africa
+    "johannesburg": "ZA",
+    # Argentina
+    "buenos aires": "AR",
 }
+
+# --- single source of truth for supported country codes ---
+# _CODE_RE and _HOST_COUNTRY_RE are auto-generated from this tuple.
+# _EMOJI_TO_CODE, _NAME_TO_CODE, _CITY_TO_CODE are independent hardcoded
+# dicts — their values should be a subset of _SUPPORTED_CODES (verified
+# at import time below).  Adding a new country means appending one line
+# here AND adding entries to the relevant dicts above.
+_SUPPORTED_CODES: tuple[str, ...] = (
+    "DE",
+    "FI",
+    "NL",
+    "US",
+    "GB",
+    "FR",
+    "JP",
+    "SG",
+    "CA",
+    "AU",
+    "KR",
+    "HK",
+    "TW",
+    "IN",
+    "RU",
+    "TR",
+    "IR",
+    "PL",
+    "SE",
+    "CH",
+    "AT",
+    "BE",
+    "ES",
+    "IT",
+    "CZ",
+    "UA",
+    "BR",
+    "MX",
+    "ID",
+    "TH",
+    "VN",
+    "PH",
+    "MY",
+    "AE",
+    "ZA",
+    "AR",
+)
 
 # Regex: standalone 2-letter country code (DE, FI, NL, US) surrounded by
 # non-alpha boundaries. Matches patterns like "DE-01", "US-1", "[DE]", "NL01".
@@ -229,14 +307,14 @@ _CITY_TO_CODE: dict[str, str] = {
 # "in" → IN (India), "at" → AT (Austria), "be" → BE (Belgium), "es" → ES (Spain).
 # VPN configs use UPPERCASE country codes in remarks (DE-01, US-1, [FI]).
 _CODE_RE = re.compile(
-    r"(?:^|[^A-Za-z])(DE|FI|NL|US|GB|FR|JP|SG|CA|AU|KR|HK|TW|IN|RU|TR|IR|PL|SE|CH|AT|BE|ES|IT|CZ|UA|BR|MX|ID)(?:[^A-Za-z]|$)",
+    r"(?:^|[^A-Za-z])(" + "|".join(_SUPPORTED_CODES) + r")(?:[^A-Za-z]|$)",
 )
 
 # Hostname prefix patterns: de01.vpn.com, us-east.server.net, nl-ams.vpn.net
 # Matches 2-letter country code at start of a hostname segment followed by digit or hyphen.
 # Case-insensitive — hostnames are case-insensitive.
 _HOST_COUNTRY_RE = re.compile(
-    r"(?:^|\.|[-_])(DE|FI|NL|US|GB|FR|JP|SG|CA|AU|KR|HK|TW|IN|RU|TR|IR|PL|SE|CH|AT|BE|ES|IT|CZ|UA|BR|MX|ID)[-\d]",
+    r"(?:^|\.|[-_])(" + "|".join(_SUPPORTED_CODES) + r")[-\d]",
     re.IGNORECASE,
 )
 
@@ -323,7 +401,7 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
     return None
 
 
-def filter_by_country(configs: list, allowed: list[str]) -> list:
+def filter_by_country(configs: list[Config], allowed: list[str]) -> list[Config]:
     """Filter configs to only those whose remark matches an allowed country.
 
     Args:
@@ -332,11 +410,29 @@ def filter_by_country(configs: list, allowed: list[str]) -> list:
             Empty list = no filtering (return all).
 
     Returns filtered list. Configs get ``country`` set when detected.
+
+    Raises a warning (never an exception) if ``allowed`` contains codes not in
+    :data:`_SUPPORTED_CODES` — such codes will never match because
+    :func:`detect_country` only returns codes from that set.  This catches
+    typos in ``settings.yaml`` (e.g. ``"UK"`` instead of ``"GB"``).
     """
     if not allowed:
         return configs
 
     allowed_upper = {c.upper() for c in allowed}
+
+    # Warn about unsupported codes — they silently never match, which is a
+    # common misconfiguration (e.g. "UK" vs "GB", "USA" vs "US").
+    invalid = allowed_upper - set(_SUPPORTED_CODES)
+    if invalid:
+        logger.warning(
+            "allowed_countries contains code(s) not supported by "
+            "detect_country: %s — these will never match any config. "
+            "Supported codes: %s",
+            ", ".join(sorted(invalid)),
+            ", ".join(_SUPPORTED_CODES),
+        )
+
     result = []
     for cfg in configs:
         if cfg.country is None:

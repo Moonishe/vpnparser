@@ -70,6 +70,13 @@ class BaseParser(ABC):
     # subclasses set this, e.g. "vmess", "vless"
     protocol: ClassVar[str] = ""
 
+    # URL schemes this parser accepts.  Defaults to ``(protocol,)`` — most
+    # parsers handle exactly one scheme.  Parsers with aliases (e.g.
+    # Hysteria2Parser accepts both ``hysteria2://`` and ``hy2://``) override
+    # this.  Used by :data:`src.parsers.PARSER_BY_SCHEME` for O(1) dispatch
+    # instead of an O(N) linear scan over ALL_PARSERS.
+    schemes: ClassVar[tuple[str, ...]] = ()
+
     @abstractmethod
     def parse(self, link: str) -> Config | None:
         """Parse a single link into a Config object.
@@ -79,7 +86,14 @@ class BaseParser(ABC):
         ...
 
     def can_parse(self, link: str) -> bool:
-        """Check if this parser handles the given link scheme."""
+        """Check if this parser handles the given link scheme.
+
+        Returns ``False`` (never raises) for ``None`` or empty input —
+        callers sometimes pass values from unreliable sources, and
+        ``parse()`` already fails soft to ``None`` for the same reason.
+        """
+        if not link:
+            return False
         return link.strip().lower().startswith(f"{self.protocol}://")
 
 
@@ -115,13 +129,154 @@ def extract_remark(fragment: str) -> str:
     return unquote(fragment)
 
 
-# Scheme alternation: vmess, vless, trojan, ss, hysteria2, hy2.
+def split_host_port(hostport: str) -> tuple[str, int] | None:
+    """Split a ``host:port`` string into ``(host, port)``.
+
+    Handles:
+    - Regular hostnames: ``example.com:443``
+    - Bracketed IPv6: ``[::1]:443``, ``[2001:db8::1]:443``
+
+    Returns ``None`` when:
+    - No port is present (``example.com`` with no ``:``).
+    - The port is not an integer in the valid range **1–65535**.
+    - The host is empty after stripping brackets/whitespace.
+    - A **bare** IPv6 address (multiple colons, no ``[…]`` brackets) is
+      supplied — the port boundary is ambiguous per RFC 2732, so a proper
+      IPv6 link must use brackets: ``[2001:db8::1]:443``.
+
+    This replaces the ad-hoc ``rsplit(":", 1)`` + ``strip("[]")`` idiom that
+    silently turned ``token@2001:db8::1`` (no port, bare IPv6) into the
+    garbage config ``address='2001:db8:', port=1``.
+    """
+    if not hostport:
+        return None
+
+    # Bracketed IPv6: [addr]:port
+    if hostport.startswith("["):
+        close = hostport.find("]")
+        if close == -1:
+            return None  # unclosed bracket
+        host = hostport[1:close].strip()
+        rest = hostport[close + 1 :]
+        if not rest.startswith(":"):
+            return None  # no port separator after bracket
+        port_str = rest[1:]
+    else:
+        # Regular hostname:port.  A bare IPv6 address (more than one colon,
+        # no brackets) is ambiguous — reject it instead of guessing.
+        if hostport.count(":") != 1:
+            return None
+        host, port_str = hostport.rsplit(":", 1)
+        host = host.strip()
+
+    if not host:
+        return None
+
+    try:
+        port = int(port_str)
+    except (ValueError, TypeError):
+        return None
+    if not (1 <= port <= 65535):
+        return None
+
+    return (host, port)
+
+
+def parse_password_host_port(
+    link: str, protocol: str, *, network: str = "tcp"
+) -> Config | None:
+    """Parse a ``protocol://PASSWORD@HOST:PORT?params#REMARK`` link.
+
+    Shared parser core for password-based protocols that follow the same URL
+    shape (currently shadowtls and anytls).  Manual splitting is used instead
+    of :func:`urllib.parse.urlparse` because urlparse does not extract userinfo
+    for non-standard schemes.
+
+    The password (URL userinfo) is percent-decoded with
+    :func:`urllib.parse.unquote`.  ``sni`` and ``alpn`` are read from the query
+    string; all other query params stay encoded in ``raw_link``.
+
+    Args:
+        link: Raw link string starting with ``protocol://``.
+        protocol: Protocol name (must match the scheme prefix in *link*).
+        network: Transport network value for the :class:`Config`
+            (default ``"tcp"``).
+
+    Returns:
+        A :class:`Config` on success, or ``None`` if the link is malformed
+        (missing/empty password, host or port; bad port range).
+    """
+    try:
+        normalized = link.strip()
+        low = normalized.lower()
+        scheme = f"{protocol}://"
+        if not low.startswith(scheme):
+            return None
+
+        body = normalized.split("://", 1)[1]
+
+        # Split fragment (remark)
+        if "#" in body:
+            body, fragment = body.split("#", 1)
+        else:
+            fragment = ""
+        remark = extract_remark(fragment)
+
+        # Split query
+        if "?" in body:
+            hostport, query_str = body.split("?", 1)
+        else:
+            hostport, query_str = body, ""
+
+        # Split userinfo (password) FIRST — before stripping path.
+        # If we strip path first, a password containing "/" would be
+        # truncated at the first "/" and lose the "@" separator.
+        if "@" in hostport:
+            userinfo, hostport = hostport.rsplit("@", 1)
+            password = unquote(userinfo)
+        else:
+            password = ""
+
+        # Reject empty / whitespace-only passwords.
+        if not password or not password.strip():
+            return None
+
+        # Strip path component from host:port only (e.g. trailing "/").
+        if "/" in hostport:
+            hostport = hostport.split("/", 1)[0]
+
+        # Split host:port (handles bracketed IPv6, rejects bare IPv6).
+        parsed_hp = split_host_port(hostport)
+        if parsed_hp is None:
+            return None
+        host, port = parsed_hp
+
+        query = parse_qs_single(query_str)
+
+        return Config(
+            protocol=protocol,
+            address=host,
+            port=port,
+            uuid_or_password=password,
+            network=network,
+            security="tls",
+            sni=query.get("sni"),
+            alpn=query.get("alpn"),
+            remark=remark,
+            raw_link=link,
+        )
+    except Exception:
+        return None
+
+
+# Scheme alternation: vmess, vless, trojan, ss, hysteria2, hy2,
+# tuic, shadowtls, anytls.
 # "hysteria2" requires the literal "2" (Hysteria v1 is a different protocol
 # with no parser here). "hy2" is the short alias and must be listed explicitly
 # — otherwise hy2:// links in source text are silently dropped by
 # find_all_links and never reach the parser.
 PROTOCOL_PATTERN = re.compile(
-    r"(?:vmess|vless|trojan|ss|hysteria2|hy2)://[^\s<>'\"]+",
+    r"(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)://[^\s<>'\"]+",
     re.IGNORECASE,
 )
 

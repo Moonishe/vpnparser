@@ -17,11 +17,17 @@ from __future__ import annotations
 from src.parsers.base import find_all_links, safe_b64decode
 
 # Schemes that mark a single proxy link (not a subscription blob).
+# Kept in sync with PROTOCOL_PATTERN in base.py.
 _PROXY_SCHEMES: tuple[str, ...] = (
     "vmess://",
     "vless://",
     "trojan://",
     "ss://",
+    "hysteria2://",
+    "hy2://",
+    "tuic://",
+    "shadowtls://",
+    "anytls://",
 )
 
 

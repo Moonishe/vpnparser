@@ -25,7 +25,7 @@ from typing import Any
 
 import yaml
 
-from src.parsers import ALL_PARSERS
+from src.parsers import ALL_PARSERS, PARSER_BY_SCHEME
 from src.parsers.base import Config, find_all_links, is_garbage_config
 from src.parsers.subscription import SubscriptionParser
 
@@ -379,21 +379,30 @@ class PipelineRunner:
         return links
 
     def _parse_one_link(self, link: str) -> Config | None:
-        """Try every parser in ALL_PARSERS against a single link.
+        """Parse a single link via O(1) scheme dispatch.
 
-        Returns the first successful Config, or None if no parser matched.
+        The scheme is extracted from the link and looked up in
+        :data:`PARSER_BY_SCHEME`.  This replaces the previous O(N) loop over
+        ``ALL_PARSERS`` that called ``can_parse()`` (strip+lower+startswith)
+        on every parser for every link.
+
+        ``parse()`` still re-checks the scheme internally (defence in depth),
+        so a corrupt dispatch entry cannot cause a wrong parser to run.
+
+        Returns the parsed :class:`Config`, or ``None`` if no parser matched.
         """
-        for parser in ALL_PARSERS:
-            try:
-                if not parser.can_parse(link):
-                    continue
-                cfg = parser.parse(link)
-                if cfg is not None:
-                    return cfg
-            except Exception as exc:
-                logger.debug("Parser %s raised on link: %s", type(parser).__name__, exc)
-                continue
-        return None
+        low = link.strip().lower()
+        idx = low.find("://")
+        if idx < 0:
+            return None
+        parser = PARSER_BY_SCHEME.get(low[:idx])
+        if parser is None:
+            return None
+        try:
+            return parser.parse(link)
+        except Exception as exc:
+            logger.debug("Parser %s raised on link: %s", type(parser).__name__, exc)
+            return None
 
     @staticmethod
     def _filter_garbage(configs: list[Config]) -> tuple[list[Config], int]:

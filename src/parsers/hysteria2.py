@@ -17,7 +17,13 @@ from __future__ import annotations
 from typing import ClassVar
 from urllib.parse import unquote
 
-from src.parsers.base import BaseParser, Config, extract_remark, parse_qs_single
+from src.parsers.base import (
+    BaseParser,
+    Config,
+    extract_remark,
+    parse_qs_single,
+    split_host_port,
+)
 
 
 class Hysteria2Parser(BaseParser):
@@ -25,8 +31,16 @@ class Hysteria2Parser(BaseParser):
 
     protocol: ClassVar[str] = "hysteria2"
 
+    # Both "hysteria2://" and the short alias "hy2://" map to this parser.
+    schemes: ClassVar[tuple[str, ...]] = ("hysteria2", "hy2")
+
     def can_parse(self, link: str) -> bool:
-        """Check if this parser handles the given link scheme."""
+        """Check if this parser handles the given link scheme.
+
+        Returns ``False`` (never raises) for ``None`` or empty input.
+        """
+        if not link:
+            return False
         low = link.strip().lower()
         return low.startswith("hysteria2://") or low.startswith("hy2://")
 
@@ -76,22 +90,19 @@ class Hysteria2Parser(BaseParser):
             else:
                 password = ""
 
-            if not password:
+            # Reject empty / whitespace-only passwords.
+            if not password or not password.strip():
                 return None
 
-            # Split host:port
-            if ":" not in hostport:
+            # Strip path component (e.g. trailing "/" or "/path").
+            if "/" in hostport:
+                hostport = hostport.split("/", 1)[0]
+
+            # Split host:port (handles bracketed IPv6, rejects bare IPv6).
+            parsed_hp = split_host_port(hostport)
+            if parsed_hp is None:
                 return None
-            host, port_str = hostport.rsplit(":", 1)
-            host = host.strip("[]")  # IPv6 brackets
-            if not host:
-                return None
-            try:
-                port = int(port_str)
-            except ValueError:
-                return None
-            if not (1 <= port <= 65535):
-                return None
+            host, port = parsed_hp
 
             query = parse_qs_single(query_str)
 
