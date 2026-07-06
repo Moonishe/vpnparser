@@ -17,6 +17,7 @@ continues with whatever data survived the previous stage.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -158,7 +159,12 @@ class PipelineRunner:
         output_files = [output_file]
 
         for list_type, split_file in self._split_output_files(output_file).items():
-            self._process_and_write_configs(
+            # Offload CPU-heavy sync work (filter/dedup/country/sort/write) to a
+            # thread so the event loop stays responsive.  Each split processes a
+            # disjoint group of Configs, and calls are awaited sequentially, so
+            # there are no race conditions on cfg.country or file writes.
+            await asyncio.to_thread(
+                self._process_and_write_configs,
                 list(configs_by_list.get(list_type, [])),
                 split_file,
                 label=list_type,
@@ -297,7 +303,9 @@ class PipelineRunner:
         return grouped
 
     @staticmethod
-    def _flatten_config_groups(configs_by_list: dict[str, list[Config]]) -> list[Config]:
+    def _flatten_config_groups(
+        configs_by_list: dict[str, list[Config]],
+    ) -> list[Config]:
         """Flatten grouped configs preserving source group insertion order."""
         return [cfg for group in configs_by_list.values() for cfg in group]
 
@@ -714,13 +722,24 @@ class PipelineRunner:
         return count
 
     def _split_output_files(self, combined_output_file: str) -> dict[str, str]:
-        """Return configured split output files keyed by normalized list type."""
+        """Return configured split output files keyed by normalized list type.
+
+        Two collision types are detected — in both the **first** entry wins
+        and the duplicate is skipped with a warning (no silent data loss):
+
+        - **Same list_type**: two keys normalize to the same list type
+          (e.g. ``blacklist`` and ``bl`` both -> ``blacklist``).
+        - **Same path**: two different list_types point to the same file
+          path — without this check ``run()`` would write the file twice
+          and the second write would silently clobber the first.
+        """
         pcfg = self._section("publisher")
         raw = pcfg.get("split_output_files", {})
         if not isinstance(raw, dict):
             return {}
 
         result: dict[str, str] = {}
+        seen_paths: set[str] = set()
         for key, path in raw.items():
             list_type = normalize_list_type(key)
             if list_type == "mixed" or not path:
@@ -728,6 +747,29 @@ class PipelineRunner:
             path_str = str(path)
             if path_str == combined_output_file:
                 continue
+            if list_type in result:
+                logger.warning(
+                    "split_output_files: key '%s' normalizes to '%s' which is "
+                    "already mapped to '%s' — ignoring path '%s'. "
+                    "Fix: remove the duplicate key or use a distinct list_type.",
+                    key,
+                    list_type,
+                    result[list_type],
+                    path_str,
+                )
+                continue
+            if path_str in seen_paths:
+                owner = next((lt for lt, p in result.items() if p == path_str), "?")
+                logger.warning(
+                    "split_output_files: path '%s' is already used by "
+                    "list_type '%s' — ignoring duplicate for '%s' to "
+                    "prevent overwriting. Fix: use a distinct output path.",
+                    path_str,
+                    owner,
+                    list_type,
+                )
+                continue
+            seen_paths.add(path_str)
             result[list_type] = path_str
         return result
 

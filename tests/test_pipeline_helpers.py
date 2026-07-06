@@ -23,7 +23,9 @@ def test_list_type_normalization_and_inference() -> None:
     assert infer_source_list_type({"path": "configs/obhod_WL"}) == "whitelist"
 
 
-def test_source_manager_raw_source_filters_files_and_sets_list_type(tmp_path, monkeypatch) -> None:
+def test_source_manager_raw_source_filters_files_and_sets_list_type(
+    tmp_path, monkeypatch
+) -> None:
     manager = SourceManager(
         sources_file=str(tmp_path / "missing-sources.json"),
         settings_file=str(tmp_path / "missing-settings.yaml"),
@@ -31,7 +33,10 @@ def test_source_manager_raw_source_filters_files_and_sets_list_type(tmp_path, mo
 
     async def fake_fetch_directory(*args, **kwargs):
         return [
-            ("keep.txt", "vless://11111111-1111-4111-8111-111111111111@example.com:443"),
+            (
+                "keep.txt",
+                "vless://11111111-1111-4111-8111-111111111111@example.com:443",
+            ),
             ("drop.txt", "trojan://secret@example.org:443"),
         ]
 
@@ -54,6 +59,26 @@ def test_source_manager_raw_source_filters_files_and_sets_list_type(tmp_path, mo
     assert result.files == [
         ("keep.txt", "vless://11111111-1111-4111-8111-111111111111@example.com:443")
     ]
+
+
+def test_filter_files_ignores_non_list_values() -> None:
+    """Non-list include_files/exclude_files must not filter or crash."""
+    files = [("a.txt", "x"), ("b.txt", "y")]
+
+    # String instead of list — must NOT iterate characters.
+    assert SourceManager._filter_files({"include_files": "a.txt"}, files) == files
+    # Integer instead of list — must NOT raise TypeError.
+    assert SourceManager._filter_files({"include_files": 42}, files) == files
+    # None — no filtering.
+    assert SourceManager._filter_files({"include_files": None}, files) == files
+
+
+def test_filter_files_skips_none_items_in_list() -> None:
+    """None items inside include_files must not become the string 'none'."""
+    files = [("a.txt", "x"), ("b.txt", "y"), ("none", "z")]
+    # Before the fix, [None] -> {"none"} -> filtered out everything except "none".
+    result = SourceManager._filter_files({"include_files": [None]}, files)
+    assert result == files  # None item is skipped, no filtering applied
 
 
 def test_load_dotenv_if_available_calls_installed_dotenv(monkeypatch) -> None:
@@ -167,7 +192,9 @@ def test_process_and_write_configs_writes_split_output(tmp_path) -> None:
         sources_path=str(tmp_path / "missing-sources.json"),
     )
 
-    count = runner._process_and_write_configs([cfg], str(output_file), label="whitelist")
+    count = runner._process_and_write_configs(
+        [cfg], str(output_file), label="whitelist"
+    )
     decoded = base64.b64decode(output_file.read_text(encoding="utf-8")).decode("utf-8")
 
     assert count == 1

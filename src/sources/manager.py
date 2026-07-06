@@ -225,17 +225,26 @@ class SourceManager:
         source: dict,
         files: list[tuple[str, str]],
     ) -> list[tuple[str, str]]:
-        """Apply optional include_files/exclude_files filters to raw sources."""
-        include = {
-            str(item).strip().lower()
-            for item in source.get("include_files", []) or []
-            if str(item).strip()
-        }
-        exclude = {
-            str(item).strip().lower()
-            for item in source.get("exclude_files", []) or []
-            if str(item).strip()
-        }
+        """Apply optional include_files/exclude_files filters to raw sources.
+
+        Non-list values (str, int, None) are silently ignored — only actual
+        lists are iterated.  ``None`` items inside a list are skipped so they
+        cannot become the literal string ``"none"`` and accidentally filter
+        out every file.
+        """
+
+        def _to_filter_set(key: str) -> set[str]:
+            raw = source.get(key)
+            if not isinstance(raw, list):
+                return set()
+            return {
+                str(item).strip().lower()
+                for item in raw
+                if item is not None and str(item).strip()
+            }
+
+        include = _to_filter_set("include_files")
+        exclude = _to_filter_set("exclude_files")
         if not include and not exclude:
             return files
 

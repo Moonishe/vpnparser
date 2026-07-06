@@ -11,10 +11,13 @@ are routed through it (same rationale as TCP check).
 from __future__ import annotations
 
 import asyncio
+import logging
 import ssl
 from typing import Any
 
 from src.parsers.base import Config
+
+logger = logging.getLogger(__name__)
 
 
 async def _open_connection_direct(
@@ -117,19 +120,26 @@ async def validate_configs_tls(
         if cfg.security not in ("tls", "reality"):
             return
         async with semaphore:
-            ok = await tls_check(
-                cfg.address,
-                cfg.port,
-                sni=cfg.sni,
-                timeout=timeout,
-                proxy_url=proxy_url,
-            )
-            cfg.is_alive = ok
+            try:
+                ok = await tls_check(
+                    cfg.address,
+                    cfg.port,
+                    sni=cfg.sni,
+                    timeout=timeout,
+                    proxy_url=proxy_url,
+                )
+                cfg.is_alive = ok
+            except Exception as exc:
+                logger.debug(
+                    "TLS check failed for %s:%d: %s — marking as dead.",
+                    cfg.address,
+                    cfg.port,
+                    exc,
+                )
+                cfg.is_alive = False
 
-    await asyncio.gather(*(_check_one(c) for c in configs))
+    await asyncio.gather(*(_check_one(c) for c in configs), return_exceptions=True)
 
     return [
-        c
-        for c in configs
-        if c.security not in ("tls", "reality") or c.is_alive is True
+        c for c in configs if c.security not in ("tls", "reality") or c.is_alive is True
     ]
