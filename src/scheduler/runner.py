@@ -96,13 +96,13 @@ class PipelineRunner:
 
         # 2. Parse all content into Config objects grouped by source list type.
         configs_by_list = await self._parse_all_by_list(results)
-        configs = self._flatten_config_groups(configs_by_list)
+        total_count = sum(len(v) for v in configs_by_list.values())
         logger.info(
             "Parsed %d configs total across %d list group(s).",
-            len(configs),
+            total_count,
             len(configs_by_list),
         )
-        if not configs:
+        if total_count == 0:
             logger.warning(
                 "No configs parsed from sources — pipeline produced nothing."
             )
@@ -110,65 +110,57 @@ class PipelineRunner:
             self._write_empty_split_outputs(output_file)
             return 0
 
-        # 2b. Filter out garbage/placeholder configs (UUID, SERVER_IP, etc).
-        configs, garbage_count = self._filter_garbage(configs)
-        if garbage_count:
-            logger.info("Filtered %d garbage/placeholder configs.", garbage_count)
-        if not configs:
-            logger.warning("All configs were garbage — pipeline produced nothing.")
-            self._write_empty_output(output_file)
-            self._write_empty_split_outputs(output_file)
-            return 0
+        # 3. Process each list type through the pipeline independently.
+        #    This gives a fair share to each list in the combined output
+        #    (blacklist + whitelist balanced 50/50 instead of blacklist dominating).
+        processed_by_list: dict[str, list[Config]] = {}
+        for list_type, group in configs_by_list.items():
+            processed = self._process_configs(list(group), label=list_type)
+            if processed:
+                processed_by_list[list_type] = processed
 
-        # 2c. Sample if too many configs (620K is not feasible to process).
-        vcfg = self._section("validator")
-        max_to_process = int(vcfg.get("max_configs_to_validate", 20000))
-        if max_to_process > 0 and len(configs) > max_to_process:
-            import random
-
-            logger.info(
-                "Sampling %d configs from %d for processing.",
-                max_to_process,
-                len(configs),
-            )
-            configs = random.sample(configs, max_to_process)
-
-        # 3. Dedup FIRST — one server = one config (address, port).
-        #    Deduping before country detection saves CPU: detect_country is
-        #    the most expensive step (~12µs/call), so fewer configs = faster.
-        configs = self._dedup_only(configs)
-        logger.info("After dedup: %d configs.", len(configs))
-
-        # 4. Country filter (no network — instant for remaining configs).
-        configs = self._filter_countries(configs)
-        logger.info("After country filter: %d configs.", len(configs))
-
-        if not configs:
+        if not processed_by_list:
             logger.warning("No configs matched allowed countries.")
             self._write_empty_output(output_file)
             self._write_empty_split_outputs(output_file)
             return 0
 
-        # 5. Aggregate: sort -> limit (dedup already done).
-        configs = self._sort_and_limit(configs)
-        logger.info("After aggregation: %d configs.", len(configs))
+        # 4. Build combined output: interleave blacklist + whitelist for balance.
+        #    Taking 75 from each then dedup leaves blacklist dominating because
+        #    it has more unique servers.  Interleaving ensures fair representation.
+        acfg = self._section("aggregator")
+        max_total = int(acfg.get("max_configs_in_output", 75))
 
-        # 5. Write output.
-        count = self._write_output(configs, output_file)
+        lists = list(processed_by_list.values())
+        combined: list[Config] = []
+        i = 0
+        while len(combined) < max_total * 2 and any(i < len(l) for l in lists):
+            for configs in lists:
+                if i < len(configs):
+                    combined.append(configs[i])
+            i += 1
+
+        # Dedup (same server in both lists) + final sort.
+        combined = self._dedup_only(combined)
+        combined = self._sort_and_limit(combined)
+        logger.info("Combined after interleave+dedup+sort: %d configs.", len(combined))
+
+        # 5. Write combined output.
+        count = self._write_output(combined, output_file)
         logger.info("Wrote %d configs to %s.", count, output_file)
         output_files = [output_file]
 
+        # 6. Write split outputs (already processed — just write).
         for list_type, split_file in self._split_output_files(output_file).items():
-            # Offload CPU-heavy sync work (filter/dedup/country/sort/write) to a
-            # thread so the event loop stays responsive.  Each split processes a
-            # disjoint group of Configs, and calls are awaited sequentially, so
-            # there are no race conditions on cfg.country or file writes.
-            await asyncio.to_thread(
-                self._process_and_write_configs,
-                list(configs_by_list.get(list_type, [])),
-                split_file,
-                label=list_type,
-            )
+            split_configs = processed_by_list.get(list_type, [])
+            if split_configs:
+                split_count = self._write_output(split_configs, split_file)
+                logger.info(
+                    "Wrote %d %s configs to %s.", split_count, list_type, split_file
+                )
+            else:
+                self._write_empty_output(split_file)
+                logger.warning("No configs for %s output.", list_type)
             output_files.append(split_file)
 
         # 6. Publish (optional).
@@ -664,20 +656,19 @@ class PipelineRunner:
 
         return list(result) if result else []
 
-    def _process_and_write_configs(
+    def _process_configs(
         self,
         configs: list[Config],
-        output_file: str,
         *,
         label: str,
-    ) -> int:
-        """Filter, aggregate, and write a single output file."""
-        logger.info("Processing %s output with %d parsed configs.", label, len(configs))
+    ) -> list[Config]:
+        """Run configs through the pipeline: garbage -> sample -> dedup -> country -> sort.
 
+        Returns processed configs (or empty list if nothing survived).
+        Does NOT write to disk — caller handles output.
+        """
         if not configs:
-            logger.warning("No configs for %s output.", label)
-            self._write_empty_output(output_file)
-            return 0
+            return []
 
         configs, garbage_count = self._filter_garbage(configs)
         if garbage_count:
@@ -687,9 +678,7 @@ class PipelineRunner:
                 label,
             )
         if not configs:
-            logger.warning("All configs were garbage for %s output.", label)
-            self._write_empty_output(output_file)
-            return 0
+            return []
 
         vcfg = self._section("validator")
         max_to_process = int(vcfg.get("max_configs_to_validate", 20000))
@@ -710,12 +699,25 @@ class PipelineRunner:
         configs = self._filter_countries(configs)
         logger.info("%s after country filter: %d configs.", label, len(configs))
         if not configs:
-            logger.warning("No configs matched allowed countries for %s.", label)
-            self._write_empty_output(output_file)
-            return 0
+            return []
 
         configs = self._sort_and_limit(configs)
         logger.info("%s after aggregation: %d configs.", label, len(configs))
+        return configs
+
+    def _process_and_write_configs(
+        self,
+        configs: list[Config],
+        output_file: str,
+        *,
+        label: str,
+    ) -> int:
+        """Filter, aggregate, and write a single output file."""
+        configs = self._process_configs(configs, label=label)
+        if not configs:
+            logger.warning("No configs for %s output.", label)
+            self._write_empty_output(output_file)
+            return 0
 
         count = self._write_output(configs, output_file)
         logger.info("Wrote %d %s configs to %s.", count, label, output_file)
