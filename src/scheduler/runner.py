@@ -1,15 +1,14 @@
-"""Pipeline orchestrator — fetch -> parse -> validate -> aggregate -> publish.
+"""Pipeline orchestrator — fetch -> parse -> filter -> aggregate -> write -> publish.
 
 ``PipelineRunner`` ties together every stage of the VPN config pipeline:
 
-1. **Fetch**   — ``SourceManager.fetch_all()`` pulls files from configured sources.
-2. **Parse**   — ``_parse_all()`` extracts proxy links and turns them into
-                 ``Config`` objects via ``ALL_PARSERS`` (with subscription-blob
-                 support via ``SubscriptionParser``).
-3. **Validate**— TCP connect (L1) -> TLS handshake (L2) -> GeoIP enrichment (L3).
-4. **Aggregate**— dedup -> sort -> per-country limit -> global cap.
-5. **Write**   — ``write_subscription()`` emits the output file.
-6. **Publish** — (optional) commit the output to a GitHub repo.
+1. **Fetch**    — ``SourceManager.fetch_all()`` pulls files from configured sources.
+2. **Parse**    — ``_parse_all_by_list()`` extracts proxy links and turns them into
+                  ``Config`` objects grouped by source ``list_type`` (blacklist/whitelist).
+3. **Filter**   — garbage/placeholder filter -> sample -> dedup -> country filter.
+4. **Aggregate**— interleave blacklist+whitelist -> sort -> per-country limit.
+5. **Write**    — ``write_subscription()`` emits combined + split output files.
+6. **Publish**  — (optional) commit outputs to a GitHub repo via Contents API.
 
 Each stage is wrapped so a failure is logged and, where possible, the pipeline
 continues with whatever data survived the previous stage.
@@ -227,50 +226,6 @@ class PipelineRunner:
 
     # --- stage 2: parse ---
 
-    async def _parse_all(self, results: list[Any]) -> list[Config]:
-        """Parse all source results into Config objects.
-
-        For each source result:
-        - Iterate ``result.files`` as ``(filename, content)`` tuples.
-        - If ``SubscriptionParser.is_subscription(content)`` -> extract links
-          from the subscription blob.
-        - Otherwise ``find_all_links(content)`` extracts links from raw text.
-        - For each link, try each parser in ``ALL_PARSERS`` until one succeeds.
-        """
-        configs: list[Config] = []
-        sub_parser = SubscriptionParser()
-
-        for result in results:
-            files = self._result_files(result)
-            source_name = self._result_name(result)
-
-            for filename, content in files:
-                if not content or not content.strip():
-                    continue
-
-                links = await self._extract_links(
-                    sub_parser, content, filename, source_name
-                )
-                if not links:
-                    logger.debug("No links found in %s (%s).", filename, source_name)
-                    continue
-
-                parsed_here = 0
-                for link in links:
-                    cfg = self._parse_one_link(link)
-                    if cfg is not None:
-                        configs.append(cfg)
-                        parsed_here += 1
-                logger.debug(
-                    "Parsed %d/%d links from %s (%s).",
-                    parsed_here,
-                    len(links),
-                    filename,
-                    source_name,
-                )
-
-        return configs
-
     async def _parse_all_by_list(
         self,
         results: list[Any],
@@ -312,13 +267,6 @@ class PipelineRunner:
                 )
 
         return grouped
-
-    @staticmethod
-    def _flatten_config_groups(
-        configs_by_list: dict[str, list[Config]],
-    ) -> list[Config]:
-        """Flatten grouped configs preserving source group insertion order."""
-        return [cfg for group in configs_by_list.values() for cfg in group]
 
     @staticmethod
     def _result_files(result: Any) -> list[tuple[str, str]]:
@@ -554,67 +502,6 @@ class PipelineRunner:
 
         return filter_by_country(configs, allowed_list)
 
-    async def _run_validator(
-        self,
-        module_path: str,
-        func_name: str,
-        configs: list[Config],
-        *,
-        stage_name: str,
-        **kwargs: Any,
-    ) -> list[Config]:
-        """Dynamically import and call a validator function.
-
-        On any failure, the input ``configs`` is returned unchanged so the
-        pipeline can continue with the previous stage's results.
-        """
-        try:
-            import importlib
-
-            module = importlib.import_module(module_path)
-            func = getattr(module, func_name)
-        except (ImportError, AttributeError) as exc:
-            logger.error(
-                "Validator %s.%s unavailable: %s — skipping %s stage.",
-                module_path,
-                func_name,
-                exc,
-                stage_name,
-            )
-            return configs
-
-        try:
-            logger.info(
-                "Running %s validation on %d configs...", stage_name, len(configs)
-            )
-            result = await func(configs, **kwargs)
-        except TypeError as exc:
-            # Signature mismatch (e.g. validator doesn't accept a kwarg) —
-            # retry positionally with just the configs.
-            logger.warning(
-                "%s validator rejected kwargs (%s) — retrying with configs only.",
-                stage_name,
-                exc,
-            )
-            try:
-                result = await func(configs)
-            except Exception as exc2:
-                logger.error(
-                    "%s validation failed (fallback): %s — passing through.",
-                    stage_name,
-                    exc2,
-                )
-                return configs
-        except Exception as exc:
-            logger.error("%s validation failed: %s — passing through.", stage_name, exc)
-            return configs
-
-        survived = len(result) if result else 0
-        logger.info(
-            "%s validation: %d/%d configs survived.", stage_name, survived, len(configs)
-        )
-        return list(result) if result else []
-
     # --- stage 3+5: aggregate (split into dedup + sort/limit) ---
 
     def _dedup_only(self, configs: list[Config]) -> list[Config]:
@@ -656,37 +543,6 @@ class PipelineRunner:
         except Exception as exc:
             logger.error("sort_and_limit failed: %s — passing through.", exc)
             return configs[:max_configs]
-
-    def _aggregate(self, configs: list[Config]) -> list[Config]:
-        """Dedup -> sort -> limit via ``merge_and_filter``."""
-        acfg = self._section("aggregator")
-        max_configs = self._max_configs()
-        sort_by = str(acfg.get("sort_by", "latency"))
-        try:
-            max_per_country = int(acfg.get("max_per_country", 0))
-        except (TypeError, ValueError):
-            max_per_country = 0
-
-        try:
-            from src.aggregator.merger import merge_and_filter
-        except (ImportError, AttributeError) as exc:
-            logger.error(
-                "Cannot import merge_and_filter: %s — skipping aggregation.", exc
-            )
-            return configs
-
-        try:
-            result = merge_and_filter(
-                configs,
-                max_total=max_configs,
-                sort_by=sort_by,
-                max_per_country=max_per_country,
-            )
-        except Exception as exc:
-            logger.error("merge_and_filter failed: %s — passing through.", exc)
-            return configs
-
-        return list(result) if result else []
 
     def _preprocess_configs(
         self,
