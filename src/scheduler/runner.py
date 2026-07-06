@@ -183,7 +183,11 @@ class PipelineRunner:
         for list_type, split_file in self._split_output_files(output_file).items():
             split_pre = preprocessed_by_list.get(list_type, [])
             if split_pre:
-                split_configs = self._sort_and_limit(split_pre)
+                if list_type == "whitelist":
+                    # Whitelist: 70% RU servers, 30% other countries.
+                    split_configs = self._whitelist_balance(split_pre, max_total)
+                else:
+                    split_configs = self._sort_and_limit(split_pre)
                 split_count = self._write_output(split_configs, split_file)
                 logger.info(
                     "Wrote %d %s configs to %s.", split_count, list_type, split_file
@@ -615,6 +619,56 @@ class PipelineRunner:
             return []
 
         return configs
+
+    def _whitelist_balance(self, configs: list[Config], max_total: int) -> list[Config]:
+        """Build whitelist output: 70% RU servers, 30% other countries.
+
+        RU configs are sorted + limited; non-RU configs are sorted + limited
+        to fill the remaining 30%.  Falls back to all-RU or all-non-RU if
+        one side has too few configs.
+        """
+        from src.aggregator.merger import limit_per_country, sort_configs
+
+        acfg = self._section("aggregator")
+        try:
+            max_per = int(acfg.get("max_per_country", 0))
+        except (TypeError, ValueError):
+            max_per = 0
+
+        ru = [c for c in configs if c.country == "RU"]
+        other = [c for c in configs if c.country != "RU"]
+
+        ru_target = int(max_total * 0.7)
+        other_target = max_total - ru_target
+
+        # Sort + limit each side.
+        ru_sorted = sort_configs(ru, sort_by="country")
+        other_sorted = sort_configs(other, sort_by="country")
+        if max_per > 0:
+            ru_sorted = limit_per_country(ru_sorted, max_per)
+            other_sorted = limit_per_country(other_sorted, max_per)
+
+        ru_result = ru_sorted[:ru_target]
+        other_result = other_sorted[:other_target]
+
+        # Fill shortfall from the other side.
+        shortfall = max_total - len(ru_result) - len(other_result)
+        if shortfall > 0:
+            if len(ru_result) < ru_target and len(other_sorted) > len(other_result):
+                extra = other_sorted[len(other_result) : len(other_result) + shortfall]
+                other_result.extend(extra)
+            elif len(other_result) < other_target and len(ru_sorted) > len(ru_result):
+                extra = ru_sorted[len(ru_result) : len(ru_result) + shortfall]
+                ru_result.extend(extra)
+
+        result = ru_result + other_result
+        logger.info(
+            "Whitelist balance: %d RU + %d other = %d total.",
+            len(ru_result),
+            len(other_result),
+            len(result),
+        )
+        return result
 
     def _process_configs(
         self,
