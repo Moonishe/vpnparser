@@ -3,44 +3,55 @@
     "blacklist": {
       "count": 150,
       "countries": {
-        "CA": 65,
-        "DE": 9,
-        "FI": 25,
-        "FR": 16,
-        "GB": 4,
-        "NL": 14,
-        "US": 17
+        "CA": 19,
+        "DE": 19,
+        "FI": 19,
+        "FR": 19,
+        "GB": 19,
+        "JP": 19,
+        "NL": 18,
+        "US": 18
       },
       "file": "output/subscription-blacklist.txt"
     },
     "combined": {
       "count": 150,
       "countries": {
-        "CA": 65,
-        "DE": 41,
-        "FI": 28,
-        "FR": 16
+        "CA": 17,
+        "DE": 17,
+        "FI": 17,
+        "FR": 17,
+        "GB": 17,
+        "JP": 17,
+        "NL": 16,
+        "RU": 16,
+        "US": 16
       },
       "file": "output/subscription.txt"
     },
     "mix": {
       "count": 150,
       "countries": {
-        "CA": 65,
-        "DE": 24,
-        "FI": 1,
-        "RU": 60
+        "CA": 10,
+        "DE": 14,
+        "FI": 14,
+        "FR": 13,
+        "GB": 9,
+        "JP": 9,
+        "NL": 12,
+        "RU": 60,
+        "US": 9
       },
       "file": "output/subscription-mix.txt"
     },
     "whitelist": {
       "count": 150,
       "countries": {
-        "DE": 33,
-        "FI": 3,
-        "FR": 6,
-        "NL": 12,
-        "RU": 96
+        "DE": 10,
+        "FI": 4,
+        "FR": 7,
+        "NL": 9,
+        "RU": 120
       },
       "file": "output/subscription-whitelist.txt"
     }
@@ -53,18 +64,18 @@
         "checked": true,
         "fail_open": false,
         "filtered": true,
-        "input": 2099,
+        "input": 2079,
         "min_alive_to_filter": 10,
-        "output_after_tcp": 153,
-        "proxy_count": 20,
+        "output_after_tcp": 2079,
+        "proxy_count": 12,
         "reason": "",
-        "tcp_alive": 150,
-        "tcp_candidates": 2096,
-        "tcp_checked": 1000,
-        "tcp_max_alive": 150,
+        "tcp_alive": 2075,
+        "tcp_candidates": 2075,
+        "tcp_checked": 2075,
+        "tcp_max_alive": 0,
         "tcp_search_round_limit": 3,
-        "tcp_search_rounds": 1,
-        "tcp_skipped_protocol": 3
+        "tcp_search_rounds": 3,
+        "tcp_skipped_protocol": 4
       },
       "whitelist": {
         "checked": true,
@@ -72,10 +83,10 @@
         "filtered": true,
         "input": 213,
         "min_alive_to_filter": 10,
-        "output_after_tcp": 153,
-        "proxy_count": 20,
+        "output_after_tcp": 213,
+        "proxy_count": 12,
         "reason": "",
-        "tcp_alive": 152,
+        "tcp_alive": 212,
         "tcp_candidates": 212,
         "tcp_checked": 212,
         "tcp_max_alive": 0,
@@ -85,7 +96,7 @@
       }
     },
     "proxy_attempts_per_config": 0,
-    "proxy_count": 20,
+    "proxy_count": 12,
     "proxy_min_proxies": 10,
     "proxy_pool_enabled": true,
     "proxy_pool_required": true,
@@ -95,7 +106,7 @@
         "max_candidates": 250,
         "max_candidates_per_source": 80,
         "round": 1,
-        "working": 20
+        "working": 12
       }
     ],
     "proxy_search_round_limit": 3,

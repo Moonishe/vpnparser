@@ -70,6 +70,9 @@ configs. Subscription titles and Telegram raw GitHub links use
 Telegram notifications read `output/run-summary.json`, so they can show whether
 TCP/SOCKS5 validation ran and list countries separately for the combined,
 blacklist, whitelist, and 75/75 mix subscriptions.
+Blacklist and combined outputs are country-balanced with round-robin selection:
+one server per available country per round, so a large pool such as Canada
+cannot dominate the final 150 slots while other countries have live servers.
 
 ## Supported Protocols
 

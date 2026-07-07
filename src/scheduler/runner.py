@@ -164,36 +164,22 @@ class PipelineRunner:
             self._write_run_summary("no_live_configs")
             return 0
 
-        # 4. Build combined output: interleave blacklist + whitelist for balance.
-        #    Each list is pre-sorted + per-country limited so no single country
-        #    dominates the combined output.
+        # 4. Build combined output from all live configs, then round-robin by
+        #    country so no single country dominates while alternatives exist.
         max_total = self._max_configs()
-        acfg = self._section("aggregator")
-        try:
-            max_per_country = int(acfg.get("max_per_country", 0))
-        except (TypeError, ValueError):
-            max_per_country = 0
 
-        lists = list(preprocessed_by_list.values())
         combined: list[Config] = []
-        i = 0
-        while len(combined) < max_total * 2 and any(i < len(group) for group in lists):
-            for configs in lists:
-                if i < len(configs):
-                    combined.append(configs[i])
-            i += 1
+        for configs in preprocessed_by_list.values():
+            combined.extend(configs)
 
         # Dedup (same server in both lists).
         combined = self._dedup_only(combined)
 
-        # Sort + limit per country so all countries are represented.
-        from src.aggregator.merger import limit_per_country, sort_configs
-
-        combined = sort_configs(combined, sort_by="country")
-        if max_per_country > 0:
-            combined = limit_per_country(combined, max_per_country)
-        combined = combined[:max_total]
-        logger.info("Combined after interleave+dedup+sort: %d configs.", len(combined))
+        combined = self._country_balanced_limit(combined, max_total)
+        logger.info(
+            "Combined after dedup+country-balance: %d configs.",
+            len(combined),
+        )
 
         # 5. Write combined output.
         count = self._write_output(combined, output_file)
@@ -1046,8 +1032,21 @@ class PipelineRunner:
 
     def _sort_and_limit(self, configs: list[Config]) -> list[Config]:
         """Sort and limit configs (dedup already done). Called after country filter."""
-        acfg = self._section("aggregator")
         max_configs = self._max_configs()
+        try:
+            return self._country_balanced_limit(configs, max_configs)
+        except Exception as exc:
+            logger.error("sort_and_limit failed: %s — passing through.", exc)
+            return configs[:max_configs]
+
+    def _country_balanced_limit(
+        self, configs: list[Config], max_total: int
+    ) -> list[Config]:
+        """Limit configs by taking one server per country in repeated rounds."""
+        if max_total <= 0 or not configs:
+            return []
+
+        acfg = self._section("aggregator")
         sort_by = str(acfg.get("sort_by", "country"))
         try:
             max_per_country = int(acfg.get("max_per_country", 0))
@@ -1055,21 +1054,45 @@ class PipelineRunner:
             max_per_country = 0
 
         try:
-            from src.aggregator.merger import sort_configs, limit_per_country
+            from src.aggregator.merger import sort_configs
         except (ImportError, AttributeError) as exc:
             logger.error("Cannot import sort_configs: %s — skipping sort.", exc)
-            return configs[:max_configs]
+            sorted_configs = list(configs)
+        else:
+            sorted_configs = sort_configs(
+                [cfg for cfg in configs if cfg.country is not None],
+                sort_by=sort_by,
+            )
 
-        try:
-            # Filter out configs with no country detected — they waste output slots.
-            configs = [c for c in configs if c.country is not None]
-            sorted_configs = sort_configs(configs, sort_by=sort_by)
-            if max_per_country > 0:
-                sorted_configs = limit_per_country(sorted_configs, max_per_country)
-            return sorted_configs[:max_configs]
-        except Exception as exc:
-            logger.error("sort_and_limit failed: %s — passing through.", exc)
-            return configs[:max_configs]
+        groups: dict[str, list[Config]] = {}
+        for cfg in sorted_configs:
+            if cfg.country is None:
+                continue
+            country = str(cfg.country).upper()
+            bucket = groups.setdefault(country, [])
+            if max_per_country > 0 and len(bucket) >= max_per_country:
+                continue
+            bucket.append(cfg)
+
+        countries = sorted(groups)
+        result: list[Config] = []
+        indexes = {country: 0 for country in countries}
+        while len(result) < max_total:
+            progressed = False
+            for country in countries:
+                index = indexes[country]
+                bucket = groups[country]
+                if index >= len(bucket):
+                    continue
+                result.append(bucket[index])
+                indexes[country] = index + 1
+                progressed = True
+                if len(result) >= max_total:
+                    break
+            if not progressed:
+                break
+
+        return result
 
     def _preprocess_configs(
         self,
@@ -1137,14 +1160,7 @@ class PipelineRunner:
         Defaults to 80% RU and 20% EU. Falls back to the other side if one side
         has too few configs so the output can still reach the configured cap.
         """
-        from src.aggregator.merger import limit_per_country, sort_configs
-
-        acfg = self._section("aggregator")
         vcfg = self._section("validator")
-        try:
-            max_per = int(acfg.get("max_per_country", 0))
-        except (TypeError, ValueError):
-            max_per = 0
         try:
             ru_ratio = float(vcfg.get("whitelist_ru_ratio", 0.8))
         except (TypeError, ValueError):
@@ -1161,12 +1177,8 @@ class PipelineRunner:
         ru_target = int(max_total * ru_ratio)
         eu_target = max_total - ru_target
 
-        # Sort + limit each side.
-        ru_sorted = sort_configs(ru, sort_by="country")
-        eu_sorted = sort_configs(eu, sort_by="country")
-        if max_per > 0:
-            ru_sorted = limit_per_country(ru_sorted, max_per)
-            eu_sorted = limit_per_country(eu_sorted, max_per)
+        ru_sorted = self._country_balanced_limit(ru, max_total)
+        eu_sorted = self._country_balanced_limit(eu, max_total)
 
         ru_result = ru_sorted[:ru_target]
         eu_result = eu_sorted[:eu_target]

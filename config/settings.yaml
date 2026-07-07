@@ -36,7 +36,7 @@ validator:
   tcp_search_rounds: 3
   tcp_max_alive: 150
   tcp_max_alive_by_list:
-    blacklist: 150
+    blacklist: 0
     whitelist: 0
   min_alive_to_filter: 10
   proxy_attempts_per_config: 0

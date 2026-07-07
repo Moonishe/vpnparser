@@ -6,6 +6,7 @@ import builtins
 import json
 import sys
 import types
+from collections import Counter
 
 import httpx
 import pytest
@@ -593,6 +594,37 @@ validator:
     assert cfg.country == "RU"
 
 
+def test_country_balanced_limit_distributes_evenly(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+aggregator:
+  max_configs_in_output: 9
+  sort_by: country
+  max_per_country: 150
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+    configs = [
+        Config(
+            "vless",
+            f"{country.lower()}-{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            country=country,
+        )
+        for country in ("CA", "DE", "FI")
+        for i in range(20)
+    ]
+
+    result = runner._sort_and_limit(configs)
+    counts = Counter(cfg.country for cfg in result)
+
+    assert len(result) == 9
+    assert counts == {"CA": 3, "DE": 3, "FI": 3}
+
+
 def test_split_output_files_from_settings(tmp_path) -> None:
     settings = tmp_path / "settings.yaml"
     settings.write_text(
@@ -689,6 +721,49 @@ validator:
     assert sum(1 for cfg in result if cfg.remark == "whitelist") == 75
     assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "RU") == 60
     assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "DE") == 15
+
+
+def test_whitelist_balance_spreads_eu_countries(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+aggregator:
+  max_configs_in_output: 75
+  sort_by: country
+validator:
+  whitelist_ru_ratio: 0.8
+  whitelist_eu_countries: [DE, FI]
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+    configs = [
+        Config(
+            "vless",
+            f"ru-{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            country="RU",
+        )
+        for i in range(100)
+    ] + [
+        Config(
+            "vless",
+            f"{country.lower()}-{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            country=country,
+        )
+        for country in ("DE", "FI")
+        for i in range(100)
+    ]
+
+    result = runner._whitelist_balance(configs, 75)
+    counts = Counter(cfg.country for cfg in result)
+
+    assert counts["RU"] == 60
+    assert counts["DE"] == 8
+    assert counts["FI"] == 7
 
 
 def test_process_and_write_configs_writes_split_output(tmp_path) -> None:
