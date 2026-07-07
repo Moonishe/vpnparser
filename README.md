@@ -18,17 +18,19 @@ The current pipeline produces four files:
 fetch -> parse -> garbage filter -> dedup -> country filter -> aggregate -> write -> publish
 ```
 
-The default mode keeps the country filter fast, then optionally runs a soft TCP
-liveness check. GitHub Actions often cannot reach VPN servers directly, so the
+The default mode keeps the country filter fast, then runs network liveness
+checks. GitHub Actions often cannot reach VPN servers directly, so the
 validator can build a small free SOCKS5 proxy pool from GitHub-hosted proxy
-lists and route TCP checks through it. The liveness stage is fail-open: if the
-proxy pool is empty or too few servers validate, the original filtered list is
-kept instead of publishing an empty subscription. Each VPN config can be tried
-through several different SOCKS5 proxies before it is treated as unreachable.
-If too few SOCKS5 proxies are found, the proxy search widens the candidate
-sample for several rounds before giving up. If a TCP candidate batch does not
-fill the target number of live VPN configs, the runner checks additional
-batches before it falls back.
+lists and route TCP/TLS checks through it. TCP only proves that a port opens;
+TLS/REALITY configs then get a stricter TLS handshake pass using the parsed SNI
+and Host values. Each VPN config can be tried through several different SOCKS5
+proxies before it is treated as unreachable. If too few SOCKS5 proxies are
+found, the proxy search widens the candidate sample for several rounds before
+giving up. The production settings use strict low-live handling, so a weak
+validation result publishes fewer configs instead of putting unchecked/dead
+configs back into the subscriptions. TCP-only configs are dropped after the
+TLS/REALITY pass in the production settings, so the final subscriptions prefer
+configs that reached the stricter handshake stage.
 
 Configured SOCKS5 proxy pool sources:
 
@@ -137,9 +139,9 @@ Important settings in `config/settings.yaml`:
 | `validator` | `max_configs_to_validate` | `0` means process all parsed configs |
 | `validator` | `tcp_enabled`, `tls_enabled` | Network liveness checks |
 | `validator` | `tcp_candidate_limit`, `tcp_search_rounds` | TCP validation batch size and retry batches |
-| `validator` | `proxy_attempts_per_config` | `0` tries all working SOCKS5 proxies for each config |
+| `validator` | `proxy_attempts_per_config`, `tls_proxy_attempts_per_config` | `0` tries all working SOCKS5 proxies for each config |
 | `validator` | `proxy_pool` | Optional free SOCKS5 pool for GitHub Actions validation |
-| `validator` | `min_alive_to_filter` | Fail-open threshold before liveness filtering is trusted |
+| `validator` | `min_alive_to_filter`, `fail_open_on_low_alive`, `drop_unchecked_after_tls` | Low-live threshold and whether to restore/drop unchecked configs |
 | `aggregator` | `max_configs_in_output` | Hard cap per generated file |
 | `aggregator` | `max_per_country` | Per-country cap |
 | `publisher` | `output_file` | Combined output path |

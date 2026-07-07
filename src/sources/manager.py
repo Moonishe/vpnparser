@@ -276,24 +276,46 @@ class SourceManager:
             return SourceResult(source_name=name, error=str(exc), list_type=list_type)
 
     @staticmethod
-    async def _fetch_direct_url(url: str, timeout: float = 30.0) -> str:
+    async def _fetch_direct_url(
+        url: str,
+        timeout: float = 30.0,
+        attempts: int = 3,
+        retry_delay: float = 2.0,
+    ) -> str:
         """Fetch a direct HTTPS text source."""
         parsed = urlparse((url or "").strip())
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError(f"source url must be absolute HTTPS: {url!r}")
 
+        max_attempts = max(1, attempts)
+        last_error: Exception | None = None
+        headers = {
+            "User-Agent": "vpn-config-parser/1.0",
+            "Accept": "text/plain,*/*",
+        }
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(
-                url,
-                headers={
-                    "User-Agent": "vpn-config-parser/1.0",
-                    "Accept": "text/plain,*/*",
-                },
-            )
-        if response.status_code == 404:
-            return ""
-        response.raise_for_status()
-        return response.text
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    response = await client.get(url, headers=headers)
+                    if response.status_code == 404:
+                        return ""
+                    response.raise_for_status()
+                    return response.text
+                except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+                    last_error = exc
+                    if attempt >= max_attempts:
+                        break
+                    logger.warning(
+                        "Direct source fetch failed for %s (attempt %d/%d): %s",
+                        url,
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
+                    await asyncio.sleep(max(0.0, retry_delay))
+        if last_error is not None:
+            raise last_error
+        return ""
 
     @staticmethod
     def _filename_from_url(url: str) -> str:

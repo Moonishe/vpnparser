@@ -212,9 +212,13 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
     proxy_min = int(validation.get("proxy_min_proxies") or 0)
     proxy_rounds = int(validation.get("proxy_search_rounds") or 0)
     proxy_round_limit = int(validation.get("proxy_search_round_limit") or 0)
+    strict_liveness = validation.get("fail_open_on_low_alive") is False
+    drop_unchecked = validation.get("drop_unchecked_after_tls") is True
     proxy_search_text = ""
     if proxy_rounds > 0 and proxy_round_limit > 0:
         proxy_search_text = f", поиск {proxy_rounds}/{proxy_round_limit}"
+    strict_text = ", strict" if strict_liveness else ""
+    unchecked_text = ", без TCP-only" if drop_unchecked else ""
 
     if not tcp_enabled and not tls_enabled:
         first = "🧪 Проверка: выключена"
@@ -226,10 +230,10 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
         min_text = f", минимум {proxy_min}" if proxy_min > 0 else ""
         first = (
             f"🧪 Проверка: включена, через {proxy_count} SOCKS5 прокси"
-            f"{min_text}{proxy_search_text}"
+            f"{min_text}{proxy_search_text}{strict_text}{unchecked_text}"
         )
     else:
-        first = "🧪 Проверка: включена, без прокси"
+        first = f"🧪 Проверка: включена, без прокси{strict_text}{unchecked_text}"
 
     lines = [first]
     lists = validation.get("lists")
@@ -243,12 +247,15 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 lines.append(f"  {label}: не проверялся, нет рабочих прокси")
                 continue
 
-            checked = int(item.get("tcp_checked") or item.get("tls_checked") or 0)
-            alive = int(item.get("tcp_alive") or item.get("tls_alive") or 0)
+            tcp_checked = int(item.get("tcp_checked") or 0)
+            tcp_alive = int(item.get("tcp_alive") or 0)
+            tls_checked = int(item.get("tls_checked") or 0)
+            tls_alive = int(item.get("tls_alive") or 0)
+            tls_unchecked = int(item.get("tls_unchecked_passthrough") or 0)
             skipped = int(item.get("tcp_skipped_protocol") or 0)
             rounds = int(item.get("tcp_search_rounds") or 0)
             round_limit = int(item.get("tcp_search_round_limit") or 0)
-            if checked <= 0 and not item.get("checked"):
+            if tcp_checked <= 0 and tls_checked <= 0 and not item.get("checked"):
                 lines.append(f"  {label}: нет кандидатов для TCP/TLS проверки")
                 continue
 
@@ -258,10 +265,24 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 if rounds > 0 and round_limit > 1
                 else ""
             )
-            lines.append(
-                f"  {label}: проверено {checked}, живых {alive}, "
-                f"пропущено {skipped}{round_text}{suffix}"
-            )
+            if tcp_checked > 0:
+                tcp_label = "TCP" if tls_checked > 0 else ""
+                tcp_label = f" {tcp_label}" if tcp_label else ""
+                lines.append(
+                    f"  {label}{tcp_label}: проверено {tcp_checked}, "
+                    f"порт открыт {tcp_alive}, пропущено {skipped}"
+                    f"{round_text}{suffix}"
+                )
+            if tls_checked > 0:
+                dropped_text = (
+                    f", TCP-only отброшено {tls_unchecked}"
+                    if item.get("tls_drop_unchecked") and tls_unchecked > 0
+                    else ""
+                )
+                lines.append(
+                    f"  {label} TLS/REALITY: проверено {tls_checked}, "
+                    f"живых {tls_alive}{dropped_text}{suffix}"
+                )
     return "\n".join(lines)
 
 

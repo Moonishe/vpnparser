@@ -789,11 +789,22 @@ class PipelineRunner:
         self._liveness_stats = {
             "tcp_enabled": tcp_enabled,
             "tls_enabled": tls_enabled,
+            "fail_open_on_low_alive": self._as_bool(
+                vcfg.get("fail_open_on_low_alive"), True
+            ),
+            "drop_unchecked_after_tls": self._as_bool(
+                vcfg.get("drop_unchecked_after_tls"), False
+            ),
             "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), False),
             "proxy_pool_required": self._as_bool(pool_cfg.get("required"), False),
             "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
             "proxy_attempts_per_config": self._as_int(
                 vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+            ),
+            "tls_proxy_attempts_per_config": self._as_int(
+                vcfg.get("tls_proxy_attempts_per_config"),
+                self._as_int(vcfg.get("proxy_attempts_per_config"), 5, minimum=0),
+                minimum=0,
             ),
             "proxy_count": 0,
             "lists": {},
@@ -831,6 +842,12 @@ class PipelineRunner:
         pool_cfg = self._proxy_pool_config()
         pool_required = self._as_bool(pool_cfg.get("required"), False)
         pool_enabled = self._as_bool(pool_cfg.get("enabled"), False)
+        fail_open_on_low_alive = self._as_bool(
+            vcfg.get("fail_open_on_low_alive"), True
+        )
+        drop_unchecked_after_tls = self._as_bool(
+            vcfg.get("drop_unchecked_after_tls"), False
+        )
         list_key = normalize_list_type(label)
         list_stats = {
             "input": len(configs),
@@ -940,17 +957,26 @@ class PipelineRunner:
                 list_stats["checked"] = True
                 list_stats["tcp_alive"] = len(alive_tcp)
                 if len(alive_tcp) < min_alive:
+                    list_stats["reason"] = "below_min_alive"
+                    if fail_open_on_low_alive:
+                        logger.warning(
+                            "%s TCP validation found %d/%d alive (<%d). "
+                            "Keeping unfiltered configs.",
+                            label,
+                            len(alive_tcp),
+                            len(checkable),
+                            min_alive,
+                        )
+                        list_stats["fail_open"] = True
+                        return configs
                     logger.warning(
                         "%s TCP validation found %d/%d alive (<%d). "
-                        "Keeping unfiltered configs.",
+                        "Strict mode keeps only alive configs.",
                         label,
                         len(alive_tcp),
                         len(checkable),
                         min_alive,
                     )
-                    list_stats["fail_open"] = True
-                    list_stats["reason"] = "below_min_alive"
-                    return configs
                 current = alive_tcp + passthrough
                 list_stats["filtered"] = True
                 list_stats["output_after_tcp"] = len(current)
@@ -962,26 +988,37 @@ class PipelineRunner:
                 )
 
         if tls_enabled:
-            tls_checkable = [c for c in current if c.security in ("tls", "reality")]
+            tls_checkable = [
+                c for c in current if str(c.security or "").lower() in ("tls", "reality")
+            ]
             if tls_checkable:
                 from src.validators.tls_check import validate_configs_tls
 
                 before_tls = list(current)
-                list_stats["tls_candidates"] = len(current)
+                tls_passthrough = [
+                    c
+                    for c in current
+                    if str(c.security or "").lower() not in ("tls", "reality")
+                ]
+                list_stats["tls_unchecked_passthrough"] = len(tls_passthrough)
+                list_stats["tls_drop_unchecked"] = drop_unchecked_after_tls
+                if drop_unchecked_after_tls:
+                    tls_passthrough = []
+                list_stats["tls_candidates"] = len(tls_checkable)
                 candidate_limit = self._as_int(
                     vcfg.get("tls_candidate_limit"), 1000, minimum=0
                 )
-                if candidate_limit > 0 and len(current) > candidate_limit:
+                if candidate_limit > 0 and len(tls_checkable) > candidate_limit:
                     logger.info(
                         "%s TLS validation candidate cap: checking first %d/%d.",
                         label,
                         candidate_limit,
-                        len(current),
+                        len(tls_checkable),
                     )
-                    current = current[:candidate_limit]
-                list_stats["tls_checked"] = len(current)
+                    tls_checkable = tls_checkable[:candidate_limit]
+                list_stats["tls_checked"] = len(tls_checkable)
                 alive_tls = await validate_configs_tls(
-                    current,
+                    tls_checkable,
                     timeout=self._as_float(
                         vcfg.get("tls_timeout_seconds"), 5.0, minimum=0.1
                     ),
@@ -990,28 +1027,57 @@ class PipelineRunner:
                     ),
                     proxy_urls=proxy_urls,
                     proxy_attempts_per_config=self._as_int(
-                        vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                        vcfg.get("tls_proxy_attempts_per_config"),
+                        self._as_int(
+                            vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                        ),
+                        minimum=0,
                     ),
                 )
                 list_stats["checked"] = True
                 list_stats["tls_alive"] = len(alive_tls)
-                min_alive = self._liveness_min_alive(len(current))
+                min_alive = self._liveness_min_alive(len(tls_checkable))
                 if len(alive_tls) < min_alive:
+                    list_stats["reason"] = "tls_below_min_alive"
+                    if fail_open_on_low_alive:
+                        logger.warning(
+                            "%s TLS validation left %d/%d configs (<%d). "
+                            "Keeping pre-TLS configs.",
+                            label,
+                            len(alive_tls),
+                            len(tls_checkable),
+                            min_alive,
+                        )
+                        list_stats["fail_open"] = True
+                        return before_tls
                     logger.warning(
                         "%s TLS validation left %d/%d configs (<%d). "
-                        "Keeping pre-TLS configs.",
+                        "Strict mode keeps only TLS-alive configs.",
                         label,
                         len(alive_tls),
-                        len(current),
+                        len(tls_checkable),
                         min_alive,
                     )
-                    list_stats["fail_open"] = True
-                    list_stats["reason"] = "tls_below_min_alive"
-                    return before_tls
-                current = alive_tls
+                current = alive_tls + tls_passthrough
                 list_stats["filtered"] = True
                 list_stats["output_after_tls"] = len(current)
                 logger.info("%s after TLS validation: %d configs.", label, len(current))
+            elif drop_unchecked_after_tls:
+                list_stats["checked"] = True
+                list_stats["tls_candidates"] = 0
+                list_stats["tls_checked"] = 0
+                list_stats["tls_alive"] = 0
+                list_stats["tls_unchecked_passthrough"] = len(current)
+                list_stats["tls_drop_unchecked"] = True
+                list_stats["filtered"] = True
+                list_stats["output_after_tls"] = 0
+                logger.warning(
+                    "%s TLS validation has no TLS/REALITY candidates. "
+                    "Strict mode drops %d TCP-only configs.",
+                    label,
+                    len(current),
+                )
+                current = []
 
         return current
 

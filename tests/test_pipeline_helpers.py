@@ -68,7 +68,9 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     summary = {
         "validation": {
             "tcp_enabled": True,
-            "tls_enabled": False,
+            "tls_enabled": True,
+            "fail_open_on_low_alive": False,
+            "drop_unchecked_after_tls": True,
             "proxy_pool_enabled": True,
             "proxy_pool_required": True,
             "proxy_count": 10,
@@ -77,11 +79,17 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
                     "tcp_checked": 1000,
                     "tcp_alive": 150,
                     "tcp_skipped_protocol": 3,
+                    "tls_checked": 140,
+                    "tls_alive": 90,
+                    "tls_unchecked_passthrough": 11,
+                    "tls_drop_unchecked": True,
                 },
                 "whitelist": {
                     "tcp_checked": 217,
                     "tcp_alive": 216,
                     "tcp_skipped_protocol": 1,
+                    "tls_checked": 200,
+                    "tls_alive": 184,
                 },
             },
         },
@@ -103,8 +111,15 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     )
 
     assert "через 10 SOCKS5 прокси" in validation
-    assert "Blacklist: проверено 1000, живых 150" in validation
-    assert "Whitelist: проверено 217, живых 216" in validation
+    assert "strict" in validation
+    assert "без TCP-only" in validation
+    assert "Blacklist TCP: проверено 1000, порт открыт 150" in validation
+    assert (
+        "Blacklist TLS/REALITY: проверено 140, живых 90, TCP-only отброшено 11"
+        in validation
+    )
+    assert "Whitelist TCP: проверено 217, порт открыт 216" in validation
+    assert "Whitelist TLS/REALITY: проверено 200, живых 184" in validation
     assert "Whitelist: 150" in subscriptions
     assert "Россия 120" in subscriptions
     assert "Mix 75/75: 150" in subscriptions
@@ -811,6 +826,32 @@ def test_tls_validator_marks_successful_tls_configs_alive(monkeypatch) -> None:
     assert cfg.is_alive is True
 
 
+def test_tls_validator_tries_host_when_sni_is_missing(monkeypatch) -> None:
+    calls = []
+
+    async def fake_tls_check(host, port, sni=None, **kwargs):
+        calls.append((host, port, sni, kwargs.get("alpn")))
+        return sni == "cdn.example.com"
+
+    monkeypatch.setattr(tls_module, "tls_check", fake_tls_check)
+    cfg = Config(
+        protocol="vless",
+        address="203.0.113.10",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="tls",
+        network="ws",
+        host="cdn.example.com",
+        alpn="h2,http/1.1",
+    )
+
+    result = asyncio.run(tls_module.validate_configs_tls([cfg]))
+
+    assert result == [cfg]
+    assert cfg.is_alive is True
+    assert calls == [("203.0.113.10", 443, "cdn.example.com", "h2,http/1.1")]
+
+
 def test_proxy_pool_parses_public_socks5_candidates() -> None:
     text = """
     socks5://8.8.8.8:1080
@@ -1221,3 +1262,113 @@ validator:
     )
 
     assert result == configs
+
+
+def test_runner_liveness_strict_mode_keeps_alive_when_below_threshold(
+    tmp_path, monkeypatch
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  tcp_enabled: true
+  min_alive_to_filter: 2
+  fail_open_on_low_alive: false
+  proxy_pool:
+    enabled: true
+    required: true
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    configs = [
+        Config("vless", "a.example", 443, "11111111-1111-4111-8111-111111111111"),
+        Config("vless", "b.example", 443, "11111111-1111-4111-8111-111111111112"),
+    ]
+
+    async def fake_proxy_urls():
+        return ["socks5://8.8.8.8:1080"]
+
+    async def fake_validate_configs_tcp(configs, **kwargs):
+        return [configs[0]]
+
+    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    monkeypatch.setattr(
+        "src.validators.tcp_check.validate_configs_tcp",
+        fake_validate_configs_tcp,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+    )
+
+    stats = runner._liveness_stats["lists"]["blacklist"]
+    assert result == [configs[0]]
+    assert stats["fail_open"] is False
+    assert stats["reason"] == "below_min_alive"
+
+
+def test_runner_liveness_drops_tcp_only_after_tls(tmp_path, monkeypatch) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  tls_enabled: true
+  drop_unchecked_after_tls: true
+  min_alive_to_filter: 1
+  proxy_pool:
+    enabled: false
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    tls_cfg = Config(
+        "vless",
+        "tls.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+    tcp_only = Config(
+        "vless",
+        "plain.example",
+        80,
+        "11111111-1111-4111-8111-111111111112",
+        security="none",
+    )
+
+    async def fake_validate_configs_tls(configs, **kwargs):
+        assert configs == [tls_cfg]
+        return [tls_cfg]
+
+    monkeypatch.setattr(
+        "src.validators.tls_check.validate_configs_tls",
+        fake_validate_configs_tls,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            [tls_cfg, tcp_only],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=True,
+        )
+    )
+
+    stats = runner._liveness_stats["lists"]["blacklist"]
+    assert result == [tls_cfg]
+    assert stats["tls_unchecked_passthrough"] == 1
+    assert stats["tls_drop_unchecked"] is True

@@ -27,9 +27,11 @@ validator:
 
   # GitHub Actions often cannot reach VPN servers directly from data-center IPs.
   # TCP liveness therefore uses a small free SOCKS5 proxy pool parsed from GitHub.
-  # The filter is fail-open: if too few servers validate, the original list is kept.
+  # TCP only proves that a port opens; TLS adds a stricter handshake check for
+  # TLS/REALITY configs. In strict mode low live counts publish fewer configs
+  # instead of putting unchecked/dead configs back into the subscriptions.
   tcp_enabled: true
-  tls_enabled: false
+  tls_enabled: true
   tcp_timeout_seconds: 4
   tcp_concurrency: 120
   tcp_candidate_limit: 1000
@@ -39,10 +41,13 @@ validator:
     blacklist: 0
     whitelist: 0
   min_alive_to_filter: 10
+  fail_open_on_low_alive: false
+  drop_unchecked_after_tls: true
   proxy_attempts_per_config: 0
-  tls_timeout_seconds: 5
-  tls_concurrency: 100
-  tls_candidate_limit: 1000
+  tls_proxy_attempts_per_config: 3
+  tls_timeout_seconds: 6
+  tls_concurrency: 80
+  tls_candidate_limit: 0
 
   proxy_pool:
     enabled: true

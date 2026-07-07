@@ -11,17 +11,23 @@ are routed through it (same rationale as TCP check).
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
+import re
 import ssl
 from typing import Any
+from urllib.parse import urlparse
 
 from src.parsers.base import Config
 
 logger = logging.getLogger(__name__)
 
+_TLS_SECURITY_VALUES = {"tls", "reality"}
+_EMPTY_SERVER_NAMES = {"", "none", "null", "false", "0", "-"}
+
 
 async def _open_connection_direct(
-    host: str, port: int, ssl_context: ssl.SSLContext, server_hostname: str
+    host: str, port: int, ssl_context: ssl.SSLContext, server_hostname: str | None
 ) -> tuple[Any, Any]:
     """Direct TLS connection."""
     return await asyncio.open_connection(
@@ -33,7 +39,7 @@ async def _open_connection_via_socks(
     host: str,
     port: int,
     ssl_context: ssl.SSLContext,
-    server_hostname: str,
+    server_hostname: str | None,
     proxy_url: str,
 ) -> tuple[Any, Any]:
     """TLS connection routed through a SOCKS5 proxy."""
@@ -48,10 +54,99 @@ async def _open_connection_via_socks(
     return reader, writer
 
 
+def _is_tls_security(security: str | None) -> bool:
+    return str(security or "").strip().lower() in _TLS_SECURITY_VALUES
+
+
+def _is_ip_address(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value.strip("[]"))
+    except ValueError:
+        return False
+    return True
+
+
+def _clean_server_name(value: str) -> str | None:
+    cleaned = value.strip().strip("\"'")
+    if not cleaned or cleaned.lower() in _EMPTY_SERVER_NAMES:
+        return None
+
+    if "://" in cleaned:
+        parsed = urlparse(cleaned)
+        cleaned = parsed.hostname or cleaned
+
+    if "/" in cleaned:
+        cleaned = cleaned.split("/", 1)[0]
+    cleaned = cleaned.strip().strip("[]").strip()
+
+    if cleaned.startswith("*."):
+        cleaned = cleaned[2:]
+
+    if cleaned.count(":") == 1:
+        host, port = cleaned.rsplit(":", 1)
+        if port.isdigit():
+            cleaned = host.strip()
+
+    if not cleaned or cleaned.lower() in _EMPTY_SERVER_NAMES:
+        return None
+    return cleaned
+
+
+def _split_server_names(value: str | None) -> list[str]:
+    if not value:
+        return []
+    names: list[str] = []
+    for part in re.split(r"[,;]", str(value)):
+        cleaned = _clean_server_name(part)
+        if cleaned:
+            names.append(cleaned)
+    return names
+
+
+def _tls_server_names(cfg: Config) -> list[str | None]:
+    """Return SNI candidates matching how clients commonly interpret links."""
+    names: list[str | None] = []
+    seen: set[str | None] = set()
+
+    def add(candidate: str | None) -> None:
+        key = candidate.lower() if isinstance(candidate, str) else candidate
+        if key in seen:
+            return
+        seen.add(key)
+        names.append(candidate)
+
+    explicit_names = [
+        name
+        for raw in (cfg.sni, cfg.host)
+        for name in _split_server_names(raw)
+        if name
+    ]
+    for name in explicit_names:
+        add(name)
+
+    if explicit_names:
+        return names
+
+    address = _clean_server_name(cfg.address)
+    if address and not _is_ip_address(address):
+        add(address)
+    else:
+        add(None)
+    return names
+
+
+def _alpn_protocols(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    protocols = [part.strip() for part in re.split(r"[,;]", value) if part.strip()]
+    return protocols or None
+
+
 async def tls_check(
     host: str,
     port: int,
     sni: str | None = None,
+    alpn: str | None = None,
     timeout: float = 5.0,
     proxy_url: str | None = None,
 ) -> bool:
@@ -64,6 +159,9 @@ async def tls_check(
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
+        protocols = _alpn_protocols(alpn)
+        if protocols:
+            ssl_context.set_alpn_protocols(protocols)
     except Exception:
         return False
 
@@ -138,19 +236,23 @@ async def validate_configs_tls(
     semaphore = asyncio.Semaphore(concurrency)
 
     async def _check_one(index: int, cfg: Config) -> None:
-        if cfg.security not in ("tls", "reality"):
+        if not _is_tls_security(cfg.security):
             return
         async with semaphore:
             try:
                 ok = False
                 for candidate_proxy in _proxies_for(index):
-                    ok = await tls_check(
-                        cfg.address,
-                        cfg.port,
-                        sni=cfg.sni,
-                        timeout=timeout,
-                        proxy_url=candidate_proxy,
-                    )
+                    for server_name in _tls_server_names(cfg):
+                        ok = await tls_check(
+                            cfg.address,
+                            cfg.port,
+                            sni=server_name,
+                            alpn=cfg.alpn,
+                            timeout=timeout,
+                            proxy_url=candidate_proxy,
+                        )
+                        if ok:
+                            break
                     if ok:
                         break
                 cfg.is_alive = ok
@@ -169,5 +271,5 @@ async def validate_configs_tls(
     )
 
     return [
-        c for c in configs if c.security not in ("tls", "reality") or c.is_alive is True
+        c for c in configs if not _is_tls_security(c.security) or c.is_alive is True
     ]
