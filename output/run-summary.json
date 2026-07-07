@@ -47,11 +47,11 @@
     "whitelist": {
       "count": 150,
       "countries": {
-        "DE": 10,
+        "DE": 12,
         "FI": 4,
         "FR": 7,
-        "NL": 9,
-        "RU": 120
+        "NL": 12,
+        "RU": 115
       },
       "file": "output/subscription-whitelist.txt"
     }
@@ -66,10 +66,10 @@
         "filtered": true,
         "input": 2079,
         "min_alive_to_filter": 10,
-        "output_after_tcp": 2079,
-        "proxy_count": 12,
+        "output_after_tcp": 1943,
+        "proxy_count": 20,
         "reason": "",
-        "tcp_alive": 2075,
+        "tcp_alive": 1939,
         "tcp_candidates": 2075,
         "tcp_checked": 2075,
         "tcp_max_alive": 0,
@@ -81,14 +81,14 @@
         "checked": true,
         "fail_open": false,
         "filtered": true,
-        "input": 213,
+        "input": 212,
         "min_alive_to_filter": 10,
-        "output_after_tcp": 213,
-        "proxy_count": 12,
+        "output_after_tcp": 192,
+        "proxy_count": 20,
         "reason": "",
-        "tcp_alive": 212,
-        "tcp_candidates": 212,
-        "tcp_checked": 212,
+        "tcp_alive": 191,
+        "tcp_candidates": 211,
+        "tcp_checked": 211,
         "tcp_max_alive": 0,
         "tcp_search_round_limit": 3,
         "tcp_search_rounds": 1,
@@ -96,7 +96,7 @@
       }
     },
     "proxy_attempts_per_config": 0,
-    "proxy_count": 12,
+    "proxy_count": 20,
     "proxy_min_proxies": 10,
     "proxy_pool_enabled": true,
     "proxy_pool_required": true,
@@ -106,7 +106,7 @@
         "max_candidates": 250,
         "max_candidates_per_source": 80,
         "round": 1,
-        "working": 12
+        "working": 20
       }
     ],
     "proxy_search_round_limit": 3,
