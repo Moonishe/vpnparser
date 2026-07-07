@@ -659,6 +659,94 @@ class PipelineRunner:
         raw = self._section("validator").get("proxy_pool", {})
         return raw if isinstance(raw, dict) else {}
 
+    async def _search_validator_proxy_pool(
+        self,
+        load_proxy_pool: Any,
+        sources: list[str] | None,
+        pool_cfg: dict[str, Any],
+    ) -> list[str]:
+        """Search for working SOCKS5 proxies, widening candidates on retries."""
+        max_proxies = self._as_int(pool_cfg.get("max_proxies"), 20, minimum=1)
+        min_proxies = self._as_int(
+            pool_cfg.get("min_proxies"), min(10, max_proxies), minimum=1
+        )
+        if min_proxies > max_proxies:
+            max_proxies = min_proxies
+
+        search_rounds = self._as_int(pool_cfg.get("search_rounds"), 3, minimum=1)
+        candidate_growth = self._as_float(
+            pool_cfg.get("candidate_growth_factor"), 2.0, minimum=1.0
+        )
+        retry_delay = self._as_float(
+            pool_cfg.get("retry_delay_seconds"), 0.0, minimum=0.0
+        )
+        base_max_candidates = self._as_int(
+            pool_cfg.get("max_candidates"), 200, minimum=1
+        )
+        base_per_source = self._as_int(
+            pool_cfg.get("max_candidates_per_source"), 80, minimum=1
+        )
+
+        self._liveness_stats.update(
+            {
+                "proxy_min_proxies": min_proxies,
+                "proxy_search_round_limit": search_rounds,
+                "proxy_search_rounds": 0,
+                "proxy_search": [],
+            }
+        )
+
+        pool_urls: list[str] = []
+        for round_index in range(search_rounds):
+            multiplier = candidate_growth**round_index
+            max_candidates = max(
+                base_max_candidates, int(base_max_candidates * multiplier)
+            )
+            max_candidates_per_source = max(
+                base_per_source, int(base_per_source * multiplier)
+            )
+            pool_urls = await load_proxy_pool(
+                sources,
+                fetch_timeout=self._as_float(
+                    pool_cfg.get("fetch_timeout_seconds"), 10.0, minimum=1.0
+                ),
+                max_candidates=max_candidates,
+                max_candidates_per_source=max_candidates_per_source,
+                max_proxies=max_proxies,
+                validate=self._as_bool(pool_cfg.get("validate"), True),
+                validation_timeout=self._as_float(
+                    pool_cfg.get("validation_timeout_seconds"), 5.0, minimum=1.0
+                ),
+                validation_concurrency=self._as_int(
+                    pool_cfg.get("validation_concurrency"), 50, minimum=1
+                ),
+                probe_host=str(pool_cfg.get("probe_host") or "api.github.com"),
+                probe_port=self._as_int(pool_cfg.get("probe_port"), 443, minimum=1),
+            )
+            self._liveness_stats["proxy_search_rounds"] = round_index + 1
+            self._liveness_stats["proxy_search"].append(
+                {
+                    "round": round_index + 1,
+                    "max_candidates": max_candidates,
+                    "max_candidates_per_source": max_candidates_per_source,
+                    "working": len(pool_urls),
+                }
+            )
+            if len(pool_urls) >= min_proxies:
+                break
+            if retry_delay > 0 and round_index + 1 < search_rounds:
+                await asyncio.sleep(retry_delay)
+
+        if len(pool_urls) < min_proxies:
+            logger.warning(
+                "Proxy pool search found only %d/%d working SOCKS5 proxies "
+                "after %d round(s).",
+                len(pool_urls),
+                min_proxies,
+                search_rounds,
+            )
+        return pool_urls
+
     async def _validator_proxy_urls(self) -> list[str]:
         """Return configured validator proxies, including optional free pool."""
         if self._validator_proxy_urls_cache is not None:
@@ -688,35 +776,10 @@ class PipelineRunner:
             else:
                 sources = self._source_list(pool_cfg.get("sources"))
                 try:
-                    pool_urls = await load_proxy_pool(
+                    pool_urls = await self._search_validator_proxy_pool(
+                        load_proxy_pool,
                         sources,
-                        fetch_timeout=self._as_float(
-                            pool_cfg.get("fetch_timeout_seconds"), 10.0, minimum=1.0
-                        ),
-                        max_candidates=self._as_int(
-                            pool_cfg.get("max_candidates"), 200, minimum=1
-                        ),
-                        max_candidates_per_source=self._as_int(
-                            pool_cfg.get("max_candidates_per_source"), 80, minimum=1
-                        ),
-                        max_proxies=self._as_int(
-                            pool_cfg.get("max_proxies"), 20, minimum=1
-                        ),
-                        validate=self._as_bool(pool_cfg.get("validate"), True),
-                        validation_timeout=self._as_float(
-                            pool_cfg.get("validation_timeout_seconds"),
-                            5.0,
-                            minimum=1.0,
-                        ),
-                        validation_concurrency=self._as_int(
-                            pool_cfg.get("validation_concurrency"),
-                            50,
-                            minimum=1,
-                        ),
-                        probe_host=str(pool_cfg.get("probe_host") or "api.github.com"),
-                        probe_port=self._as_int(
-                            pool_cfg.get("probe_port"), 443, minimum=1
-                        ),
+                        pool_cfg,
                     )
                 except Exception as exc:
                     logger.warning("Proxy pool load failed: %s", exc)
@@ -814,16 +877,6 @@ class PipelineRunner:
                 candidate_limit = self._as_int(
                     vcfg.get("tcp_candidate_limit"), 1000, minimum=0
                 )
-                if candidate_limit > 0 and len(checkable) > candidate_limit:
-                    logger.info(
-                        "%s TCP validation candidate cap: checking first %d/%d.",
-                        label,
-                        candidate_limit,
-                        len(checkable),
-                    )
-                    checkable = checkable[:candidate_limit]
-                list_stats["tcp_checked"] = len(checkable)
-
                 tcp_max_alive = self._as_int(vcfg.get("tcp_max_alive"), 0, minimum=0)
                 tcp_max_alive_by_list = vcfg.get("tcp_max_alive_by_list", {})
                 if isinstance(tcp_max_alive_by_list, dict):
@@ -838,24 +891,68 @@ class PipelineRunner:
                         )
                 list_stats["tcp_max_alive"] = tcp_max_alive
 
-                alive_tcp = await validate_configs_tcp(
-                    checkable,
-                    timeout=self._as_float(
-                        vcfg.get("tcp_timeout_seconds"), 5.0, minimum=0.1
-                    ),
-                    concurrency=self._as_int(
-                        vcfg.get("tcp_concurrency"), 300, minimum=1
-                    ),
-                    max_alive=tcp_max_alive,
-                    proxy_urls=proxy_urls,
-                    proxy_attempts_per_config=self._as_int(
-                        vcfg.get("proxy_attempts_per_config"), 5, minimum=0
-                    ),
-                )
-                list_stats["checked"] = True
-                list_stats["tcp_alive"] = len(alive_tcp)
                 min_alive = self._liveness_min_alive(len(checkable))
                 list_stats["min_alive_to_filter"] = min_alive
+                tcp_search_rounds = self._as_int(
+                    vcfg.get("tcp_search_rounds"), 3, minimum=1
+                )
+                if candidate_limit <= 0:
+                    tcp_search_rounds = 1
+                    candidate_limit = len(checkable)
+                list_stats["tcp_search_round_limit"] = tcp_search_rounds
+
+                alive_tcp: list[Config] = []
+                alive_keys: set[Any] = set()
+                checked_total = 0
+                offset = 0
+                round_count = 0
+                while offset < len(checkable) and round_count < tcp_search_rounds:
+                    batch = checkable[offset : offset + candidate_limit]
+                    if not batch:
+                        break
+                    round_count += 1
+                    offset += len(batch)
+                    checked_total += len(batch)
+                    remaining_alive = (
+                        max(0, tcp_max_alive - len(alive_tcp))
+                        if tcp_max_alive > 0
+                        else 0
+                    )
+                    if tcp_max_alive > 0 and remaining_alive <= 0:
+                        break
+                    logger.info(
+                        "%s TCP validation round %d: checking %d/%d candidates.",
+                        label,
+                        round_count,
+                        checked_total,
+                        len(checkable),
+                    )
+                    batch_alive = await validate_configs_tcp(
+                        batch,
+                        timeout=self._as_float(
+                            vcfg.get("tcp_timeout_seconds"), 5.0, minimum=0.1
+                        ),
+                        concurrency=self._as_int(
+                            vcfg.get("tcp_concurrency"), 300, minimum=1
+                        ),
+                        max_alive=remaining_alive,
+                        proxy_urls=proxy_urls,
+                        proxy_attempts_per_config=self._as_int(
+                            vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                        ),
+                    )
+                    for cfg in batch_alive:
+                        if cfg.dedup_key in alive_keys:
+                            continue
+                        alive_keys.add(cfg.dedup_key)
+                        alive_tcp.append(cfg)
+                    if tcp_max_alive > 0 and len(alive_tcp) >= tcp_max_alive:
+                        break
+
+                list_stats["tcp_checked"] = checked_total
+                list_stats["tcp_search_rounds"] = round_count
+                list_stats["checked"] = True
+                list_stats["tcp_alive"] = len(alive_tcp)
                 if len(alive_tcp) < min_alive:
                     logger.warning(
                         "%s TCP validation found %d/%d alive (<%d). "

@@ -33,6 +33,7 @@ validator:
   tcp_timeout_seconds: 4
   tcp_concurrency: 120
   tcp_candidate_limit: 1000
+  tcp_search_rounds: 3
   tcp_max_alive: 150
   tcp_max_alive_by_list:
     blacklist: 150
@@ -56,7 +57,11 @@ validator:
       - "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt"
     max_candidates: 250
     max_candidates_per_source: 80
+    min_proxies: 10
     max_proxies: 20
+    search_rounds: 3
+    candidate_growth_factor: 2
+    retry_delay_seconds: 3
     fetch_timeout_seconds: 10
     validation_timeout_seconds: 5
     validation_concurrency: 50

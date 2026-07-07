@@ -209,13 +209,25 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
     proxy_pool_enabled = bool(validation.get("proxy_pool_enabled"))
     proxy_pool_required = bool(validation.get("proxy_pool_required"))
     proxy_count = int(validation.get("proxy_count") or 0)
+    proxy_min = int(validation.get("proxy_min_proxies") or 0)
+    proxy_rounds = int(validation.get("proxy_search_rounds") or 0)
+    proxy_round_limit = int(validation.get("proxy_search_round_limit") or 0)
+    proxy_search_text = ""
+    if proxy_rounds > 0 and proxy_round_limit > 0:
+        proxy_search_text = f", поиск {proxy_rounds}/{proxy_round_limit}"
 
     if not tcp_enabled and not tls_enabled:
         first = "🧪 Проверка: выключена"
     elif proxy_pool_enabled and proxy_pool_required and proxy_count <= 0:
         first = "🧪 Проверка: пропущена, рабочих SOCKS5 прокси не найдено"
+        if proxy_round_limit > 0:
+            first += f" после {proxy_round_limit} раундов поиска"
     elif proxy_count > 0:
-        first = f"🧪 Проверка: включена, через {proxy_count} SOCKS5 прокси"
+        min_text = f", минимум {proxy_min}" if proxy_min > 0 else ""
+        first = (
+            f"🧪 Проверка: включена, через {proxy_count} SOCKS5 прокси"
+            f"{min_text}{proxy_search_text}"
+        )
     else:
         first = "🧪 Проверка: включена, без прокси"
 
@@ -234,14 +246,21 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             checked = int(item.get("tcp_checked") or item.get("tls_checked") or 0)
             alive = int(item.get("tcp_alive") or item.get("tls_alive") or 0)
             skipped = int(item.get("tcp_skipped_protocol") or 0)
+            rounds = int(item.get("tcp_search_rounds") or 0)
+            round_limit = int(item.get("tcp_search_round_limit") or 0)
             if checked <= 0 and not item.get("checked"):
                 lines.append(f"  {label}: нет кандидатов для TCP/TLS проверки")
                 continue
 
             suffix = " fail-open" if item.get("fail_open") else ""
+            round_text = (
+                f", раунды {rounds}/{round_limit}"
+                if rounds > 0 and round_limit > 1
+                else ""
+            )
             lines.append(
                 f"  {label}: проверено {checked}, живых {alive}, "
-                f"пропущено {skipped}{suffix}"
+                f"пропущено {skipped}{round_text}{suffix}"
             )
     return "\n".join(lines)
 

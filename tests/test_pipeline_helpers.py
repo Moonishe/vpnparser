@@ -816,6 +816,44 @@ def test_proxy_pool_validation_waits_when_limit_not_reached(monkeypatch) -> None
     assert result == ["socks5://8.8.8.8:1080", "socks5://1.1.1.1:9050"]
 
 
+def test_runner_proxy_search_expands_candidates_until_minimum(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text("", encoding="utf-8")
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+    runner._liveness_stats = {}
+    calls = []
+
+    async def fake_load_proxy_pool(_sources, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return ["socks5://8.8.8.8:1080"]
+        return [
+            "socks5://8.8.8.8:1080",
+            "socks5://1.1.1.1:9050",
+            "socks5://9.9.9.9:1080",
+        ]
+
+    result = asyncio.run(
+        runner._search_validator_proxy_pool(
+            fake_load_proxy_pool,
+            ["https://first.example/list.txt"],
+            {
+                "min_proxies": 3,
+                "max_proxies": 5,
+                "search_rounds": 2,
+                "max_candidates": 10,
+                "max_candidates_per_source": 4,
+                "candidate_growth_factor": 2,
+            },
+        )
+    )
+
+    assert len(result) == 3
+    assert [call["max_candidates"] for call in calls] == [10, 20]
+    assert [call["max_candidates_per_source"] for call in calls] == [4, 8]
+    assert runner._liveness_stats["proxy_search_rounds"] == 2
+
+
 def test_tcp_validator_rotates_proxy_pool(monkeypatch) -> None:
     seen_proxy_urls = []
 
@@ -1000,6 +1038,65 @@ validator:
 
     assert result == [alive]
     assert captured["proxy_urls"] == ["socks5://8.8.8.8:1080"]
+
+
+def test_runner_liveness_searches_more_tcp_candidates(
+    tmp_path, monkeypatch
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  tcp_enabled: true
+  tcp_candidate_limit: 2
+  tcp_search_rounds: 3
+  tcp_max_alive: 3
+  min_alive_to_filter: 1
+  proxy_pool:
+    enabled: true
+    required: true
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    configs = [
+        Config("vless", f"{i}.example", 443, "11111111-1111-4111-8111-111111111111")
+        for i in range(5)
+    ]
+    call_sizes = []
+
+    async def fake_proxy_urls():
+        return ["socks5://8.8.8.8:1080"]
+
+    async def fake_validate_configs_tcp(batch, **kwargs):
+        call_sizes.append(len(batch))
+        return [batch[0]]
+
+    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    monkeypatch.setattr(
+        "src.validators.tcp_check.validate_configs_tcp",
+        fake_validate_configs_tcp,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+    )
+
+    stats = runner._liveness_stats["lists"]["blacklist"]
+    assert result == [configs[0], configs[2], configs[4]]
+    assert call_sizes == [2, 2, 1]
+    assert stats["tcp_checked"] == 5
+    assert stats["tcp_alive"] == 3
+    assert stats["tcp_search_rounds"] == 3
 
 
 def test_runner_liveness_keeps_original_when_alive_below_threshold(

@@ -3,33 +3,33 @@
     "blacklist": {
       "count": 150,
       "countries": {
-        "CA": 57,
-        "DE": 9,
-        "FI": 28,
-        "FR": 18,
+        "CA": 44,
+        "DE": 12,
+        "FI": 29,
+        "FR": 20,
         "GB": 5,
         "JP": 1,
-        "NL": 17,
-        "US": 15
+        "NL": 18,
+        "US": 21
       },
       "file": "output/subscription-blacklist.txt"
     },
     "combined": {
       "count": 150,
       "countries": {
-        "CA": 57,
-        "DE": 45,
-        "FI": 31,
-        "FR": 17
+        "CA": 44,
+        "DE": 52,
+        "FI": 32,
+        "FR": 22
       },
       "file": "output/subscription.txt"
     },
     "mix": {
       "count": 150,
       "countries": {
-        "CA": 57,
-        "DE": 24,
-        "FI": 9,
+        "CA": 44,
+        "DE": 27,
+        "FI": 19,
         "RU": 60
       },
       "file": "output/subscription-mix.txt"
@@ -37,8 +37,8 @@
     "whitelist": {
       "count": 150,
       "countries": {
-        "DE": 37,
-        "RU": 113
+        "DE": 30,
+        "RU": 120
       },
       "file": "output/subscription-whitelist.txt"
     }
@@ -54,12 +54,14 @@
         "input": 2099,
         "min_alive_to_filter": 10,
         "output_after_tcp": 153,
-        "proxy_count": 20,
+        "proxy_count": 10,
         "reason": "",
         "tcp_alive": 150,
         "tcp_candidates": 2096,
         "tcp_checked": 1000,
         "tcp_max_alive": 150,
+        "tcp_search_round_limit": 3,
+        "tcp_search_rounds": 1,
         "tcp_skipped_protocol": 3
       },
       "whitelist": {
@@ -68,21 +70,34 @@
         "filtered": true,
         "input": 213,
         "min_alive_to_filter": 10,
-        "output_after_tcp": 185,
-        "proxy_count": 20,
+        "output_after_tcp": 213,
+        "proxy_count": 10,
         "reason": "",
-        "tcp_alive": 184,
+        "tcp_alive": 212,
         "tcp_candidates": 212,
         "tcp_checked": 212,
         "tcp_max_alive": 0,
+        "tcp_search_round_limit": 3,
+        "tcp_search_rounds": 1,
         "tcp_skipped_protocol": 1
       }
     },
     "proxy_attempts_per_config": 0,
-    "proxy_count": 20,
+    "proxy_count": 10,
+    "proxy_min_proxies": 10,
     "proxy_pool_enabled": true,
     "proxy_pool_required": true,
     "proxy_pool_validate": true,
+    "proxy_search": [
+      {
+        "max_candidates": 250,
+        "max_candidates_per_source": 80,
+        "round": 1,
+        "working": 10
+      }
+    ],
+    "proxy_search_round_limit": 3,
+    "proxy_search_rounds": 1,
     "status": "enabled",
     "tcp_enabled": true,
     "tls_enabled": false

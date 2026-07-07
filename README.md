@@ -25,6 +25,10 @@ lists and route TCP checks through it. The liveness stage is fail-open: if the
 proxy pool is empty or too few servers validate, the original filtered list is
 kept instead of publishing an empty subscription. Each VPN config can be tried
 through several different SOCKS5 proxies before it is treated as unreachable.
+If too few SOCKS5 proxies are found, the proxy search widens the candidate
+sample for several rounds before giving up. If a TCP candidate batch does not
+fill the target number of live VPN configs, the runner checks additional
+batches before it falls back.
 
 Configured SOCKS5 proxy pool sources:
 
@@ -129,6 +133,7 @@ Important settings in `config/settings.yaml`:
 | `validator` | `whitelist_ru_ratio`, `whitelist_eu_countries` | Whitelist RU/EU split |
 | `validator` | `max_configs_to_validate` | `0` means process all parsed configs |
 | `validator` | `tcp_enabled`, `tls_enabled` | Network liveness checks |
+| `validator` | `tcp_candidate_limit`, `tcp_search_rounds` | TCP validation batch size and retry batches |
 | `validator` | `proxy_attempts_per_config` | `0` tries all working SOCKS5 proxies for each config |
 | `validator` | `proxy_pool` | Optional free SOCKS5 pool for GitHub Actions validation |
 | `validator` | `min_alive_to_filter` | Fail-open threshold before liveness filtering is trusted |
