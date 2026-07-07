@@ -24,6 +24,8 @@ import sys
 import socket
 import urllib.request
 import urllib.error
+from pathlib import Path
+from typing import Any
 
 from src.repo_info import github_branch, github_repo_slug
 
@@ -138,6 +140,145 @@ def _subscription_urls() -> dict[str, str]:
         "whitelist": f"{base}/subscription-whitelist.txt",
         "mix": f"{base}/subscription-mix.txt",
     }
+
+
+_SUBSCRIPTION_LABELS = {
+    "combined": "Общая",
+    "blacklist": "Blacklist",
+    "whitelist": "Whitelist",
+    "mix": "Mix 75/75",
+}
+
+
+def _load_run_summary(filepath: str) -> dict[str, Any]:
+    """Load output/run-summary.json written by the pipeline."""
+    if not filepath:
+        return {}
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _subscription_file_paths(subscription_file: str) -> dict[str, str]:
+    """Return expected local output files using the combined path as anchor."""
+    combined = Path(subscription_file or "output/subscription.txt")
+    output_dir = combined.parent
+    return {
+        "combined": str(combined),
+        "blacklist": str(output_dir / "subscription-blacklist.txt"),
+        "whitelist": str(output_dir / "subscription-whitelist.txt"),
+        "mix": str(output_dir / "subscription-mix.txt"),
+    }
+
+
+def _country_name(code: str) -> str:
+    flag, name = _COUNTRY_INFO.get(code, ("🌍", code))
+    return f"{flag} {name}"
+
+
+def _format_country_counts(countries: dict[str, Any], *, max_items: int = 6) -> str:
+    """Format country counts as a compact Telegram line."""
+    parsed: list[tuple[str, int]] = []
+    for code, count in countries.items():
+        try:
+            parsed.append((str(code).upper(), int(count)))
+        except (TypeError, ValueError):
+            continue
+    if not parsed:
+        return "страны не определены"
+
+    parsed.sort(key=lambda item: item[1], reverse=True)
+    shown = parsed[:max_items]
+    parts = [f"{_country_name(code)} {count}" for code, count in shown]
+    remaining = len(parsed) - len(shown)
+    if remaining > 0:
+        parts.append(f"+{remaining} стран")
+    return ", ".join(parts)
+
+
+def _format_validation_section(summary: dict[str, Any]) -> str:
+    validation = summary.get("validation")
+    if not isinstance(validation, dict) or not validation:
+        return "🧪 Проверка: нет данных по этому прогону"
+
+    tcp_enabled = bool(validation.get("tcp_enabled"))
+    tls_enabled = bool(validation.get("tls_enabled"))
+    proxy_pool_enabled = bool(validation.get("proxy_pool_enabled"))
+    proxy_pool_required = bool(validation.get("proxy_pool_required"))
+    proxy_count = int(validation.get("proxy_count") or 0)
+
+    if not tcp_enabled and not tls_enabled:
+        first = "🧪 Проверка: выключена"
+    elif proxy_pool_enabled and proxy_pool_required and proxy_count <= 0:
+        first = "🧪 Проверка: пропущена, рабочих SOCKS5 прокси не найдено"
+    elif proxy_count > 0:
+        first = f"🧪 Проверка: включена, через {proxy_count} SOCKS5 прокси"
+    else:
+        first = "🧪 Проверка: включена, без прокси"
+
+    lines = [first]
+    lists = validation.get("lists")
+    if isinstance(lists, dict):
+        for key in ("blacklist", "whitelist"):
+            item = lists.get(key)
+            if not isinstance(item, dict):
+                continue
+            label = _SUBSCRIPTION_LABELS.get(key, key)
+            if item.get("reason") == "no_proxies":
+                lines.append(f"  {label}: не проверялся, нет рабочих прокси")
+                continue
+
+            checked = int(item.get("tcp_checked") or item.get("tls_checked") or 0)
+            alive = int(item.get("tcp_alive") or item.get("tls_alive") or 0)
+            skipped = int(item.get("tcp_skipped_protocol") or 0)
+            if checked <= 0 and not item.get("checked"):
+                lines.append(f"  {label}: нет кандидатов для TCP/TLS проверки")
+                continue
+
+            suffix = " fail-open" if item.get("fail_open") else ""
+            lines.append(
+                f"  {label}: проверено {checked}, живых {alive}, "
+                f"пропущено {skipped}{suffix}"
+            )
+    return "\n".join(lines)
+
+
+def _format_subscriptions_section(
+    summary: dict[str, Any], subscription_file: str
+) -> str:
+    outputs = summary.get("outputs")
+    lines = ["📍 Подписки и страны:"]
+
+    if isinstance(outputs, dict) and outputs:
+        for key in ("combined", "blacklist", "whitelist", "mix"):
+            item = outputs.get(key)
+            if not isinstance(item, dict):
+                continue
+            label = _SUBSCRIPTION_LABELS.get(key, key)
+            count = int(item.get("count") or 0)
+            countries = item.get("countries")
+            country_text = _format_country_counts(
+                countries if isinstance(countries, dict) else {}
+            )
+            lines.append(f"  {label}: {count} — {country_text}")
+        if len(lines) > 1:
+            return "\n".join(lines)
+
+    for key, filepath in _subscription_file_paths(subscription_file).items():
+        counts = _count_countries_from_file(filepath)
+        if not counts:
+            continue
+        label = _SUBSCRIPTION_LABELS.get(key, key)
+        lines.append(
+            f"  {label}: {sum(counts.values())} — {_format_country_counts(counts)}"
+        )
+
+    if len(lines) == 1:
+        lines.append("  данных по файлам нет")
+    return "\n".join(lines)
 
 
 def _count_countries_from_file(filepath: str) -> dict[str, int]:
@@ -404,11 +545,12 @@ def send_notification(
     configs_count: int,
     countries: str = "DE FI NL US GB FR JP SG CA",
     subscription_file: str = "",
+    status_file: str = "",
 ) -> bool:
     """Send a Telegram notification with config count + fun fact.
 
     Reads TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, LLM_API_KEY from env.
-    If subscription_file is provided, parses it for per-country breakdown.
+    If status_file is provided, uses exact per-output pipeline metadata.
     Returns True if sent, False if skipped or failed.
     """
     token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
@@ -427,33 +569,24 @@ def send_notification(
     if configs_count < 0:
         configs_count = 0
 
-    # Get per-country breakdown from subscription file if available.
-    country_counts: dict[str, int] = {}
-    if subscription_file:
-        country_counts = _count_countries_from_file(subscription_file)
+    summary = _load_run_summary(status_file)
 
     # Generate fun fact via Gemini.
     api_key = os.environ.get("LLM_API_KEY", "")
     fact = _generate_fun_fact(api_key)
     urls = _subscription_urls()
 
-    # Build country breakdown lines.
-    if country_counts:
-        country_lines = []
-        for code, count in country_counts.items():
-            flag, name = _COUNTRY_INFO.get(code, ("🌍", code))
-            country_lines.append(f"  {flag} {name}: {count}")
-        country_section = "\n".join(country_lines)
-    else:
-        country_section = html.escape(countries)
+    validation_section = _format_validation_section(summary)
+    subscriptions_section = _format_subscriptions_section(summary, subscription_file)
 
     # Build message.
     message = (
         f"{html.escape(_bot_intro())}\n"
         f"\n"
         f"Конфиг обновился, обновите конфигурацию.\n"
-        f"Страны которые обновились:\n"
-        f"{country_section}\n"
+        f"{html.escape(validation_section)}\n"
+        f"\n"
+        f"{html.escape(subscriptions_section)}\n"
         f"\n"
         f"🔮 Факт: {html.escape(fact)}\n"
         f"\n"
@@ -478,6 +611,12 @@ def main() -> int:
         default="output/subscription.txt",
         help="Path to subscription.txt for per-country breakdown",
     )
+    parser.add_argument(
+        "--status-file",
+        type=str,
+        default="output/run-summary.json",
+        help="Path to run-summary.json for validation and per-output stats",
+    )
     args = parser.parse_args()
 
     if args.configs < 0:
@@ -489,6 +628,7 @@ def main() -> int:
         configs_count=args.configs,
         countries=args.countries,
         subscription_file=args.file,
+        status_file=args.status_file,
     )
     if ok:
         logger.info("Notification sent")

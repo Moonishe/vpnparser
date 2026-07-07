@@ -17,9 +17,11 @@ continues with whatever data survived the previous stage.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +51,8 @@ class PipelineRunner:
         self.github_token = github_token or os.environ.get("GITHUB_TOKEN")
         self.settings: dict[str, Any] = self._load_settings(settings_path)
         self._validator_proxy_urls_cache: list[str] | None = None
+        self._liveness_stats: dict[str, Any] = {}
+        self._output_stats: dict[str, Any] = {}
 
     # --- settings ---
 
@@ -102,6 +106,8 @@ class PipelineRunner:
                 ``GITHUB_TOKEN`` and repo config).
         """
         start = time.monotonic()
+        self._liveness_stats = {}
+        self._output_stats = {}
         logger.info("Pipeline started.")
 
         # 1. Fetch all sources.
@@ -110,6 +116,7 @@ class PipelineRunner:
             logger.warning("No source results fetched — pipeline produced nothing.")
             self._write_empty_output(output_file)
             self._write_empty_secondary_outputs(output_file)
+            self._write_run_summary("no_sources")
             return 0
 
         # 2. Parse all content into Config objects grouped by source list type.
@@ -126,6 +133,7 @@ class PipelineRunner:
             )
             self._write_empty_output(output_file)
             self._write_empty_secondary_outputs(output_file)
+            self._write_run_summary("no_configs_parsed")
             return 0
 
         # 3. Preprocess each list type: garbage -> sample -> dedup -> country.
@@ -143,6 +151,7 @@ class PipelineRunner:
             logger.warning("No configs matched allowed countries.")
             self._write_empty_output(output_file)
             self._write_empty_secondary_outputs(output_file)
+            self._write_run_summary("no_allowed_countries")
             return 0
 
         preprocessed_by_list = await self._validate_liveness_by_list(
@@ -152,6 +161,7 @@ class PipelineRunner:
             logger.warning("No configs survived liveness validation.")
             self._write_empty_output(output_file)
             self._write_empty_secondary_outputs(output_file)
+            self._write_run_summary("no_live_configs")
             return 0
 
         # 4. Build combined output: interleave blacklist + whitelist for balance.
@@ -187,6 +197,7 @@ class PipelineRunner:
 
         # 5. Write combined output.
         count = self._write_output(combined, output_file)
+        self._record_output_stats("combined", output_file, combined)
         logger.info("Wrote %d configs to %s.", count, output_file)
         output_files = [output_file]
         split_output_files = self._split_output_files(output_file)
@@ -196,9 +207,11 @@ class PipelineRunner:
             mix_configs = self._build_mixed_output(preprocessed_by_list, max_total)
             if mix_configs:
                 mix_count = self._write_output(mix_configs, mix_output_file)
+                self._record_output_stats("mix", mix_output_file, mix_configs)
                 logger.info("Wrote %d mix configs to %s.", mix_count, mix_output_file)
             else:
                 self._write_empty_output(mix_output_file)
+                self._record_output_stats("mix", mix_output_file, [])
                 logger.warning("No configs for mix output.")
             output_files.append(mix_output_file)
 
@@ -213,13 +226,19 @@ class PipelineRunner:
                 else:
                     split_configs = self._sort_and_limit(split_pre)
                 split_count = self._write_output(split_configs, split_file)
+                self._record_output_stats(list_type, split_file, split_configs)
                 logger.info(
                     "Wrote %d %s configs to %s.", split_count, list_type, split_file
                 )
             else:
                 self._write_empty_output(split_file)
+                self._record_output_stats(list_type, split_file, [])
                 logger.warning("No configs for %s output.", list_type)
             output_files.append(split_file)
+
+        summary_file = self._write_run_summary("ok")
+        if summary_file:
+            output_files.append(summary_file)
 
         # 7. Publish (optional).
         if publish:
@@ -653,6 +672,14 @@ class PipelineRunner:
             urls.append(explicit)
 
         pool_cfg = self._proxy_pool_config()
+        self._liveness_stats.update(
+            {
+                "explicit_proxy": bool(explicit),
+                "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), False),
+                "proxy_pool_required": self._as_bool(pool_cfg.get("required"), False),
+                "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
+            }
+        )
         if self._as_bool(pool_cfg.get("enabled"), False):
             try:
                 from src.validators.proxy_pool import load_proxy_pool
@@ -699,6 +726,7 @@ class PipelineRunner:
                             urls.append(proxy_url)
 
         self._validator_proxy_urls_cache = urls
+        self._liveness_stats["proxy_count"] = len(urls)
         return list(urls)
 
     async def _validate_liveness_by_list(
@@ -708,8 +736,23 @@ class PipelineRunner:
         vcfg = self._section("validator")
         tcp_enabled = self._as_bool(vcfg.get("tcp_enabled"), False)
         tls_enabled = self._as_bool(vcfg.get("tls_enabled"), False)
+        pool_cfg = self._proxy_pool_config()
+        self._liveness_stats = {
+            "tcp_enabled": tcp_enabled,
+            "tls_enabled": tls_enabled,
+            "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), False),
+            "proxy_pool_required": self._as_bool(pool_cfg.get("required"), False),
+            "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
+            "proxy_attempts_per_config": self._as_int(
+                vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+            ),
+            "proxy_count": 0,
+            "lists": {},
+        }
         if not tcp_enabled and not tls_enabled:
+            self._liveness_stats["status"] = "disabled"
             return configs_by_list
+        self._liveness_stats["status"] = "enabled"
 
         validated: dict[str, list[Config]] = {}
         for list_type, configs in configs_by_list.items():
@@ -739,12 +782,23 @@ class PipelineRunner:
         pool_cfg = self._proxy_pool_config()
         pool_required = self._as_bool(pool_cfg.get("required"), False)
         pool_enabled = self._as_bool(pool_cfg.get("enabled"), False)
+        list_key = normalize_list_type(label)
+        list_stats = {
+            "input": len(configs),
+            "proxy_count": len(proxy_urls),
+            "checked": False,
+            "filtered": False,
+            "fail_open": False,
+            "reason": "",
+        }
+        self._liveness_stats.setdefault("lists", {})[list_key] = list_stats
         if pool_enabled and pool_required and not proxy_urls:
             logger.warning(
                 "Liveness validation for %s skipped: proxy_pool.required=true "
                 "but no proxies are available.",
                 label,
             )
+            list_stats["reason"] = "no_proxies"
             return configs
 
         current = list(configs)
@@ -752,6 +806,8 @@ class PipelineRunner:
         if tcp_enabled:
             checkable = [c for c in current if c.protocol not in _TCP_SKIP_PROTOCOLS]
             passthrough = [c for c in current if c.protocol in _TCP_SKIP_PROTOCOLS]
+            list_stats["tcp_candidates"] = len(checkable)
+            list_stats["tcp_skipped_protocol"] = len(passthrough)
             if checkable:
                 from src.validators.tcp_check import validate_configs_tcp
 
@@ -766,6 +822,7 @@ class PipelineRunner:
                         len(checkable),
                     )
                     checkable = checkable[:candidate_limit]
+                list_stats["tcp_checked"] = len(checkable)
 
                 tcp_max_alive = self._as_int(vcfg.get("tcp_max_alive"), 0, minimum=0)
                 tcp_max_alive_by_list = vcfg.get("tcp_max_alive_by_list", {})
@@ -779,6 +836,7 @@ class PipelineRunner:
                             tcp_max_alive,
                             minimum=0,
                         )
+                list_stats["tcp_max_alive"] = tcp_max_alive
 
                 alive_tcp = await validate_configs_tcp(
                     checkable,
@@ -794,7 +852,10 @@ class PipelineRunner:
                         vcfg.get("proxy_attempts_per_config"), 5, minimum=0
                     ),
                 )
+                list_stats["checked"] = True
+                list_stats["tcp_alive"] = len(alive_tcp)
                 min_alive = self._liveness_min_alive(len(checkable))
+                list_stats["min_alive_to_filter"] = min_alive
                 if len(alive_tcp) < min_alive:
                     logger.warning(
                         "%s TCP validation found %d/%d alive (<%d). "
@@ -804,8 +865,12 @@ class PipelineRunner:
                         len(checkable),
                         min_alive,
                     )
+                    list_stats["fail_open"] = True
+                    list_stats["reason"] = "below_min_alive"
                     return configs
                 current = alive_tcp + passthrough
+                list_stats["filtered"] = True
+                list_stats["output_after_tcp"] = len(current)
                 logger.info(
                     "%s after TCP validation: %d alive, %d TCP-skipped.",
                     label,
@@ -819,6 +884,7 @@ class PipelineRunner:
                 from src.validators.tls_check import validate_configs_tls
 
                 before_tls = list(current)
+                list_stats["tls_candidates"] = len(current)
                 candidate_limit = self._as_int(
                     vcfg.get("tls_candidate_limit"), 1000, minimum=0
                 )
@@ -830,6 +896,7 @@ class PipelineRunner:
                         len(current),
                     )
                     current = current[:candidate_limit]
+                list_stats["tls_checked"] = len(current)
                 alive_tls = await validate_configs_tls(
                     current,
                     timeout=self._as_float(
@@ -843,6 +910,8 @@ class PipelineRunner:
                         vcfg.get("proxy_attempts_per_config"), 5, minimum=0
                     ),
                 )
+                list_stats["checked"] = True
+                list_stats["tls_alive"] = len(alive_tls)
                 min_alive = self._liveness_min_alive(len(current))
                 if len(alive_tls) < min_alive:
                     logger.warning(
@@ -853,8 +922,12 @@ class PipelineRunner:
                         len(current),
                         min_alive,
                     )
+                    list_stats["fail_open"] = True
+                    list_stats["reason"] = "tls_below_min_alive"
                     return before_tls
                 current = alive_tls
+                list_stats["filtered"] = True
+                list_stats["output_after_tls"] = len(current)
                 logger.info("%s after TLS validation: %d configs.", label, len(current))
 
         return current
@@ -1227,6 +1300,52 @@ class PipelineRunner:
         """Clear configured split outputs on empty runs."""
         for split_file in self._split_output_files(combined_output_file).values():
             self._write_empty_output(split_file)
+
+    def _status_output_file(self) -> str | None:
+        """Return run-summary output path, if configured."""
+        pcfg = self._section("publisher")
+        raw = pcfg.get("status_output_file")
+        if not raw:
+            return None
+        return str(raw)
+
+    def _record_output_stats(
+        self, name: str, output_file: str, configs: list[Config]
+    ) -> None:
+        """Store exact output counts/countries before raw links lose metadata."""
+        country_counts = Counter(
+            str(cfg.country).upper()
+            for cfg in configs
+            if cfg.raw_link and getattr(cfg, "country", None)
+        )
+        self._output_stats[name] = {
+            "file": output_file,
+            "count": sum(1 for cfg in configs if cfg.raw_link),
+            "countries": dict(country_counts.most_common()),
+        }
+
+    def _write_run_summary(self, status: str) -> str | None:
+        """Write machine-readable run metadata for Telegram and debugging."""
+        output_file = self._status_output_file()
+        if not output_file:
+            return None
+
+        payload = {
+            "status": status,
+            "outputs": self._output_stats,
+            "validation": self._liveness_stats,
+        }
+        path = Path(output_file)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("Could not write run summary %s: %s", output_file, exc)
+            return None
+        return output_file
 
     # --- stage 5: write ---
 

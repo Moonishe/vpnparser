@@ -63,6 +63,81 @@ def test_telegram_subscription_urls_use_github_env(monkeypatch) -> None:
     }
 
 
+def test_telegram_formats_validation_and_per_subscription_countries() -> None:
+    summary = {
+        "validation": {
+            "tcp_enabled": True,
+            "tls_enabled": False,
+            "proxy_pool_enabled": True,
+            "proxy_pool_required": True,
+            "proxy_count": 10,
+            "lists": {
+                "blacklist": {
+                    "tcp_checked": 1000,
+                    "tcp_alive": 150,
+                    "tcp_skipped_protocol": 3,
+                },
+                "whitelist": {
+                    "tcp_checked": 217,
+                    "tcp_alive": 216,
+                    "tcp_skipped_protocol": 1,
+                },
+            },
+        },
+        "outputs": {
+            "whitelist": {
+                "count": 150,
+                "countries": {"RU": 120, "DE": 30},
+            },
+            "mix": {
+                "count": 150,
+                "countries": {"RU": 60, "CA": 49, "DE": 27, "FI": 14},
+            },
+        },
+    }
+
+    validation = telegram_module._format_validation_section(summary)
+    subscriptions = telegram_module._format_subscriptions_section(
+        summary, "output/subscription.txt"
+    )
+
+    assert "через 10 SOCKS5 прокси" in validation
+    assert "Blacklist: проверено 1000, живых 150" in validation
+    assert "Whitelist: проверено 217, живых 216" in validation
+    assert "Whitelist: 150" in subscriptions
+    assert "Россия 120" in subscriptions
+    assert "Mix 75/75: 150" in subscriptions
+    assert "Россия 60" in subscriptions
+
+
+def test_runner_summary_uses_config_country_metadata(tmp_path) -> None:
+    status_file = tmp_path / "run-summary.json"
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  status_output_file: {status_file}
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+    cfg = Config(
+        "vless",
+        "unknown.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        raw_link="vless://11111111-1111-4111-8111-111111111111@unknown.example:443#node",
+        country="RU",
+    )
+
+    runner._record_output_stats("whitelist", "output/subscription-whitelist.txt", [cfg])
+    runner._write_run_summary("ok")
+    data = json.loads(status_file.read_text(encoding="utf-8"))
+
+    assert data["outputs"]["whitelist"]["count"] == 1
+    assert data["outputs"]["whitelist"]["countries"] == {"RU": 1}
+
+
 def test_repo_info_parses_github_remote_and_ref(monkeypatch) -> None:
     assert _slug_from_remote_url("https://github.com/owner/repo.git") == "owner/repo"
     assert _slug_from_remote_url("git@github.com:owner/repo.git") == "owner/repo"

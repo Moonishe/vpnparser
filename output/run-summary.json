@@ -1,0 +1,93 @@
+{
+  "outputs": {
+    "blacklist": {
+      "count": 150,
+      "countries": {
+        "CA": 44,
+        "DE": 14,
+        "FI": 29,
+        "FR": 18,
+        "GB": 5,
+        "JP": 1,
+        "NL": 17,
+        "US": 22
+      },
+      "file": "output/subscription-blacklist.txt"
+    },
+    "combined": {
+      "count": 150,
+      "countries": {
+        "CA": 44,
+        "DE": 46,
+        "FI": 32,
+        "FR": 21,
+        "GB": 5,
+        "JP": 1,
+        "NL": 1
+      },
+      "file": "output/subscription.txt"
+    },
+    "mix": {
+      "count": 150,
+      "countries": {
+        "CA": 44,
+        "DE": 29,
+        "FI": 17,
+        "RU": 60
+      },
+      "file": "output/subscription-mix.txt"
+    },
+    "whitelist": {
+      "count": 150,
+      "countries": {
+        "DE": 30,
+        "RU": 120
+      },
+      "file": "output/subscription-whitelist.txt"
+    }
+  },
+  "status": "ok",
+  "validation": {
+    "explicit_proxy": false,
+    "lists": {
+      "blacklist": {
+        "checked": true,
+        "fail_open": false,
+        "filtered": true,
+        "input": 2099,
+        "min_alive_to_filter": 10,
+        "output_after_tcp": 153,
+        "proxy_count": 10,
+        "reason": "",
+        "tcp_alive": 150,
+        "tcp_candidates": 2096,
+        "tcp_checked": 1000,
+        "tcp_max_alive": 150,
+        "tcp_skipped_protocol": 3
+      },
+      "whitelist": {
+        "checked": true,
+        "fail_open": false,
+        "filtered": true,
+        "input": 213,
+        "min_alive_to_filter": 10,
+        "output_after_tcp": 213,
+        "proxy_count": 10,
+        "reason": "",
+        "tcp_alive": 212,
+        "tcp_candidates": 212,
+        "tcp_checked": 212,
+        "tcp_max_alive": 0,
+        "tcp_skipped_protocol": 1
+      }
+    },
+    "proxy_attempts_per_config": 0,
+    "proxy_count": 10,
+    "proxy_pool_enabled": true,
+    "proxy_pool_required": true,
+    "proxy_pool_validate": true,
+    "status": "enabled",
+    "tcp_enabled": true,
+    "tls_enabled": false
+  }
+}

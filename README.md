@@ -10,6 +10,7 @@ The current pipeline produces four files:
 - `output/subscription-mix.txt` - strict 75 blacklist + 75 whitelist mix.
 - `output/subscription-blacklist.txt` - normal "blacklist" VPN pool.
 - `output/subscription-whitelist.txt` - "whitelist" / restricted-network pool.
+- `output/run-summary.json` - validation and per-output country metadata for Telegram.
 
 ## Pipeline
 
@@ -62,6 +63,9 @@ Whitelist output targets 150 checked configs with an 80% RU / 20% EU split.
 The mix output targets 75 checked blacklist configs plus 75 checked whitelist
 configs. Subscription titles and Telegram raw GitHub links use
 `GITHUB_OWNER/GITHUB_REPO` (or GitHub Actions' `GITHUB_REPOSITORY`) when set.
+Telegram notifications read `output/run-summary.json`, so they can show whether
+TCP/SOCKS5 validation ran and list countries separately for the combined,
+blacklist, whitelist, and 75/75 mix subscriptions.
 
 ## Supported Protocols
 

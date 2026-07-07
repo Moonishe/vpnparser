@@ -74,6 +74,7 @@ jobs:
           test -f output/subscription-mix.txt || { echo "ERROR: output/subscription-mix.txt not created!"; exit 1; }
           test -f output/subscription-blacklist.txt || { echo "ERROR: output/subscription-blacklist.txt not created!"; exit 1; }
           test -f output/subscription-whitelist.txt || { echo "ERROR: output/subscription-whitelist.txt not created!"; exit 1; }
+          test -f output/run-summary.json || { echo "ERROR: output/run-summary.json not created!"; exit 1; }
           # Decode base64 and count configs in the combined subscription.
           CONFIGS=$(python3 -c "
           import base64
@@ -92,7 +93,7 @@ jobs:
 
       - name: Telegram notify
         if: env.configs_count != ''
-        run: python -m src.notify.telegram --configs "${{ env.configs_count }}" --file output/subscription.txt
+        run: python -m src.notify.telegram --configs "${{ env.configs_count }}" --file output/subscription.txt --status-file output/run-summary.json
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
