@@ -4,9 +4,10 @@ Fetches public VPN subscription files from GitHub, parses supported proxy links,
 filters and deduplicates them, then writes Happ/v2ray-compatible base64
 subscriptions.
 
-The current pipeline produces three files:
+The current pipeline produces four files:
 
 - `output/subscription.txt` - combined pool.
+- `output/subscription-mix.txt` - strict 75 blacklist + 75 whitelist mix.
 - `output/subscription-blacklist.txt` - normal "blacklist" VPN pool.
 - `output/subscription-whitelist.txt` - "whitelist" / restricted-network pool.
 
@@ -16,35 +17,51 @@ The current pipeline produces three files:
 fetch -> parse -> garbage filter -> dedup -> country filter -> aggregate -> write -> publish
 ```
 
-The default mode is intentionally fast: it does not run TCP/TLS/GeoIP network
-checks. It detects countries from remarks, hostnames, SNI, and source metadata,
-then caps the output per country. TCP/TLS validators still exist in `src/validators`
-and can be wired in later for a slower live-check mode.
+The default mode keeps the country filter fast, then optionally runs a soft TCP
+liveness check. GitHub Actions often cannot reach VPN servers directly, so the
+validator can build a small free SOCKS5 proxy pool from GitHub-hosted proxy
+lists and route TCP checks through it. The liveness stage is fail-open: if the
+proxy pool is empty or too few servers validate, the original filtered list is
+kept instead of publishing an empty subscription. Each VPN config can be tried
+through several different SOCKS5 proxies before it is treated as unreachable.
+
+Configured SOCKS5 proxy pool sources:
+
+- `proxifly/free-proxy-list`
+- `ProxyScrape/free-proxy-list`
+- `VPSLabCloud/VPSLab-Free-Proxy-List`
+- `gfpcom/free-proxy-list` wiki list, used last because it is much larger
 
 ## Sources
 
 Sources live in `config/sources.json`. Each source supports:
 
-- `type`: `subscription` for one file or `raw` for a directory.
+- `type`: `subscription` for one GitHub file, `raw` for a GitHub directory,
+  or `url` for a direct HTTPS text source.
 - `list_type`: `blacklist`, `whitelist`, or `mixed`.
-- `owner`, `repo`, `path`, `branch`, `enabled`.
+- GitHub sources use `owner`, `repo`, `path`, `branch`, `enabled`.
+- Direct URL sources use `url`; optional `default_country` is used only when
+  country detection from the config itself fails.
 - For raw directories: optional `max_depth`, `max_files`, `include_files`, `exclude_files`.
 
 Currently included upstream pools:
 
 - `igareck/vpn-configs-for-russia`
-  - Black: `BLACK_VLESS_RUS_mobile.txt`, `BLACK_VLESS_RUS.txt`, `BLACK_SS+All_RUS.txt`
-  - White: `Vless-Reality-White-Lists-Rus-Mobile.txt`, `WHITE-CIDR-RU-checked.txt`, `WHITE-CIDR-RU-all.txt`
-- `AvenCores/goida-vpn-configs`
-  - Selected mirrors: `githubmirror/1.txt`, `6.txt`, `22.txt`, `24.txt`, `25.txt`
-- `hiztin/VLESS-PO-GRIBI`
-  - `deploy/sub.txt`
-- `VAL41K/bypass-rkn-blocks`
-  - Black: `configs/obhod_BL`
+  - Black: `BLACK_VLESS_RUS_mobile.txt`
+  - White: `Vless-Reality-White-Lists-Rus-Mobile.txt`, `WHITE-CIDR-RU-checked.txt`,
+    `WHITE-CIDR-RU-all.txt`, `WHITE-SNI-RU-all.txt`
+- `V2RayRoot/V2RayConfig`
+  - Black: `Config/vless.txt`
+- `sakha1370/OpenRay`
+  - Black: `output/all_valid_proxies.txt`
+- `jsxta/whitelist-russia`
+  - White subscription: `https://gbr.mydan.online/configs`
 
-`AvenCores/goida-vpn-configs` is intentionally not fetched from repo root and
-does not include every mirror file. Some mirrors are huge or duplicate other
-configured sources.
+Blacklist output keeps only `DE`, `FI`, `NL`, `US`, `GB`, `FR`, `JP`, `CA`.
+Whitelist output targets 150 checked configs with an 80% RU / 20% EU split.
+The mix output targets 75 checked blacklist configs plus 75 checked whitelist
+configs. Subscription titles and Telegram raw GitHub links use
+`GITHUB_OWNER/GITHUB_REPO` (or GitHub Actions' `GITHUB_REPOSITORY`) when set.
 
 ## Supported Protocols
 
@@ -104,8 +121,13 @@ Important settings in `config/settings.yaml`:
 | --- | --- | --- |
 | `sources` | `max_concurrent_fetches` | Concurrent source fetch limit |
 | `validator` | `allowed_countries` | Empty list keeps all countries |
+| `validator` | `allowed_countries_by_list` | Per-list country filters |
+| `validator` | `whitelist_ru_ratio`, `whitelist_eu_countries` | Whitelist RU/EU split |
 | `validator` | `max_configs_to_validate` | `0` means process all parsed configs |
-| `validator` | `tcp_enabled`, `tls_enabled` | Reserved for slower live validation |
+| `validator` | `tcp_enabled`, `tls_enabled` | Network liveness checks |
+| `validator` | `proxy_attempts_per_config` | `0` tries all working SOCKS5 proxies for each config |
+| `validator` | `proxy_pool` | Optional free SOCKS5 pool for GitHub Actions validation |
+| `validator` | `min_alive_to_filter` | Fail-open threshold before liveness filtering is trusted |
 | `aggregator` | `max_configs_in_output` | Hard cap per generated file |
 | `aggregator` | `max_per_country` | Per-country cap |
 | `publisher` | `output_file` | Combined output path |

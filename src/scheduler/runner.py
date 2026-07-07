@@ -7,7 +7,7 @@
                   ``Config`` objects grouped by source ``list_type`` (blacklist/whitelist).
 3. **Filter**   — garbage/placeholder filter -> sample -> dedup -> country filter.
 4. **Aggregate**— interleave blacklist+whitelist -> sort -> per-country limit.
-5. **Write**    — ``write_subscription()`` emits combined + split output files.
+5. **Write**    — ``write_subscription()`` emits combined, mix, and split files.
 6. **Publish**  — (optional) commit outputs to a GitHub repo via Contents API.
 
 Each stage is wrapped so a failure is logged and, where possible, the pipeline
@@ -25,12 +25,14 @@ from typing import Any
 
 import yaml
 
-from src.parsers import ALL_PARSERS, PARSER_BY_SCHEME
+from src.parsers import PARSER_BY_SCHEME
 from src.parsers.base import Config, find_all_links, is_garbage_config
 from src.parsers.subscription import SubscriptionParser
 from src.sources.list_types import normalize_list_type
 
 logger = logging.getLogger(__name__)
+
+_TCP_SKIP_PROTOCOLS = {"tuic", "hysteria2"}
 
 
 class PipelineRunner:
@@ -46,6 +48,7 @@ class PipelineRunner:
         self.sources_path = sources_path
         self.github_token = github_token or os.environ.get("GITHUB_TOKEN")
         self.settings: dict[str, Any] = self._load_settings(settings_path)
+        self._validator_proxy_urls_cache: list[str] | None = None
 
     # --- settings ---
 
@@ -106,7 +109,7 @@ class PipelineRunner:
         if not results:
             logger.warning("No source results fetched — pipeline produced nothing.")
             self._write_empty_output(output_file)
-            self._write_empty_split_outputs(output_file)
+            self._write_empty_secondary_outputs(output_file)
             return 0
 
         # 2. Parse all content into Config objects grouped by source list type.
@@ -122,7 +125,7 @@ class PipelineRunner:
                 "No configs parsed from sources — pipeline produced nothing."
             )
             self._write_empty_output(output_file)
-            self._write_empty_split_outputs(output_file)
+            self._write_empty_secondary_outputs(output_file)
             return 0
 
         # 3. Preprocess each list type: garbage -> sample -> dedup -> country.
@@ -139,7 +142,16 @@ class PipelineRunner:
         if not preprocessed_by_list:
             logger.warning("No configs matched allowed countries.")
             self._write_empty_output(output_file)
-            self._write_empty_split_outputs(output_file)
+            self._write_empty_secondary_outputs(output_file)
+            return 0
+
+        preprocessed_by_list = await self._validate_liveness_by_list(
+            preprocessed_by_list
+        )
+        if not preprocessed_by_list:
+            logger.warning("No configs survived liveness validation.")
+            self._write_empty_output(output_file)
+            self._write_empty_secondary_outputs(output_file)
             return 0
 
         # 4. Build combined output: interleave blacklist + whitelist for balance.
@@ -155,7 +167,7 @@ class PipelineRunner:
         lists = list(preprocessed_by_list.values())
         combined: list[Config] = []
         i = 0
-        while len(combined) < max_total * 2 and any(i < len(l) for l in lists):
+        while len(combined) < max_total * 2 and any(i < len(group) for group in lists):
             for configs in lists:
                 if i < len(configs):
                     combined.append(configs[i])
@@ -177,14 +189,26 @@ class PipelineRunner:
         count = self._write_output(combined, output_file)
         logger.info("Wrote %d configs to %s.", count, output_file)
         output_files = [output_file]
+        split_output_files = self._split_output_files(output_file)
+
+        mix_output_file = self._mix_output_file(output_file, split_output_files)
+        if mix_output_file:
+            mix_configs = self._build_mixed_output(preprocessed_by_list, max_total)
+            if mix_configs:
+                mix_count = self._write_output(mix_configs, mix_output_file)
+                logger.info("Wrote %d mix configs to %s.", mix_count, mix_output_file)
+            else:
+                self._write_empty_output(mix_output_file)
+                logger.warning("No configs for mix output.")
+            output_files.append(mix_output_file)
 
         # 6. Write split outputs — sort+limit each preprocessed list now
         #    (deferred from step 3 so the combined path sorts only once).
-        for list_type, split_file in self._split_output_files(output_file).items():
+        for list_type, split_file in split_output_files.items():
             split_pre = preprocessed_by_list.get(list_type, [])
             if split_pre:
                 if list_type == "whitelist":
-                    # Whitelist: 70% RU servers, 30% other countries.
+                    # Whitelist: 80% RU servers, 20% EU countries by default.
                     split_configs = self._whitelist_balance(split_pre, max_total)
                 else:
                     split_configs = self._sort_and_limit(split_pre)
@@ -271,6 +295,13 @@ class PipelineRunner:
                 for link in links:
                     cfg = self._parse_one_link(link)
                     if cfg is not None:
+                        source_default_country = self._result_default_country(result)
+                        if source_default_country:
+                            setattr(
+                                cfg,
+                                "source_default_country",
+                                source_default_country,
+                            )
                         bucket.append(cfg)
                         parsed_here += 1
                 logger.debug(
@@ -319,6 +350,19 @@ class PipelineRunner:
         if isinstance(result, dict):
             return str(result.get("name") or result.get("source_name") or "?")
         return "?"
+
+    @staticmethod
+    def _result_default_country(result: Any) -> str | None:
+        """Best-effort default country hint carried by a source result."""
+        raw: Any = None
+        if hasattr(result, "default_country"):
+            raw = getattr(result, "default_country")
+        elif isinstance(result, dict):
+            raw = result.get("default_country")
+        if raw is None:
+            return None
+        text = str(raw).strip().upper()
+        return text if len(text) == 2 and text.isalpha() else None
 
     async def _extract_links(
         self,
@@ -480,7 +524,9 @@ class PipelineRunner:
 
     # --- stage 3: country filter ---
 
-    def _filter_countries(self, configs: list[Config]) -> list[Config]:
+    def _filter_countries(
+        self, configs: list[Config], *, list_type: str = "mixed"
+    ) -> list[Config]:
         """Filter configs by allowed countries (no network — instant).
 
         Detects country from each config's remark using emoji flags,
@@ -491,16 +537,34 @@ class PipelineRunner:
         """
         vcfg = self._section("validator")
         allowed = vcfg.get("allowed_countries", [])
+        by_list = vcfg.get("allowed_countries_by_list", {})
+        if isinstance(by_list, dict):
+            specific = by_list.get(normalize_list_type(list_type))
+            if specific is not None:
+                allowed = specific
         # Guard: YAML scalar string (e.g. "RU" instead of ["RU"]) would
         # iterate character-by-character → ["R","U"] → 0 matches.
         if isinstance(allowed, str):
             allowed = [allowed]
 
+        from src.validators.country_filter import detect_country
+
+        for cfg in configs:
+            if cfg.country is None:
+                cfg.country = detect_country(
+                    cfg.remark,
+                    getattr(cfg, "address", None),
+                    getattr(cfg, "sni", None),
+                    getattr(cfg, "host", None),
+                )
+            if cfg.country is None:
+                default_country = getattr(cfg, "source_default_country", None)
+                if default_country:
+                    cfg.country = str(default_country).upper()
+
         if not allowed:
             logger.info("No country filter configured — keeping all configs.")
             # Still try to detect country for sorting purposes.
-            from src.validators.country_filter import detect_country
-
             for cfg in configs:
                 if cfg.country is None:
                     cfg.country = detect_country(
@@ -512,11 +576,288 @@ class PipelineRunner:
             return configs
 
         allowed_list = [str(c).upper() for c in allowed]
-        logger.info("Filtering to allowed countries: %s", allowed_list)
+        logger.info("Filtering %s to allowed countries: %s", list_type, allowed_list)
 
         from src.validators.country_filter import filter_by_country
 
         return filter_by_country(configs, allowed_list)
+
+    # --- optional network liveness validation ---
+
+    @staticmethod
+    def _as_bool(value: Any, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+        return default
+
+    @staticmethod
+    def _as_int(value: Any, default: int, *, minimum: int = 0) -> int:
+        if isinstance(value, bool):
+            return default
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(minimum, parsed)
+
+    @staticmethod
+    def _as_float(value: Any, default: float, *, minimum: float = 0.0) -> float:
+        if isinstance(value, bool):
+            return default
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+        return max(minimum, parsed)
+
+    @staticmethod
+    def _source_list(value: Any) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return []
+
+    def _liveness_min_alive(self, total: int) -> int:
+        if total <= 0:
+            return 0
+        vcfg = self._section("validator")
+        raw = vcfg.get("min_alive_to_filter", 1)
+        threshold = self._as_int(raw, 1, minimum=1)
+        return min(threshold, total)
+
+    def _proxy_pool_config(self) -> dict[str, Any]:
+        raw = self._section("validator").get("proxy_pool", {})
+        return raw if isinstance(raw, dict) else {}
+
+    async def _validator_proxy_urls(self) -> list[str]:
+        """Return configured validator proxies, including optional free pool."""
+        if self._validator_proxy_urls_cache is not None:
+            return list(self._validator_proxy_urls_cache)
+
+        vcfg = self._section("validator")
+        urls: list[str] = []
+        explicit = str(vcfg.get("proxy_url") or os.environ.get("VALIDATOR_PROXY") or "")
+        explicit = explicit.strip()
+        if explicit:
+            urls.append(explicit)
+
+        pool_cfg = self._proxy_pool_config()
+        if self._as_bool(pool_cfg.get("enabled"), False):
+            try:
+                from src.validators.proxy_pool import load_proxy_pool
+            except ImportError as exc:
+                logger.warning("Proxy pool unavailable: %s", exc)
+            else:
+                sources = self._source_list(pool_cfg.get("sources"))
+                try:
+                    pool_urls = await load_proxy_pool(
+                        sources,
+                        fetch_timeout=self._as_float(
+                            pool_cfg.get("fetch_timeout_seconds"), 10.0, minimum=1.0
+                        ),
+                        max_candidates=self._as_int(
+                            pool_cfg.get("max_candidates"), 200, minimum=1
+                        ),
+                        max_candidates_per_source=self._as_int(
+                            pool_cfg.get("max_candidates_per_source"), 80, minimum=1
+                        ),
+                        max_proxies=self._as_int(
+                            pool_cfg.get("max_proxies"), 20, minimum=1
+                        ),
+                        validate=self._as_bool(pool_cfg.get("validate"), True),
+                        validation_timeout=self._as_float(
+                            pool_cfg.get("validation_timeout_seconds"),
+                            5.0,
+                            minimum=1.0,
+                        ),
+                        validation_concurrency=self._as_int(
+                            pool_cfg.get("validation_concurrency"),
+                            50,
+                            minimum=1,
+                        ),
+                        probe_host=str(pool_cfg.get("probe_host") or "api.github.com"),
+                        probe_port=self._as_int(
+                            pool_cfg.get("probe_port"), 443, minimum=1
+                        ),
+                    )
+                except Exception as exc:
+                    logger.warning("Proxy pool load failed: %s", exc)
+                else:
+                    for proxy_url in pool_urls:
+                        if proxy_url not in urls:
+                            urls.append(proxy_url)
+
+        self._validator_proxy_urls_cache = urls
+        return list(urls)
+
+    async def _validate_liveness_by_list(
+        self, configs_by_list: dict[str, list[Config]]
+    ) -> dict[str, list[Config]]:
+        """Optionally run TCP/TLS liveness checks for each list type."""
+        vcfg = self._section("validator")
+        tcp_enabled = self._as_bool(vcfg.get("tcp_enabled"), False)
+        tls_enabled = self._as_bool(vcfg.get("tls_enabled"), False)
+        if not tcp_enabled and not tls_enabled:
+            return configs_by_list
+
+        validated: dict[str, list[Config]] = {}
+        for list_type, configs in configs_by_list.items():
+            alive = await self._validate_liveness_configs(
+                list(configs),
+                label=list_type,
+                tcp_enabled=tcp_enabled,
+                tls_enabled=tls_enabled,
+            )
+            if alive:
+                validated[list_type] = alive
+        return validated
+
+    async def _validate_liveness_configs(
+        self,
+        configs: list[Config],
+        *,
+        label: str,
+        tcp_enabled: bool,
+        tls_enabled: bool,
+    ) -> list[Config]:
+        if not configs:
+            return []
+
+        vcfg = self._section("validator")
+        proxy_urls = await self._validator_proxy_urls()
+        pool_cfg = self._proxy_pool_config()
+        pool_required = self._as_bool(pool_cfg.get("required"), False)
+        pool_enabled = self._as_bool(pool_cfg.get("enabled"), False)
+        if pool_enabled and pool_required and not proxy_urls:
+            logger.warning(
+                "Liveness validation for %s skipped: proxy_pool.required=true "
+                "but no proxies are available.",
+                label,
+            )
+            return configs
+
+        current = list(configs)
+
+        if tcp_enabled:
+            checkable = [c for c in current if c.protocol not in _TCP_SKIP_PROTOCOLS]
+            passthrough = [c for c in current if c.protocol in _TCP_SKIP_PROTOCOLS]
+            if checkable:
+                from src.validators.tcp_check import validate_configs_tcp
+
+                candidate_limit = self._as_int(
+                    vcfg.get("tcp_candidate_limit"), 1000, minimum=0
+                )
+                if candidate_limit > 0 and len(checkable) > candidate_limit:
+                    logger.info(
+                        "%s TCP validation candidate cap: checking first %d/%d.",
+                        label,
+                        candidate_limit,
+                        len(checkable),
+                    )
+                    checkable = checkable[:candidate_limit]
+
+                tcp_max_alive = self._as_int(vcfg.get("tcp_max_alive"), 0, minimum=0)
+                tcp_max_alive_by_list = vcfg.get("tcp_max_alive_by_list", {})
+                if isinstance(tcp_max_alive_by_list, dict):
+                    specific_max_alive = tcp_max_alive_by_list.get(
+                        normalize_list_type(label)
+                    )
+                    if specific_max_alive is not None:
+                        tcp_max_alive = self._as_int(
+                            specific_max_alive,
+                            tcp_max_alive,
+                            minimum=0,
+                        )
+
+                alive_tcp = await validate_configs_tcp(
+                    checkable,
+                    timeout=self._as_float(
+                        vcfg.get("tcp_timeout_seconds"), 5.0, minimum=0.1
+                    ),
+                    concurrency=self._as_int(
+                        vcfg.get("tcp_concurrency"), 300, minimum=1
+                    ),
+                    max_alive=tcp_max_alive,
+                    proxy_urls=proxy_urls,
+                    proxy_attempts_per_config=self._as_int(
+                        vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                    ),
+                )
+                min_alive = self._liveness_min_alive(len(checkable))
+                if len(alive_tcp) < min_alive:
+                    logger.warning(
+                        "%s TCP validation found %d/%d alive (<%d). "
+                        "Keeping unfiltered configs.",
+                        label,
+                        len(alive_tcp),
+                        len(checkable),
+                        min_alive,
+                    )
+                    return configs
+                current = alive_tcp + passthrough
+                logger.info(
+                    "%s after TCP validation: %d alive, %d TCP-skipped.",
+                    label,
+                    len(alive_tcp),
+                    len(passthrough),
+                )
+
+        if tls_enabled:
+            tls_checkable = [c for c in current if c.security in ("tls", "reality")]
+            if tls_checkable:
+                from src.validators.tls_check import validate_configs_tls
+
+                before_tls = list(current)
+                candidate_limit = self._as_int(
+                    vcfg.get("tls_candidate_limit"), 1000, minimum=0
+                )
+                if candidate_limit > 0 and len(current) > candidate_limit:
+                    logger.info(
+                        "%s TLS validation candidate cap: checking first %d/%d.",
+                        label,
+                        candidate_limit,
+                        len(current),
+                    )
+                    current = current[:candidate_limit]
+                alive_tls = await validate_configs_tls(
+                    current,
+                    timeout=self._as_float(
+                        vcfg.get("tls_timeout_seconds"), 5.0, minimum=0.1
+                    ),
+                    concurrency=self._as_int(
+                        vcfg.get("tls_concurrency"), 100, minimum=1
+                    ),
+                    proxy_urls=proxy_urls,
+                    proxy_attempts_per_config=self._as_int(
+                        vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                    ),
+                )
+                min_alive = self._liveness_min_alive(len(current))
+                if len(alive_tls) < min_alive:
+                    logger.warning(
+                        "%s TLS validation left %d/%d configs (<%d). "
+                        "Keeping pre-TLS configs.",
+                        label,
+                        len(alive_tls),
+                        len(current),
+                        min_alive,
+                    )
+                    return before_tls
+                current = alive_tls
+                logger.info("%s after TLS validation: %d configs.", label, len(current))
+
+        return current
 
     # --- stage 3+5: aggregate (split into dedup + sort/limit) ---
 
@@ -613,7 +954,7 @@ class PipelineRunner:
         configs = self._dedup_only(configs)
         logger.info("%s after dedup: %d configs.", label, len(configs))
 
-        configs = self._filter_countries(configs)
+        configs = self._filter_countries(configs, list_type=label)
         logger.info("%s after country filter: %d configs.", label, len(configs))
         if not configs:
             return []
@@ -621,54 +962,132 @@ class PipelineRunner:
         return configs
 
     def _whitelist_balance(self, configs: list[Config], max_total: int) -> list[Config]:
-        """Build whitelist output: 70% RU servers, 30% other countries.
+        """Build whitelist output: mostly RU servers plus EU fallback servers.
 
-        RU configs are sorted + limited; non-RU configs are sorted + limited
-        to fill the remaining 30%.  Falls back to all-RU or all-non-RU if
-        one side has too few configs.
+        Defaults to 80% RU and 20% EU. Falls back to the other side if one side
+        has too few configs so the output can still reach the configured cap.
         """
         from src.aggregator.merger import limit_per_country, sort_configs
 
         acfg = self._section("aggregator")
+        vcfg = self._section("validator")
         try:
             max_per = int(acfg.get("max_per_country", 0))
         except (TypeError, ValueError):
             max_per = 0
+        try:
+            ru_ratio = float(vcfg.get("whitelist_ru_ratio", 0.8))
+        except (TypeError, ValueError):
+            ru_ratio = 0.8
+        ru_ratio = min(1.0, max(0.0, ru_ratio))
+        eu_raw = vcfg.get("whitelist_eu_countries", ["DE", "FI", "NL", "FR"])
+        if isinstance(eu_raw, str):
+            eu_raw = [eu_raw]
+        eu_countries = {str(code).upper() for code in eu_raw}
 
         ru = [c for c in configs if c.country == "RU"]
-        other = [c for c in configs if c.country != "RU"]
+        eu = [c for c in configs if c.country in eu_countries]
 
-        ru_target = int(max_total * 0.7)
-        other_target = max_total - ru_target
+        ru_target = int(max_total * ru_ratio)
+        eu_target = max_total - ru_target
 
         # Sort + limit each side.
         ru_sorted = sort_configs(ru, sort_by="country")
-        other_sorted = sort_configs(other, sort_by="country")
+        eu_sorted = sort_configs(eu, sort_by="country")
         if max_per > 0:
             ru_sorted = limit_per_country(ru_sorted, max_per)
-            other_sorted = limit_per_country(other_sorted, max_per)
+            eu_sorted = limit_per_country(eu_sorted, max_per)
 
         ru_result = ru_sorted[:ru_target]
-        other_result = other_sorted[:other_target]
+        eu_result = eu_sorted[:eu_target]
 
         # Fill shortfall from the other side.
-        shortfall = max_total - len(ru_result) - len(other_result)
+        shortfall = max_total - len(ru_result) - len(eu_result)
         if shortfall > 0:
-            if len(ru_result) < ru_target and len(other_sorted) > len(other_result):
-                extra = other_sorted[len(other_result) : len(other_result) + shortfall]
-                other_result.extend(extra)
-            elif len(other_result) < other_target and len(ru_sorted) > len(ru_result):
+            if len(ru_result) < ru_target and len(eu_sorted) > len(eu_result):
+                extra = eu_sorted[len(eu_result) : len(eu_result) + shortfall]
+                eu_result.extend(extra)
+            elif len(eu_result) < eu_target and len(ru_sorted) > len(ru_result):
                 extra = ru_sorted[len(ru_result) : len(ru_result) + shortfall]
                 ru_result.extend(extra)
 
-        result = ru_result + other_result
+        result = ru_result + eu_result
         logger.info(
-            "Whitelist balance: %d RU + %d other = %d total.",
+            "Whitelist balance: %d RU + %d EU = %d total.",
             len(ru_result),
-            len(other_result),
+            len(eu_result),
             len(result),
         )
         return result
+
+    def _build_mixed_output(
+        self, preprocessed_by_list: dict[str, list[Config]], max_total: int
+    ) -> list[Config]:
+        """Build a strict 50/50 blacklist + whitelist mix from live configs."""
+        if max_total <= 0:
+            return []
+
+        blacklist_target = max_total // 2
+        whitelist_target = max_total - blacklist_target
+        used_keys: set[Any] = set()
+
+        blacklist_candidates = self._sort_and_limit(
+            preprocessed_by_list.get("blacklist", [])
+        )
+        blacklist_part = self._take_unique_configs(
+            blacklist_candidates, blacklist_target, used_keys
+        )
+
+        whitelist_source = [
+            cfg
+            for cfg in preprocessed_by_list.get("whitelist", [])
+            if cfg.dedup_key not in used_keys
+        ]
+        whitelist_candidates = self._whitelist_balance(whitelist_source, whitelist_target)
+        whitelist_part = self._take_unique_configs(
+            whitelist_candidates, whitelist_target, used_keys
+        )
+
+        if len(blacklist_part) < blacklist_target:
+            logger.warning(
+                "Mix output short on blacklist configs: %d/%d.",
+                len(blacklist_part),
+                blacklist_target,
+            )
+        if len(whitelist_part) < whitelist_target:
+            logger.warning(
+                "Mix output short on whitelist configs: %d/%d.",
+                len(whitelist_part),
+                whitelist_target,
+            )
+
+        result = blacklist_part + whitelist_part
+        logger.info(
+            "Mix output: %d blacklist + %d whitelist = %d total.",
+            len(blacklist_part),
+            len(whitelist_part),
+            len(result),
+        )
+        return result
+
+    @staticmethod
+    def _take_unique_configs(
+        configs: list[Config], target: int, used_keys: set[Any]
+    ) -> list[Config]:
+        """Take up to target configs, skipping keys already used by another list."""
+        if target <= 0:
+            return []
+
+        selected: list[Config] = []
+        for cfg in configs:
+            key = cfg.dedup_key
+            if key in used_keys:
+                continue
+            selected.append(cfg)
+            used_keys.add(key)
+            if len(selected) >= target:
+                break
+        return selected
 
     def _process_configs(
         self,
@@ -763,6 +1182,46 @@ class PipelineRunner:
             seen_paths.add(path_str)
             result[list_type] = path_str
         return result
+
+    def _mix_output_file(
+        self,
+        combined_output_file: str,
+        split_output_files: dict[str, str] | None = None,
+    ) -> str | None:
+        """Return configured 50/50 mix output path, if enabled and non-conflicting."""
+        pcfg = self._section("publisher")
+        path = pcfg.get("mix_output_file")
+        if not path:
+            return None
+
+        path_str = str(path)
+        if path_str == combined_output_file:
+            logger.warning(
+                "mix_output_file points to the combined output '%s' — ignoring.",
+                combined_output_file,
+            )
+            return None
+
+        split_paths = set((split_output_files or {}).values())
+        if path_str in split_paths:
+            logger.warning(
+                "mix_output_file path '%s' is already used by a split output — "
+                "ignoring to prevent overwriting.",
+                path_str,
+            )
+            return None
+
+        return path_str
+
+    def _write_empty_secondary_outputs(self, combined_output_file: str) -> None:
+        """Clear configured split and mix outputs on empty runs."""
+        split_output_files = self._split_output_files(combined_output_file)
+        self._write_empty_split_outputs(combined_output_file)
+        mix_output_file = self._mix_output_file(
+            combined_output_file, split_output_files
+        )
+        if mix_output_file:
+            self._write_empty_output(mix_output_file)
 
     def _write_empty_split_outputs(self, combined_output_file: str) -> None:
         """Clear configured split outputs on empty runs."""

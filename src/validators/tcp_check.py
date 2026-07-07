@@ -97,6 +97,8 @@ async def validate_configs_tcp(
     concurrency: int = 200,
     max_alive: int = 0,
     proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    proxy_attempts_per_config: int = 1,
 ) -> list[Config]:
     """Check configs via TCP with optional early termination and SOCKS5 proxy.
 
@@ -107,26 +109,53 @@ async def validate_configs_tcp(
         max_alive: Stop once this many alive configs are found.
             0 = no limit (check everything).
         proxy_url: Optional SOCKS5 proxy URL to route connections through.
+        proxy_urls: Optional SOCKS5 proxy pool. When provided, configs are
+            checked through the pool in round-robin order. Takes precedence
+            over ``proxy_url``.
+        proxy_attempts_per_config: Number of different proxies to try per
+            config before marking it dead. ``0`` means try the whole pool.
 
     Returns alive configs sorted by latency_ms ascending.
     """
     if not configs:
         return []
 
+    proxy_choices = [p for p in (proxy_urls or []) if p]
+    if not proxy_choices and proxy_url:
+        proxy_choices = [proxy_url]
+
+    def _proxies_for(index: int) -> list[str | None]:
+        if not proxy_choices:
+            return [None]
+        if proxy_attempts_per_config <= 0:
+            attempts = len(proxy_choices)
+        else:
+            attempts = min(max(1, proxy_attempts_per_config), len(proxy_choices))
+        start = index % len(proxy_choices)
+        return [proxy_choices[(start + offset) % len(proxy_choices)] for offset in range(attempts)]
+
     semaphore = asyncio.Semaphore(concurrency)
     alive_list: list[Config] = []
     alive_lock = asyncio.Lock()
     done_event = asyncio.Event()
 
-    async def _check_one(cfg: Config) -> None:
+    async def _check_one(index: int, cfg: Config) -> None:
         if done_event.is_set():
             return
         async with semaphore:
             if done_event.is_set():
                 return
-            is_alive, latency_ms = await tcp_check(
-                cfg.address, cfg.port, timeout=timeout, proxy_url=proxy_url
-            )
+            is_alive = False
+            latency_ms: float | None = None
+            for candidate_proxy in _proxies_for(index):
+                is_alive, latency_ms = await tcp_check(
+                    cfg.address,
+                    cfg.port,
+                    timeout=timeout,
+                    proxy_url=candidate_proxy,
+                )
+                if is_alive:
+                    break
             cfg.is_alive = is_alive
             cfg.latency_ms = latency_ms
             if is_alive:
@@ -135,18 +164,26 @@ async def validate_configs_tcp(
                     if max_alive > 0 and len(alive_list) >= max_alive:
                         done_event.set()
 
-    tasks = [asyncio.create_task(_check_one(c)) for c in configs]
+    tasks = [asyncio.create_task(_check_one(i, c)) for i, c in enumerate(configs)]
 
-    await asyncio.wait(
-        [asyncio.create_task(done_event.wait()), *tasks],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
+    if max_alive > 0:
+        pending_tasks = set(tasks)
+        done_task = asyncio.create_task(done_event.wait())
+        while pending_tasks and not done_event.is_set():
+            done, _pending = await asyncio.wait(
+                [*pending_tasks, done_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            pending_tasks -= done
 
-    if done_event.is_set():
-        for t in tasks:
-            if not t.done():
-                t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        if done_event.is_set():
+            for task in pending_tasks:
+                task.cancel()
+        if not done_task.done():
+            done_task.cancel()
+            await asyncio.gather(done_task, return_exceptions=True)
+
+    await asyncio.gather(*tasks, return_exceptions=True)
 
     alive_list.sort(
         key=lambda c: c.latency_ms if c.latency_ms is not None else float("inf")

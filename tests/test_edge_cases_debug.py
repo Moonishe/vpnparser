@@ -664,8 +664,8 @@ def _make_configs(countries: list[str]) -> list[Config]:
     ]
 
 
-def test_whitelist_balance_70_30_split():
-    """Whitelist output should be ~70% RU, ~30% other countries."""
+def test_whitelist_balance_80_20_split():
+    """Whitelist output should be ~80% RU, ~20% EU countries."""
     runner = _make_runner()
     max_total = 75
     # 100 RU + 50 other
@@ -674,12 +674,12 @@ def test_whitelist_balance_70_30_split():
     ru = sum(1 for c in result if c.country == "RU")
     other = sum(1 for c in result if c.country != "RU")
     assert len(result) == max_total, f"Expected {max_total}, got {len(result)}"
-    assert ru == 52, f"Expected 52 RU (70%), got {ru}"
-    assert other == 23, f"Expected 23 other (30%), got {other}"
+    assert ru == 60, f"Expected 60 RU (80%), got {ru}"
+    assert other == 15, f"Expected 15 EU (20%), got {other}"
 
 
 def test_whitelist_balance_fills_shortfall_from_other():
-    """If RU < 70% target, fill remaining slots from other countries."""
+    """If RU < 80% target, fill remaining slots from EU countries."""
     runner = _make_runner()
     max_total = 75
     # Only 10 RU, 100 other
@@ -693,7 +693,7 @@ def test_whitelist_balance_fills_shortfall_from_other():
 
 
 def test_whitelist_balance_fills_shortfall_from_ru():
-    """If other < 30% target, fill remaining slots from RU."""
+    """If EU < 20% target, fill remaining slots from RU."""
     runner = _make_runner()
     max_total = 75
     # 100 RU, only 5 other

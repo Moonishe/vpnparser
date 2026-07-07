@@ -11,24 +11,57 @@ validator:
   # Country filter — only keep configs from these countries (by remark).
   # No network calls — instant for 620K+ configs.
   # Empty list = keep all. Common: DE, FI, NL, US, GB, FR, JP, SG, CA
-  allowed_countries: ["RU", "DE", "FI", "NL", "US", "GB", "FR", "JP", "CA"]
+  allowed_countries: []
+  allowed_countries_by_list:
+    blacklist: ["DE", "FI", "NL", "US", "GB", "FR", "JP", "CA"]
+    whitelist: ["RU", "DE", "FI", "NL", "FR"]
+  whitelist_ru_ratio: 0.8
+  whitelist_eu_countries: ["DE", "FI", "NL", "FR"]
   
   # If more configs than this are parsed, randomly sample before filtering.
   # Set to 0 to process ALL configs (country filter is instant — no network).
   max_configs_to_validate: 0
   
-  # SOCKS5 proxy for TCP/TLS validation (optional, only when tcp/tls enabled)
+  # SOCKS5 proxy for TCP/TLS validation (optional, only when tcp/tls enabled).
   # proxy_url: "socks5://127.0.0.1:1080"
-  
-  # TCP/TLS checks are DISABLED by default (instant country filter instead)
-  # Set to true to enable network-based liveness checks.
-  tcp_enabled: false
+
+  # GitHub Actions often cannot reach VPN servers directly from data-center IPs.
+  # TCP liveness therefore uses a small free SOCKS5 proxy pool parsed from GitHub.
+  # The filter is fail-open: if too few servers validate, the original list is kept.
+  tcp_enabled: true
   tls_enabled: false
-  tcp_timeout_seconds: 5
-  tcp_concurrency: 300
-  tcp_max_alive: 50
+  tcp_timeout_seconds: 4
+  tcp_concurrency: 120
+  tcp_candidate_limit: 1000
+  tcp_max_alive: 150
+  tcp_max_alive_by_list:
+    blacklist: 150
+    whitelist: 0
+  min_alive_to_filter: 10
+  proxy_attempts_per_config: 0
   tls_timeout_seconds: 5
   tls_concurrency: 100
+  tls_candidate_limit: 1000
+
+  proxy_pool:
+    enabled: true
+    # If no explicit proxy and no free proxy survives self-check, skip liveness
+    # instead of falling back to direct GitHub Actions connections.
+    required: true
+    validate: true
+    sources:
+      - "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks5/data.txt"
+      - "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/protocols/socks5/data.txt"
+      - "https://cdn.jsdelivr.net/gh/VPSLabCloud/VPSLab-Free-Proxy-List@main/socks5_all.txt"
+      - "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt"
+    max_candidates: 250
+    max_candidates_per_source: 80
+    max_proxies: 20
+    fetch_timeout_seconds: 10
+    validation_timeout_seconds: 5
+    validation_concurrency: 50
+    probe_host: "api.github.com"
+    probe_port: 443
   
   # GeoIP (optional enrichment, disabled by default to avoid rate limits)
   geoip_enabled: false
@@ -36,14 +69,15 @@ validator:
 
 # --- Aggregator ---
 aggregator:
-  max_configs_in_output: 75
+  max_configs_in_output: 150
   sort_by: "country"
-  max_per_country: 50
+  max_per_country: 150
 
 # --- Publisher ---
 publisher:
   mode: "repo"
   output_file: "output/subscription.txt"
+  mix_output_file: "output/subscription-mix.txt"
   split_output_files:
     blacklist: "output/subscription-blacklist.txt"
     whitelist: "output/subscription-whitelist.txt"

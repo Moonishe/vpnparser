@@ -71,6 +71,7 @@ jobs:
       - name: Verify output
         run: |
           test -f output/subscription.txt || { echo "ERROR: output/subscription.txt not created!"; exit 1; }
+          test -f output/subscription-mix.txt || { echo "ERROR: output/subscription-mix.txt not created!"; exit 1; }
           test -f output/subscription-blacklist.txt || { echo "ERROR: output/subscription-blacklist.txt not created!"; exit 1; }
           test -f output/subscription-whitelist.txt || { echo "ERROR: output/subscription-whitelist.txt not created!"; exit 1; }
           # Decode base64 and count configs in the combined subscription.
@@ -96,6 +97,9 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+          GITHUB_BRANCH: ${{ github.ref_name }}
 
       - name: Save facts cache
         # Only save when the file actually exists. On forks without

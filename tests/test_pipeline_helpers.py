@@ -3,14 +3,18 @@ from __future__ import annotations
 import asyncio
 import base64
 import builtins
+import json
 import sys
 import types
 
 import httpx
 import pytest
 
+from src.aggregator.output import generate_plain
 from src.env import load_dotenv_if_available
-from src.parsers.base import Config
+from src.notify import telegram as telegram_module
+from src.parsers.base import Config, is_garbage_config
+from src.repo_info import _slug_from_remote_url, github_branch
 from src.scheduler.runner import PipelineRunner
 from src.publisher.github import _contents_url as publisher_contents_url
 from src.sources.github import (
@@ -20,7 +24,10 @@ from src.sources.github import (
 )
 from src.sources.list_types import infer_source_list_type, normalize_list_type
 from src.sources.manager import SourceManager, SourceResult
+from src.validators import tcp_check as tcp_module
+from src.validators import proxy_pool as proxy_pool_module
 from src.validators import tls_check as tls_module
+from src.validators.proxy_pool import parse_proxy_candidates
 
 
 def test_list_type_normalization_and_inference() -> None:
@@ -29,6 +36,42 @@ def test_list_type_normalization_and_inference() -> None:
     assert normalize_list_type("unknown") == "mixed"
     assert infer_source_list_type({"name": "val41k-obhod_BL"}) == "blacklist"
     assert infer_source_list_type({"path": "configs/obhod_WL"}) == "whitelist"
+
+
+def test_output_watermark_uses_github_env(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_OWNER", "owner")
+    monkeypatch.setenv("GITHUB_REPO", "repo")
+    plain = generate_plain([])
+    watermark = plain.split("vmess://", 1)[1]
+    payload = json.loads(base64.b64decode(watermark).decode("utf-8"))
+
+    assert payload["ps"] == "owner/repo"
+
+
+def test_telegram_subscription_urls_use_github_env(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_OWNER", "owner")
+    monkeypatch.setenv("GITHUB_REPO", "repo")
+    monkeypatch.setenv("GITHUB_BRANCH", "main")
+
+    urls = telegram_module._subscription_urls()
+
+    assert urls == {
+        "combined": "https://raw.githubusercontent.com/owner/repo/main/output/subscription.txt",
+        "blacklist": "https://raw.githubusercontent.com/owner/repo/main/output/subscription-blacklist.txt",
+        "whitelist": "https://raw.githubusercontent.com/owner/repo/main/output/subscription-whitelist.txt",
+        "mix": "https://raw.githubusercontent.com/owner/repo/main/output/subscription-mix.txt",
+    }
+
+
+def test_repo_info_parses_github_remote_and_ref(monkeypatch) -> None:
+    assert _slug_from_remote_url("https://github.com/owner/repo.git") == "owner/repo"
+    assert _slug_from_remote_url("git@github.com:owner/repo.git") == "owner/repo"
+
+    monkeypatch.delenv("GITHUB_BRANCH", raising=False)
+    monkeypatch.delenv("GITHUB_REF_NAME", raising=False)
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+
+    assert github_branch() == "main"
 
 
 def test_source_manager_raw_source_filters_files_and_sets_list_type(
@@ -66,6 +109,38 @@ def test_source_manager_raw_source_filters_files_and_sets_list_type(
     assert result.list_type == "whitelist"
     assert result.files == [
         ("keep.txt", "vless://11111111-1111-4111-8111-111111111111@example.com:443")
+    ]
+
+
+def test_source_manager_url_source_fetches_direct_url(tmp_path, monkeypatch) -> None:
+    manager = SourceManager(
+        sources_file=str(tmp_path / "missing-sources.json"),
+        settings_file=str(tmp_path / "missing-settings.yaml"),
+    )
+
+    async def fake_fetch_direct_url(url: str) -> str:
+        assert url == "https://example.com/sub.txt"
+        return "vless://11111111-1111-4111-8111-111111111111@example.com:443"
+
+    monkeypatch.setattr(manager, "_fetch_direct_url", fake_fetch_direct_url)
+
+    result = asyncio.run(
+        manager.fetch_source(
+            {
+                "name": "direct",
+                "list_type": "blacklist",
+                "type": "url",
+                "url": "https://example.com/sub.txt",
+                "default_country": "DE",
+            }
+        )
+    )
+
+    assert result.ok is True
+    assert result.list_type == "blacklist"
+    assert result.default_country == "DE"
+    assert result.files == [
+        ("sub.txt", "vless://11111111-1111-4111-8111-111111111111@example.com:443")
     ]
 
 
@@ -111,6 +186,27 @@ def test_load_dotenv_if_available_returns_false_without_dependency(monkeypatch) 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
     assert load_dotenv_if_available() is False
+
+
+def test_ad_filter_rejects_telegram_and_russian_ad_remarks() -> None:
+    assert is_garbage_config(
+        Config(
+            "vless",
+            "vpn-host.test",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            remark="join t.me/channel",
+        )
+    )
+    assert is_garbage_config(
+        Config(
+            "trojan",
+            "vpn-host-2.test",
+            443,
+            "secret",
+            remark="канал купить vpn",
+        )
+    )
 
 
 def test_github_fetch_file_falls_back_to_raw_url_on_rate_limit(monkeypatch) -> None:
@@ -339,6 +435,89 @@ def test_runner_parses_configs_grouped_by_source_list_type() -> None:
     assert [cfg.protocol for cfg in grouped["whitelist"]] == ["trojan"]
 
 
+def test_runner_uses_per_list_country_filters(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  allowed_countries_by_list:
+    blacklist: [DE]
+    whitelist: [RU]
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    black_de = Config(
+        "vless",
+        "de.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        remark="DE-01",
+    )
+    black_ru = Config(
+        "vless",
+        "ru.example",
+        443,
+        "11111111-1111-4111-8111-111111111112",
+        remark="RU-01",
+    )
+    white_de = Config(
+        "vless",
+        "de-white.example",
+        443,
+        "11111111-1111-4111-8111-111111111113",
+        remark="DE-02",
+    )
+    white_ru = Config(
+        "vless",
+        "ru-white.example",
+        443,
+        "11111111-1111-4111-8111-111111111114",
+        remark="RU-02",
+    )
+
+    assert runner._filter_countries([black_de, black_ru], list_type="blacklist") == [
+        black_de
+    ]
+    assert runner._filter_countries([white_de, white_ru], list_type="whitelist") == [
+        white_ru
+    ]
+
+
+def test_runner_uses_source_default_country_when_detection_fails(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  allowed_countries_by_list:
+    whitelist: [RU]
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    cfg = Config(
+        "vless",
+        "unknown.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        remark="WHITE",
+    )
+    setattr(cfg, "source_default_country", "RU")
+
+    result = runner._filter_countries([cfg], list_type="whitelist")
+
+    assert result == [cfg]
+    assert cfg.country == "RU"
+
+
 def test_split_output_files_from_settings(tmp_path) -> None:
     settings = tmp_path / "settings.yaml"
     settings.write_text(
@@ -356,6 +535,85 @@ publisher:
         "blacklist": "output/subscription-blacklist.txt",
         "whitelist": "output/subscription-whitelist.txt",
     }
+
+
+def test_mix_output_file_from_settings(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+publisher:
+  mix_output_file: output/subscription-mix.txt
+  split_output_files:
+    blacklist: output/subscription-blacklist.txt
+    whitelist: output/subscription-whitelist.txt
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+    splits = runner._split_output_files("output/subscription.txt")
+
+    assert runner._mix_output_file("output/subscription.txt", splits) == (
+        "output/subscription-mix.txt"
+    )
+
+
+def test_build_mixed_output_uses_blacklist_and_whitelist_halves(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+aggregator:
+  max_configs_in_output: 150
+  sort_by: country
+validator:
+  whitelist_ru_ratio: 0.8
+  whitelist_eu_countries: [DE, FI]
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+
+    blacklist = [
+        Config(
+            "vless",
+            f"black-{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            remark="blacklist",
+            country="DE",
+        )
+        for i in range(100)
+    ]
+    whitelist = [
+        Config(
+            "vless",
+            f"white-ru-{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            remark="whitelist",
+            country="RU",
+        )
+        for i in range(100)
+    ] + [
+        Config(
+            "vless",
+            f"white-de-{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            remark="whitelist",
+            country="DE",
+        )
+        for i in range(100)
+    ]
+
+    result = runner._build_mixed_output(
+        {"blacklist": blacklist, "whitelist": whitelist}, 150
+    )
+
+    assert len(result) == 150
+    assert sum(1 for cfg in result if cfg.remark == "blacklist") == 75
+    assert sum(1 for cfg in result if cfg.remark == "whitelist") == 75
+    assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "RU") == 60
+    assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "DE") == 15
 
 
 def test_process_and_write_configs_writes_split_output(tmp_path) -> None:
@@ -401,3 +659,318 @@ def test_tls_validator_marks_successful_tls_configs_alive(monkeypatch) -> None:
 
     assert result == [cfg]
     assert cfg.is_alive is True
+
+
+def test_proxy_pool_parses_public_socks5_candidates() -> None:
+    text = """
+    socks5://8.8.8.8:1080
+    1.1.1.1 9050
+    10.0.0.1:1080
+    192.168.1.1:1080
+    8.8.8.8:1080
+    999.1.1.1:1080
+    """
+
+    assert parse_proxy_candidates(text) == [
+        "socks5://8.8.8.8:1080",
+        "socks5://1.1.1.1:9050",
+    ]
+
+
+def test_proxy_pool_fetch_stops_after_candidate_limit(monkeypatch) -> None:
+    fetched_urls = []
+
+    async def fake_fetch_source(_client, url):
+        fetched_urls.append(url)
+        return "socks5://8.8.8.8:1080 socks5://1.1.1.1:9050"
+
+    monkeypatch.setattr(proxy_pool_module, "_fetch_source", fake_fetch_source)
+
+    result = asyncio.run(
+        proxy_pool_module.fetch_proxy_candidates(
+            ["https://first.example/list.txt", "https://second.example/list.txt"],
+            max_candidates=1,
+        )
+    )
+
+    assert result == ["socks5://8.8.8.8:1080"]
+    assert fetched_urls == ["https://first.example/list.txt"]
+
+
+def test_proxy_pool_limits_candidates_per_source(monkeypatch) -> None:
+    async def fake_fetch_source(_client, url):
+        if "first" in url:
+            return " ".join(
+                f"socks5://8.8.8.{i}:1080" for i in range(1, 5)
+            )
+        return " ".join(f"socks5://1.1.1.{i}:9050" for i in range(1, 5))
+
+    monkeypatch.setattr(proxy_pool_module, "_fetch_source", fake_fetch_source)
+
+    result = asyncio.run(
+        proxy_pool_module.fetch_proxy_candidates(
+            ["https://first.example/list.txt", "https://second.example/list.txt"],
+            max_candidates=4,
+            max_candidates_per_source=2,
+        )
+    )
+
+    assert result == [
+        "socks5://8.8.8.1:1080",
+        "socks5://8.8.8.2:1080",
+        "socks5://1.1.1.1:9050",
+        "socks5://1.1.1.2:9050",
+    ]
+
+
+def test_proxy_pool_validation_waits_when_limit_not_reached(monkeypatch) -> None:
+    async def fake_proxy_connects(proxy_url, **kwargs):
+        await asyncio.sleep(0.01 if "8.8.8.8" in proxy_url else 0.03)
+        return True
+
+    monkeypatch.setattr(proxy_pool_module, "proxy_connects", fake_proxy_connects)
+
+    result = asyncio.run(
+        proxy_pool_module.validate_proxy_candidates(
+            ["socks5://8.8.8.8:1080", "socks5://1.1.1.1:9050"],
+            max_proxies=5,
+            concurrency=2,
+        )
+    )
+
+    assert result == ["socks5://8.8.8.8:1080", "socks5://1.1.1.1:9050"]
+
+
+def test_tcp_validator_rotates_proxy_pool(monkeypatch) -> None:
+    seen_proxy_urls = []
+
+    async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        seen_proxy_urls.append(proxy_url)
+        return (True, 10.0 + len(seen_proxy_urls))
+
+    monkeypatch.setattr(tcp_module, "tcp_check", fake_tcp_check)
+    configs = [
+        Config("vless", "a.example", 443, "11111111-1111-4111-8111-111111111111"),
+        Config("vless", "b.example", 443, "11111111-1111-4111-8111-111111111112"),
+        Config("vless", "c.example", 443, "11111111-1111-4111-8111-111111111113"),
+    ]
+
+    result = asyncio.run(
+        tcp_module.validate_configs_tcp(
+            configs,
+            proxy_urls=["socks5://8.8.8.8:1080", "socks5://1.1.1.1:9050"],
+        )
+    )
+
+    assert result == configs
+    assert seen_proxy_urls == [
+        "socks5://8.8.8.8:1080",
+        "socks5://1.1.1.1:9050",
+        "socks5://8.8.8.8:1080",
+    ]
+
+
+def test_tcp_validator_waits_for_all_when_no_max_alive(monkeypatch) -> None:
+    seen_hosts = []
+
+    async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        seen_hosts.append(host)
+        await asyncio.sleep(0.01 if host == "a.example" else 0.03)
+        return (True, 10.0)
+
+    monkeypatch.setattr(tcp_module, "tcp_check", fake_tcp_check)
+    configs = [
+        Config("vless", "a.example", 443, "11111111-1111-4111-8111-111111111111"),
+        Config("vless", "b.example", 443, "11111111-1111-4111-8111-111111111112"),
+    ]
+
+    result = asyncio.run(tcp_module.validate_configs_tcp(configs, max_alive=0))
+
+    assert result == configs
+    assert seen_hosts == ["a.example", "b.example"]
+
+
+def test_tcp_validator_retries_multiple_proxies_per_config(monkeypatch) -> None:
+    seen_proxy_urls = []
+
+    async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        seen_proxy_urls.append(proxy_url)
+        return (proxy_url == "socks5://1.1.1.1:9050", 20.0)
+
+    monkeypatch.setattr(tcp_module, "tcp_check", fake_tcp_check)
+    cfg = Config(
+        "vless",
+        "vpn.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+    )
+
+    result = asyncio.run(
+        tcp_module.validate_configs_tcp(
+            [cfg],
+            proxy_urls=["socks5://8.8.8.8:1080", "socks5://1.1.1.1:9050"],
+            proxy_attempts_per_config=2,
+        )
+    )
+
+    assert result == [cfg]
+    assert cfg.is_alive is True
+    assert seen_proxy_urls == ["socks5://8.8.8.8:1080", "socks5://1.1.1.1:9050"]
+
+
+def test_runner_liveness_required_proxy_pool_fail_open(tmp_path, monkeypatch) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  tcp_enabled: true
+  min_alive_to_filter: 1
+  proxy_pool:
+    enabled: true
+    required: true
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+
+    async def no_proxies():
+        return []
+
+    async def should_not_check(*args, **kwargs):
+        raise AssertionError("liveness must be skipped without required proxies")
+
+    monkeypatch.setattr(runner, "_validator_proxy_urls", no_proxies)
+    monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", should_not_check)
+    cfg = Config(
+        "vless",
+        "example.com",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            [cfg],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+    )
+
+    assert result == [cfg]
+
+
+def test_runner_liveness_uses_proxy_pool_and_filters_when_enough_alive(
+    tmp_path, monkeypatch
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  tcp_enabled: true
+  tcp_timeout_seconds: 1
+  tcp_concurrency: 2
+  tcp_max_alive: 0
+  min_alive_to_filter: 1
+  proxy_pool:
+    enabled: true
+    required: true
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    dead = Config(
+        "vless",
+        "dead.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+    )
+    alive = Config(
+        "vless",
+        "alive.example",
+        443,
+        "11111111-1111-4111-8111-111111111112",
+    )
+    captured = {}
+
+    async def fake_proxy_urls():
+        return ["socks5://8.8.8.8:1080"]
+
+    async def fake_validate_configs_tcp(configs, **kwargs):
+        captured["proxy_urls"] = kwargs.get("proxy_urls")
+        return [alive]
+
+    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    monkeypatch.setattr(
+        "src.validators.tcp_check.validate_configs_tcp",
+        fake_validate_configs_tcp,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            [dead, alive],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+    )
+
+    assert result == [alive]
+    assert captured["proxy_urls"] == ["socks5://8.8.8.8:1080"]
+
+
+def test_runner_liveness_keeps_original_when_alive_below_threshold(
+    tmp_path, monkeypatch
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  tcp_enabled: true
+  min_alive_to_filter: 2
+  proxy_pool:
+    enabled: true
+    required: true
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    configs = [
+        Config("vless", "a.example", 443, "11111111-1111-4111-8111-111111111111"),
+        Config("vless", "b.example", 443, "11111111-1111-4111-8111-111111111112"),
+    ]
+
+    async def fake_proxy_urls():
+        return ["socks5://8.8.8.8:1080"]
+
+    async def fake_validate_configs_tcp(configs, **kwargs):
+        return [configs[0]]
+
+    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    monkeypatch.setattr(
+        "src.validators.tcp_check.validate_configs_tcp",
+        fake_validate_configs_tcp,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+    )
+
+    assert result == configs

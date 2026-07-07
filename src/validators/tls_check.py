@@ -102,6 +102,8 @@ async def validate_configs_tls(
     timeout: float = 5.0,
     concurrency: int = 100,
     proxy_url: str | None = None,
+    proxy_urls: list[str] | None = None,
+    proxy_attempts_per_config: int = 1,
 ) -> list[Config]:
     """Filter configs by TLS handshake.
 
@@ -113,21 +115,44 @@ async def validate_configs_tls(
         timeout: TLS handshake timeout.
         concurrency: Max concurrent checks.
         proxy_url: Optional SOCKS5 proxy URL.
+        proxy_urls: Optional SOCKS5 proxy pool. When provided, configs are
+            checked through the pool in round-robin order. Takes precedence
+            over ``proxy_url``.
+        proxy_attempts_per_config: Number of different proxies to try per
+            config before marking it dead. ``0`` means try the whole pool.
     """
+    proxy_choices = [p for p in (proxy_urls or []) if p]
+    if not proxy_choices and proxy_url:
+        proxy_choices = [proxy_url]
+
+    def _proxies_for(index: int) -> list[str | None]:
+        if not proxy_choices:
+            return [None]
+        if proxy_attempts_per_config <= 0:
+            attempts = len(proxy_choices)
+        else:
+            attempts = min(max(1, proxy_attempts_per_config), len(proxy_choices))
+        start = index % len(proxy_choices)
+        return [proxy_choices[(start + offset) % len(proxy_choices)] for offset in range(attempts)]
+
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def _check_one(cfg: Config) -> None:
+    async def _check_one(index: int, cfg: Config) -> None:
         if cfg.security not in ("tls", "reality"):
             return
         async with semaphore:
             try:
-                ok = await tls_check(
-                    cfg.address,
-                    cfg.port,
-                    sni=cfg.sni,
-                    timeout=timeout,
-                    proxy_url=proxy_url,
-                )
+                ok = False
+                for candidate_proxy in _proxies_for(index):
+                    ok = await tls_check(
+                        cfg.address,
+                        cfg.port,
+                        sni=cfg.sni,
+                        timeout=timeout,
+                        proxy_url=candidate_proxy,
+                    )
+                    if ok:
+                        break
                 cfg.is_alive = ok
             except Exception as exc:
                 logger.debug(
@@ -138,7 +163,10 @@ async def validate_configs_tls(
                 )
                 cfg.is_alive = False
 
-    await asyncio.gather(*(_check_one(c) for c in configs), return_exceptions=True)
+    await asyncio.gather(
+        *(_check_one(i, c) for i, c in enumerate(configs)),
+        return_exceptions=True,
+    )
 
     return [
         c for c in configs if c.security not in ("tls", "reality") or c.is_alive is True

@@ -13,7 +13,9 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlparse
 
+import httpx
 import yaml
 
 from src.sources.github import GitHubClient
@@ -37,6 +39,7 @@ class SourceResult:
     files: list[tuple[str, str]] = field(default_factory=list)
     error: str | None = None
     list_type: str = DEFAULT_LIST_TYPE
+    default_country: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -174,7 +177,30 @@ class SourceManager:
             repo = source.get("repo", "")
             path = source.get("path", "")
             branch = source.get("branch", "main")
+            url = source.get("url", "")
             list_type = infer_source_list_type(source)
+            default_country = self._source_default_country(source)
+
+            if stype == "url" or (stype == "subscription" and url):
+                content = await self._fetch_direct_url(str(url))
+                if not content:
+                    return SourceResult(
+                        source_name=name,
+                        error=f"url source '{url}' is empty or not found",
+                        list_type=list_type,
+                        default_country=default_country,
+                    )
+                filename = (
+                    str(source.get("filename") or "").strip()
+                    or self._filename_from_url(str(url))
+                    or f"{name}.txt"
+                )
+                return SourceResult(
+                    source_name=name,
+                    files=[(filename, content)],
+                    list_type=list_type,
+                    default_country=default_country,
+                )
 
             # subscription requires path; raw allows empty path (= root directory).
             if not (owner and repo):
@@ -182,12 +208,14 @@ class SourceManager:
                     source_name=name,
                     error=f"source '{name}' is missing owner/repo",
                     list_type=list_type,
+                    default_country=default_country,
                 )
             if stype == "subscription" and not path:
                 return SourceResult(
                     source_name=name,
                     error=f"subscription source '{name}' requires a file path",
                     list_type=list_type,
+                    default_country=default_country,
                 )
 
             if stype == "subscription":
@@ -197,12 +225,14 @@ class SourceManager:
                         source_name=name,
                         error=f"subscription file '{path}' is empty or not found",
                         list_type=list_type,
+                        default_country=default_country,
                     )
                 filename = path.rsplit("/", 1)[-1] or f"{name}.txt"
                 return SourceResult(
                     source_name=name,
                     files=[(filename, content)],
                     list_type=list_type,
+                    default_country=default_country,
                 )
 
             if stype == "raw":
@@ -222,18 +252,61 @@ class SourceManager:
                         source_name=name,
                         error=f"directory '{path}' is empty or not found",
                         list_type=list_type,
+                        default_country=default_country,
                     )
-                return SourceResult(source_name=name, files=files, list_type=list_type)
+                return SourceResult(
+                    source_name=name,
+                    files=files,
+                    list_type=list_type,
+                    default_country=default_country,
+                )
 
             return SourceResult(
                 source_name=name,
-                error=f"unknown source type '{stype}' (expected 'subscription' or 'raw')",
+                error=(
+                    f"unknown source type '{stype}' "
+                    "(expected 'subscription', 'raw', or 'url')"
+                ),
                 list_type=list_type,
+                default_country=default_country,
             )
         except Exception as exc:
             # Isolate failures: log and surface as a structured error.
             logger.error("Failed to fetch source '%s': %s", name, exc, exc_info=True)
             return SourceResult(source_name=name, error=str(exc), list_type=list_type)
+
+    @staticmethod
+    async def _fetch_direct_url(url: str, timeout: float = 30.0) -> str:
+        """Fetch a direct HTTPS text source."""
+        parsed = urlparse((url or "").strip())
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError(f"source url must be absolute HTTPS: {url!r}")
+
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(
+                url,
+                headers={
+                    "User-Agent": "vpn-config-parser/1.0",
+                    "Accept": "text/plain,*/*",
+                },
+            )
+        if response.status_code == 404:
+            return ""
+        response.raise_for_status()
+        return response.text
+
+    @staticmethod
+    def _filename_from_url(url: str) -> str:
+        parsed = urlparse((url or "").strip())
+        return PurePosixPath(parsed.path).name or ""
+
+    @staticmethod
+    def _source_default_country(source: dict) -> str | None:
+        raw = source.get("default_country")
+        if raw is None:
+            return None
+        text = str(raw).strip().upper()
+        return text if len(text) == 2 and text.isalpha() else None
 
     @staticmethod
     def _int_source_value(source: dict, key: str, default: int) -> int:

@@ -3,131 +3,62 @@
     {
       "name": "igareck-black-vless-mobile",
       "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "igareck",
-      "repo": "vpn-configs-for-russia",
-      "path": "BLACK_VLESS_RUS_mobile.txt",
-      "branch": "main",
+      "type": "url",
+      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
       "enabled": true
     },
     {
-      "name": "igareck-black-vless-full",
+      "name": "v2rayroot-vless",
       "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "igareck",
-      "repo": "vpn-configs-for-russia",
-      "path": "BLACK_VLESS_RUS.txt",
-      "branch": "main",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/V2RayRoot/V2RayConfig/refs/heads/main/Config/vless.txt",
       "enabled": true
     },
     {
-      "name": "igareck-black-ss-all",
+      "name": "sakha1370-openray-valid",
       "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "igareck",
-      "repo": "vpn-configs-for-russia",
-      "path": "BLACK_SS+All_RUS.txt",
-      "branch": "main",
+      "type": "url",
+      "url": "https://github.com/sakha1370/OpenRay/raw/refs/heads/main/output/all_valid_proxies.txt",
       "enabled": true
     },
     {
-      "name": "avencores-mirror-1",
-      "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "AvenCores",
-      "repo": "goida-vpn-configs",
-      "path": "githubmirror/1.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "avencores-mirror-6",
-      "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "AvenCores",
-      "repo": "goida-vpn-configs",
-      "path": "githubmirror/6.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "avencores-mirror-22",
-      "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "AvenCores",
-      "repo": "goida-vpn-configs",
-      "path": "githubmirror/22.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "avencores-mirror-24",
-      "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "AvenCores",
-      "repo": "goida-vpn-configs",
-      "path": "githubmirror/24.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "avencores-mirror-25",
-      "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "AvenCores",
-      "repo": "goida-vpn-configs",
-      "path": "githubmirror/25.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "hiztin-vless-po-gribi",
-      "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "hiztin",
-      "repo": "VLESS-PO-GRIBI",
-      "path": "deploy/sub.txt",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "val41k-obhod-bl",
-      "list_type": "blacklist",
-      "type": "subscription",
-      "owner": "VAL41K",
-      "repo": "bypass-rkn-blocks",
-      "path": "configs/obhod_BL",
-      "branch": "main",
-      "enabled": true
-    },
-    {
-      "name": "avencores-white-sni-cidr",
+      "name": "igareck-white-vless-reality-mobile",
       "list_type": "whitelist",
-      "type": "subscription",
-      "owner": "AvenCores",
-      "repo": "goida-vpn-configs",
-      "path": "githubmirror/26.txt",
-      "branch": "main",
+      "type": "url",
+      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+      "default_country": "RU",
       "enabled": true
     },
     {
-      "name": "aviamastersgh-verified",
+      "name": "igareck-white-cidr-checked",
       "list_type": "whitelist",
-      "type": "subscription",
-      "owner": "aviamastersgh",
-      "repo": "vpn-free-russia",
-      "path": "verified_configs.txt",
-      "branch": "main",
+      "type": "url",
+      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-checked.txt",
+      "default_country": "RU",
       "enabled": true
     },
     {
-      "name": "aviamastersgh-ru-cidr",
+      "name": "igareck-white-cidr-all",
       "list_type": "whitelist",
-      "type": "subscription",
-      "owner": "aviamastersgh",
-      "repo": "vpn-free-russia",
-      "path": "ru_configs.txt",
-      "branch": "main",
+      "type": "url",
+      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-all.txt",
+      "default_country": "RU",
+      "enabled": true
+    },
+    {
+      "name": "igareck-white-sni-all",
+      "list_type": "whitelist",
+      "type": "url",
+      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/WHITE-SNI-RU-all.txt",
+      "default_country": "RU",
+      "enabled": true
+    },
+    {
+      "name": "jsxta-whitelist-russia-subscription",
+      "list_type": "whitelist",
+      "type": "url",
+      "url": "https://gbr.mydan.online/configs",
+      "default_country": "RU",
       "enabled": true
     }
   ]

@@ -12,16 +12,23 @@ import json
 from pathlib import Path
 
 from src.parsers.base import Config
+from src.repo_info import github_repo_slug
 
 # Watermark config — shown first in Happ as a "title" entry.
-# Uses a dummy vmess link with LO's GitHub repo name as remark.
+# Uses a dummy vmess link with the configured GitHub repo name as remark.
 # The server (0.0.0.0:1) is not real — it's just a display marker.
-_WATERMARK_REMARK = "Moonishe/vpnparser"
-_WATERMARK_LINK = "vmess://" + base64.b64encode(
-    json.dumps(
+
+
+def _repo_slug() -> str:
+    """Return owner/repo for display in subscription clients."""
+    return github_repo_slug()
+
+
+def _watermark_payload() -> dict[str, object]:
+    return (
         {
             "v": "2",
-            "ps": _WATERMARK_REMARK,
+            "ps": _repo_slug(),
             "add": "0.0.0.0",
             "port": "1",
             "id": "00000000-0000-0000-0000-000000000000",
@@ -31,19 +38,28 @@ _WATERMARK_LINK = "vmess://" + base64.b64encode(
             "type": "none",
             "tls": "none",
         }
-    ).encode("utf-8")
-).decode("utf-8")
+    )
+
+
+def _watermark_link() -> str:
+    """Build the display-only vmess watermark from the current repo env."""
+    return "vmess://" + base64.b64encode(
+        json.dumps(_watermark_payload()).encode("utf-8")
+    ).decode("utf-8")
+
+
+_WATERMARK_LINK = _watermark_link()
 
 
 def generate_plain(configs: list[Config]) -> str:
     """Generate plain text subscription (one link per line).
 
-    Prepends a watermark entry (Moonishe/vpnparser) as the first line so
+    Prepends a watermark entry with the GitHub repo name as the first line so
     it shows up first in Happ's server list.
     Joins raw_link fields with newline. Filters out configs with empty
     raw_link. Returns just the watermark for empty input.
     """
-    links = [_WATERMARK_LINK]
+    links = [_watermark_link()]
     links.extend(config.raw_link for config in configs if config.raw_link)
     return "\n".join(links)
 
