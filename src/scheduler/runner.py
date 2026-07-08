@@ -25,6 +25,7 @@ import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -674,6 +675,21 @@ class PipelineRunner:
         raw = self._section("validator").get("proxy_pool", {})
         return raw if isinstance(raw, dict) else {}
 
+    @staticmethod
+    def _redact_proxy_url(proxy_url: str) -> str:
+        parsed = urlparse(proxy_url)
+        if not parsed.scheme or not parsed.hostname:
+            return "<invalid-proxy-url>"
+        host = parsed.hostname
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        try:
+            parsed_port = parsed.port
+        except ValueError:
+            return "<invalid-proxy-url>"
+        port = f":{parsed_port}" if parsed_port else ""
+        return f"{parsed.scheme}://{host}{port}"
+
     async def _search_validator_proxy_pool(
         self,
         load_proxy_pool: Any,
@@ -805,6 +821,15 @@ class PipelineRunner:
 
         self._validator_proxy_urls_cache = urls
         self._liveness_stats["proxy_count"] = len(urls)
+        if explicit:
+            self._liveness_stats["proxy_urls"] = [
+                "<explicit-proxy-hidden>",
+                *[self._redact_proxy_url(url) for url in urls[1:]],
+            ]
+        else:
+            self._liveness_stats["proxy_urls"] = [
+                self._redact_proxy_url(url) for url in urls
+            ]
         return list(urls)
 
     async def _validate_liveness_by_list(

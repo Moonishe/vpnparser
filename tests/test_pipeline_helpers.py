@@ -94,6 +94,8 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
                     "xray_min_probe_successes": 3,
                     "xray_attempts_per_config": 3,
                     "xray_min_attempt_successes": 3,
+                    "xray_proxy_checks": 3,
+                    "xray_min_proxy_successes": 2,
                 },
                 "whitelist": {
                     "tcp_checked": 217,
@@ -140,7 +142,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     )
     assert (
         "<b>Blacklist Xray</b>: проверено 90, реально рабочих 42, "
-        "неподдержано 2, HTTPS-пробы 3/3, повторы 3/3"
+        "неподдержано 2, HTTPS-пробы 3/3, повторы 3/3, proxy-сети 2/3"
         in validation
     )
     assert "<b>Whitelist TCP</b>: проверено 217, порт открыт 216" in validation
@@ -205,6 +207,8 @@ def test_telegram_no_proxies_reason_does_not_hide_xray_stats() -> None:
                         "xray_min_probe_successes": 3,
                         "xray_attempts_per_config": 3,
                         "xray_min_attempt_successes": 3,
+                        "xray_proxy_checks": 3,
+                        "xray_min_proxy_successes": 2,
                     }
                 },
             }
@@ -215,7 +219,7 @@ def test_telegram_no_proxies_reason_does_not_hide_xray_stats() -> None:
     assert "пропущена" not in validation
     assert "не проверялся, нет рабочих прокси" not in validation
     assert "<b>Blacklist Xray</b>: проверено 10, реально рабочих 7" in validation
-    assert "HTTPS-пробы 3/3, повторы 3/3" in validation
+    assert "HTTPS-пробы 3/3, повторы 3/3, proxy-сети 2/3" in validation
 
 
 def test_send_telegram_uses_html_parse_mode(monkeypatch) -> None:
@@ -1374,6 +1378,20 @@ def test_runner_proxy_search_expands_candidates_until_minimum(tmp_path) -> None:
     assert runner._liveness_stats["proxy_search_rounds"] == 2
 
 
+def test_runner_redacts_proxy_urls_for_summary() -> None:
+    assert (
+        PipelineRunner._redact_proxy_url("socks5://user:pass@1.2.3.4:1080")
+        == "socks5://1.2.3.4:1080"
+    )
+    assert (
+        PipelineRunner._redact_proxy_url("http://[2001:db8::1]:8080")
+        == "http://[2001:db8::1]:8080"
+    )
+    assert PipelineRunner._redact_proxy_url("socks5://1.2.3.4:bad") == (
+        "<invalid-proxy-url>"
+    )
+
+
 def test_tcp_validator_rotates_proxy_pool(monkeypatch) -> None:
     seen_proxy_urls = []
 
@@ -1930,6 +1948,82 @@ validator:
     assert stats["xray_min_probe_successes"] == 2
     assert stats["xray_attempts_per_config"] == 3
     assert stats["xray_min_attempt_successes"] == 3
+
+
+def test_runner_liveness_requires_xray_proxy_probe_successes(
+    tmp_path, monkeypatch
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  xray_enabled: true
+  xray_executable: /usr/bin/xray
+  xray_proxy_probe_count: 3
+  xray_min_proxy_successes: 2
+  proxy_pool:
+    enabled: true
+    required: true
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    cfg = Config(
+        "vless",
+        "alive.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+
+    async def fake_proxy_urls():
+        return [
+            "socks5://8.8.8.8:1080",
+            "socks5://1.1.1.1:9050",
+            "socks5://9.9.9.9:1080",
+        ]
+
+    async def fake_validate_configs_xray(configs, **kwargs):
+        assert kwargs["probe_proxy_urls"] == [
+            "socks5://8.8.8.8:1080",
+            "socks5://1.1.1.1:9050",
+            "socks5://9.9.9.9:1080",
+        ]
+        assert kwargs["min_proxy_successes"] == 2
+        for item in configs:
+            setattr(item, "xray_was_checked", True)
+            item.is_alive = True
+        return configs
+
+    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    monkeypatch.setattr(
+        "src.validators.xray_probe.find_xray_executable",
+        lambda explicit_path=None: "/usr/bin/xray",
+    )
+    monkeypatch.setattr("src.validators.xray_probe.is_xray_supported", lambda cfg: True)
+    monkeypatch.setattr(
+        "src.validators.xray_probe.validate_configs_xray",
+        fake_validate_configs_xray,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            [cfg],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+    )
+
+    stats = runner._liveness_stats["lists"]["blacklist"]
+    assert result == [cfg]
+    assert stats["xray_proxy_checks"] == 3
+    assert stats["xray_min_proxy_successes"] == 2
 
 
 def test_runner_health_history_bans_repeated_failures(tmp_path) -> None:

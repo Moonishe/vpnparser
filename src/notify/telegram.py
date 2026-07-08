@@ -294,6 +294,8 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             xray_min_attempt_successes = int(
                 item.get("xray_min_attempt_successes") or 0
             )
+            xray_proxy_checks = int(item.get("xray_proxy_checks") or 0)
+            xray_min_proxy_successes = int(item.get("xray_min_proxy_successes") or 0)
             skipped = int(item.get("tcp_skipped_protocol") or 0)
             rounds = int(item.get("tcp_search_rounds") or 0)
             round_limit = int(item.get("tcp_search_round_limit") or 0)
@@ -358,10 +360,15 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                     and xray_min_attempt_successes > 0
                     else ""
                 )
+                proxy_text = (
+                    f", proxy-сети {xray_min_proxy_successes}/{xray_proxy_checks}"
+                    if xray_proxy_checks > 0 and xray_min_proxy_successes > 0
+                    else ""
+                )
                 lines.append(
                     f"  {_b(f'{label} Xray')}: проверено {xray_checked}, "
                     f"реально рабочих {xray_alive}{unsupported_text}{probe_text}"
-                    f"{attempt_text}"
+                    f"{attempt_text}{proxy_text}"
                 )
     quality = validation.get("quality")
     if isinstance(quality, dict):

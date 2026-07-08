@@ -68,7 +68,7 @@ validator:
   xray_min_attempt_successes: 3
   xray_min_probe_successes: 3
   xray_proxy_probe_count: 3
-  xray_min_proxy_successes: 0
+  xray_min_proxy_successes: 2
   xray_probe_urls:
     - "https://www.gstatic.com/generate_204"
     - "https://cp.cloudflare.com/generate_204"
