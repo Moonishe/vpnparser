@@ -206,6 +206,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
 
     tcp_enabled = bool(validation.get("tcp_enabled"))
     tls_enabled = bool(validation.get("tls_enabled"))
+    xray_enabled = bool(validation.get("xray_enabled"))
     proxy_pool_enabled = bool(validation.get("proxy_pool_enabled"))
     proxy_pool_required = bool(validation.get("proxy_pool_required"))
     proxy_count = int(validation.get("proxy_count") or 0)
@@ -220,7 +221,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
     strict_text = ", strict" if strict_liveness else ""
     unchecked_text = ", без TCP-only" if drop_unchecked else ""
 
-    if not tcp_enabled and not tls_enabled:
+    if not tcp_enabled and not tls_enabled and not xray_enabled:
         first = "🧪 Проверка: выключена"
     elif proxy_pool_enabled and proxy_pool_required and proxy_count <= 0:
         first = "🧪 Проверка: пропущена, рабочих SOCKS5 прокси не найдено"
@@ -252,10 +253,18 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             tls_checked = int(item.get("tls_checked") or 0)
             tls_alive = int(item.get("tls_alive") or 0)
             tls_unchecked = int(item.get("tls_unchecked_passthrough") or 0)
+            xray_checked = int(item.get("xray_checked") or 0)
+            xray_alive = int(item.get("xray_alive") or 0)
+            xray_unsupported = int(item.get("xray_unsupported") or 0)
             skipped = int(item.get("tcp_skipped_protocol") or 0)
             rounds = int(item.get("tcp_search_rounds") or 0)
             round_limit = int(item.get("tcp_search_round_limit") or 0)
-            if tcp_checked <= 0 and tls_checked <= 0 and not item.get("checked"):
+            if (
+                tcp_checked <= 0
+                and tls_checked <= 0
+                and xray_checked <= 0
+                and not item.get("checked")
+            ):
                 lines.append(f"  {label}: нет кандидатов для TCP/TLS проверки")
                 continue
 
@@ -282,6 +291,18 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 lines.append(
                     f"  {label} TLS/REALITY: проверено {tls_checked}, "
                     f"живых {tls_alive}{dropped_text}{suffix}"
+                )
+            if item.get("reason") == "xray_unavailable":
+                lines.append(f"  {label} Xray: пропущен, xray не установлен")
+            elif xray_checked > 0:
+                unsupported_text = (
+                    f", неподдержано {xray_unsupported}"
+                    if xray_unsupported > 0
+                    else ""
+                )
+                lines.append(
+                    f"  {label} Xray: проверено {xray_checked}, "
+                    f"реально рабочих {xray_alive}{unsupported_text}"
                 )
     return "\n".join(lines)
 

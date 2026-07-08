@@ -28,6 +28,7 @@ from src.sources.manager import SourceManager, SourceResult
 from src.validators import tcp_check as tcp_module
 from src.validators import proxy_pool as proxy_pool_module
 from src.validators import tls_check as tls_module
+from src.validators import xray_probe as xray_module
 from src.validators.proxy_pool import parse_proxy_candidates
 
 
@@ -69,6 +70,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
         "validation": {
             "tcp_enabled": True,
             "tls_enabled": True,
+            "xray_enabled": True,
             "fail_open_on_low_alive": False,
             "drop_unchecked_after_tls": True,
             "proxy_pool_enabled": True,
@@ -83,6 +85,9 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
                     "tls_alive": 90,
                     "tls_unchecked_passthrough": 11,
                     "tls_drop_unchecked": True,
+                    "xray_checked": 90,
+                    "xray_alive": 42,
+                    "xray_unsupported": 2,
                 },
                 "whitelist": {
                     "tcp_checked": 217,
@@ -118,6 +123,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
         "Blacklist TLS/REALITY: проверено 140, живых 90, TCP-only отброшено 11"
         in validation
     )
+    assert "Blacklist Xray: проверено 90, реально рабочих 42, неподдержано 2" in validation
     assert "Whitelist TCP: проверено 217, порт открыт 216" in validation
     assert "Whitelist TLS/REALITY: проверено 200, живых 184" in validation
     assert "Whitelist: 150" in subscriptions
@@ -852,6 +858,46 @@ def test_tls_validator_tries_host_when_sni_is_missing(monkeypatch) -> None:
     assert calls == [("203.0.113.10", 443, "cdn.example.com", "h2,http/1.1")]
 
 
+def test_xray_probe_builds_vless_reality_config() -> None:
+    cfg = Config(
+        protocol="vless",
+        address="203.0.113.10",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        network="tcp",
+        security="reality",
+        sni="www.example.com",
+        fp="chrome",
+        pbk="public-key",
+        sid="abcd",
+        flow="xtls-rprx-vision",
+    )
+
+    built = xray_module.build_xray_config(cfg, 18080)
+
+    assert built is not None
+    outbound = built["outbounds"][0]
+    assert outbound["protocol"] == "vless"
+    assert outbound["settings"]["vnext"][0]["users"][0]["flow"] == "xtls-rprx-vision"
+    assert outbound["streamSettings"]["security"] == "reality"
+    assert outbound["streamSettings"]["realitySettings"]["publicKey"] == "public-key"
+    assert built["inbounds"][0]["port"] == 18080
+
+
+def test_xray_probe_rejects_unsupported_network() -> None:
+    cfg = Config(
+        protocol="vless",
+        address="example.com",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        network="xhttp",
+        security="tls",
+    )
+
+    assert xray_module.build_xray_config(cfg, 18080) is None
+    assert xray_module.is_xray_supported(cfg) is False
+
+
 def test_proxy_pool_parses_public_socks5_candidates() -> None:
     text = """
     socks5://8.8.8.8:1080
@@ -1372,3 +1418,72 @@ validator:
     assert result == [tls_cfg]
     assert stats["tls_unchecked_passthrough"] == 1
     assert stats["tls_drop_unchecked"] is True
+
+
+def test_runner_liveness_filters_with_xray_probe(tmp_path, monkeypatch) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  xray_enabled: true
+  xray_executable: /usr/bin/xray
+  xray_concurrency: 2
+  xray_max_alive: 0
+  proxy_pool:
+    enabled: false
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    alive = Config(
+        "vless",
+        "alive.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+    dead = Config(
+        "vless",
+        "dead.example",
+        443,
+        "11111111-1111-4111-8111-111111111112",
+        security="tls",
+    )
+
+    monkeypatch.setattr(
+        "src.validators.xray_probe.find_xray_executable",
+        lambda explicit_path=None: "/usr/bin/xray",
+    )
+    monkeypatch.setattr(
+        "src.validators.xray_probe.is_xray_supported",
+        lambda cfg: True,
+    )
+
+    async def fake_validate_configs_xray(configs, **kwargs):
+        assert kwargs["xray_path"] == "/usr/bin/xray"
+        assert kwargs["concurrency"] == 2
+        return [alive]
+
+    monkeypatch.setattr(
+        "src.validators.xray_probe.validate_configs_xray",
+        fake_validate_configs_xray,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            [alive, dead],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+    )
+
+    stats = runner._liveness_stats["lists"]["blacklist"]
+    assert result == [alive]
+    assert stats["xray_checked"] == 2
+    assert stats["xray_alive"] == 1

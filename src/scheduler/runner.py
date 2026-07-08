@@ -785,10 +785,12 @@ class PipelineRunner:
         vcfg = self._section("validator")
         tcp_enabled = self._as_bool(vcfg.get("tcp_enabled"), False)
         tls_enabled = self._as_bool(vcfg.get("tls_enabled"), False)
+        xray_enabled = self._as_bool(vcfg.get("xray_enabled"), False)
         pool_cfg = self._proxy_pool_config()
         self._liveness_stats = {
             "tcp_enabled": tcp_enabled,
             "tls_enabled": tls_enabled,
+            "xray_enabled": xray_enabled,
             "fail_open_on_low_alive": self._as_bool(
                 vcfg.get("fail_open_on_low_alive"), True
             ),
@@ -809,7 +811,7 @@ class PipelineRunner:
             "proxy_count": 0,
             "lists": {},
         }
-        if not tcp_enabled and not tls_enabled:
+        if not tcp_enabled and not tls_enabled and not xray_enabled:
             self._liveness_stats["status"] = "disabled"
             return configs_by_list
         self._liveness_stats["status"] = "enabled"
@@ -821,6 +823,7 @@ class PipelineRunner:
                 label=list_type,
                 tcp_enabled=tcp_enabled,
                 tls_enabled=tls_enabled,
+                xray_enabled=xray_enabled,
             )
             if alive:
                 validated[list_type] = alive
@@ -833,6 +836,7 @@ class PipelineRunner:
         label: str,
         tcp_enabled: bool,
         tls_enabled: bool,
+        xray_enabled: bool = False,
     ) -> list[Config]:
         if not configs:
             return []
@@ -1078,6 +1082,94 @@ class PipelineRunner:
                     len(current),
                 )
                 current = []
+
+        if xray_enabled and current:
+            from src.validators.xray_probe import (
+                find_xray_executable,
+                is_xray_supported,
+                validate_configs_xray,
+            )
+
+            xray_path = find_xray_executable(str(vcfg.get("xray_executable") or ""))
+            xray_required = self._as_bool(vcfg.get("xray_required"), False)
+            list_stats["xray_required"] = xray_required
+            list_stats["xray_available"] = bool(xray_path)
+            if not xray_path:
+                list_stats["xray_checked"] = 0
+                list_stats["xray_alive"] = 0
+                list_stats["reason"] = "xray_unavailable"
+                if xray_required:
+                    logger.warning(
+                        "%s Xray validation required but xray executable "
+                        "is unavailable. Dropping configs.",
+                        label,
+                    )
+                    return []
+                logger.warning(
+                    "%s Xray validation skipped: xray executable unavailable.",
+                    label,
+                )
+                return current
+
+            supported = [cfg for cfg in current if is_xray_supported(cfg)]
+            unsupported = len(current) - len(supported)
+            drop_unsupported = self._as_bool(
+                vcfg.get("xray_drop_unsupported"), True
+            )
+            list_stats["xray_candidates"] = len(supported)
+            list_stats["xray_unsupported"] = unsupported
+            list_stats["xray_drop_unsupported"] = drop_unsupported
+            if not supported:
+                list_stats["xray_checked"] = 0
+                list_stats["xray_alive"] = 0
+                list_stats["reason"] = "xray_no_supported_candidates"
+                return [] if drop_unsupported else current
+
+            candidate_limit = self._as_int(
+                vcfg.get("xray_candidate_limit"), 0, minimum=0
+            )
+            if candidate_limit > 0:
+                supported = self._country_balanced_limit(supported, candidate_limit)
+
+            xray_max_alive = self._as_int(vcfg.get("xray_max_alive"), 0, minimum=0)
+            xray_max_alive_by_list = vcfg.get("xray_max_alive_by_list", {})
+            if isinstance(xray_max_alive_by_list, dict):
+                specific_max_alive = xray_max_alive_by_list.get(
+                    normalize_list_type(label)
+                )
+                if specific_max_alive is not None:
+                    xray_max_alive = self._as_int(
+                        specific_max_alive,
+                        xray_max_alive,
+                        minimum=0,
+                    )
+
+            list_stats["xray_checked"] = len(supported)
+            list_stats["xray_max_alive"] = xray_max_alive
+            alive_xray = await validate_configs_xray(
+                supported,
+                xray_path=xray_path,
+                probe_url=str(
+                    vcfg.get("xray_probe_url")
+                    or "https://www.gstatic.com/generate_204"
+                ),
+                timeout=self._as_float(
+                    vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0
+                ),
+                startup_timeout=self._as_float(
+                    vcfg.get("xray_startup_timeout_seconds"), 4.0, minimum=0.5
+                ),
+                concurrency=self._as_int(
+                    vcfg.get("xray_concurrency"), 6, minimum=1
+                ),
+                max_alive=xray_max_alive,
+            )
+            list_stats["checked"] = True
+            list_stats["filtered"] = True
+            list_stats["xray_alive"] = len(alive_xray)
+            list_stats["output_after_xray"] = len(alive_xray)
+            current = alive_xray
+            logger.info("%s after Xray validation: %d configs.", label, len(current))
 
         return current
 

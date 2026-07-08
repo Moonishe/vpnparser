@@ -41,6 +41,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install Xray core
+        run: |
+          set -euo pipefail
+          curl -L --retry 3 --retry-delay 2 \
+            -o /tmp/xray.zip \
+            "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"
+          unzip -q /tmp/xray.zip -d /tmp/xray
+          chmod +x /tmp/xray/xray
+          echo "/tmp/xray" >> "$GITHUB_PATH"
+          /tmp/xray/xray version
+
       - name: Run tests
         run: python -m pytest -q -p no:cacheprovider
 

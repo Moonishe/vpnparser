@@ -48,6 +48,18 @@ validator:
   tls_timeout_seconds: 6
   tls_concurrency: 80
   tls_candidate_limit: 0
+  xray_enabled: true
+  xray_required: false
+  xray_drop_unsupported: true
+  xray_candidate_limit: 0
+  xray_max_alive: 0
+  xray_max_alive_by_list:
+    blacklist: 220
+    whitelist: 120
+  xray_timeout_seconds: 12
+  xray_startup_timeout_seconds: 4
+  xray_concurrency: 6
+  xray_probe_url: "https://www.gstatic.com/generate_204"
 
   proxy_pool:
     enabled: true

@@ -23,14 +23,16 @@ checks. GitHub Actions often cannot reach VPN servers directly, so the
 validator can build a small free SOCKS5 proxy pool from GitHub-hosted proxy
 lists and route TCP/TLS checks through it. TCP only proves that a port opens;
 TLS/REALITY configs then get a stricter TLS handshake pass using the parsed SNI
-and Host values. Each VPN config can be tried through several different SOCKS5
-proxies before it is treated as unreachable. If too few SOCKS5 proxies are
-found, the proxy search widens the candidate sample for several rounds before
-giving up. The production settings use strict low-live handling, so a weak
-validation result publishes fewer configs instead of putting unchecked/dead
-configs back into the subscriptions. TCP-only configs are dropped after the
-TLS/REALITY pass in the production settings, so the final subscriptions prefer
-configs that reached the stricter handshake stage.
+and Host values. After that, the GitHub Actions workflow installs Xray-core and
+runs an L3 client probe: each supported config is loaded as an Xray outbound,
+then a real HTTPS request is made through a local SOCKS inbound. Each VPN config
+can be tried through several different SOCKS5 proxies before it is treated as
+unreachable. If too few SOCKS5 proxies are found, the proxy search widens the
+candidate sample for several rounds before giving up. The production settings
+use strict low-live handling, so a weak validation result publishes fewer
+configs instead of putting unchecked/dead configs back into the subscriptions.
+TCP-only configs are dropped after the TLS/REALITY pass in the production
+settings, and unsupported Xray candidates are dropped before the final output.
 
 Configured SOCKS5 proxy pool sources:
 
@@ -137,9 +139,10 @@ Important settings in `config/settings.yaml`:
 | `validator` | `allowed_countries_by_list` | Per-list country filters |
 | `validator` | `whitelist_ru_ratio`, `whitelist_eu_countries` | Whitelist RU/EU split |
 | `validator` | `max_configs_to_validate` | `0` means process all parsed configs |
-| `validator` | `tcp_enabled`, `tls_enabled` | Network liveness checks |
+| `validator` | `tcp_enabled`, `tls_enabled`, `xray_enabled` | Network and real-client liveness checks |
 | `validator` | `tcp_candidate_limit`, `tcp_search_rounds` | TCP validation batch size and retry batches |
 | `validator` | `proxy_attempts_per_config`, `tls_proxy_attempts_per_config` | `0` tries all working SOCKS5 proxies for each config |
+| `validator` | `xray_max_alive_by_list`, `xray_concurrency`, `xray_probe_url` | Xray L3 probe limits and HTTPS test URL |
 | `validator` | `proxy_pool` | Optional free SOCKS5 pool for GitHub Actions validation |
 | `validator` | `min_alive_to_filter`, `fail_open_on_low_alive`, `drop_unchecked_after_tls` | Low-live threshold and whether to restore/drop unchecked configs |
 | `aggregator` | `max_configs_in_output` | Hard cap per generated file |
