@@ -104,7 +104,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
                 "countries": {"RU": 120, "DE": 30},
             },
             "mix": {
-                "count": 150,
+                "count": 200,
                 "countries": {"RU": 60, "CA": 49, "DE": 27, "FI": 14},
             },
         },
@@ -128,7 +128,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     assert "Whitelist TLS/REALITY: проверено 200, живых 184" in validation
     assert "Whitelist: 150" in subscriptions
     assert "Россия 120" in subscriptions
-    assert "Mix 75/75: 150" in subscriptions
+    assert "Mix 100/100: 200" in subscriptions
     assert "Россия 60" in subscriptions
 
 
@@ -690,7 +690,7 @@ def test_build_mixed_output_uses_blacklist_and_whitelist_halves(tmp_path) -> Non
     settings.write_text(
         """
 aggregator:
-  max_configs_in_output: 150
+  max_configs_in_output: 200
   sort_by: country
 validator:
   whitelist_ru_ratio: 0.8
@@ -734,14 +734,14 @@ validator:
     ]
 
     result = runner._build_mixed_output(
-        {"blacklist": blacklist, "whitelist": whitelist}, 150
+        {"blacklist": blacklist, "whitelist": whitelist}, 200
     )
 
-    assert len(result) == 150
-    assert sum(1 for cfg in result if cfg.remark == "blacklist") == 75
-    assert sum(1 for cfg in result if cfg.remark == "whitelist") == 75
-    assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "RU") == 60
-    assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "DE") == 15
+    assert len(result) == 200
+    assert sum(1 for cfg in result if cfg.remark == "blacklist") == 100
+    assert sum(1 for cfg in result if cfg.remark == "whitelist") == 100
+    assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "RU") == 80
+    assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "DE") == 20
 
 
 def test_whitelist_balance_spreads_eu_countries(tmp_path) -> None:
@@ -1487,3 +1487,75 @@ validator:
     assert result == [alive]
     assert stats["xray_checked"] == 2
     assert stats["xray_alive"] == 1
+
+
+def test_runner_xray_preselects_only_subscription_candidates(
+    tmp_path, monkeypatch
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  xray_enabled: true
+  xray_executable: /usr/bin/xray
+  xray_candidate_limit_by_list:
+    blacklist: 200
+  xray_max_alive: 0
+  proxy_pool:
+    enabled: false
+aggregator:
+  max_configs_in_output: 200
+  sort_by: country
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    configs = [
+        Config(
+            "vless",
+            f"{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            security="tls",
+            country="DE" if i % 2 else "CA",
+        )
+        for i in range(300)
+    ]
+    captured = {}
+
+    monkeypatch.setattr(
+        "src.validators.xray_probe.find_xray_executable",
+        lambda explicit_path=None: "/usr/bin/xray",
+    )
+    monkeypatch.setattr("src.validators.xray_probe.is_xray_supported", lambda cfg: True)
+
+    async def fake_validate_configs_xray(configs, **kwargs):
+        captured["checked"] = len(configs)
+        return configs[:123]
+
+    monkeypatch.setattr(
+        "src.validators.xray_probe.validate_configs_xray",
+        fake_validate_configs_xray,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+    )
+
+    stats = runner._liveness_stats["lists"]["blacklist"]
+    assert captured["checked"] == 200
+    assert stats["xray_candidates"] == 300
+    assert stats["xray_preselected"] == 200
+    assert stats["xray_checked"] == 200
+    assert stats["xray_alive"] == 123
+    assert len(result) == 123

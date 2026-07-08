@@ -51,11 +51,14 @@ validator:
   xray_enabled: true
   xray_required: false
   xray_drop_unsupported: true
-  xray_candidate_limit: 0
+  xray_candidate_limit: 200
+  xray_candidate_limit_by_list:
+    blacklist: 200
+    whitelist: 200
   xray_max_alive: 0
   xray_max_alive_by_list:
-    blacklist: 220
-    whitelist: 120
+    blacklist: 200
+    whitelist: 200
   xray_timeout_seconds: 12
   xray_startup_timeout_seconds: 4
   xray_concurrency: 6
@@ -91,9 +94,9 @@ validator:
 
 # --- Aggregator ---
 aggregator:
-  max_configs_in_output: 150
+  max_configs_in_output: 200
   sort_by: "country"
-  max_per_country: 150
+  max_per_country: 200
 
 # --- Publisher ---
 publisher:

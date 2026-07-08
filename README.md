@@ -7,7 +7,7 @@ subscriptions.
 The current pipeline produces four files:
 
 - `output/subscription.txt` - combined pool.
-- `output/subscription-mix.txt` - strict 75 blacklist + 75 whitelist mix.
+- `output/subscription-mix.txt` - strict 100 blacklist + 100 whitelist mix.
 - `output/subscription-blacklist.txt` - normal "blacklist" VPN pool.
 - `output/subscription-whitelist.txt` - "whitelist" / restricted-network pool.
 - `output/run-summary.json` - validation and per-output country metadata for Telegram.
@@ -57,8 +57,12 @@ Currently included upstream pools:
 
 - `igareck/vpn-configs-for-russia`
   - Black: `BLACK_VLESS_RUS_mobile.txt`
-  - White: `Vless-Reality-White-Lists-Rus-Mobile.txt`, `WHITE-CIDR-RU-checked.txt`,
+  - White: `Vless-Reality-White-Lists-Rus-Mobile.txt`, `Vless-Reality-White-Lists-Rus-Mobile-2.txt`, `WHITE-CIDR-RU-checked.txt`,
     `WHITE-CIDR-RU-all.txt`, `WHITE-SNI-RU-all.txt`
+- `luxxuria/harvester`
+  - Black: `top_600.txt`, `speed_tested.txt`
+- `DarkRoyalty/shnajder-vpn-configs`
+  - White: `githubmirror/26.txt`
 - `V2RayRoot/V2RayConfig`
   - Black: `Config/vless.txt`
 - `sakha1370/OpenRay`
@@ -67,16 +71,16 @@ Currently included upstream pools:
   - White subscription: `https://gbr.mydan.online/configs`
 
 Blacklist output keeps only `DE`, `FI`, `NL`, `US`, `GB`, `FR`, `JP`, `CA`.
-Whitelist output targets 150 checked configs with an 80% RU / 20% EU split.
-The mix output targets 75 checked blacklist configs plus 75 checked whitelist
+Whitelist output targets 200 checked configs with an 80% RU / 20% EU split.
+The mix output targets 100 checked blacklist configs plus 100 checked whitelist
 configs. Subscription titles and Telegram raw GitHub links use
 `GITHUB_OWNER/GITHUB_REPO` (or GitHub Actions' `GITHUB_REPOSITORY`) when set.
 Telegram notifications read `output/run-summary.json`, so they can show whether
 TCP/SOCKS5 validation ran and list countries separately for the combined,
-blacklist, whitelist, and 75/75 mix subscriptions.
+blacklist, whitelist, and 100/100 mix subscriptions.
 Blacklist and combined outputs are country-balanced with round-robin selection:
 one server per available country per round, so a large pool such as Canada
-cannot dominate the final 150 slots while other countries have live servers.
+cannot dominate the final 200 slots while other countries have live servers.
 
 ## Supported Protocols
 

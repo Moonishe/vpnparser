@@ -1128,8 +1128,22 @@ class PipelineRunner:
             candidate_limit = self._as_int(
                 vcfg.get("xray_candidate_limit"), 0, minimum=0
             )
+            xray_candidate_limit_by_list = vcfg.get("xray_candidate_limit_by_list", {})
+            if isinstance(xray_candidate_limit_by_list, dict):
+                specific_candidate_limit = xray_candidate_limit_by_list.get(list_key)
+                if specific_candidate_limit is not None:
+                    candidate_limit = self._as_int(
+                        specific_candidate_limit,
+                        candidate_limit,
+                        minimum=0,
+                    )
             if candidate_limit > 0:
-                supported = self._country_balanced_limit(supported, candidate_limit)
+                supported = self._xray_candidate_preselect(
+                    supported,
+                    candidate_limit,
+                    list_key,
+                )
+            list_stats["xray_preselected"] = len(supported)
 
             xray_max_alive = self._as_int(vcfg.get("xray_max_alive"), 0, minimum=0)
             xray_max_alive_by_list = vcfg.get("xray_max_alive_by_list", {})
@@ -1174,6 +1188,14 @@ class PipelineRunner:
         return current
 
     # --- stage 3+5: aggregate (split into dedup + sort/limit) ---
+
+    def _xray_candidate_preselect(
+        self, configs: list[Config], max_total: int, list_type: str
+    ) -> list[Config]:
+        """Preselect only configs that could enter the final subscription."""
+        if normalize_list_type(list_type) == "whitelist":
+            return self._whitelist_balance(configs, max_total)
+        return self._country_balanced_limit(configs, max_total)
 
     def _dedup_only(self, configs: list[Config]) -> list[Config]:
         """Deduplicate configs by (address, port). Called before country filter."""

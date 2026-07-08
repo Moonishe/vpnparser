@@ -8,6 +8,20 @@
       "enabled": true
     },
     {
+      "name": "luxxuria-harvester-top-600",
+      "list_type": "blacklist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/luxxuria/harvester/main/top_600.txt",
+      "enabled": true
+    },
+    {
+      "name": "luxxuria-harvester-speed-tested",
+      "list_type": "blacklist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/luxxuria/harvester/main/speed_tested.txt",
+      "enabled": true
+    },
+    {
       "name": "v2rayroot-vless",
       "list_type": "blacklist",
       "type": "url",
@@ -26,6 +40,14 @@
       "list_type": "whitelist",
       "type": "url",
       "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+      "default_country": "RU",
+      "enabled": true
+    },
+    {
+      "name": "igareck-white-vless-reality-mobile-2",
+      "list_type": "whitelist",
+      "type": "url",
+      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
       "default_country": "RU",
       "enabled": true
     },
@@ -58,6 +80,14 @@
       "list_type": "whitelist",
       "type": "url",
       "url": "https://gbr.mydan.online/configs",
+      "default_country": "RU",
+      "enabled": true
+    },
+    {
+      "name": "darkroyalty-shnajder-githubmirror-26",
+      "list_type": "whitelist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/DarkRoyalty/shnajder-vpn-configs/refs/heads/main/githubmirror/26.txt",
       "default_country": "RU",
       "enabled": true
     }
