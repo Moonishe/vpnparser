@@ -103,6 +103,9 @@ publisher:
   mode: "repo"
   output_file: "output/subscription.txt"
   mix_output_file: "output/subscription-mix.txt"
+  location_outputs_enabled: true
+  location_output_dir: "output/locations"
+  location_output_limit: 50
   status_output_file: "output/run-summary.json"
   split_output_files:
     blacklist: "output/subscription-blacklist.txt"

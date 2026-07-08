@@ -325,6 +325,17 @@ def _format_subscriptions_section(
                 countries if isinstance(countries, dict) else {}
             )
             lines.append(f"  {label}: {count} — {country_text}")
+        location_outputs = [
+            item
+            for key, item in outputs.items()
+            if str(key).startswith("location_") and isinstance(item, dict)
+        ]
+        if location_outputs:
+            total_locations = len(location_outputs)
+            max_count = max(int(item.get("count") or 0) for item in location_outputs)
+            lines.append(
+                f"  Локации: {total_locations} файлов, до {max_count} серверов"
+            )
         if len(lines) > 1:
             return "\n".join(lines)
 

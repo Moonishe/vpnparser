@@ -7,6 +7,7 @@ import json
 import sys
 import types
 from collections import Counter
+from pathlib import Path
 
 import httpx
 import pytest
@@ -107,6 +108,14 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
                 "count": 200,
                 "countries": {"RU": 60, "CA": 49, "DE": 27, "FI": 14},
             },
+            "location_de": {
+                "count": 50,
+                "countries": {"DE": 50},
+            },
+            "location_ru": {
+                "count": 42,
+                "countries": {"RU": 42},
+            },
         },
     }
 
@@ -129,6 +138,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     assert "Whitelist: 150" in subscriptions
     assert "Россия 120" in subscriptions
     assert "Mix 100/100: 200" in subscriptions
+    assert "Локации: 2 файлов, до 50 серверов" in subscriptions
     assert "Россия 60" in subscriptions
 
 
@@ -811,6 +821,67 @@ def test_process_and_write_configs_writes_split_output(tmp_path) -> None:
 
     assert count == 1
     assert raw_link in decoded
+
+
+def test_location_outputs_are_capped_per_country(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    location_dir = tmp_path / "locations"
+    settings.write_text(
+        f"""
+publisher:
+  location_outputs_enabled: true
+  location_output_dir: {location_dir}
+  location_output_limit: 50
+aggregator:
+  sort_by: country
+  max_per_country: 200
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing-sources.json"),
+    )
+    configs = [
+        Config(
+            "vless",
+            f"de-{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            raw_link=(
+                "vless://11111111-1111-4111-8111-111111111111"
+                f"@de-{i}.example:443#DE-{i}"
+            ),
+            country="DE",
+        )
+        for i in range(75)
+    ] + [
+        Config(
+            "vless",
+            f"ru-{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            raw_link=(
+                "vless://11111111-1111-4111-8111-111111111111"
+                f"@ru-{i}.example:443#RU-{i}"
+            ),
+            country="RU",
+        )
+        for i in range(12)
+    ]
+
+    files = runner._write_location_outputs(configs)
+
+    assert sorted(Path(path).name for path in files) == [
+        "subscription-DE.txt",
+        "subscription-RU.txt",
+    ]
+    de_text = (location_dir / "subscription-DE.txt").read_text(encoding="utf-8")
+    ru_text = (location_dir / "subscription-RU.txt").read_text(encoding="utf-8")
+    assert len(base64.b64decode(de_text).decode("utf-8").splitlines()) == 51
+    assert len(base64.b64decode(ru_text).decode("utf-8").splitlines()) == 13
+    assert runner._output_stats["location_de"]["count"] == 50
+    assert runner._output_stats["location_ru"]["count"] == 12
 
 
 def test_tls_validator_marks_successful_tls_configs_alive(monkeypatch) -> None:

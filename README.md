@@ -10,6 +10,8 @@ The current pipeline produces four files:
 - `output/subscription-mix.txt` - strict 100 blacklist + 100 whitelist mix.
 - `output/subscription-blacklist.txt` - normal "blacklist" VPN pool.
 - `output/subscription-whitelist.txt` - "whitelist" / restricted-network pool.
+- `output/locations/subscription-XX.txt` - per-country subconfigs, up to 50
+  checked servers per location.
 - `output/run-summary.json` - validation and per-output country metadata for Telegram.
 
 ## Pipeline
@@ -78,6 +80,8 @@ configs. Subscription titles and Telegram raw GitHub links use
 Telegram notifications read `output/run-summary.json`, so they can show whether
 TCP/SOCKS5 validation ran and list countries separately for the combined,
 blacklist, whitelist, and 100/100 mix subscriptions.
+Per-country location outputs are generated from the same Xray-validated pool
+and are capped at 50 servers per country.
 Blacklist and combined outputs are country-balanced with round-robin selection:
 one server per available country per round, so a large pool such as Canada
 cannot dominate the final 200 slots while other countries have live servers.
@@ -153,6 +157,7 @@ Important settings in `config/settings.yaml`:
 | `aggregator` | `max_per_country` | Per-country cap |
 | `publisher` | `output_file` | Combined output path |
 | `publisher` | `split_output_files` | Blacklist/whitelist output paths |
+| `publisher` | `location_output_dir`, `location_output_limit` | Per-country subconfig folder and cap |
 | `llm` | `enabled` | Optional LLM fallback when regex finds no links |
 
 ## GitHub Actions

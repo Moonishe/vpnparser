@@ -173,9 +173,9 @@ class PipelineRunner:
             combined.extend(configs)
 
         # Dedup (same server in both lists).
-        combined = self._dedup_only(combined)
+        all_live_configs = self._dedup_only(combined)
 
-        combined = self._country_balanced_limit(combined, max_total)
+        combined = self._country_balanced_limit(all_live_configs, max_total)
         logger.info(
             "Combined after dedup+country-balance: %d configs.",
             len(combined),
@@ -221,6 +221,9 @@ class PipelineRunner:
                 self._record_output_stats(list_type, split_file, [])
                 logger.warning("No configs for %s output.", list_type)
             output_files.append(split_file)
+
+        location_output_files = self._write_location_outputs(all_live_configs)
+        output_files.extend(location_output_files)
 
         summary_file = self._write_run_summary("ok")
         if summary_file:
@@ -1584,11 +1587,73 @@ class PipelineRunner:
         )
         if mix_output_file:
             self._write_empty_output(mix_output_file)
+        self._clear_location_outputs()
 
     def _write_empty_split_outputs(self, combined_output_file: str) -> None:
         """Clear configured split outputs on empty runs."""
         for split_file in self._split_output_files(combined_output_file).values():
             self._write_empty_output(split_file)
+
+    def _location_output_config(self) -> tuple[bool, str, int]:
+        pcfg = self._section("publisher")
+        enabled = self._as_bool(pcfg.get("location_outputs_enabled"), True)
+        output_dir = str(pcfg.get("location_output_dir") or "output/locations")
+        limit = self._as_int(pcfg.get("location_output_limit"), 50, minimum=1)
+        return enabled, output_dir, limit
+
+    @staticmethod
+    def _location_output_filename(country: str) -> str:
+        code = "".join(ch for ch in country.upper() if ch.isalnum())
+        return f"subscription-{code or 'XX'}.txt"
+
+    def _clear_location_outputs(self) -> None:
+        enabled, output_dir, _limit = self._location_output_config()
+        if not enabled:
+            return
+        root = Path(output_dir)
+        if not root.exists():
+            return
+        for path in root.glob("subscription-*.txt"):
+            try:
+                path.unlink()
+            except OSError as exc:
+                logger.warning("Failed to remove stale location output %s: %s", path, exc)
+
+    def _build_location_outputs(
+        self, configs: list[Config], per_location_limit: int
+    ) -> dict[str, list[Config]]:
+        groups: dict[str, list[Config]] = {}
+        for cfg in configs:
+            if not cfg.raw_link or not getattr(cfg, "country", None):
+                continue
+            country = str(cfg.country).upper()
+            groups.setdefault(country, []).append(cfg)
+
+        return {
+            country: self._country_balanced_limit(country_configs, per_location_limit)
+            for country, country_configs in sorted(groups.items())
+        }
+
+    def _write_location_outputs(self, configs: list[Config]) -> list[str]:
+        enabled, output_dir, limit = self._location_output_config()
+        if not enabled:
+            return []
+
+        self._clear_location_outputs()
+        outputs = self._build_location_outputs(configs, limit)
+        output_files: list[str] = []
+        for country, country_configs in outputs.items():
+            output_file = str(Path(output_dir) / self._location_output_filename(country))
+            count = self._write_output(country_configs, output_file)
+            self._record_output_stats(f"location_{country.lower()}", output_file, country_configs)
+            output_files.append(output_file)
+            logger.info(
+                "Wrote %d %s location configs to %s.",
+                count,
+                country,
+                output_file,
+            )
+        return output_files
 
     def _status_output_file(self) -> str | None:
         """Return run-summary output path, if configured."""
