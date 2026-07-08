@@ -89,6 +89,8 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
                     "xray_checked": 90,
                     "xray_alive": 42,
                     "xray_unsupported": 2,
+                    "xray_probe_count": 3,
+                    "xray_min_probe_successes": 2,
                 },
                 "whitelist": {
                     "tcp_checked": 217,
@@ -134,7 +136,8 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
         in validation
     )
     assert (
-        "<b>Blacklist Xray</b>: проверено 90, реально рабочих 42, неподдержано 2"
+        "<b>Blacklist Xray</b>: проверено 90, реально рабочих 42, "
+        "неподдержано 2, HTTPS-пробы 2/3"
         in validation
     )
     assert "<b>Whitelist TCP</b>: проверено 217, порт открыт 216" in validation
@@ -1037,6 +1040,79 @@ def test_xray_probe_rejects_unsupported_network() -> None:
     assert xray_module.is_xray_supported(cfg) is False
 
 
+def test_xray_http_status_code_accepts_only_http_status() -> None:
+    assert xray_module._http_status_code(b"HTTP/1.1 204 No Content\r\n") == 204
+    assert xray_module._http_status_code(b"HTTP/2 200\r\n") == 200
+    assert xray_module._http_status_code(b"proxy error") is None
+    assert xray_module._http_status_code(b"HTTP/1.1 nope\r\n") is None
+
+
+def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> None:
+    cfg = Config(
+        protocol="vless",
+        address="203.0.113.10",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr(xray_module, "_free_local_port", lambda: 18080)
+
+    async def fake_wait_for_port(*_args):
+        return True
+
+    monkeypatch.setattr(xray_module, "_wait_for_port", fake_wait_for_port)
+
+    class DummyProc:
+        returncode = None
+
+        def terminate(self) -> None:
+            self.returncode = 0
+
+        async def wait(self) -> None:
+            return None
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def fake_create_subprocess_exec(*_args, **_kwargs):
+        return DummyProc()
+
+    async def fake_probe(_port, *, probe_url, timeout):
+        calls.append(probe_url)
+        return {
+            "https://ok-1.example/generate_204": 204,
+            "https://bad.example/generate_204": 503,
+            "https://ok-2.example/trace": 200,
+        }[probe_url]
+
+    monkeypatch.setattr(
+        xray_module.asyncio,
+        "create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+    monkeypatch.setattr(xray_module, "_https_probe_via_socks", fake_probe)
+
+    assert asyncio.run(
+        xray_module.xray_probe_check(
+            cfg,
+            xray_path="/usr/bin/xray",
+            probe_urls=[
+                "https://ok-1.example/generate_204",
+                "https://bad.example/generate_204",
+                "https://ok-2.example/trace",
+            ],
+            min_probe_successes=2,
+        )
+    )
+    assert calls == [
+        "https://ok-1.example/generate_204",
+        "https://bad.example/generate_204",
+        "https://ok-2.example/trace",
+    ]
+
+
 def test_proxy_pool_parses_public_socks5_candidates() -> None:
     text = """
     socks5://8.8.8.8:1080
@@ -1569,6 +1645,10 @@ validator:
   xray_executable: /usr/bin/xray
   xray_concurrency: 2
   xray_max_alive: 0
+  xray_min_probe_successes: 2
+  xray_probe_urls:
+    - https://one.example/generate_204
+    - https://two.example/trace
   proxy_pool:
     enabled: false
 """,
@@ -1605,6 +1685,11 @@ validator:
     async def fake_validate_configs_xray(configs, **kwargs):
         assert kwargs["xray_path"] == "/usr/bin/xray"
         assert kwargs["concurrency"] == 2
+        assert kwargs["probe_urls"] == [
+            "https://one.example/generate_204",
+            "https://two.example/trace",
+        ]
+        assert kwargs["min_probe_successes"] == 2
         return [alive]
 
     monkeypatch.setattr(
@@ -1626,6 +1711,8 @@ validator:
     assert result == [alive]
     assert stats["xray_checked"] == 2
     assert stats["xray_alive"] == 1
+    assert stats["xray_probe_count"] == 2
+    assert stats["xray_min_probe_successes"] == 2
 
 
 def test_runner_xray_preselects_only_subscription_candidates(

@@ -49,7 +49,7 @@ validator:
   tls_concurrency: 80
   tls_candidate_limit: 0
   xray_enabled: true
-  xray_required: false
+  xray_required: true
   xray_drop_unsupported: true
   xray_candidate_limit: 200
   xray_candidate_limit_by_list:
@@ -59,10 +59,16 @@ validator:
   xray_max_alive_by_list:
     blacklist: 200
     whitelist: 200
-  xray_timeout_seconds: 12
-  xray_startup_timeout_seconds: 4
-  xray_concurrency: 6
-  xray_probe_url: "https://www.gstatic.com/generate_204"
+  xray_timeout_seconds: 15
+  xray_startup_timeout_seconds: 5
+  xray_concurrency: 4
+  # A config is considered live only if Xray can proxy at least 2 of these
+  # independent HTTPS probes with a normal HTTP 2xx/3xx response.
+  xray_min_probe_successes: 2
+  xray_probe_urls:
+    - "https://www.gstatic.com/generate_204"
+    - "https://cp.cloudflare.com/generate_204"
+    - "https://www.cloudflare.com/cdn-cgi/trace"
 
   proxy_pool:
     enabled: true

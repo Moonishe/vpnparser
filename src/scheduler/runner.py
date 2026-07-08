@@ -1163,13 +1163,42 @@ class PipelineRunner:
 
             list_stats["xray_checked"] = len(supported)
             list_stats["xray_max_alive"] = xray_max_alive
+            probe_urls_raw = vcfg.get("xray_probe_urls")
+            if isinstance(probe_urls_raw, str):
+                xray_probe_urls = [
+                    part.strip()
+                    for part in probe_urls_raw.replace(";", ",").split(",")
+                    if part.strip()
+                ]
+            elif isinstance(probe_urls_raw, list):
+                xray_probe_urls = [
+                    str(part).strip() for part in probe_urls_raw if str(part).strip()
+                ]
+            else:
+                xray_probe_urls = []
+            if not xray_probe_urls:
+                xray_probe_urls = [
+                    str(
+                        vcfg.get("xray_probe_url")
+                        or "https://www.gstatic.com/generate_204"
+                    )
+                ]
+            xray_min_probe_successes = self._as_int(
+                vcfg.get("xray_min_probe_successes"),
+                1,
+                minimum=1,
+            )
+            xray_min_probe_successes = min(
+                xray_min_probe_successes,
+                len(xray_probe_urls),
+            )
+            list_stats["xray_probe_count"] = len(xray_probe_urls)
+            list_stats["xray_min_probe_successes"] = xray_min_probe_successes
             alive_xray = await validate_configs_xray(
                 supported,
                 xray_path=xray_path,
-                probe_url=str(
-                    vcfg.get("xray_probe_url")
-                    or "https://www.gstatic.com/generate_204"
-                ),
+                probe_urls=xray_probe_urls,
+                min_probe_successes=xray_min_probe_successes,
                 timeout=self._as_float(
                     vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0
                 ),

@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 _SUPPORTED_PROTOCOLS = {"vless", "trojan", "vmess", "ss"}
 _SUPPORTED_NETWORKS = {"tcp", "ws", "grpc"}
+_DEFAULT_PROBE_URLS = ["https://www.gstatic.com/generate_204"]
+_DEFAULT_ACCEPTED_STATUS_CODES = set(range(200, 400))
 
 
 def find_xray_executable(explicit_path: str | None = None) -> str | None:
@@ -251,12 +253,47 @@ async def _wait_for_port(port: int, timeout: float) -> bool:
     return False
 
 
+def _http_status_code(chunk: bytes) -> int | None:
+    if not chunk.startswith(b"HTTP/"):
+        return None
+    parts = chunk.split(maxsplit=2)
+    if len(parts) < 2:
+        return None
+    try:
+        return int(parts[1])
+    except ValueError:
+        return None
+
+
+def _normalize_probe_urls(
+    probe_url: str | None = None,
+    probe_urls: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    candidates: list[str] = []
+    if probe_urls:
+        candidates.extend(str(url) for url in probe_urls)
+    if probe_url:
+        candidates.append(str(probe_url))
+    if not candidates:
+        candidates.extend(_DEFAULT_PROBE_URLS)
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for url in candidates:
+        cleaned = url.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        normalized.append(cleaned)
+        seen.add(cleaned)
+    return normalized or list(_DEFAULT_PROBE_URLS)
+
+
 async def _https_probe_via_socks(
     socks_port: int,
     *,
     probe_url: str,
     timeout: float,
-) -> bool:
+) -> int | None:
     parsed = urlparse(probe_url)
     host = parsed.hostname
     if parsed.scheme != "https" or not host:
@@ -286,13 +323,13 @@ async def _https_probe_via_socks(
         await writer.drain()
         chunk = await asyncio.wait_for(reader.read(64), timeout=timeout)
     except Exception:
-        return False
+        return None
     finally:
         with contextlib.suppress(Exception):
             writer.close()  # type: ignore[name-defined]
             await writer.wait_closed()  # type: ignore[name-defined]
 
-    return chunk.startswith(b"HTTP/")
+    return _http_status_code(chunk)
 
 
 async def xray_probe_check(
@@ -300,14 +337,21 @@ async def xray_probe_check(
     *,
     xray_path: str,
     probe_url: str = "https://www.gstatic.com/generate_204",
+    probe_urls: list[str] | tuple[str, ...] | None = None,
+    min_probe_successes: int = 1,
+    accepted_status_codes: set[int] | None = None,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
 ) -> bool:
-    """Run one real Xray outbound probe."""
+    """Run real HTTPS probes through one Xray outbound."""
     socks_port = _free_local_port()
     xray_config = build_xray_config(cfg, socks_port)
     if xray_config is None:
         return False
+
+    urls = _normalize_probe_urls(probe_url, probe_urls)
+    required_successes = min(len(urls), max(1, min_probe_successes))
+    accepted = accepted_status_codes or _DEFAULT_ACCEPTED_STATUS_CODES
 
     with tempfile.TemporaryDirectory(prefix="vpnparser-xray-") as tmpdir:
         config_path = Path(tmpdir) / "config.json"
@@ -323,11 +367,25 @@ async def xray_probe_check(
         try:
             if not await _wait_for_port(socks_port, startup_timeout):
                 return False
-            return await _https_probe_via_socks(
-                socks_port,
-                probe_url=probe_url,
-                timeout=timeout,
-            )
+            successes = 0
+            failures_allowed = len(urls) - required_successes
+            failures = 0
+            for url in urls:
+                status_code = await _https_probe_via_socks(
+                    socks_port,
+                    probe_url=url,
+                    timeout=timeout,
+                )
+                if status_code in accepted:
+                    successes += 1
+                    if successes >= required_successes:
+                        return True
+                    continue
+
+                failures += 1
+                if failures > failures_allowed:
+                    return False
+            return successes >= required_successes
         finally:
             if proc.returncode is None:
                 proc.terminate()
@@ -344,6 +402,8 @@ async def validate_configs_xray(
     *,
     xray_path: str,
     probe_url: str = "https://www.gstatic.com/generate_204",
+    probe_urls: list[str] | tuple[str, ...] | None = None,
+    min_probe_successes: int = 1,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
     concurrency: int = 6,
@@ -368,6 +428,8 @@ async def validate_configs_xray(
                 cfg,
                 xray_path=xray_path,
                 probe_url=probe_url,
+                probe_urls=probe_urls,
+                min_probe_successes=min_probe_successes,
                 timeout=timeout,
                 startup_timeout=startup_timeout,
             )

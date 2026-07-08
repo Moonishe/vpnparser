@@ -271,6 +271,8 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             xray_checked = int(item.get("xray_checked") or 0)
             xray_alive = int(item.get("xray_alive") or 0)
             xray_unsupported = int(item.get("xray_unsupported") or 0)
+            xray_probe_count = int(item.get("xray_probe_count") or 0)
+            xray_min_probe_successes = int(item.get("xray_min_probe_successes") or 0)
             skipped = int(item.get("tcp_skipped_protocol") or 0)
             rounds = int(item.get("tcp_search_rounds") or 0)
             round_limit = int(item.get("tcp_search_round_limit") or 0)
@@ -315,9 +317,14 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                     if xray_unsupported > 0
                     else ""
                 )
+                probe_text = (
+                    f", HTTPS-пробы {xray_min_probe_successes}/{xray_probe_count}"
+                    if xray_probe_count > 1 and xray_min_probe_successes > 0
+                    else ""
+                )
                 lines.append(
                     f"  {_b(f'{label} Xray')}: проверено {xray_checked}, "
-                    f"реально рабочих {xray_alive}{unsupported_text}"
+                    f"реально рабочих {xray_alive}{unsupported_text}{probe_text}"
                 )
     return "\n".join(lines)
 
