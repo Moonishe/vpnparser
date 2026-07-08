@@ -404,6 +404,8 @@ async def validate_configs_xray(
     probe_url: str = "https://www.gstatic.com/generate_204",
     probe_urls: list[str] | tuple[str, ...] | None = None,
     min_probe_successes: int = 1,
+    attempts_per_config: int = 1,
+    min_attempt_successes: int = 1,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
     concurrency: int = 6,
@@ -424,15 +426,32 @@ async def validate_configs_xray(
         async with semaphore:
             if done_event.is_set():
                 return
-            ok = await xray_probe_check(
-                cfg,
-                xray_path=xray_path,
-                probe_url=probe_url,
-                probe_urls=probe_urls,
-                min_probe_successes=min_probe_successes,
-                timeout=timeout,
-                startup_timeout=startup_timeout,
-            )
+            attempts = max(1, attempts_per_config)
+            required_attempts = min(attempts, max(1, min_attempt_successes))
+            failures_allowed = attempts - required_attempts
+            attempt_successes = 0
+            attempt_failures = 0
+            for _attempt in range(attempts):
+                ok = await xray_probe_check(
+                    cfg,
+                    xray_path=xray_path,
+                    probe_url=probe_url,
+                    probe_urls=probe_urls,
+                    min_probe_successes=min_probe_successes,
+                    timeout=timeout,
+                    startup_timeout=startup_timeout,
+                )
+                if ok:
+                    attempt_successes += 1
+                    if attempt_successes >= required_attempts:
+                        break
+                    continue
+
+                attempt_failures += 1
+                if attempt_failures > failures_allowed:
+                    break
+
+            ok = attempt_successes >= required_attempts
             cfg.is_alive = ok
             if not ok:
                 return

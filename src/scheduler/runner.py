@@ -1192,13 +1192,31 @@ class PipelineRunner:
                 xray_min_probe_successes,
                 len(xray_probe_urls),
             )
+            xray_attempts_per_config = self._as_int(
+                vcfg.get("xray_attempts_per_config"),
+                1,
+                minimum=1,
+            )
+            xray_min_attempt_successes = self._as_int(
+                vcfg.get("xray_min_attempt_successes"),
+                xray_attempts_per_config,
+                minimum=1,
+            )
+            xray_min_attempt_successes = min(
+                xray_min_attempt_successes,
+                xray_attempts_per_config,
+            )
             list_stats["xray_probe_count"] = len(xray_probe_urls)
             list_stats["xray_min_probe_successes"] = xray_min_probe_successes
+            list_stats["xray_attempts_per_config"] = xray_attempts_per_config
+            list_stats["xray_min_attempt_successes"] = xray_min_attempt_successes
             alive_xray = await validate_configs_xray(
                 supported,
                 xray_path=xray_path,
                 probe_urls=xray_probe_urls,
                 min_probe_successes=xray_min_probe_successes,
+                attempts_per_config=xray_attempts_per_config,
+                min_attempt_successes=xray_min_attempt_successes,
                 timeout=self._as_float(
                     vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0
                 ),

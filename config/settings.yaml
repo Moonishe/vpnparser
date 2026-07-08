@@ -62,9 +62,11 @@ validator:
   xray_timeout_seconds: 15
   xray_startup_timeout_seconds: 5
   xray_concurrency: 4
-  # A config is considered live only if Xray can proxy at least 2 of these
+  # A config is considered live only if every Xray attempt can proxy all 3
   # independent HTTPS probes with a normal HTTP 2xx/3xx response.
-  xray_min_probe_successes: 2
+  xray_attempts_per_config: 3
+  xray_min_attempt_successes: 3
+  xray_min_probe_successes: 3
   xray_probe_urls:
     - "https://www.gstatic.com/generate_204"
     - "https://cp.cloudflare.com/generate_204"

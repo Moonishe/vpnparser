@@ -90,7 +90,9 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
                     "xray_alive": 42,
                     "xray_unsupported": 2,
                     "xray_probe_count": 3,
-                    "xray_min_probe_successes": 2,
+                    "xray_min_probe_successes": 3,
+                    "xray_attempts_per_config": 3,
+                    "xray_min_attempt_successes": 3,
                 },
                 "whitelist": {
                     "tcp_checked": 217,
@@ -137,7 +139,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     )
     assert (
         "<b>Blacklist Xray</b>: проверено 90, реально рабочих 42, "
-        "неподдержано 2, HTTPS-пробы 2/3"
+        "неподдержано 2, HTTPS-пробы 3/3, повторы 3/3"
         in validation
     )
     assert "<b>Whitelist TCP</b>: проверено 217, порт открыт 216" in validation
@@ -1113,6 +1115,47 @@ def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> No
     ]
 
 
+def test_xray_validation_requires_repeated_successful_attempts(monkeypatch) -> None:
+    stable = Config(
+        protocol="vless",
+        address="stable.example",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+    flaky = Config(
+        protocol="vless",
+        address="flaky.example",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111112",
+        security="tls",
+    )
+    outcomes = {
+        "stable.example": [True, True, True],
+        "flaky.example": [True, False],
+    }
+
+    async def fake_xray_probe_check(cfg, **_kwargs):
+        return outcomes[cfg.address].pop(0)
+
+    monkeypatch.setattr(xray_module, "xray_probe_check", fake_xray_probe_check)
+
+    result = asyncio.run(
+        xray_module.validate_configs_xray(
+            [stable, flaky],
+            xray_path="/usr/bin/xray",
+            attempts_per_config=3,
+            min_attempt_successes=3,
+            concurrency=1,
+        )
+    )
+
+    assert result == [stable]
+    assert stable.is_alive is True
+    assert flaky.is_alive is False
+    assert outcomes == {"stable.example": [], "flaky.example": []}
+
+
 def test_proxy_pool_parses_public_socks5_candidates() -> None:
     text = """
     socks5://8.8.8.8:1080
@@ -1645,6 +1688,8 @@ validator:
   xray_executable: /usr/bin/xray
   xray_concurrency: 2
   xray_max_alive: 0
+  xray_attempts_per_config: 3
+  xray_min_attempt_successes: 3
   xray_min_probe_successes: 2
   xray_probe_urls:
     - https://one.example/generate_204
@@ -1690,6 +1735,8 @@ validator:
             "https://two.example/trace",
         ]
         assert kwargs["min_probe_successes"] == 2
+        assert kwargs["attempts_per_config"] == 3
+        assert kwargs["min_attempt_successes"] == 3
         return [alive]
 
     monkeypatch.setattr(
@@ -1713,6 +1760,8 @@ validator:
     assert stats["xray_alive"] == 1
     assert stats["xray_probe_count"] == 2
     assert stats["xray_min_probe_successes"] == 2
+    assert stats["xray_attempts_per_config"] == 3
+    assert stats["xray_min_attempt_successes"] == 3
 
 
 def test_runner_xray_preselects_only_subscription_candidates(
