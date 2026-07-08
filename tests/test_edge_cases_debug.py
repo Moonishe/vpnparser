@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -13,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.parsers.base import Config
 from src.scheduler.runner import PipelineRunner
-from src.sources.list_types import infer_source_list_type, normalize_list_type
-from src.sources.manager import SourceManager, SourceResult
+from src.sources.list_types import infer_source_list_type
+from src.sources.manager import SourceManager
 from src.validators import tls_check as tls_module
 
 
@@ -466,7 +465,7 @@ aggregator:
 """,
         encoding="utf-8",
     )
-    runner = PipelineRunner(
+    _runner = PipelineRunner(
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )

@@ -8,6 +8,9 @@ from src.aggregator.output import generate_base64
 from src.parsers import PARSER_BY_SCHEME
 from src.parsers.base import Config, find_all_links, is_garbage_config, split_host_port
 from src.parsers.subscription import SubscriptionParser
+from src.parsers.trojan import TrojanParser
+from src.parsers.vless import VlessParser
+from src.parsers.vmess import VmessParser
 from src.validators.country_filter import detect_country
 
 
@@ -133,11 +136,6 @@ def test_country_detection_uses_remark_and_host_without_common_false_positives()
     assert detect_country("contact us") is None
     assert detect_country("", "nl-ams.example.com") == "NL"
     assert detect_country("", "id-jakarta.example.com") == "ID"
-
-
-from src.parsers.trojan import TrojanParser
-from src.parsers.vless import VlessParser
-from src.parsers.vmess import VmessParser
 
 
 def _vmess(payload: dict) -> str:

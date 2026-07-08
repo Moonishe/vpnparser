@@ -10,7 +10,7 @@ import asyncio
 import httpx
 import pytest
 
-from src.sources.github import GitHubClient, GitHubRateLimitError
+from src.sources.github import GitHubClient
 
 
 # ---------------------------------------------------------------------------
