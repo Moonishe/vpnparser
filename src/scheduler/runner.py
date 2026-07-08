@@ -17,6 +17,7 @@ continues with whatever data survived the previous stage.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -53,6 +54,7 @@ class PipelineRunner:
         self._validator_proxy_urls_cache: list[str] | None = None
         self._liveness_stats: dict[str, Any] = {}
         self._output_stats: dict[str, Any] = {}
+        self._health_history: dict[str, Any] | None = None
 
     # --- settings ---
 
@@ -163,6 +165,13 @@ class PipelineRunner:
             self._write_empty_secondary_outputs(output_file)
             self._write_run_summary("no_live_configs")
             return 0
+        preprocessed_by_list = self._apply_quality_filters(preprocessed_by_list)
+        if not preprocessed_by_list:
+            logger.warning("No configs survived quality/history filters.")
+            self._write_empty_output(output_file)
+            self._write_empty_secondary_outputs(output_file)
+            self._write_run_summary("no_quality_configs")
+            return 0
 
         # 4. Build combined output from all live configs, then round-robin by
         #    country so no single country dominates while alternatives exist.
@@ -228,6 +237,9 @@ class PipelineRunner:
         summary_file = self._write_run_summary("ok")
         if summary_file:
             output_files.append(summary_file)
+        health_file = self._write_health_history()
+        if health_file:
+            output_files.append(health_file)
 
         # 7. Publish (optional).
         if publish:
@@ -310,6 +322,8 @@ class PipelineRunner:
                                 "source_default_country",
                                 source_default_country,
                             )
+                        setattr(cfg, "source_name", source_name)
+                        setattr(cfg, "source_file", filename)
                         bucket.append(cfg)
                         parsed_here += 1
                 logger.debug(
@@ -866,13 +880,19 @@ class PipelineRunner:
         }
         self._liveness_stats.setdefault("lists", {})[list_key] = list_stats
         if pool_enabled and pool_required and not proxy_urls:
+            list_stats["reason"] = "no_proxies"
+            if not xray_enabled:
+                logger.warning(
+                    "Liveness validation for %s skipped: proxy_pool.required=true "
+                    "but no proxies are available.",
+                    label,
+                )
+                return configs
             logger.warning(
-                "Liveness validation for %s skipped: proxy_pool.required=true "
-                "but no proxies are available.",
+                "%s proxy pool is empty; continuing with required direct Xray "
+                "validation and skipping proxy-network score.",
                 label,
             )
-            list_stats["reason"] = "no_proxies"
-            return configs
 
         current = list(configs)
 
@@ -1210,6 +1230,23 @@ class PipelineRunner:
             list_stats["xray_min_probe_successes"] = xray_min_probe_successes
             list_stats["xray_attempts_per_config"] = xray_attempts_per_config
             list_stats["xray_min_attempt_successes"] = xray_min_attempt_successes
+            proxy_probe_count = self._as_int(
+                vcfg.get("xray_proxy_probe_count"),
+                0,
+                minimum=0,
+            )
+            xray_proxy_urls = proxy_urls[:proxy_probe_count] if proxy_probe_count else []
+            xray_min_proxy_successes = self._as_int(
+                vcfg.get("xray_min_proxy_successes"),
+                0,
+                minimum=0,
+            )
+            xray_min_proxy_successes = min(
+                xray_min_proxy_successes,
+                len(xray_proxy_urls),
+            )
+            list_stats["xray_proxy_checks"] = len(xray_proxy_urls)
+            list_stats["xray_min_proxy_successes"] = xray_min_proxy_successes
             alive_xray = await validate_configs_xray(
                 supported,
                 xray_path=xray_path,
@@ -1217,6 +1254,8 @@ class PipelineRunner:
                 min_probe_successes=xray_min_probe_successes,
                 attempts_per_config=xray_attempts_per_config,
                 min_attempt_successes=xray_min_attempt_successes,
+                probe_proxy_urls=xray_proxy_urls,
+                min_proxy_successes=xray_min_proxy_successes,
                 timeout=self._as_float(
                     vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0
                 ),
@@ -1231,6 +1270,12 @@ class PipelineRunner:
             list_stats["checked"] = True
             list_stats["filtered"] = True
             list_stats["xray_alive"] = len(alive_xray)
+            self._update_health_history(supported)
+            self._update_source_health(supported, list_stats)
+            alive_xray = [
+                cfg for cfg in alive_xray if not self._is_health_or_source_banned(cfg)
+            ]
+            list_stats["output_after_health"] = len(alive_xray)
             list_stats["output_after_xray"] = len(alive_xray)
             current = alive_xray
             logger.info("%s after Xray validation: %d configs.", label, len(current))
@@ -1304,6 +1349,15 @@ class PipelineRunner:
                 continue
             bucket.append(cfg)
 
+        for bucket in groups.values():
+            bucket.sort(
+                key=lambda cfg: (
+                    -float(getattr(cfg, "quality_score", 0) or 0),
+                    cfg.latency_ms is None,
+                    float(cfg.latency_ms if cfg.latency_ms is not None else 10**9),
+                )
+            )
+
         countries = sorted(groups)
         result: list[Config] = []
         indexes = {country: 0 for country in countries}
@@ -1322,6 +1376,245 @@ class PipelineRunner:
             if not progressed:
                 break
 
+        return result
+
+    def _quality_cfg(self) -> dict[str, Any]:
+        cfg = self._section("quality")
+        return cfg if isinstance(cfg, dict) else {}
+
+    def _health_history_file(self) -> str | None:
+        raw = self._quality_cfg().get("health_history_file", "output/health-history.json")
+        return str(raw) if raw else None
+
+    def _load_health_history(self) -> dict[str, Any]:
+        if self._health_history is not None:
+            return self._health_history
+        path = self._health_history_file()
+        if not path:
+            self._health_history = {"configs": {}, "sources": {}}
+            return self._health_history
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        data.setdefault("configs", {})
+        data.setdefault("sources", {})
+        self._health_history = data
+        return data
+
+    def _write_health_history(self) -> str | None:
+        path = self._health_history_file()
+        if not path or self._health_history is None:
+            return None
+        payload = dict(self._health_history)
+        payload["updated_at"] = int(time.time())
+        try:
+            target = Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("Could not write health history %s: %s", path, exc)
+            return None
+        return path
+
+    @staticmethod
+    def _config_health_key(cfg: Config) -> str:
+        raw = cfg.raw_link or "|".join(
+            [
+                str(cfg.protocol),
+                str(cfg.address),
+                str(cfg.port),
+                str(cfg.uuid_or_password),
+                str(cfg.network),
+                str(cfg.security),
+            ]
+        )
+        return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
+
+    def _update_health_history(self, checked_configs: list[Config]) -> None:
+        if not self._as_bool(self._quality_cfg().get("health_history_enabled"), True):
+            return
+        history = self._load_health_history()
+        records = history.setdefault("configs", {})
+        now = int(time.time())
+        max_recent = self._as_int(
+            self._quality_cfg().get("health_recent_window"), 5, minimum=1
+        )
+        fail_threshold = self._as_int(
+            self._quality_cfg().get("ban_after_consecutive_failures"), 2, minimum=1
+        )
+        cooldown_seconds = int(
+            self._as_float(
+                self._quality_cfg().get("ban_cooldown_hours"), 12.0, minimum=0.1
+            )
+            * 3600
+        )
+        for cfg in checked_configs:
+            key = self._config_health_key(cfg)
+            record = records.setdefault(
+                key,
+                {
+                    "passes": 0,
+                    "fails": 0,
+                    "consecutive_failures": 0,
+                    "recent": [],
+                    "banned_until": 0,
+                },
+            )
+            alive = bool(getattr(cfg, "is_alive", False))
+            recent = list(record.get("recent") or [])
+            recent.append(alive)
+            record["recent"] = recent[-max_recent:]
+            record["last_seen"] = now
+            record["last_alive"] = now if alive else int(record.get("last_alive") or 0)
+            record["source"] = getattr(cfg, "source_name", "")
+            record["country"] = getattr(cfg, "country", "")
+            if alive:
+                record["passes"] = int(record.get("passes") or 0) + 1
+                record["consecutive_failures"] = 0
+                record["banned_until"] = 0
+            else:
+                failures = int(record.get("consecutive_failures") or 0) + 1
+                record["fails"] = int(record.get("fails") or 0) + 1
+                record["consecutive_failures"] = failures
+                if failures >= fail_threshold:
+                    record["banned_until"] = now + cooldown_seconds
+            setattr(cfg, "health_record", record)
+
+    def _source_run_stats(self, checked_configs: list[Config]) -> dict[str, dict[str, int]]:
+        stats: dict[str, dict[str, int]] = {}
+        for cfg in checked_configs:
+            source = str(getattr(cfg, "source_name", "?") or "?")
+            item = stats.setdefault(source, {"checked": 0, "alive": 0})
+            item["checked"] += 1
+            if getattr(cfg, "is_alive", False):
+                item["alive"] += 1
+        return stats
+
+    def _update_source_health(
+        self, checked_configs: list[Config], list_stats: dict[str, Any]
+    ) -> None:
+        qcfg = self._quality_cfg()
+        source_stats = self._source_run_stats(checked_configs)
+        list_stats["sources"] = source_stats
+        if not self._as_bool(qcfg.get("source_health_enabled"), True):
+            return
+        min_checked = self._as_int(qcfg.get("source_min_checked"), 50, minimum=1)
+        bad_rate = self._as_float(qcfg.get("source_bad_alive_rate"), 0.02, minimum=0.0)
+        bad_runs = self._as_int(qcfg.get("source_bad_runs_to_ban"), 2, minimum=1)
+        cooldown_seconds = int(
+            self._as_float(qcfg.get("source_ban_cooldown_hours"), 12.0, minimum=0.1)
+            * 3600
+        )
+        now = int(time.time())
+        history = self._load_health_history().setdefault("sources", {})
+        for source, stats in source_stats.items():
+            checked = int(stats["checked"])
+            alive = int(stats["alive"])
+            rate = alive / checked if checked else 0.0
+            record = history.setdefault(
+                source, {"runs": 0, "bad_runs": 0, "banned_until": 0}
+            )
+            record["runs"] = int(record.get("runs") or 0) + 1
+            record["last_checked"] = checked
+            record["last_alive"] = alive
+            record["last_alive_rate"] = rate
+            record["updated_at"] = now
+            if checked >= min_checked and rate <= bad_rate:
+                record["bad_runs"] = int(record.get("bad_runs") or 0) + 1
+                if int(record["bad_runs"]) >= bad_runs:
+                    record["banned_until"] = now + cooldown_seconds
+            else:
+                record["bad_runs"] = 0
+                record["banned_until"] = 0
+
+    def _is_health_or_source_banned(self, cfg: Config) -> bool:
+        if not self._as_bool(self._quality_cfg().get("health_history_enabled"), True):
+            return False
+        now = int(time.time())
+        history = self._load_health_history()
+        record = history.get("configs", {}).get(self._config_health_key(cfg), {})
+        if int(record.get("banned_until") or 0) > now:
+            setattr(cfg, "quality_block_reason", "health_ban")
+            return True
+        source = str(getattr(cfg, "source_name", "?") or "?")
+        source_record = history.get("sources", {}).get(source, {})
+        if int(source_record.get("banned_until") or 0) > now:
+            setattr(cfg, "quality_block_reason", "source_ban")
+            return True
+        return False
+
+    def _quality_score(self, cfg: Config) -> float:
+        qcfg = self._quality_cfg()
+        score = 60.0 if getattr(cfg, "is_alive", False) else 0.0
+        record = self._load_health_history().get("configs", {}).get(
+            self._config_health_key(cfg),
+            {},
+        )
+        recent = list(record.get("recent") or [])
+        if sum(1 for item in recent[-3:] if item) >= 2:
+            score += 20.0
+        if cfg.latency_ms is not None:
+            max_latency = self._as_float(qcfg.get("max_latency_ms"), 10000.0, minimum=1.0)
+            if cfg.latency_ms <= max_latency:
+                score += max(0.0, 10.0 * (1.0 - (float(cfg.latency_ms) / max_latency)))
+        if getattr(cfg, "country", None):
+            score += 5.0
+        source = str(getattr(cfg, "source_name", "?") or "?")
+        source_record = self._load_health_history().get("sources", {}).get(source, {})
+        source_rate = float(source_record.get("last_alive_rate") or 0.0)
+        if source_rate >= self._as_float(qcfg.get("source_good_alive_rate"), 0.2, minimum=0.0):
+            score += 5.0
+        proxy_checks = int(getattr(cfg, "xray_proxy_checks", 0) or 0)
+        proxy_successes = int(getattr(cfg, "xray_proxy_successes", 0) or 0)
+        if proxy_checks:
+            score += min(5.0, 5.0 * (proxy_successes / proxy_checks))
+        return score
+
+    def _apply_quality_filters(
+        self, configs_by_list: dict[str, list[Config]]
+    ) -> dict[str, list[Config]]:
+        qcfg = self._quality_cfg()
+        max_latency = self._as_float(qcfg.get("max_latency_ms"), 10000.0, minimum=1.0)
+        drop_slow = self._as_bool(qcfg.get("drop_slow_configs"), True)
+        result: dict[str, list[Config]] = {}
+        quality_stats: dict[str, Any] = {"drop_slow": drop_slow, "max_latency_ms": max_latency}
+        for list_type, configs in configs_by_list.items():
+            kept: list[Config] = []
+            slow_dropped = 0
+            for cfg in configs:
+                if drop_slow and cfg.latency_ms is not None and cfg.latency_ms > max_latency:
+                    slow_dropped += 1
+                    continue
+                score = self._quality_score(cfg)
+                setattr(cfg, "quality_score", score)
+                kept.append(cfg)
+            kept.sort(
+                key=lambda cfg: (
+                    -float(getattr(cfg, "quality_score", 0) or 0),
+                    cfg.latency_ms is None,
+                    float(cfg.latency_ms if cfg.latency_ms is not None else 10**9),
+                )
+            )
+            if kept:
+                result[list_type] = kept
+            quality_stats[list_type] = {
+                "input": len(configs),
+                "kept": len(kept),
+                "slow_dropped": slow_dropped,
+                "avg_score": (
+                    sum(float(getattr(cfg, "quality_score", 0) or 0) for cfg in kept)
+                    / len(kept)
+                    if kept
+                    else 0
+                ),
+            }
+        self._liveness_stats["quality"] = quality_stats
         return result
 
     def _preprocess_configs(

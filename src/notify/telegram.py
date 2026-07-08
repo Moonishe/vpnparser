@@ -338,6 +338,20 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                     f"реально рабочих {xray_alive}{unsupported_text}{probe_text}"
                     f"{attempt_text}"
                 )
+    quality = validation.get("quality")
+    if isinstance(quality, dict):
+        for key in ("blacklist", "whitelist"):
+            item = quality.get(key)
+            if not isinstance(item, dict):
+                continue
+            label = _SUBSCRIPTION_LABELS.get(key, key)
+            kept = int(item.get("kept") or 0)
+            slow_dropped = int(item.get("slow_dropped") or 0)
+            avg_score = float(item.get("avg_score") or 0)
+            lines.append(
+                f"  {_b(f'{label} quality')}: прошло {kept}, "
+                f"медленных удалено {slow_dropped}, score {avg_score:.1f}"
+            )
     return "\n".join(lines)
 
 

@@ -67,6 +67,8 @@ validator:
   xray_attempts_per_config: 3
   xray_min_attempt_successes: 3
   xray_min_probe_successes: 3
+  xray_proxy_probe_count: 3
+  xray_min_proxy_successes: 0
   xray_probe_urls:
     - "https://www.gstatic.com/generate_204"
     - "https://cp.cloudflare.com/generate_204"
@@ -99,6 +101,22 @@ validator:
   # GeoIP (optional enrichment, disabled by default to avoid rate limits)
   geoip_enabled: false
   geoip_api_url: "http://ip-api.com/json/{ip}"
+
+# --- Quality scoring / stability history ---
+quality:
+  health_history_enabled: true
+  health_history_file: "output/health-history.json"
+  health_recent_window: 5
+  ban_after_consecutive_failures: 2
+  ban_cooldown_hours: 12
+  max_latency_ms: 10000
+  drop_slow_configs: true
+  source_health_enabled: true
+  source_min_checked: 50
+  source_bad_alive_rate: 0.02
+  source_good_alive_rate: 0.2
+  source_bad_runs_to_ban: 2
+  source_ban_cooldown_hours: 12
 
 # --- Aggregator ---
 aggregator:

@@ -20,6 +20,7 @@ import socket
 import ssl
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -144,7 +145,33 @@ def _stream_settings(cfg: Config) -> dict[str, Any] | None:
     return stream
 
 
-def build_xray_config(cfg: Config, socks_port: int) -> dict[str, Any] | None:
+def _proxy_outbound(proxy_url: str) -> dict[str, Any] | None:
+    parsed = urlparse(proxy_url)
+    scheme = parsed.scheme.lower()
+    if scheme not in {"socks", "socks5", "http"} or not parsed.hostname:
+        return None
+
+    server: dict[str, Any] = {
+        "address": parsed.hostname,
+        "port": int(parsed.port or (1080 if scheme in {"socks", "socks5"} else 8080)),
+    }
+    if parsed.username or parsed.password:
+        server["users"] = [
+            {
+                "user": parsed.username or "",
+                "pass": parsed.password or "",
+            }
+        ]
+    return {
+        "tag": "dial-proxy",
+        "protocol": "socks" if scheme in {"socks", "socks5"} else "http",
+        "settings": {"servers": [server]},
+    }
+
+
+def build_xray_config(
+    cfg: Config, socks_port: int, *, dial_proxy_url: str | None = None
+) -> dict[str, Any] | None:
     """Build a minimal Xray config for one outbound."""
     protocol = str(cfg.protocol or "").lower()
     if protocol not in _SUPPORTED_PROTOCOLS:
@@ -154,7 +181,11 @@ def build_xray_config(cfg: Config, socks_port: int) -> dict[str, Any] | None:
     if stream is None:
         return None
 
-    outbound: dict[str, Any] = {"protocol": protocol, "streamSettings": stream}
+    outbound: dict[str, Any] = {
+        "tag": "vpn",
+        "protocol": protocol,
+        "streamSettings": stream,
+    }
     if protocol == "vless":
         user: dict[str, Any] = {
             "id": cfg.uuid_or_password,
@@ -211,6 +242,14 @@ def build_xray_config(cfg: Config, socks_port: int) -> dict[str, Any] | None:
             ]
         }
 
+    outbounds = [outbound]
+    if dial_proxy_url:
+        proxy = _proxy_outbound(dial_proxy_url)
+        if proxy is None:
+            return None
+        outbound["proxySettings"] = {"tag": "dial-proxy"}
+        outbounds.append(proxy)
+
     return {
         "log": {"loglevel": "warning"},
         "inbounds": [
@@ -221,7 +260,7 @@ def build_xray_config(cfg: Config, socks_port: int) -> dict[str, Any] | None:
                 "settings": {"auth": "noauth", "udp": False},
             }
         ],
-        "outbounds": [outbound],
+        "outbounds": outbounds,
     }
 
 
@@ -340,12 +379,13 @@ async def xray_probe_check(
     probe_urls: list[str] | tuple[str, ...] | None = None,
     min_probe_successes: int = 1,
     accepted_status_codes: set[int] | None = None,
+    dial_proxy_url: str | None = None,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
 ) -> bool:
     """Run real HTTPS probes through one Xray outbound."""
     socks_port = _free_local_port()
-    xray_config = build_xray_config(cfg, socks_port)
+    xray_config = build_xray_config(cfg, socks_port, dial_proxy_url=dial_proxy_url)
     if xray_config is None:
         return False
 
@@ -406,6 +446,8 @@ async def validate_configs_xray(
     min_probe_successes: int = 1,
     attempts_per_config: int = 1,
     min_attempt_successes: int = 1,
+    probe_proxy_urls: list[str] | tuple[str, ...] | None = None,
+    min_proxy_successes: int = 0,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
     concurrency: int = 6,
@@ -431,7 +473,9 @@ async def validate_configs_xray(
             failures_allowed = attempts - required_attempts
             attempt_successes = 0
             attempt_failures = 0
+            successful_latencies: list[float] = []
             for _attempt in range(attempts):
+                started = time.monotonic()
                 ok = await xray_probe_check(
                     cfg,
                     xray_path=xray_path,
@@ -442,6 +486,7 @@ async def validate_configs_xray(
                     startup_timeout=startup_timeout,
                 )
                 if ok:
+                    successful_latencies.append((time.monotonic() - started) * 1000)
                     attempt_successes += 1
                     if attempt_successes >= required_attempts:
                         break
@@ -452,6 +497,32 @@ async def validate_configs_xray(
                     break
 
             ok = attempt_successes >= required_attempts
+            proxy_successes = 0
+            proxy_urls = [url for url in (probe_proxy_urls or []) if str(url).strip()]
+            if ok and proxy_urls:
+                for proxy_url in proxy_urls:
+                    proxy_ok = await xray_probe_check(
+                        cfg,
+                        xray_path=xray_path,
+                        probe_url=probe_url,
+                        probe_urls=probe_urls,
+                        min_probe_successes=min_probe_successes,
+                        dial_proxy_url=str(proxy_url).strip(),
+                        timeout=timeout,
+                        startup_timeout=startup_timeout,
+                    )
+                    if proxy_ok:
+                        proxy_successes += 1
+                ok = proxy_successes >= max(0, min_proxy_successes)
+
+            setattr(cfg, "xray_attempt_successes", attempt_successes)
+            setattr(cfg, "xray_attempts_per_config", attempts)
+            setattr(cfg, "xray_proxy_successes", proxy_successes)
+            setattr(cfg, "xray_proxy_checks", len(proxy_urls))
+            if successful_latencies:
+                successful_latencies.sort()
+                mid = len(successful_latencies) // 2
+                cfg.latency_ms = successful_latencies[mid]
             cfg.is_alive = ok
             if not ok:
                 return

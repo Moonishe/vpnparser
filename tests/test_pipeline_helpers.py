@@ -5,6 +5,7 @@ import base64
 import builtins
 import json
 import sys
+import time
 import types
 from collections import Counter
 from pathlib import Path
@@ -1028,6 +1029,32 @@ def test_xray_probe_builds_vless_reality_config() -> None:
     assert built["inbounds"][0]["port"] == 18080
 
 
+def test_xray_probe_can_dial_vpn_through_socks_proxy() -> None:
+    cfg = Config(
+        protocol="vless",
+        address="203.0.113.10",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        network="tcp",
+        security="tls",
+        sni="www.example.com",
+    )
+
+    built = xray_module.build_xray_config(
+        cfg,
+        18080,
+        dial_proxy_url="socks5://proxy.example:1080",
+    )
+
+    assert built is not None
+    vpn, proxy = built["outbounds"]
+    assert vpn["tag"] == "vpn"
+    assert vpn["proxySettings"] == {"tag": "dial-proxy"}
+    assert proxy["tag"] == "dial-proxy"
+    assert proxy["protocol"] == "socks"
+    assert proxy["settings"]["servers"][0]["address"] == "proxy.example"
+
+
 def test_xray_probe_rejects_unsupported_network() -> None:
     cfg = Config(
         protocol="vless",
@@ -1397,6 +1424,70 @@ validator:
     assert result == [cfg]
 
 
+def test_runner_liveness_runs_required_xray_without_proxy_pool(
+    tmp_path, monkeypatch
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+validator:
+  allowed_countries: []
+  xray_enabled: true
+  xray_required: true
+  xray_executable: /usr/bin/xray
+  proxy_pool:
+    enabled: true
+    required: true
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    cfg = Config(
+        "vless",
+        "example.com",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+
+    async def no_proxies():
+        return []
+
+    async def fake_validate_configs_xray(configs, **kwargs):
+        assert kwargs["probe_proxy_urls"] == []
+        assert kwargs["min_proxy_successes"] == 0
+        for item in configs:
+            item.is_alive = True
+        return configs
+
+    monkeypatch.setattr(runner, "_validator_proxy_urls", no_proxies)
+    monkeypatch.setattr(
+        "src.validators.xray_probe.find_xray_executable",
+        lambda explicit_path=None: "/usr/bin/xray",
+    )
+    monkeypatch.setattr("src.validators.xray_probe.is_xray_supported", lambda cfg: True)
+    monkeypatch.setattr(
+        "src.validators.xray_probe.validate_configs_xray",
+        fake_validate_configs_xray,
+    )
+
+    result = asyncio.run(
+        runner._validate_liveness_configs(
+            [cfg],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+    )
+
+    assert result == [cfg]
+    assert runner._liveness_stats["lists"]["blacklist"]["xray_checked"] == 1
+
+
 def test_runner_liveness_uses_proxy_pool_and_filters_when_enough_alive(
     tmp_path, monkeypatch
 ) -> None:
@@ -1762,6 +1853,87 @@ validator:
     assert stats["xray_min_probe_successes"] == 2
     assert stats["xray_attempts_per_config"] == 3
     assert stats["xray_min_attempt_successes"] == 3
+
+
+def test_runner_health_history_bans_repeated_failures(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    health_file = tmp_path / "health-history.json"
+    settings.write_text(
+        f"""
+quality:
+  health_history_enabled: true
+  health_history_file: {health_file}
+  ban_after_consecutive_failures: 2
+  ban_cooldown_hours: 12
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    cfg = Config(
+        "vless",
+        "dead.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        raw_link="vless://dead",
+    )
+    cfg.is_alive = False
+
+    runner._update_health_history([cfg])
+    runner._update_health_history([cfg])
+    runner._write_health_history()
+
+    history = json.loads(health_file.read_text(encoding="utf-8"))
+    record = history["configs"][runner._config_health_key(cfg)]
+    assert record["consecutive_failures"] == 2
+    assert record["banned_until"] > int(time.time())
+    assert runner._is_health_or_source_banned(cfg) is True
+
+
+def test_runner_quality_scores_and_drops_slow_configs(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        """
+quality:
+  health_history_enabled: true
+  max_latency_ms: 10000
+  drop_slow_configs: true
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    fast = Config(
+        "vless",
+        "fast.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        country="DE",
+        raw_link="vless://fast",
+        latency_ms=1000,
+        is_alive=True,
+    )
+    slow = Config(
+        "vless",
+        "slow.example",
+        443,
+        "11111111-1111-4111-8111-111111111112",
+        country="DE",
+        raw_link="vless://slow",
+        latency_ms=20000,
+        is_alive=True,
+    )
+    runner._update_health_history([fast, slow])
+
+    filtered = runner._apply_quality_filters({"blacklist": [slow, fast]})
+
+    assert filtered == {"blacklist": [fast]}
+    assert getattr(fast, "quality_score") > 60
+    assert runner._liveness_stats["quality"]["blacklist"]["slow_dropped"] == 1
 
 
 def test_runner_xray_preselects_only_subscription_candidates(
