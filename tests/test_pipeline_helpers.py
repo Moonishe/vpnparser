@@ -127,19 +127,87 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     assert "через 10 SOCKS5 прокси" in validation
     assert "strict" in validation
     assert "без TCP-only" in validation
-    assert "Blacklist TCP: проверено 1000, порт открыт 150" in validation
+    assert "<b>Blacklist TCP</b>: проверено 1000, порт открыт 150" in validation
     assert (
-        "Blacklist TLS/REALITY: проверено 140, живых 90, TCP-only отброшено 11"
+        "<b>Blacklist TLS/REALITY</b>: проверено 140, живых 90, "
+        "TCP-only отброшено 11"
         in validation
     )
-    assert "Blacklist Xray: проверено 90, реально рабочих 42, неподдержано 2" in validation
-    assert "Whitelist TCP: проверено 217, порт открыт 216" in validation
-    assert "Whitelist TLS/REALITY: проверено 200, живых 184" in validation
-    assert "Whitelist: 150" in subscriptions
+    assert (
+        "<b>Blacklist Xray</b>: проверено 90, реально рабочих 42, неподдержано 2"
+        in validation
+    )
+    assert "<b>Whitelist TCP</b>: проверено 217, порт открыт 216" in validation
+    assert "<b>Whitelist TLS/REALITY</b>: проверено 200, живых 184" in validation
+    assert "<b>Whitelist</b>: 150" in subscriptions
     assert "Россия 120" in subscriptions
-    assert "Mix 100/100: 200" in subscriptions
-    assert "Локации: 2 файлов, до 50 серверов" in subscriptions
+    assert "<b>Mix 100/100</b>: 200" in subscriptions
+    assert "<b>Локации</b>: 2 файлов, до 50 серверов" in subscriptions
     assert "Россия 60" in subscriptions
+
+
+def test_telegram_message_uses_html_links_and_escapes_dynamic_text(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+    monkeypatch.setenv("GITHUB_OWNER", "owner")
+    monkeypatch.setenv("GITHUB_REPO", "repo")
+    monkeypatch.setenv("GITHUB_BRANCH", "main")
+    monkeypatch.setattr(
+        telegram_module, "_generate_fun_fact", lambda _api_key: "опасный <tag> & факт"
+    )
+
+    def fake_send(token: str, chat_id: str, text: str) -> bool:
+        captured["token"] = token
+        captured["chat_id"] = chat_id
+        captured["text"] = text
+        return True
+
+    monkeypatch.setattr(telegram_module, "_send_telegram", fake_send)
+
+    assert telegram_module.send_notification(configs_count=1)
+
+    text = captured["text"]
+    assert "🤖 <b>Я — vpnparser бот</b>" in text
+    assert '<a href="https://github.com/owner/repo">owner/repo</a>' in text
+    assert (
+        '<a href="https://raw.githubusercontent.com/owner/repo/main/output/'
+        'subscription-blacklist.txt">Рабочий blacklist</a>'
+    ) in text
+    assert "опасный &lt;tag&gt; &amp; факт" in text
+    assert "&lt;b&gt;" not in text
+
+
+def test_send_telegram_uses_html_parse_mode(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class DummyResponse:
+        def __enter__(self) -> DummyResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+    def fake_urlopen(req: object, timeout: int) -> DummyResponse:
+        captured["timeout"] = timeout
+        captured["payload"] = json.loads(req.data.decode("utf-8"))  # type: ignore[attr-defined]
+        return DummyResponse()
+
+    monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+
+    assert telegram_module._send_telegram(
+        "123456789:ABCDEFGHIJKLMNOPQRST", "-100123", "<b>hello</b>"
+    )
+    assert captured["payload"] == {
+        "chat_id": "-100123",
+        "text": "<b>hello</b>",
+        "parse_mode": "HTML",
+    }
+    assert captured["timeout"] == 10
 
 
 def test_runner_summary_uses_config_country_metadata(tmp_path) -> None:

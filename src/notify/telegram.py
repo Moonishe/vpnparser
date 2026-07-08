@@ -50,12 +50,26 @@ def _repo_branch() -> str:
     return github_branch()
 
 
+def _h(value: Any) -> str:
+    """Escape dynamic values for Telegram HTML parse mode."""
+    return html.escape(str(value), quote=True)
+
+
+def _b(value: Any) -> str:
+    return f"<b>{_h(value)}</b>"
+
+
+def _link(label: Any, url: Any) -> str:
+    return f'<a href="{_h(url)}">{_h(label)}</a>'
+
+
 def _bot_intro() -> str:
     repo_slug = _repo_slug()
+    repo_url = f"https://github.com/{repo_slug}"
     return (
-        "🤖 Я — vpnparser бот от @dutysissy\n"
+        f"🤖 {_b('Я — vpnparser бот')} от @dutysissy\n"
         "📡 Парсю публичные VPN конфиги каждый час\n"
-        f"🔗 https://github.com/{repo_slug}"
+        f"🔗 {_link(repo_slug, repo_url)}"
     )
 
 _FACT_PROMPT = (
@@ -131,6 +145,7 @@ _COUNTRY_INFO = {
     "AR": ("🇦🇷", "Аргентина"),
 }
 
+
 def _subscription_urls() -> dict[str, str]:
     """Return raw GitHub URLs for all published subscription outputs."""
     base = f"https://raw.githubusercontent.com/{_repo_slug()}/{_repo_branch()}/output"
@@ -176,7 +191,7 @@ def _subscription_file_paths(subscription_file: str) -> dict[str, str]:
 
 def _country_name(code: str) -> str:
     flag, name = _COUNTRY_INFO.get(code, ("🌍", code))
-    return f"{flag} {name}"
+    return f"{flag} {_h(name)}"
 
 
 def _format_country_counts(countries: dict[str, Any], *, max_items: int = 6) -> str:
@@ -202,7 +217,7 @@ def _format_country_counts(countries: dict[str, Any], *, max_items: int = 6) -> 
 def _format_validation_section(summary: dict[str, Any]) -> str:
     validation = summary.get("validation")
     if not isinstance(validation, dict) or not validation:
-        return "🧪 Проверка: нет данных по этому прогону"
+        return f"{_b('🧪 Проверка')}: нет данных по этому прогону"
 
     tcp_enabled = bool(validation.get("tcp_enabled"))
     tls_enabled = bool(validation.get("tls_enabled"))
@@ -222,19 +237,19 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
     unchecked_text = ", без TCP-only" if drop_unchecked else ""
 
     if not tcp_enabled and not tls_enabled and not xray_enabled:
-        first = "🧪 Проверка: выключена"
+        first = f"{_b('🧪 Проверка')}: выключена"
     elif proxy_pool_enabled and proxy_pool_required and proxy_count <= 0:
-        first = "🧪 Проверка: пропущена, рабочих SOCKS5 прокси не найдено"
+        first = f"{_b('🧪 Проверка')}: пропущена, рабочих SOCKS5 прокси не найдено"
         if proxy_round_limit > 0:
             first += f" после {proxy_round_limit} раундов поиска"
     elif proxy_count > 0:
         min_text = f", минимум {proxy_min}" if proxy_min > 0 else ""
         first = (
-            f"🧪 Проверка: включена, через {proxy_count} SOCKS5 прокси"
+            f"{_b('🧪 Проверка')}: включена, через {proxy_count} SOCKS5 прокси"
             f"{min_text}{proxy_search_text}{strict_text}{unchecked_text}"
         )
     else:
-        first = f"🧪 Проверка: включена, без прокси{strict_text}{unchecked_text}"
+        first = f"{_b('🧪 Проверка')}: включена, без прокси{strict_text}{unchecked_text}"
 
     lines = [first]
     lists = validation.get("lists")
@@ -245,7 +260,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 continue
             label = _SUBSCRIPTION_LABELS.get(key, key)
             if item.get("reason") == "no_proxies":
-                lines.append(f"  {label}: не проверялся, нет рабочих прокси")
+                lines.append(f"  {_b(label)}: не проверялся, нет рабочих прокси")
                 continue
 
             tcp_checked = int(item.get("tcp_checked") or 0)
@@ -265,7 +280,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 and xray_checked <= 0
                 and not item.get("checked")
             ):
-                lines.append(f"  {label}: нет кандидатов для TCP/TLS проверки")
+                lines.append(f"  {_b(label)}: нет кандидатов для TCP/TLS проверки")
                 continue
 
             suffix = " fail-open" if item.get("fail_open") else ""
@@ -278,7 +293,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 tcp_label = "TCP" if tls_checked > 0 else ""
                 tcp_label = f" {tcp_label}" if tcp_label else ""
                 lines.append(
-                    f"  {label}{tcp_label}: проверено {tcp_checked}, "
+                    f"  {_b(f'{label}{tcp_label}')}: проверено {tcp_checked}, "
                     f"порт открыт {tcp_alive}, пропущено {skipped}"
                     f"{round_text}{suffix}"
                 )
@@ -289,11 +304,11 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                     else ""
                 )
                 lines.append(
-                    f"  {label} TLS/REALITY: проверено {tls_checked}, "
+                    f"  {_b(f'{label} TLS/REALITY')}: проверено {tls_checked}, "
                     f"живых {tls_alive}{dropped_text}{suffix}"
                 )
             if item.get("reason") == "xray_unavailable":
-                lines.append(f"  {label} Xray: пропущен, xray не установлен")
+                lines.append(f"  {_b(f'{label} Xray')}: пропущен, xray не установлен")
             elif xray_checked > 0:
                 unsupported_text = (
                     f", неподдержано {xray_unsupported}"
@@ -301,7 +316,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                     else ""
                 )
                 lines.append(
-                    f"  {label} Xray: проверено {xray_checked}, "
+                    f"  {_b(f'{label} Xray')}: проверено {xray_checked}, "
                     f"реально рабочих {xray_alive}{unsupported_text}"
                 )
     return "\n".join(lines)
@@ -311,7 +326,7 @@ def _format_subscriptions_section(
     summary: dict[str, Any], subscription_file: str
 ) -> str:
     outputs = summary.get("outputs")
-    lines = ["📍 Подписки и страны:"]
+    lines = [f"{_b('📍 Подписки и страны')}:"]
 
     if isinstance(outputs, dict) and outputs:
         for key in ("combined", "blacklist", "whitelist", "mix"):
@@ -324,7 +339,7 @@ def _format_subscriptions_section(
             country_text = _format_country_counts(
                 countries if isinstance(countries, dict) else {}
             )
-            lines.append(f"  {label}: {count} — {country_text}")
+            lines.append(f"  {_b(label)}: {count} — {country_text}")
         location_outputs = [
             item
             for key, item in outputs.items()
@@ -334,7 +349,7 @@ def _format_subscriptions_section(
             total_locations = len(location_outputs)
             max_count = max(int(item.get("count") or 0) for item in location_outputs)
             lines.append(
-                f"  Локации: {total_locations} файлов, до {max_count} серверов"
+                f"  {_b('Локации')}: {total_locations} файлов, до {max_count} серверов"
             )
         if len(lines) > 1:
             return "\n".join(lines)
@@ -345,7 +360,7 @@ def _format_subscriptions_section(
             continue
         label = _SUBSCRIPTION_LABELS.get(key, key)
         lines.append(
-            f"  {label}: {sum(counts.values())} — {_format_country_counts(counts)}"
+            f"  {_b(label)}: {sum(counts.values())} — {_format_country_counts(counts)}"
         )
 
     if len(lines) == 1:
@@ -652,21 +667,23 @@ def send_notification(
     subscriptions_section = _format_subscriptions_section(summary, subscription_file)
 
     # Build message.
+    repo_slug = _repo_slug()
+    repo_url = f"https://github.com/{repo_slug}"
     message = (
-        f"{html.escape(_bot_intro())}\n"
+        f"{_bot_intro()}\n"
         f"\n"
-        f"Конфиг обновился, обновите конфигурацию.\n"
-        f"{html.escape(validation_section)}\n"
+        f"{_b('Конфиг обновился')}, обновите конфигурацию.\n"
+        f"{validation_section}\n"
         f"\n"
-        f"{html.escape(subscriptions_section)}\n"
+        f"{subscriptions_section}\n"
         f"\n"
-        f"🔮 Факт: {html.escape(fact)}\n"
+        f"{_b('🔮 Факт')}: {_h(fact)}\n"
         f"\n"
-        f"📋 Подписки ({html.escape(_repo_slug())}):\n"
-        f"  🔗 Общая: {html.escape(urls['combined'])}\n"
-        f"  ⚫ Рабочий blacklist: {html.escape(urls['blacklist'])}\n"
-        f"  ⚪ Рабочий whitelist: {html.escape(urls['whitelist'])}\n"
-        f"  🧩 Mix 100/100: {html.escape(urls['mix'])}"
+        f"{_b('📋 Подписки')} ({_link(repo_slug, repo_url)}):\n"
+        f"  🔗 {_link('Общая', urls['combined'])}\n"
+        f"  ⚫ {_link('Рабочий blacklist', urls['blacklist'])}\n"
+        f"  ⚪ {_link('Рабочий whitelist', urls['whitelist'])}\n"
+        f"  🧩 {_link('Mix 100/100', urls['mix'])}"
     )
 
     return _send_telegram(token, chat_id, message)
