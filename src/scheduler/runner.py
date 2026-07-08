@@ -163,14 +163,26 @@ class PipelineRunner:
             logger.warning("No configs survived liveness validation.")
             self._write_empty_output(output_file)
             self._write_empty_secondary_outputs(output_file)
-            self._write_run_summary("no_live_configs")
+            summary_file = self._write_run_summary("no_live_configs")
+            health_file = self._write_health_history()
+            if publish:
+                await self._publish_files(
+                    [path for path in (summary_file, health_file) if path],
+                    combined_output_file=output_file,
+                )
             return 0
         preprocessed_by_list = self._apply_quality_filters(preprocessed_by_list)
         if not preprocessed_by_list:
             logger.warning("No configs survived quality/history filters.")
             self._write_empty_output(output_file)
             self._write_empty_secondary_outputs(output_file)
-            self._write_run_summary("no_quality_configs")
+            summary_file = self._write_run_summary("no_quality_configs")
+            health_file = self._write_health_history()
+            if publish:
+                await self._publish_files(
+                    [path for path in (summary_file, health_file) if path],
+                    combined_output_file=output_file,
+                )
             return 0
 
         # 4. Build combined output from all live configs, then round-robin by

@@ -259,9 +259,6 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             if not isinstance(item, dict):
                 continue
             label = _SUBSCRIPTION_LABELS.get(key, key)
-            if item.get("reason") == "no_proxies":
-                lines.append(f"  {_b(label)}: не проверялся, нет рабочих прокси")
-                continue
 
             tcp_checked = int(item.get("tcp_checked") or 0)
             tcp_alive = int(item.get("tcp_alive") or 0)
@@ -280,6 +277,14 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             skipped = int(item.get("tcp_skipped_protocol") or 0)
             rounds = int(item.get("tcp_search_rounds") or 0)
             round_limit = int(item.get("tcp_search_round_limit") or 0)
+            if (
+                item.get("reason") == "no_proxies"
+                and tcp_checked <= 0
+                and tls_checked <= 0
+                and xray_checked <= 0
+            ):
+                lines.append(f"  {_b(label)}: не проверялся, нет рабочих прокси")
+                continue
             if (
                 tcp_checked <= 0
                 and tls_checked <= 0

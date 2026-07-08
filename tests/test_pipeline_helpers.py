@@ -185,6 +185,35 @@ def test_telegram_message_uses_html_links_and_escapes_dynamic_text(monkeypatch) 
     assert "&lt;b&gt;" not in text
 
 
+def test_telegram_no_proxies_reason_does_not_hide_xray_stats() -> None:
+    validation = telegram_module._format_validation_section(
+        {
+            "validation": {
+                "xray_enabled": True,
+                "proxy_pool_enabled": True,
+                "proxy_pool_required": True,
+                "proxy_count": 0,
+                "lists": {
+                    "blacklist": {
+                        "reason": "no_proxies",
+                        "checked": True,
+                        "xray_checked": 10,
+                        "xray_alive": 7,
+                        "xray_probe_count": 3,
+                        "xray_min_probe_successes": 3,
+                        "xray_attempts_per_config": 3,
+                        "xray_min_attempt_successes": 3,
+                    }
+                },
+            }
+        }
+    )
+
+    assert "не проверялся, нет рабочих прокси" not in validation
+    assert "<b>Blacklist Xray</b>: проверено 10, реально рабочих 7" in validation
+    assert "HTTPS-пробы 3/3, повторы 3/3" in validation
+
+
 def test_send_telegram_uses_html_parse_mode(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
