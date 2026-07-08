@@ -235,9 +235,30 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
         proxy_search_text = f", поиск {proxy_rounds}/{proxy_round_limit}"
     strict_text = ", strict" if strict_liveness else ""
     unchecked_text = ", без TCP-only" if drop_unchecked else ""
+    lists = validation.get("lists")
+    xray_ran_without_proxies = (
+        xray_enabled
+        and isinstance(lists, dict)
+        and any(
+            isinstance(item, dict) and int(item.get("xray_checked") or 0) > 0
+            for item in lists.values()
+        )
+    )
 
     if not tcp_enabled and not tls_enabled and not xray_enabled:
         first = f"{_b('🧪 Проверка')}: выключена"
+    elif (
+        proxy_pool_enabled
+        and proxy_pool_required
+        and proxy_count <= 0
+        and xray_ran_without_proxies
+    ):
+        first = (
+            f"{_b('🧪 Проверка')}: включена, без рабочих SOCKS5 прокси, "
+            f"Xray напрямую{strict_text}{unchecked_text}"
+        )
+        if proxy_round_limit > 0:
+            first += f", поиск прокси {proxy_round_limit} раундов"
     elif proxy_pool_enabled and proxy_pool_required and proxy_count <= 0:
         first = f"{_b('🧪 Проверка')}: пропущена, рабочих SOCKS5 прокси не найдено"
         if proxy_round_limit > 0:
@@ -252,7 +273,6 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
         first = f"{_b('🧪 Проверка')}: включена, без прокси{strict_text}{unchecked_text}"
 
     lines = [first]
-    lists = validation.get("lists")
     if isinstance(lists, dict):
         for key in ("blacklist", "whitelist"):
             item = lists.get(key)

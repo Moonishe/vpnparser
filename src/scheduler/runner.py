@@ -1282,8 +1282,12 @@ class PipelineRunner:
             list_stats["checked"] = True
             list_stats["filtered"] = True
             list_stats["xray_alive"] = len(alive_xray)
-            self._update_health_history(supported)
-            self._update_source_health(supported, list_stats)
+            xray_attempted = [
+                cfg for cfg in supported if getattr(cfg, "xray_was_checked", False)
+            ]
+            list_stats["xray_checked"] = len(xray_attempted)
+            self._update_health_history(xray_attempted)
+            self._update_source_health(xray_attempted, list_stats)
             alive_xray = [
                 cfg for cfg in alive_xray if not self._is_health_or_source_banned(cfg)
             ]

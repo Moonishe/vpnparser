@@ -457,6 +457,10 @@ async def validate_configs_xray(
     if not configs:
         return []
 
+    for cfg in configs:
+        setattr(cfg, "xray_was_checked", False)
+        cfg.is_alive = False
+
     semaphore = asyncio.Semaphore(max(1, concurrency))
     alive: list[Config] = []
     alive_lock = asyncio.Lock()
@@ -468,6 +472,7 @@ async def validate_configs_xray(
         async with semaphore:
             if done_event.is_set():
                 return
+            setattr(cfg, "xray_was_checked", True)
             attempts = max(1, attempts_per_config)
             required_attempts = min(attempts, max(1, min_attempt_successes))
             failures_allowed = attempts - required_attempts
