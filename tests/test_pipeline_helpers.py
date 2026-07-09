@@ -1346,6 +1346,46 @@ def test_xray_validation_rejects_runner_and_proxy_public_ips(monkeypatch) -> Non
     ]
 
 
+def test_xray_validation_rotates_proxy_pool_and_stops_after_required_successes(
+    monkeypatch,
+) -> None:
+    cfg = Config(
+        protocol="vless",
+        address="stable.example",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+    proxy_urls = [f"socks5://192.0.2.{idx}:1080" for idx in range(1, 11)]
+    proxy_calls: list[str] = []
+
+    async def fake_xray_probe_check(_cfg, **kwargs):
+        proxy_url = kwargs.get("dial_proxy_url")
+        if proxy_url:
+            proxy_calls.append(proxy_url)
+        return True
+
+    monkeypatch.setattr(xray_module, "xray_probe_check", fake_xray_probe_check)
+
+    result = asyncio.run(
+        xray_module.validate_configs_xray(
+            [cfg],
+            xray_path="/usr/bin/xray",
+            attempts_per_config=1,
+            min_attempt_successes=1,
+            probe_proxy_urls=proxy_urls,
+            min_proxy_successes=2,
+            concurrency=1,
+        )
+    )
+
+    rotated = xray_module._rotated_proxy_urls_for_config(cfg, proxy_urls)
+    assert result == [cfg]
+    assert proxy_calls == rotated[:2]
+    assert getattr(cfg, "xray_proxy_successes") == 2
+    assert getattr(cfg, "xray_proxy_checks") == len(proxy_urls)
+
+
 def test_xray_validation_does_not_mark_unchecked_max_alive_candidates(
     monkeypatch,
 ) -> None:

@@ -51,23 +51,23 @@ validator:
   xray_enabled: true
   xray_required: true
   xray_drop_unsupported: true
-  xray_candidate_limit: 200
+  xray_candidate_limit: 1000
   xray_candidate_limit_by_list:
-    blacklist: 200
-    whitelist: 200
+    blacklist: 1000
+    whitelist: 1000
   xray_max_alive: 0
   xray_max_alive_by_list:
     blacklist: 200
     whitelist: 200
   xray_timeout_seconds: 15
   xray_startup_timeout_seconds: 5
-  xray_concurrency: 4
+  xray_concurrency: 5
   # A config is considered live only if every Xray attempt can proxy all 3
   # independent HTTPS probes with a normal HTTP 2xx/3xx response.
   xray_attempts_per_config: 3
   xray_min_attempt_successes: 3
   xray_min_probe_successes: 3
-  xray_proxy_probe_count: 3
+  xray_proxy_probe_count: 10
   xray_min_proxy_successes: 2
   xray_require_distinct_outbound_ip: true
   xray_probe_urls:
@@ -87,10 +87,10 @@ validator:
       - "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/protocols/socks5/data.txt"
       - "https://cdn.jsdelivr.net/gh/VPSLabCloud/VPSLab-Free-Proxy-List@main/socks5_all.txt"
       - "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt"
-    max_candidates: 250
-    max_candidates_per_source: 80
-    min_proxies: 10
-    max_proxies: 20
+    max_candidates: 600
+    max_candidates_per_source: 150
+    min_proxies: 15
+    max_proxies: 40
     search_rounds: 3
     candidate_growth_factor: 2
     retry_delay_seconds: 3

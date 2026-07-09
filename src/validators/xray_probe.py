@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import ipaddress
 import json
 import logging
@@ -445,6 +446,18 @@ async def discover_public_ip(
     return None
 
 
+def _rotated_proxy_urls_for_config(
+    cfg: Config, proxy_urls: list[str] | tuple[str, ...]
+) -> list[str]:
+    """Rotate proxy order per config so one bad proxy prefix cannot poison a run."""
+    urls = [str(url).strip() for url in proxy_urls if str(url).strip()]
+    if len(urls) <= 1:
+        return urls
+    key = f"{cfg.address}:{cfg.port}:{cfg.uuid_or_password}".encode("utf-8")
+    offset = int.from_bytes(hashlib.sha256(key).digest()[:4], "big") % len(urls)
+    return [*urls[offset:], *urls[:offset]]
+
+
 async def xray_probe_check(
     cfg: Config,
     *,
@@ -626,7 +639,8 @@ async def validate_configs_xray(
             ok = attempt_successes >= required_attempts
             proxy_successes = 0
             if ok and proxy_urls:
-                for proxy_url in proxy_urls:
+                required_proxy_successes = max(0, min_proxy_successes)
+                for proxy_url in _rotated_proxy_urls_for_config(cfg, proxy_urls):
                     proxy_url = str(proxy_url).strip()
                     proxy_ok = await xray_probe_check(
                         cfg,
@@ -644,7 +658,9 @@ async def validate_configs_xray(
                     )
                     if proxy_ok:
                         proxy_successes += 1
-                ok = proxy_successes >= max(0, min_proxy_successes)
+                        if proxy_successes >= required_proxy_successes:
+                            break
+                ok = proxy_successes >= required_proxy_successes
 
             setattr(cfg, "xray_attempt_successes", attempt_successes)
             setattr(cfg, "xray_attempts_per_config", attempts)
