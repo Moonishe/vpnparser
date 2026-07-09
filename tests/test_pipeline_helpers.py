@@ -96,6 +96,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
                     "xray_min_attempt_successes": 3,
                     "xray_proxy_checks": 3,
                     "xray_min_proxy_successes": 2,
+                    "xray_require_distinct_outbound_ip": True,
                 },
                 "whitelist": {
                     "tcp_checked": 217,
@@ -142,7 +143,8 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     )
     assert (
         "<b>Blacklist Xray</b>: проверено 90, реально рабочих 42, "
-        "неподдержано 2, HTTPS-пробы 3/3, повторы 3/3, proxy-сети 2/3"
+        "неподдержано 2, HTTPS-пробы 3/3, повторы 3/3, proxy-сети 2/3, "
+        "IP-check"
         in validation
     )
     assert "<b>Whitelist TCP</b>: проверено 217, порт открыт 216" in validation
@@ -209,6 +211,7 @@ def test_telegram_no_proxies_reason_does_not_hide_xray_stats() -> None:
                         "xray_min_attempt_successes": 3,
                         "xray_proxy_checks": 3,
                         "xray_min_proxy_successes": 2,
+                        "xray_require_distinct_outbound_ip": True,
                     }
                 },
             }
@@ -219,7 +222,7 @@ def test_telegram_no_proxies_reason_does_not_hide_xray_stats() -> None:
     assert "пропущена" not in validation
     assert "не проверялся, нет рабочих прокси" not in validation
     assert "<b>Blacklist Xray</b>: проверено 10, реально рабочих 7" in validation
-    assert "HTTPS-пробы 3/3, повторы 3/3, proxy-сети 2/3" in validation
+    assert "HTTPS-пробы 3/3, повторы 3/3, proxy-сети 2/3, IP-check" in validation
 
 
 def test_send_telegram_uses_html_parse_mode(monkeypatch) -> None:
@@ -1113,6 +1116,15 @@ def test_xray_http_status_code_accepts_only_http_status() -> None:
     assert xray_module._http_status_code(b"HTTP/1.1 nope\r\n") is None
 
 
+def test_xray_extracts_identity_probe_ip() -> None:
+    assert xray_module._extract_probe_ip("203.0.113.10") == "203.0.113.10"
+    assert (
+        xray_module._extract_probe_ip("fl=1\nip=2001:db8::1\nts=1\n")
+        == "2001:db8::1"
+    )
+    assert xray_module._extract_probe_ip("not an ip") is None
+
+
 def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> None:
     cfg = Config(
         protocol="vless",
@@ -1145,20 +1157,22 @@ def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> No
     async def fake_create_subprocess_exec(*_args, **_kwargs):
         return DummyProc()
 
-    async def fake_probe(_port, *, probe_url, timeout):
+    async def fake_probe(*, socks_port, probe_url, timeout):
+        assert socks_port == 18080
         calls.append(probe_url)
-        return {
+        status = {
             "https://ok-1.example/generate_204": 204,
             "https://bad.example/generate_204": 503,
             "https://ok-2.example/trace": 200,
         }[probe_url]
+        return (status, "ip=203.0.113.10\n")
 
     monkeypatch.setattr(
         xray_module.asyncio,
         "create_subprocess_exec",
         fake_create_subprocess_exec,
     )
-    monkeypatch.setattr(xray_module, "_https_probe_via_socks", fake_probe)
+    monkeypatch.setattr(xray_module, "_https_probe_response", fake_probe)
 
     assert asyncio.run(
         xray_module.xray_probe_check(
@@ -1177,6 +1191,74 @@ def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> No
         "https://bad.example/generate_204",
         "https://ok-2.example/trace",
     ]
+
+
+def test_xray_probe_requires_distinct_outbound_ip(monkeypatch) -> None:
+    cfg = Config(
+        protocol="vless",
+        address="203.0.113.10",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+    monkeypatch.setattr(xray_module, "_free_local_port", lambda: 18080)
+
+    async def fake_wait_for_port(*_args):
+        return True
+
+    monkeypatch.setattr(xray_module, "_wait_for_port", fake_wait_for_port)
+
+    class DummyProc:
+        returncode = None
+
+        def terminate(self) -> None:
+            self.returncode = 0
+
+        async def wait(self) -> None:
+            return None
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def fake_create_subprocess_exec(*_args, **_kwargs):
+        return DummyProc()
+
+    async def same_ip_probe(**_kwargs):
+        return (200, "ip=198.51.100.7\n")
+
+    monkeypatch.setattr(
+        xray_module.asyncio,
+        "create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+    monkeypatch.setattr(xray_module, "_https_probe_response", same_ip_probe)
+
+    assert not asyncio.run(
+        xray_module.xray_probe_check(
+            cfg,
+            xray_path="/usr/bin/xray",
+            probe_urls=["https://www.cloudflare.com/cdn-cgi/trace"],
+            min_probe_successes=1,
+            require_distinct_outbound_ip=True,
+            reject_outbound_ips={"198.51.100.7"},
+        )
+    )
+
+    async def different_ip_probe(**_kwargs):
+        return (200, "ip=203.0.113.44\n")
+
+    monkeypatch.setattr(xray_module, "_https_probe_response", different_ip_probe)
+
+    assert asyncio.run(
+        xray_module.xray_probe_check(
+            cfg,
+            xray_path="/usr/bin/xray",
+            probe_urls=["https://www.cloudflare.com/cdn-cgi/trace"],
+            min_probe_successes=1,
+            require_distinct_outbound_ip=True,
+            reject_outbound_ips={"198.51.100.7"},
+        )
+    )
 
 
 def test_xray_validation_requires_repeated_successful_attempts(monkeypatch) -> None:
@@ -1218,6 +1300,50 @@ def test_xray_validation_requires_repeated_successful_attempts(monkeypatch) -> N
     assert stable.is_alive is True
     assert flaky.is_alive is False
     assert outcomes == {"stable.example": [], "flaky.example": []}
+
+
+def test_xray_validation_rejects_runner_and_proxy_public_ips(monkeypatch) -> None:
+    cfg = Config(
+        protocol="vless",
+        address="stable.example",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+    seen_reject_sets: list[set[str]] = []
+
+    async def fake_discover_public_ip(*, proxy_url=None, **_kwargs):
+        return "198.51.100.2" if proxy_url else "198.51.100.1"
+
+    async def fake_xray_probe_check(_cfg, **kwargs):
+        seen_reject_sets.append(set(kwargs["reject_outbound_ips"]))
+        return True
+
+    monkeypatch.setattr(xray_module, "discover_public_ip", fake_discover_public_ip)
+    monkeypatch.setattr(xray_module, "xray_probe_check", fake_xray_probe_check)
+
+    result = asyncio.run(
+        xray_module.validate_configs_xray(
+            [cfg],
+            xray_path="/usr/bin/xray",
+            probe_urls=[
+                "https://api.ipify.org",
+                "https://www.cloudflare.com/cdn-cgi/trace",
+            ],
+            attempts_per_config=1,
+            min_attempt_successes=1,
+            probe_proxy_urls=["socks5://proxy.example:1080"],
+            min_proxy_successes=1,
+            require_distinct_outbound_ip=True,
+            concurrency=1,
+        )
+    )
+
+    assert result == [cfg]
+    assert seen_reject_sets == [
+        {"198.51.100.1"},
+        {"198.51.100.1", "198.51.100.2"},
+    ]
 
 
 def test_xray_validation_does_not_mark_unchecked_max_alive_candidates(
@@ -1962,6 +2088,7 @@ validator:
   xray_executable: /usr/bin/xray
   xray_proxy_probe_count: 3
   xray_min_proxy_successes: 2
+  xray_require_distinct_outbound_ip: true
   proxy_pool:
     enabled: true
     required: true
@@ -1994,6 +2121,7 @@ validator:
             "socks5://9.9.9.9:1080",
         ]
         assert kwargs["min_proxy_successes"] == 2
+        assert kwargs["require_distinct_outbound_ip"] is True
         for item in configs:
             setattr(item, "xray_was_checked", True)
             item.is_alive = True
@@ -2024,6 +2152,7 @@ validator:
     assert result == [cfg]
     assert stats["xray_proxy_checks"] == 3
     assert stats["xray_min_proxy_successes"] == 2
+    assert stats["xray_require_distinct_outbound_ip"] is True
 
 
 def test_runner_health_history_bans_repeated_failures(tmp_path) -> None:

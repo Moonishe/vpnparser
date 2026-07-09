@@ -69,7 +69,9 @@ validator:
   xray_min_probe_successes: 3
   xray_proxy_probe_count: 3
   xray_min_proxy_successes: 2
+  xray_require_distinct_outbound_ip: true
   xray_probe_urls:
+    - "https://api.ipify.org"
     - "https://www.gstatic.com/generate_204"
     - "https://cp.cloudflare.com/generate_204"
     - "https://www.cloudflare.com/cdn-cgi/trace"

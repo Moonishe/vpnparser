@@ -1284,6 +1284,13 @@ class PipelineRunner:
             )
             list_stats["xray_proxy_checks"] = len(xray_proxy_urls)
             list_stats["xray_min_proxy_successes"] = xray_min_proxy_successes
+            xray_require_distinct_outbound_ip = self._as_bool(
+                vcfg.get("xray_require_distinct_outbound_ip"),
+                False,
+            )
+            list_stats["xray_require_distinct_outbound_ip"] = (
+                xray_require_distinct_outbound_ip
+            )
             alive_xray = await validate_configs_xray(
                 supported,
                 xray_path=xray_path,
@@ -1293,6 +1300,7 @@ class PipelineRunner:
                 min_attempt_successes=xray_min_attempt_successes,
                 probe_proxy_urls=xray_proxy_urls,
                 min_proxy_successes=xray_min_proxy_successes,
+                require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
                 timeout=self._as_float(
                     vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0
                 ),

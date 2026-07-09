@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 _SUPPORTED_PROTOCOLS = {"vless", "trojan", "vmess", "ss"}
 _SUPPORTED_NETWORKS = {"tcp", "ws", "grpc"}
 _DEFAULT_PROBE_URLS = ["https://www.gstatic.com/generate_204"]
+_DEFAULT_IDENTITY_PROBE_URLS = [
+    "https://api.ipify.org",
+    "https://www.cloudflare.com/cdn-cgi/trace",
+]
 _DEFAULT_ACCEPTED_STATUS_CODES = set(range(200, 400))
 
 
@@ -304,6 +308,28 @@ def _http_status_code(chunk: bytes) -> int | None:
         return None
 
 
+def _extract_probe_ip(body: str) -> str | None:
+    text = body.strip()
+    if not text:
+        return None
+
+    candidates: list[str] = [text]
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip().lower() in {"ip", "ip_addr", "query"}:
+            candidates.append(value.strip())
+        else:
+            candidates.append(line.strip())
+
+    for candidate in candidates:
+        cleaned = candidate.strip().strip("[]")
+        try:
+            return str(ipaddress.ip_address(cleaned))
+        except ValueError:
+            continue
+    return None
+
+
 def _normalize_probe_urls(
     probe_url: str | None = None,
     probe_urls: list[str] | tuple[str, ...] | None = None,
@@ -327,12 +353,13 @@ def _normalize_probe_urls(
     return normalized or list(_DEFAULT_PROBE_URLS)
 
 
-async def _https_probe_via_socks(
-    socks_port: int,
+async def _https_probe_response(
     *,
     probe_url: str,
     timeout: float,
-) -> int | None:
+    socks_port: int | None = None,
+    proxy_url: str | None = None,
+) -> tuple[int | None, str]:
     parsed = urlparse(probe_url)
     host = parsed.hostname
     if parsed.scheme != "https" or not host:
@@ -342,16 +369,25 @@ async def _https_probe_via_socks(
     if parsed.query:
         path = f"{path}?{parsed.query}"
 
+    writer = None
     try:
-        from python_socks.async_.asyncio import Proxy
+        sock = None
+        if socks_port is not None or proxy_url:
+            from python_socks.async_.asyncio import Proxy
 
-        proxy = Proxy.from_url(f"socks5://127.0.0.1:{socks_port}")
-        sock = await proxy.connect(dest_host=host, dest_port=port, timeout=timeout)
+            proxy = Proxy.from_url(proxy_url or f"socks5://127.0.0.1:{socks_port}")
+            sock = await proxy.connect(dest_host=host, dest_port=port, timeout=timeout)
         context = ssl.create_default_context()
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(sock=sock, ssl=context, server_hostname=host),
-            timeout=timeout,
-        )
+        if sock is not None:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(sock=sock, ssl=context, server_hostname=host),
+                timeout=timeout,
+            )
+        else:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port, ssl=context, server_hostname=host),
+                timeout=timeout,
+            )
         request = (
             f"GET {path} HTTP/1.1\r\n"
             f"Host: {host}\r\n"
@@ -360,15 +396,53 @@ async def _https_probe_via_socks(
         )
         writer.write(request.encode("ascii"))
         await writer.drain()
-        chunk = await asyncio.wait_for(reader.read(64), timeout=timeout)
+        chunk = await asyncio.wait_for(reader.read(4096), timeout=timeout)
     except Exception:
-        return None
+        return (None, "")
     finally:
         with contextlib.suppress(Exception):
-            writer.close()  # type: ignore[name-defined]
-            await writer.wait_closed()  # type: ignore[name-defined]
+            if writer is not None:
+                writer.close()
+                await writer.wait_closed()
 
-    return _http_status_code(chunk)
+    header, _, body = chunk.partition(b"\r\n\r\n")
+    return (_http_status_code(header), body.decode("utf-8", errors="ignore"))
+
+
+async def _https_probe_via_socks(
+    socks_port: int,
+    *,
+    probe_url: str,
+    timeout: float,
+) -> int | None:
+    status_code, _body = await _https_probe_response(
+        probe_url=probe_url,
+        timeout=timeout,
+        socks_port=socks_port,
+    )
+    return status_code
+
+
+async def discover_public_ip(
+    *,
+    probe_urls: list[str] | tuple[str, ...] | None = None,
+    proxy_url: str | None = None,
+    timeout: float = 12.0,
+) -> str | None:
+    """Return the public IP seen by an identity endpoint."""
+    urls = _normalize_probe_urls(None, probe_urls or _DEFAULT_IDENTITY_PROBE_URLS)
+    for url in urls:
+        status_code, body = await _https_probe_response(
+            probe_url=url,
+            timeout=timeout,
+            proxy_url=proxy_url,
+        )
+        if status_code not in _DEFAULT_ACCEPTED_STATUS_CODES:
+            continue
+        found = _extract_probe_ip(body)
+        if found:
+            return found
+    return None
 
 
 async def xray_probe_check(
@@ -380,6 +454,8 @@ async def xray_probe_check(
     min_probe_successes: int = 1,
     accepted_status_codes: set[int] | None = None,
     dial_proxy_url: str | None = None,
+    require_distinct_outbound_ip: bool = False,
+    reject_outbound_ips: set[str] | None = None,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
 ) -> bool:
@@ -392,6 +468,7 @@ async def xray_probe_check(
     urls = _normalize_probe_urls(probe_url, probe_urls)
     required_successes = min(len(urls), max(1, min_probe_successes))
     accepted = accepted_status_codes or _DEFAULT_ACCEPTED_STATUS_CODES
+    rejected_ips = {str(ip).strip() for ip in (reject_outbound_ips or set()) if str(ip).strip()}
 
     with tempfile.TemporaryDirectory(prefix="vpnparser-xray-") as tmpdir:
         config_path = Path(tmpdir) / "config.json"
@@ -410,22 +487,30 @@ async def xray_probe_check(
             successes = 0
             failures_allowed = len(urls) - required_successes
             failures = 0
+            identity_ok = False
             for url in urls:
-                status_code = await _https_probe_via_socks(
-                    socks_port,
+                status_code, body = await _https_probe_response(
+                    socks_port=socks_port,
                     probe_url=url,
                     timeout=timeout,
                 )
                 if status_code in accepted:
                     successes += 1
-                    if successes >= required_successes:
+                    outbound_ip = _extract_probe_ip(body)
+                    if outbound_ip and outbound_ip not in rejected_ips:
+                        identity_ok = True
+                    if successes >= required_successes and (
+                        not require_distinct_outbound_ip or identity_ok
+                    ):
                         return True
                     continue
 
                 failures += 1
                 if failures > failures_allowed:
                     return False
-            return successes >= required_successes
+            return successes >= required_successes and (
+                not require_distinct_outbound_ip or identity_ok
+            )
         finally:
             if proc.returncode is None:
                 proc.terminate()
@@ -448,6 +533,7 @@ async def validate_configs_xray(
     min_attempt_successes: int = 1,
     probe_proxy_urls: list[str] | tuple[str, ...] | None = None,
     min_proxy_successes: int = 0,
+    require_distinct_outbound_ip: bool = False,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
     concurrency: int = 6,
@@ -465,6 +551,40 @@ async def validate_configs_xray(
     alive: list[Config] = []
     alive_lock = asyncio.Lock()
     done_event = asyncio.Event()
+    proxy_urls = [url for url in (probe_proxy_urls or []) if str(url).strip()]
+    reject_ips: set[str] = set()
+    proxy_reject_ips: dict[str, set[str]] = {}
+    if require_distinct_outbound_ip:
+        identity_urls = [
+            url
+            for url in _normalize_probe_urls(probe_url, probe_urls)
+            if url in _DEFAULT_IDENTITY_PROBE_URLS
+            or "ipify" in url
+            or "cdn-cgi/trace" in url
+        ]
+        identity_urls = identity_urls or list(_DEFAULT_IDENTITY_PROBE_URLS)
+        direct_ip = await discover_public_ip(
+            probe_urls=identity_urls,
+            timeout=timeout,
+        )
+        if direct_ip:
+            reject_ips.add(direct_ip)
+        if proxy_urls:
+            proxy_results = await asyncio.gather(
+                *[
+                    discover_public_ip(
+                        probe_urls=identity_urls,
+                        proxy_url=str(proxy_url).strip(),
+                        timeout=timeout,
+                    )
+                    for proxy_url in proxy_urls
+                ],
+                return_exceptions=True,
+            )
+            for proxy_url, found in zip(proxy_urls, proxy_results, strict=False):
+                proxy_reject_ips[str(proxy_url).strip()] = set(reject_ips)
+                if isinstance(found, str) and found.strip():
+                    proxy_reject_ips[str(proxy_url).strip()].add(found.strip())
 
     async def _check_one(cfg: Config) -> None:
         if done_event.is_set():
@@ -487,6 +607,8 @@ async def validate_configs_xray(
                     probe_url=probe_url,
                     probe_urls=probe_urls,
                     min_probe_successes=min_probe_successes,
+                    require_distinct_outbound_ip=require_distinct_outbound_ip,
+                    reject_outbound_ips=reject_ips,
                     timeout=timeout,
                     startup_timeout=startup_timeout,
                 )
@@ -503,16 +625,20 @@ async def validate_configs_xray(
 
             ok = attempt_successes >= required_attempts
             proxy_successes = 0
-            proxy_urls = [url for url in (probe_proxy_urls or []) if str(url).strip()]
             if ok and proxy_urls:
                 for proxy_url in proxy_urls:
+                    proxy_url = str(proxy_url).strip()
                     proxy_ok = await xray_probe_check(
                         cfg,
                         xray_path=xray_path,
                         probe_url=probe_url,
                         probe_urls=probe_urls,
                         min_probe_successes=min_probe_successes,
-                        dial_proxy_url=str(proxy_url).strip(),
+                        dial_proxy_url=proxy_url,
+                        require_distinct_outbound_ip=require_distinct_outbound_ip,
+                        reject_outbound_ips=proxy_reject_ips.get(
+                            proxy_url, reject_ips
+                        ),
                         timeout=timeout,
                         startup_timeout=startup_timeout,
                     )
