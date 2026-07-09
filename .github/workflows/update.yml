@@ -25,6 +25,7 @@ concurrency:
 jobs:
   update-configs:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write # needed to push the updated subscription back to the repo
     steps:
@@ -63,6 +64,14 @@ jobs:
           restore-keys: |
             facts-history
 
+      - name: Restore health-history cache
+        uses: actions/cache/restore@v4
+        with:
+          path: output/health-history.json
+          key: health-history
+          restore-keys: |
+            health-history
+
       - name: Run pipeline
         run: python -m src.main --run --publish
         env:
@@ -81,6 +90,7 @@ jobs:
 
       - name: Verify output
         run: |
+          set -euo pipefail
           test -f output/subscription.txt || { echo "ERROR: output/subscription.txt not created!"; exit 1; }
           test -f output/subscription-mix.txt || { echo "ERROR: output/subscription-mix.txt not created!"; exit 1; }
           test -f output/subscription-blacklist.txt || { echo "ERROR: output/subscription-blacklist.txt not created!"; exit 1; }
@@ -99,8 +109,15 @@ jobs:
           except Exception:
               print(0)
           ")
-          echo "configs_count=$CONFIGS" >> $GITHUB_ENV
+          echo "configs_count=$CONFIGS" >> "$GITHUB_ENV"
           echo "Output: $CONFIGS configs"
+          STATUS=$(python3 -c "import json; print(json.load(open('output/run-summary.json')).get('status',''))")
+          echo "run_status=$STATUS" >> "$GITHUB_ENV"
+          echo "Run status: $STATUS"
+          # Soft warn on zero configs; the run summary keeps the failure reason.
+          if [ "$CONFIGS" = "0" ]; then
+            echo "::warning::Pipeline published 0 live configs (status=$STATUS). Check Xray/proxy validation."
+          fi
 
       - name: Telegram notify
         if: env.configs_count != ''
@@ -123,3 +140,10 @@ jobs:
         with:
           path: facts_history.json
           key: facts-history-${{ github.run_id }}
+
+      - name: Save health-history cache
+        if: always() && hashFiles('output/health-history.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: output/health-history.json
+          key: health-history-${{ github.run_id }}

@@ -117,10 +117,9 @@ class PipelineRunner:
         results = await self._fetch_sources()
         if not results:
             logger.warning("No source results fetched — pipeline produced nothing.")
-            self._write_empty_output(output_file)
-            self._write_empty_secondary_outputs(output_file)
-            self._write_run_summary("no_sources")
-            return 0
+            return await self._finish_empty_run(
+                output_file, status="no_sources", publish=publish
+            )
 
         # 2. Parse all content into Config objects grouped by source list type.
         configs_by_list = await self._parse_all_by_list(results)
@@ -134,10 +133,9 @@ class PipelineRunner:
             logger.warning(
                 "No configs parsed from sources — pipeline produced nothing."
             )
-            self._write_empty_output(output_file)
-            self._write_empty_secondary_outputs(output_file)
-            self._write_run_summary("no_configs_parsed")
-            return 0
+            return await self._finish_empty_run(
+                output_file, status="no_configs_parsed", publish=publish
+            )
 
         # 3. Preprocess each list type: garbage -> sample -> dedup -> country.
         #    Sorting is deferred to step 4 (combined) and step 7 (splits) so
@@ -152,39 +150,24 @@ class PipelineRunner:
 
         if not preprocessed_by_list:
             logger.warning("No configs matched allowed countries.")
-            self._write_empty_output(output_file)
-            self._write_empty_secondary_outputs(output_file)
-            self._write_run_summary("no_allowed_countries")
-            return 0
+            return await self._finish_empty_run(
+                output_file, status="no_allowed_countries", publish=publish
+            )
 
         preprocessed_by_list = await self._validate_liveness_by_list(
             preprocessed_by_list
         )
         if not preprocessed_by_list:
             logger.warning("No configs survived liveness validation.")
-            self._write_empty_output(output_file)
-            self._write_empty_secondary_outputs(output_file)
-            summary_file = self._write_run_summary("no_live_configs")
-            health_file = self._write_health_history()
-            if publish:
-                await self._publish_files(
-                    [path for path in (summary_file, health_file) if path],
-                    combined_output_file=output_file,
-                )
-            return 0
+            return await self._finish_empty_run(
+                output_file, status="no_live_configs", publish=publish
+            )
         preprocessed_by_list = self._apply_quality_filters(preprocessed_by_list)
         if not preprocessed_by_list:
             logger.warning("No configs survived quality/history filters.")
-            self._write_empty_output(output_file)
-            self._write_empty_secondary_outputs(output_file)
-            summary_file = self._write_run_summary("no_quality_configs")
-            health_file = self._write_health_history()
-            if publish:
-                await self._publish_files(
-                    [path for path in (summary_file, health_file) if path],
-                    combined_output_file=output_file,
-                )
-            return 0
+            return await self._finish_empty_run(
+                output_file, status="no_quality_configs", publish=publish
+            )
 
         # 4. Build combined output from all live configs, then round-robin by
         #    country so no single country dominates while alternatives exist.
@@ -1977,6 +1960,65 @@ class PipelineRunner:
         if mix_output_file:
             self._write_empty_output(mix_output_file)
         self._clear_location_outputs()
+
+    def _configured_subscription_output_paths(
+        self, combined_output_file: str
+    ) -> list[str]:
+        """Return all subscription paths that should stay in sync on every run.
+
+        Includes combined, mix, and split outputs. Location files are omitted
+        here because empty runs clear them rather than rewriting placeholders.
+        """
+        paths: list[str] = [combined_output_file]
+        split_output_files = self._split_output_files(combined_output_file)
+        paths.extend(split_output_files.values())
+        mix_output_file = self._mix_output_file(
+            combined_output_file, split_output_files
+        )
+        if mix_output_file:
+            paths.append(mix_output_file)
+        return list(dict.fromkeys(paths))
+
+    async def _finish_empty_run(
+        self,
+        output_file: str,
+        *,
+        status: str,
+        publish: bool,
+    ) -> int:
+        """Write empty subscription artifacts and optionally publish all of them.
+
+        Previously failed runs often published only ``run-summary.json`` +
+        health history, leaving remote ``subscription*.txt`` stale while the
+        summary reported zero live configs. Always publish the full set so
+        consumers never see outdated "live" lists after a dead run.
+        """
+        self._write_empty_output(output_file)
+        self._write_empty_secondary_outputs(output_file)
+
+        # Keep run-summary outputs in sync with the empty files we just wrote.
+        self._output_stats = {}
+        self._record_output_stats("combined", output_file, [])
+        split_output_files = self._split_output_files(output_file)
+        for list_type, split_file in split_output_files.items():
+            self._record_output_stats(list_type, split_file, [])
+        mix_output_file = self._mix_output_file(output_file, split_output_files)
+        if mix_output_file:
+            self._record_output_stats("mix", mix_output_file, [])
+
+        summary_file = self._write_run_summary(status)
+        health_file = self._write_health_history()
+        if publish:
+            publish_paths = self._configured_subscription_output_paths(output_file)
+            if summary_file:
+                publish_paths.append(summary_file)
+            if health_file:
+                publish_paths.append(health_file)
+            await self._publish_files(
+                publish_paths,
+                combined_output_file=output_file,
+            )
+        return 0
 
     def _write_empty_split_outputs(self, combined_output_file: str) -> None:
         """Clear configured split outputs on empty runs."""

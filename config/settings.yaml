@@ -43,7 +43,8 @@ validator:
   min_alive_to_filter: 10
   fail_open_on_low_alive: false
   drop_unchecked_after_tls: true
-  proxy_attempts_per_config: 0
+  # Cap SOCKS retries per config (0 = try entire pool; inflates TCP false-positives).
+  proxy_attempts_per_config: 3
   tls_proxy_attempts_per_config: 3
   tls_timeout_seconds: 6
   tls_concurrency: 80
@@ -62,13 +63,15 @@ validator:
   xray_timeout_seconds: 15
   xray_startup_timeout_seconds: 5
   xray_concurrency: 5
-  # A config is considered live only if every Xray attempt can proxy all 3
-  # independent HTTPS probes with a normal HTTP 2xx/3xx response.
-  xray_attempts_per_config: 3
-  xray_min_attempt_successes: 3
-  xray_min_probe_successes: 3
+  # Baseline L3 gate: require repeated real Xray HTTPS probes and a distinct
+  # outbound IP, but do not demand a perfect 3/3 multi-proxy result from a
+  # volatile free SOCKS pool. Proxy-network success remains required below.
+  xray_attempts_per_config: 2
+  xray_min_attempt_successes: 2
+  xray_min_probe_successes: 2
   xray_proxy_probe_count: 10
-  xray_min_proxy_successes: 2
+  # Require at least one external proxy route to pass, using the rotated pool.
+  xray_min_proxy_successes: 1
   xray_require_distinct_outbound_ip: true
   xray_probe_urls:
     - "https://api.ipify.org"

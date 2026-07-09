@@ -357,6 +357,61 @@ def test_edge7_publish_files_dedup(monkeypatch):
     print("EDGE 7: PASS - dict.fromkeys deduplicates correctly")
 
 
+def test_empty_run_publishes_all_subscription_outputs(tmp_path, monkeypatch):
+    """Failed runs must publish empty subscription*.txt, not only summary.
+
+    Previously no_live_configs / empty-source paths published summary + health
+    only, leaving remote subscription files stale.
+    """
+    sources = tmp_path / "sources.json"
+    sources.write_text('{"sources": []}', encoding="utf-8")
+
+    combined = str(tmp_path / "subscription.txt")
+    mix = str(tmp_path / "subscription-mix.txt")
+    bl = str(tmp_path / "subscription-blacklist.txt")
+    wl = str(tmp_path / "subscription-whitelist.txt")
+    summary = str(tmp_path / "run-summary.json")
+    health = str(tmp_path / "health-history.json")
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+quality:
+  health_history_enabled: true
+  health_history_file: {health}
+publisher:
+  output_file: {combined}
+  mix_output_file: {mix}
+  status_output_file: {summary}
+  split_output_files:
+    blacklist: {bl}
+    whitelist: {wl}
+""",
+        encoding="utf-8",
+    )
+
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(sources),
+        github_token="test-token",
+    )
+    published: list[str] = []
+
+    async def fake_publish(output_file, repo_path=None):
+        published.append(output_file)
+
+    monkeypatch.setattr(runner, "_publish", fake_publish)
+
+    count = asyncio.run(runner.run(output_file=combined, publish=True))
+    assert count == 0
+
+    for path in (combined, mix, bl, wl, summary):
+        assert Path(path).exists(), f"missing local artifact {path}"
+        assert path in published, f"empty run did not publish {path}; got {published}"
+
+    print("EMPTY PUBLISH: PASS - all subscription outputs published on empty run")
+
+
 # --- FIXED: _split_output_files collision — first wins, warn ---------------
 
 
