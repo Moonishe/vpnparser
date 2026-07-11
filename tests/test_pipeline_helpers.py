@@ -1426,6 +1426,46 @@ def test_xray_validation_does_not_mark_unchecked_max_alive_candidates(
     assert getattr(second, "xray_was_checked") is False
 
 
+
+def test_xray_validation_relaxed_gate_allows_single_attempt(monkeypatch) -> None:
+    """Regression: relaxed settings should accept a config after one real Xray
+    probe without requiring a distinct outbound IP or proxy-network success."""
+    cfg = Config(
+        protocol="vless",
+        address="relaxed.example",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="tls",
+    )
+
+    async def fake_xray_probe_check(_cfg, **kwargs):
+        assert kwargs.get("require_distinct_outbound_ip") is False
+        return True
+
+    monkeypatch.setattr(xray_module, "xray_probe_check", fake_xray_probe_check)
+
+    result = asyncio.run(
+        xray_module.validate_configs_xray(
+            [cfg],
+            xray_path="/usr/bin/xray",
+            probe_urls=["https://www.gstatic.com/generate_204"],
+            min_probe_successes=1,
+            attempts_per_config=2,
+            min_attempt_successes=1,
+            probe_proxy_urls=[],
+            min_proxy_successes=0,
+            require_distinct_outbound_ip=False,
+            concurrency=1,
+        )
+    )
+
+    assert result == [cfg]
+    assert cfg.is_alive is True
+    assert getattr(cfg, "xray_attempt_successes") == 1
+    assert getattr(cfg, "xray_proxy_successes") == 0
+    assert getattr(cfg, "xray_proxy_checks") == 0
+
+
 def test_proxy_pool_parses_public_socks5_candidates() -> None:
     text = """
     socks5://8.8.8.8:1080

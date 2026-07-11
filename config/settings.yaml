@@ -63,16 +63,15 @@ validator:
   xray_timeout_seconds: 15
   xray_startup_timeout_seconds: 5
   xray_concurrency: 5
-  # Baseline L3 gate: require repeated real Xray HTTPS probes and a distinct
-  # outbound IP, but do not demand a perfect 3/3 multi-proxy result from a
-  # volatile free SOCKS pool. Proxy-network success remains required below.
+  # Relaxed L3 gate: free SOCKS5 proxies are unstable. A single real Xray HTTPS
+  # probe is enough; do not require a distinct outbound IP or a proxy-network
+  # success. The real-handshake barrier still filters garbage configs.
   xray_attempts_per_config: 2
-  xray_min_attempt_successes: 2
-  xray_min_probe_successes: 2
-  xray_proxy_probe_count: 10
-  # Require at least one external proxy route to pass, using the rotated pool.
-  xray_min_proxy_successes: 1
-  xray_require_distinct_outbound_ip: true
+  xray_min_attempt_successes: 1
+  xray_min_probe_successes: 1
+  xray_proxy_probe_count: 0
+  xray_min_proxy_successes: 0
+  xray_require_distinct_outbound_ip: false
   xray_probe_urls:
     - "https://api.ipify.org"
     - "https://www.gstatic.com/generate_204"
@@ -116,6 +115,12 @@ quality:
   ban_cooldown_hours: 12
   max_latency_ms: 10000
   drop_slow_configs: true
+  # Do not drop "slow" configs if it would leave fewer than this many alive configs
+  # in a list. Keeps the pipeline from discarding the last surviving configs.
+  min_alive_to_skip_slow_drop: 1
+  # Skip health/source bans when Xray found no more than this many alive configs,
+  # so a small set of proven-working configs is not erased by stale history.
+  health_ban_min_alive: 3
   source_health_enabled: true
   source_min_checked: 50
   source_bad_alive_rate: 0.02

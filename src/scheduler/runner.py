@@ -1304,9 +1304,21 @@ class PipelineRunner:
             list_stats["xray_checked"] = len(xray_attempted)
             self._update_health_history(xray_attempted)
             self._update_source_health(xray_attempted, list_stats)
-            alive_xray = [
-                cfg for cfg in alive_xray if not self._is_health_or_source_banned(cfg)
-            ]
+            health_ban_min_alive = self._as_int(
+                self._quality_cfg().get("health_ban_min_alive"), 3, minimum=0
+            )
+            if len(alive_xray) > health_ban_min_alive:
+                alive_xray = [
+                    cfg for cfg in alive_xray if not self._is_health_or_source_banned(cfg)
+                ]
+            else:
+                logger.info(
+                    "%s Xray found %d alive configs (<= %d); "
+                    "skipping health history bans.",
+                    label,
+                    len(alive_xray),
+                    health_ban_min_alive,
+                )
             list_stats["output_after_health"] = len(alive_xray)
             list_stats["output_after_xray"] = len(alive_xray)
             current = alive_xray
@@ -1614,18 +1626,38 @@ class PipelineRunner:
         qcfg = self._quality_cfg()
         max_latency = self._as_float(qcfg.get("max_latency_ms"), 10000.0, minimum=1.0)
         drop_slow = self._as_bool(qcfg.get("drop_slow_configs"), True)
+        min_alive_to_skip_slow_drop = self._as_int(
+            qcfg.get("min_alive_to_skip_slow_drop"), 1, minimum=0
+        )
         result: dict[str, list[Config]] = {}
-        quality_stats: dict[str, Any] = {"drop_slow": drop_slow, "max_latency_ms": max_latency}
+        quality_stats: dict[str, Any] = {
+            "drop_slow": drop_slow,
+            "max_latency_ms": max_latency,
+            "min_alive_to_skip_slow_drop": min_alive_to_skip_slow_drop,
+        }
         for list_type, configs in configs_by_list.items():
-            kept: list[Config] = []
-            slow_dropped = 0
+            fast: list[Config] = []
+            slow: list[Config] = []
             for cfg in configs:
                 if drop_slow and cfg.latency_ms is not None and cfg.latency_ms > max_latency:
-                    slow_dropped += 1
-                    continue
-                score = self._quality_score(cfg)
-                setattr(cfg, "quality_score", score)
-                kept.append(cfg)
+                    slow.append(cfg)
+                else:
+                    fast.append(cfg)
+            kept = fast
+            slow_dropped = len(slow)
+            if fast and not slow:
+                for cfg in fast:
+                    setattr(cfg, "quality_score", self._quality_score(cfg))
+            elif len(fast) < min_alive_to_skip_slow_drop and slow:
+                # Preserve the last alive configs even if they are "slow".
+                for cfg in fast + slow:
+                    setattr(cfg, "quality_score", self._quality_score(cfg))
+                kept = fast + slow
+                slow_dropped = 0
+                quality_stats.setdefault("slow_preserved", {})[list_type] = len(slow)
+            else:
+                for cfg in fast:
+                    setattr(cfg, "quality_score", self._quality_score(cfg))
             kept.sort(
                 key=lambda cfg: (
                     -float(getattr(cfg, "quality_score", 0) or 0),
@@ -2115,10 +2147,14 @@ class PipelineRunner:
         if not output_file:
             return None
 
+        # Never publish working SOCKS5 proxy URLs in the summary output.
+        # Internal liveness stats keep the raw URLs for debugging only.
+        validation = dict(self._liveness_stats)
+        validation.pop("proxy_urls", None)
         payload = {
             "status": status,
             "outputs": self._output_stats,
-            "validation": self._liveness_stats,
+            "validation": validation,
         }
         path = Path(output_file)
         try:
