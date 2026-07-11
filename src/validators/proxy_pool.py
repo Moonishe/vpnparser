@@ -10,9 +10,13 @@ import asyncio
 import ipaddress
 import logging
 import re
+import time
 from collections.abc import Iterable
+from typing import Any
 
 import httpx
+
+from src.validators.proxy_health import ProxyHealthHistory
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +177,13 @@ async def validate_proxy_candidates(
     concurrency: int = 50,
     probe_host: str = "api.github.com",
     probe_port: int = 443,
+    history: ProxyHealthHistory | None = None,
 ) -> list[str]:
-    """Self-check proxy candidates and return the first working proxies."""
+    """Self-check proxy candidates and return the first working proxies.
+
+    Records latency and success/failure in ``history`` when provided, and
+    prefers proxies with a good recent track record.
+    """
     if not proxies or max_proxies <= 0:
         return []
 
@@ -189,12 +198,16 @@ async def validate_proxy_candidates(
         async with semaphore:
             if done_event.is_set():
                 return
+            start = time.monotonic()
             ok = await proxy_connects(
                 proxy_url,
                 probe_host=probe_host,
                 probe_port=probe_port,
                 timeout=timeout,
             )
+            latency_ms = (time.monotonic() - start) * 1000.0 if ok else None
+            if history is not None:
+                history.record(proxy_url, ok, latency_ms)
             if not ok:
                 return
             async with alive_lock:
@@ -236,6 +249,7 @@ async def load_proxy_pool(
     validation_concurrency: int = 50,
     probe_host: str = "api.github.com",
     probe_port: int = 443,
+    history: ProxyHealthHistory | None = None,
 ) -> list[str]:
     """Load a SOCKS5 proxy pool from GitHub-hosted text lists."""
     candidates = await fetch_proxy_candidates(
@@ -260,7 +274,10 @@ async def load_proxy_pool(
         concurrency=validation_concurrency,
         probe_host=probe_host,
         probe_port=probe_port,
+        history=history,
     )
+    if history is not None:
+        pool = history.rank(pool)
     logger.info(
         "Proxy pool: %d/%d candidates passed self-check.",
         len(pool),

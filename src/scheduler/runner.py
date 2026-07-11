@@ -56,6 +56,9 @@ class PipelineRunner:
         self._liveness_stats: dict[str, Any] = {}
         self._output_stats: dict[str, Any] = {}
         self._health_history: dict[str, Any] | None = None
+        self._proxy_health_history: Any | None = None
+        self._proxy_health_file: str | None = None
+        self._init_proxy_health_history()
 
     # --- settings ---
 
@@ -236,6 +239,8 @@ class PipelineRunner:
         health_file = self._write_health_history()
         if health_file:
             output_files.append(health_file)
+
+        self._save_proxy_health_history()
 
         # 7. Publish (optional).
         if publish:
@@ -658,6 +663,41 @@ class PipelineRunner:
         raw = self._section("validator").get("proxy_pool", {})
         return raw if isinstance(raw, dict) else {}
 
+    def _proxy_health_config(self) -> dict[str, Any]:
+        pool_cfg = self._proxy_pool_config()
+        defaults = {
+            "health_enabled": True,
+            "health_history_file": "output/proxy-health-history.json",
+            "ban_after_consecutive_failures": 3,
+            "latency_window": 5,
+            "max_latency_ms": 8000.0,
+            "refresh_if_below_min": True,
+        }
+        provided = pool_cfg.get("health", {})
+        if not isinstance(provided, dict):
+            provided = {}
+        merged = dict(defaults)
+        merged.update(provided)
+        return merged
+
+    def _init_proxy_health_history(self) -> None:
+        try:
+            from src.validators.proxy_health import ProxyHealthHistory
+        except ImportError:
+            return
+        hcfg = self._proxy_health_config()
+        if not self._as_bool(hcfg.get("health_enabled"), True):
+            return
+        self._proxy_health_file = str(hcfg.get("health_history_file") or "")
+        self._proxy_health_history = ProxyHealthHistory.load(
+            self._proxy_health_file,
+            window=self._as_int(hcfg.get("latency_window"), 5, minimum=1),
+            ban_after_consecutive_failures=self._as_int(
+                hcfg.get("ban_after_consecutive_failures"), 3, minimum=1
+            ),
+            max_latency_ms=self._as_float(hcfg.get("max_latency_ms"), 8000.0, minimum=1.0),
+        )
+
     @staticmethod
     def _redact_proxy_url(proxy_url: str) -> str:
         parsed = urlparse(proxy_url)
@@ -736,6 +776,7 @@ class PipelineRunner:
                 ),
                 probe_host=str(pool_cfg.get("probe_host") or "api.github.com"),
                 probe_port=self._as_int(pool_cfg.get("probe_port"), 443, minimum=1),
+                history=self._proxy_health_history,
             )
             self._liveness_stats["proxy_search_rounds"] = round_index + 1
             self._liveness_stats["proxy_search"].append(
@@ -2117,6 +2158,19 @@ class PipelineRunner:
                 output_file,
             )
         return output_files
+
+    def _save_proxy_health_history(self) -> None:
+        if self._proxy_health_history is None or not self._proxy_health_file:
+            return
+        try:
+            self._proxy_health_history.save(self._proxy_health_file)
+            logger.info(
+                "Saved proxy health history (%d entries) to %s.",
+                len(self._proxy_health_history.records),
+                self._proxy_health_file,
+            )
+        except Exception as exc:
+            logger.warning("Failed to save proxy health history: %s", exc)
 
     def _status_output_file(self) -> str | None:
         """Return run-summary output path, if configured."""

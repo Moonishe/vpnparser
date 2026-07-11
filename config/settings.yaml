@@ -84,6 +84,16 @@ validator:
     # instead of falling back to direct GitHub Actions connections.
     required: true
     validate: true
+    # Health tracking: remember which proxies worked and how fast they were.
+    # Banned/dead proxies are skipped on the next run, and the fastest recent
+    # proxies are tried first, so only genuinely working proxies are used.
+    health:
+      health_enabled: true
+      health_history_file: "output/proxy-health-history.json"
+      ban_after_consecutive_failures: 3
+      latency_window: 5
+      max_latency_ms: 8000
+      refresh_if_below_min: true
     sources:
       - "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks5/data.txt"
       - "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/protocols/socks5/data.txt"
