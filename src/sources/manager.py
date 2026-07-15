@@ -166,6 +166,10 @@ class SourceManager:
               is a base64 subscription blob (kept as a single (filename, content) tuple).
             * ``raw`` — fetch all files in the directory at ``path``; each file
               may contain one or more proxy config links.
+            * ``url-list`` — fetch an index file at ``url`` containing one URL
+              per line, then fetch each listed URL concurrently. Supports
+              ``{YYYY}``, ``{MM}``, ``{DD}``, ``{M}``, ``{YYYYMM}``,
+              ``{YYYYMMDD}`` placeholders.
         """
         name = (
             source.get("name", "<unnamed>") if isinstance(source, dict) else "<unnamed>"
@@ -201,6 +205,9 @@ class SourceManager:
                     list_type=list_type,
                     default_country=default_country,
                 )
+
+            if stype == "url-list":
+                return await self._fetch_url_list(source, name, list_type, default_country)
 
             # subscription requires path; raw allows empty path (= root directory).
             if not (owner and repo):
@@ -284,8 +291,8 @@ class SourceManager:
     ) -> str:
         """Fetch a direct HTTPS text source."""
         parsed = urlparse((url or "").strip())
-        if parsed.scheme != "https" or not parsed.netloc:
-            raise ValueError(f"source url must be absolute HTTPS: {url!r}")
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"source url must be absolute HTTP/HTTPS: {url!r}")
 
         max_attempts = max(1, attempts)
         last_error: Exception | None = None
@@ -321,6 +328,116 @@ class SourceManager:
     def _filename_from_url(url: str) -> str:
         parsed = urlparse((url or "").strip())
         return PurePosixPath(parsed.path).name or ""
+
+    async def _fetch_url_list(
+        self,
+        source: dict,
+        name: str,
+        list_type: str,
+        default_country: str | None,
+    ) -> SourceResult:
+        """Fetch a file containing a list of URLs, then fetch each URL concurrently.
+
+        The input file is expected to contain one URL per line. Lines that are
+        empty, comments, or not absolute http/https URLs are skipped.
+        """
+        url = str(source.get("url") or "")
+        if not url:
+            return SourceResult(
+                source_name=name,
+                error=f"url-list source '{name}' is missing url",
+                list_type=list_type,
+                default_country=default_country,
+            )
+
+        index_content = await self._fetch_direct_url(url)
+        if not index_content:
+            return SourceResult(
+                source_name=name,
+                error=f"url-list index '{url}' is empty or not found",
+                list_type=list_type,
+                default_country=default_country,
+            )
+
+        from datetime import datetime
+
+        now = datetime.now()
+        date_tokens = {
+            "{YYYY}": now.strftime("%Y"),
+            "{MM}": now.strftime("%m"),
+            "{DD}": now.strftime("%d"),
+            "{M}": str(now.month),
+            "{YYYYMM}": now.strftime("%Y%m"),
+            "{YYYYMMDD}": now.strftime("%Y%m%d"),
+        }
+
+        seen: set[str] = set()
+        urls: list[str] = []
+        for line in index_content.splitlines():
+            line = line.strip()
+            if not line or line.startswith(("#", "//")):
+                continue
+            # Some lists include URLs after labels like "URL: ..."; keep only the URL.
+            candidates = [part.strip() for part in line.replace(",", " ").split()]
+            for candidate in candidates:
+                parsed = urlparse(candidate)
+                if parsed.scheme in {"http", "https"} and parsed.netloc:
+                    for token, value in date_tokens.items():
+                        candidate = candidate.replace(token, value)
+                    if candidate not in seen:
+                        seen.add(candidate)
+                        urls.append(candidate)
+                    break
+
+        if not urls:
+            return SourceResult(
+                source_name=name,
+                error=f"url-list index '{url}' contains no valid URLs",
+                list_type=list_type,
+                default_country=default_country,
+            )
+
+        max_files = self._int_source_value(source, "max_files", 200)
+        urls = urls[:max_files]
+
+        concurrency = self._int_source_value(source, "max_concurrent_urls", 10)
+        concurrency = max(1, concurrency)
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def fetch_one(target: str) -> tuple[str, str] | None:
+            async with semaphore:
+                try:
+                    content = await self._fetch_direct_url(target)
+                except Exception as exc:
+                    logger.warning("url-list fetch failed for %s: %s", target, exc)
+                    return None
+                if not content:
+                    return None
+                filename = (
+                    str(source.get("filename") or "").strip()
+                    or self._filename_from_url(target)
+                    or f"{name}.txt"
+                )
+                return (filename, content)
+
+        tasks = [fetch_one(target) for target in urls]
+        fetched = await asyncio.gather(*tasks)
+        files = [item for item in fetched if item is not None]
+
+        if not files:
+            return SourceResult(
+                source_name=name,
+                error=f"url-list source '{name}' fetched {len(urls)} URLs but none returned content",
+                list_type=list_type,
+                default_country=default_country,
+            )
+
+        return SourceResult(
+            source_name=name,
+            files=files,
+            list_type=list_type,
+            default_country=default_country,
+        )
 
     @staticmethod
     def _source_default_country(source: dict) -> str | None:

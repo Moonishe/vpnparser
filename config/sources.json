@@ -90,6 +90,42 @@
       "url": "https://raw.githubusercontent.com/DarkRoyalty/shnajder-vpn-configs/refs/heads/main/githubmirror/26.txt",
       "default_country": "RU",
       "enabled": true
+    },
+    {
+      "name": "kort0881-mermeroo-only-new",
+      "list_type": "blacklist",
+      "type": "url-list",
+      "url": "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/mermeroo_only_new_for_mirror.txt",
+      "max_files": 200,
+      "max_concurrent_urls": 10,
+      "enabled": true
+    },
+    {
+      "name": "kort0881-mermeroo-extra",
+      "list_type": "blacklist",
+      "type": "url-list",
+      "url": "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/mermeroo_extra_sources.txt",
+      "max_files": 200,
+      "max_concurrent_urls": 10,
+      "enabled": true
+    },
+    {
+      "name": "kort0881-proxy-collect-only-new",
+      "list_type": "blacklist",
+      "type": "url-list",
+      "url": "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/proxy_collect_only_new_for_mirror.txt",
+      "max_files": 50,
+      "max_concurrent_urls": 5,
+      "enabled": true
+    },
+    {
+      "name": "kort0881-proxy-collect-extra",
+      "list_type": "blacklist",
+      "type": "url-list",
+      "url": "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/proxy_collect_extra_sources.txt",
+      "max_files": 50,
+      "max_concurrent_urls": 5,
+      "enabled": true
     }
   ]
 }

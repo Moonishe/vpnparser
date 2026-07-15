@@ -2389,3 +2389,47 @@ aggregator:
     assert stats["xray_checked"] == 200
     assert stats["xray_alive"] == 123
     assert len(result) == 123
+
+
+def test_url_list_source_fetches_each_url(monkeypatch) -> None:
+    """A url-list source parses lines as URLs and fetches each one concurrently."""
+    sm = SourceManager(
+        sources_file="config/sources.json",
+        settings_file="config/settings.yaml",
+    )
+    index_text = "\n".join(
+        [
+            "# comment",
+            "https://example.com/a.txt",
+            "https://example.com/b.txt",
+            "not-a-url",
+        ]
+    )
+    fetched: dict[str, str] = {
+        "https://example.com/a.txt": "vless://a",
+        "https://example.com/b.txt": "vmess://b",
+    }
+
+    async def fake_fetch_direct_url(url: str) -> str:
+        if url == "https://example.com/index.txt":
+            return index_text
+        return fetched.get(url, "")
+
+    monkeypatch.setattr(sm, "_fetch_direct_url", staticmethod(fake_fetch_direct_url))
+
+    source = {
+        "name": "test-url-list",
+        "type": "url-list",
+        "url": "https://example.com/index.txt",
+        "list_type": "blacklist",
+        "max_files": 200,
+        "max_concurrent_urls": 10,
+    }
+
+    result = asyncio.run(sm.fetch_source(source))
+
+    assert result.error is None
+    assert len(result.files) == 2
+    filenames = {f[0] for f in result.files}
+    assert "a.txt" in filenames
+    assert "b.txt" in filenames
