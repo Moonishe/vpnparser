@@ -27,16 +27,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import yaml
 
-from src.parsers import PARSER_BY_SCHEME
-from src.parsers.base import Config, find_all_links, is_garbage_config
-from src.parsers.subscription import SubscriptionParser
+from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.settings import Settings, load_settings
 from src.scheduler.stages.fetch import SourceFetcher
-# TODO: use LinkParser once parsing logic is fully extracted
-# from src.scheduler.stages.parse import LinkParser
+from src.scheduler.stages.parse import LinkParser
+from src.scheduler.stages.filter import PreprocessFilter
 from src.sources.list_types import normalize_list_type
 
 logger = logging.getLogger(__name__)
@@ -72,6 +69,8 @@ class PipelineRunner:
         self._proxy_health_file: str | None = None
         self._init_proxy_health_history()
         self._fetcher = SourceFetcher()
+        self._parser = LinkParser(self._context)
+        self._preprocessor = PreprocessFilter(self._context)
         self._state = PipelineState()
 
     # --- settings ---
@@ -268,318 +267,27 @@ class PipelineRunner:
         results: list[Any],
     ) -> dict[str, list[Config]]:
         """Parse all source results grouped by normalized list type."""
-        grouped: dict[str, list[Config]] = {}
-        sub_parser = SubscriptionParser()
-
-        for result in results:
-            list_type = normalize_list_type(getattr(result, "list_type", "mixed"))
-            files = self._result_files(result)
-            source_name = self._result_name(result)
-
-            for filename, content in files:
-                if not content or not content.strip():
-                    continue
-
-                links = await self._extract_links(
-                    sub_parser, content, filename, source_name
-                )
-                if not links:
-                    logger.debug("No links found in %s (%s).", filename, source_name)
-                    continue
-
-                parsed_here = 0
-                bucket = grouped.setdefault(list_type, [])
-                for link in links:
-                    cfg = self._parse_one_link(link)
-                    if cfg is not None:
-                        source_default_country = self._result_default_country(result)
-                        if source_default_country:
-                            setattr(
-                                cfg,
-                                "source_default_country",
-                                source_default_country,
-                            )
-                        setattr(cfg, "source_name", source_name)
-                        setattr(cfg, "source_file", filename)
-                        bucket.append(cfg)
-                        parsed_here += 1
-                logger.debug(
-                    "Parsed %d/%d links from %s (%s, %s).",
-                    parsed_here,
-                    len(links),
-                    filename,
-                    source_name,
-                    list_type,
-                )
-
-        return grouped
+        self._state.sources = list(results)
+        self._state = await self._parser.run(self._state, self._context)
+        return self._state.parsed
 
     @staticmethod
-    def _result_files(result: Any) -> list[tuple[str, str]]:
-        """Extract ``[(filename, content), ...]`` from a SourceResult.
-
-        Supports both attribute (``result.files``) and mapping
-        (``result["files"]``) shapes, and tolerates a plain list of tuples.
-        """
-        files: Any = None
-        if hasattr(result, "files"):
-            files = result.files
-        elif isinstance(result, dict):
-            files = result.get("files")
-        elif isinstance(result, list):
-            files = result
-        if not files:
-            return []
-        out: list[tuple[str, str]] = []
-        for entry in files:
-            if isinstance(entry, tuple) and len(entry) == 2:
-                out.append((str(entry[0]), str(entry[1])))
-            elif isinstance(entry, dict):
-                name = entry.get("name") or entry.get("filename") or ""
-                content = entry.get("content") or ""
-                out.append((str(name), str(content)))
-        return out
-
-    @staticmethod
-    def _result_name(result: Any) -> str:
-        """Best-effort source name for logging."""
-        for attr in ("name", "source_name"):
-            if hasattr(result, attr):
-                return str(getattr(result, attr) or "?")
-        if isinstance(result, dict):
-            return str(result.get("name") or result.get("source_name") or "?")
-        return "?"
-
-    @staticmethod
-    def _result_default_country(result: Any) -> str | None:
-        """Best-effort default country hint carried by a source result."""
-        raw: Any = None
-        if hasattr(result, "default_country"):
-            raw = getattr(result, "default_country")
-        elif isinstance(result, dict):
-            raw = result.get("default_country")
-        if raw is None:
-            return None
-        text = str(raw).strip().upper()
-        return text if len(text) == 2 and text.isalpha() else None
-
-    async def _extract_links(
-        self,
-        sub_parser: SubscriptionParser,
-        content: str,
-        filename: str,
-        source_name: str,
-    ) -> list[str]:
-        """Extract proxy links from a content blob.
-
-        Tries the subscription detector first; falls back to ``find_all_links``
-        on any error or non-subscription content.  When regex finds 0 links
-        and LLM is enabled, tries LLM extraction as a last resort.
-        """
-        try:
-            is_sub = sub_parser.is_subscription(content)
-        except Exception as exc:
-            logger.debug(
-                "is_subscription raised for %s (%s): %s — treating as raw.",
-                filename,
-                source_name,
-                exc,
-            )
-            is_sub = False
-
-        if is_sub:
-            try:
-                links = sub_parser.parse_subscription(content) or []
-                logger.debug(
-                    "Subscription blob %s (%s) -> %d links.",
-                    filename,
-                    source_name,
-                    len(links),
-                )
-                return [ln for ln in links if isinstance(ln, str) and ln]
-            except Exception as exc:
-                logger.warning(
-                    "SubscriptionParser.parse_subscription failed for %s (%s): %s — "
-                    "falling back to find_all_links.",
-                    filename,
-                    source_name,
-                    exc,
-                )
-
-        links = find_all_links(content)
-
-        # LLM fallback: if regex found 0 links and text is long enough, try LLM.
-        if not links:
-            links = await self._llm_fallback(content, filename, source_name)
-
-        return links
-
-    async def _llm_fallback(
-        self, content: str, filename: str, source_name: str
-    ) -> list[str]:
-        """Try LLM extraction when regex found 0 links.
-
-        Reads LLM settings from ``settings.yaml``.  If LLM is disabled or
-        no API key is set, returns an empty list silently.
-        """
-        lcfg = self._section("llm")
-        if not lcfg.get("enabled", False):
-            return []
-
-        api_key_env = lcfg.get("api_key_env", "LLM_API_KEY")
-        api_key = os.environ.get(api_key_env, "")
-        if not api_key:
-            logger.debug("LLM fallback skipped: no API key in env %s", api_key_env)
-            return []
-
-        provider = lcfg.get("provider", "gemini")
-        model = lcfg.get("model", "gemini-2.0-flash")
-        try:
-            min_text_length = int(lcfg.get("min_text_length", 100))
-        except (TypeError, ValueError):
-            min_text_length = 100
-
-        from src.parsers.llm_fallback import LLMFallbackParser, should_use_llm
-
-        if not should_use_llm(content, [], min_text_length=min_text_length):
-            return []
-
-        logger.info(
-            "Trying LLM fallback for %s (%s) — regex found 0 links in %d chars.",
-            filename,
-            source_name,
-            len(content),
-        )
-
-        try:
-            llm = LLMFallbackParser(
-                provider=provider,
-                model=model,
-                api_key=api_key,
-            )
-            links = await llm.extract_links(content)
-        except Exception as exc:
-            logger.warning(
-                "LLM fallback failed for %s (%s): %s", filename, source_name, exc
-            )
-            return []
-
-        if links:
-            logger.info(
-                "LLM fallback extracted %d links from %s (%s).",
-                len(links),
-                filename,
-                source_name,
-            )
-        return links
-
-    def _parse_one_link(self, link: str) -> Config | None:
-        """Parse a single link via O(1) scheme dispatch.
-
-        The scheme is extracted from the link and looked up in
-        :data:`PARSER_BY_SCHEME`.  This replaces the previous O(N) loop over
-        ``ALL_PARSERS`` that called ``can_parse()`` (strip+lower+startswith)
-        on every parser for every link.
-
-        ``parse()`` still re-checks the scheme internally (defence in depth),
-        so a corrupt dispatch entry cannot cause a wrong parser to run.
-
-        Returns the parsed :class:`Config`, or ``None`` if no parser matched.
-        """
-        low = link.strip().lower()
-        idx = low.find("://")
-        if idx < 0:
-            return None
-        parser = PARSER_BY_SCHEME.get(low[:idx])
-        if parser is None:
-            return None
-        try:
-            return parser.parse(link)
-        except Exception as exc:
-            logger.debug("Parser %s raised on link: %s", type(parser).__name__, exc)
-            return None
-
     @staticmethod
     def _filter_garbage(configs: list[Config]) -> tuple[list[Config], int]:
-        """Remove placeholder/template configs (UUID, SERVER_IP, example.com).
+        """Remove placeholder/template configs. Delegates to GarbageFilter."""
+        from src.scheduler.stages.filter import GarbageFilter
 
-        Returns (clean_configs, garbage_count).
-        """
-        clean: list[Config] = []
-        garbage = 0
-        for cfg in configs:
-            if is_garbage_config(cfg):
-                garbage += 1
-                logger.debug(
-                    "Garbage filtered: %s://%s:%d (%s)",
-                    cfg.protocol,
-                    cfg.address,
-                    cfg.port,
-                    (cfg.remark or "")[:50],
-                )
-            else:
-                clean.append(cfg)
-        return clean, garbage
+        return GarbageFilter.filter_garbage(configs)
 
     # --- stage 3: country filter ---
 
     def _filter_countries(
         self, configs: list[Config], *, list_type: str = "mixed"
     ) -> list[Config]:
-        """Filter configs by allowed countries (no network — instant).
+        """Filter configs by allowed countries. Delegates to CountryFilter."""
+        from src.scheduler.stages.filter import CountryFilter
 
-        Detects country from each config's remark using emoji flags,
-        country names, and ISO codes. Only configs matching the
-        ``allowed_countries`` list are kept.
-
-        When ``allowed_countries`` is empty, all configs pass through.
-        """
-        vcfg = self._section("validator")
-        allowed = vcfg.get("allowed_countries", [])
-        by_list = vcfg.get("allowed_countries_by_list", {})
-        if isinstance(by_list, dict):
-            specific = by_list.get(normalize_list_type(list_type))
-            if specific is not None:
-                allowed = specific
-        # Guard: YAML scalar string (e.g. "RU" instead of ["RU"]) would
-        # iterate character-by-character → ["R","U"] → 0 matches.
-        if isinstance(allowed, str):
-            allowed = [allowed]
-
-        from src.validators.country_filter import detect_country
-
-        for cfg in configs:
-            if cfg.country is None:
-                cfg.country = detect_country(
-                    cfg.remark,
-                    getattr(cfg, "address", None),
-                    getattr(cfg, "sni", None),
-                    getattr(cfg, "host", None),
-                )
-            if cfg.country is None:
-                default_country = getattr(cfg, "source_default_country", None)
-                if default_country:
-                    cfg.country = str(default_country).upper()
-
-        if not allowed:
-            logger.info("No country filter configured — keeping all configs.")
-            # Still try to detect country for sorting purposes.
-            for cfg in configs:
-                if cfg.country is None:
-                    cfg.country = detect_country(
-                        cfg.remark,
-                        getattr(cfg, "address", None),
-                        getattr(cfg, "sni", None),
-                        getattr(cfg, "host", None),
-                    )
-            return configs
-
-        allowed_list = [str(c).upper() for c in allowed]
-        logger.info("Filtering %s to allowed countries: %s", list_type, allowed_list)
-
-        from src.validators.country_filter import filter_by_country
-
-        return filter_by_country(configs, allowed_list)
+        return CountryFilter(self._context).filter_countries(configs, list_type=list_type)
 
     # --- optional network liveness validation ---
 
@@ -1354,17 +1062,10 @@ class PipelineRunner:
         return self._country_balanced_limit(configs, max_total)
 
     def _dedup_only(self, configs: list[Config]) -> list[Config]:
-        """Deduplicate configs by (address, port). Called before country filter."""
-        try:
-            from src.aggregator.merger import deduplicate
-        except (ImportError, AttributeError) as exc:
-            logger.error("Cannot import deduplicate: %s — skipping dedup.", exc)
-            return configs
-        try:
-            return deduplicate(configs)
-        except Exception as exc:
-            logger.error("deduplicate failed: %s — passing through.", exc)
-            return configs
+        """Deduplicate configs by (address, port). Delegates to DedupFilter."""
+        from src.scheduler.stages.filter import DedupFilter
+
+        return DedupFilter.dedup_only(configs)
 
     def _sort_and_limit(self, configs: list[Config]) -> list[Config]:
         """Sort and limit configs (dedup already done). Called after country filter."""
@@ -1704,59 +1405,8 @@ class PipelineRunner:
         *,
         label: str,
     ) -> list[Config]:
-        """Preprocess configs: garbage -> sample -> dedup -> country filter.
-
-        This is the per-list ``process`` stage of the pipeline.  It does NOT
-        sort or limit — sorting is deferred so the combined output (step 4 of
-        :meth:`run`) and each split output (step 6) sort exactly once instead
-        of twice (previously ``_process_configs`` sorted per-list and
-        :meth:`run` re-sorted the combined list).
-
-        Dedup is kept here (before the country filter) so intra-list
-        duplicates are removed early; the combined path in :meth:`run` then
-        dedups cross-list duplicates after interleaving.
-
-        Returns preprocessed configs (or empty list if nothing survived).
-        Preserves insertion order (no sort).
-        """
-        if not configs:
-            return []
-
-        configs, garbage_count = self._filter_garbage(configs)
-        if garbage_count:
-            logger.info(
-                "Filtered %d garbage/placeholder configs for %s.",
-                garbage_count,
-                label,
-            )
-        if not configs:
-            return []
-
-        vcfg = self._section("validator")
-        try:
-            max_to_process = int(vcfg.get("max_configs_to_validate", 20000))
-        except (TypeError, ValueError):
-            max_to_process = 20000
-        if max_to_process > 0 and len(configs) > max_to_process:
-            import random
-
-            logger.info(
-                "Sampling %d configs from %d for %s processing.",
-                max_to_process,
-                len(configs),
-                label,
-            )
-            configs = random.sample(configs, max_to_process)
-
-        configs = self._dedup_only(configs)
-        logger.info("%s after dedup: %d configs.", label, len(configs))
-
-        configs = self._filter_countries(configs, list_type=label)
-        logger.info("%s after country filter: %d configs.", label, len(configs))
-        if not configs:
-            return []
-
-        return configs
+        """Preprocess configs: garbage -> sample -> dedup -> country filter."""
+        return self._preprocessor.preprocess(configs, label=label)
 
     def _whitelist_balance(self, configs: list[Config], max_total: int) -> list[Config]:
         """Build whitelist output: mostly RU servers plus EU fallback servers.
