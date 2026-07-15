@@ -32,6 +32,11 @@ import yaml
 from src.parsers import PARSER_BY_SCHEME
 from src.parsers.base import Config, find_all_links, is_garbage_config
 from src.parsers.subscription import SubscriptionParser
+from src.scheduler.context import PipelineContext, PipelineState
+from src.scheduler.settings import Settings, load_settings
+from src.scheduler.stages.fetch import SourceFetcher
+# TODO: use LinkParser once parsing logic is fully extracted
+# from src.scheduler.stages.parse import LinkParser
 from src.sources.list_types import normalize_list_type
 
 logger = logging.getLogger(__name__)
@@ -51,7 +56,14 @@ class PipelineRunner:
         self.settings_path = settings_path
         self.sources_path = sources_path
         self.github_token = github_token or os.environ.get("GITHUB_TOKEN")
-        self.settings: dict[str, Any] = self._load_settings(settings_path)
+        self._settings = Settings(load_settings(settings_path))
+        # Public attribute retained for compatibility with tests/debug code.
+        self.settings: dict[str, Any] = self._settings._data
+        self._context = PipelineContext(
+            settings=self._settings,
+            github_token=self.github_token,
+            sources_path=self.sources_path,
+        )
         self._validator_proxy_urls_cache: list[str] | None = None
         self._liveness_stats: dict[str, Any] = {}
         self._output_stats: dict[str, Any] = {}
@@ -59,27 +71,19 @@ class PipelineRunner:
         self._proxy_health_history: Any | None = None
         self._proxy_health_file: str | None = None
         self._init_proxy_health_history()
+        self._fetcher = SourceFetcher()
+        self._state = PipelineState()
 
     # --- settings ---
 
     @staticmethod
     def _load_settings(path: str) -> dict[str, Any]:
-        """Load settings from a YAML file, returning an empty dict on failure."""
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = yaml.safe_load(fh)
-        except FileNotFoundError:
-            logger.error("Settings file not found: %s — using defaults.", path)
-            return {}
-        except yaml.YAMLError as exc:
-            logger.error("Failed to parse settings %s: %s — using defaults.", path, exc)
-            return {}
-        return data or {}
+        """Deprecated: use ``src.scheduler.settings.load_settings``."""
+        return load_settings(path)
 
     def _section(self, key: str) -> dict[str, Any]:
         """Return a settings section (empty dict if missing)."""
-        section = self.settings.get(key, {})
-        return section if isinstance(section, dict) else {}
+        return self._settings.section(key)
 
     def _max_configs(self) -> int:
         """Canonical ``max_configs_in_output`` (single source of truth).
@@ -253,37 +257,9 @@ class PipelineRunner:
     # --- stage 1: fetch ---
 
     async def _fetch_sources(self) -> list[Any]:
-        """Fetch all sources via SourceManager.
-
-        Imports SourceManager lazily so a missing/broken module does not break
-        pipeline startup — it only fails when this stage actually runs. The
-        manager's HTTP client is cleaned up via ``async with``.
-        """
-        try:
-            from src.sources.manager import SourceManager
-        except ImportError as exc:
-            logger.error("Cannot import SourceManager: %s — fetch stage skipped.", exc)
-            return []
-
-        try:
-            manager = SourceManager(
-                sources_file=self.sources_path,
-                settings_file=self.settings_path,
-                github_token=self.github_token,
-            )
-        except Exception as exc:
-            logger.error("Failed to construct SourceManager: %s", exc)
-            return []
-
-        try:
-            async with manager:
-                results = await manager.fetch_all()
-        except Exception as exc:
-            logger.error("SourceManager.fetch_all() failed: %s", exc)
-            return []
-
-        logger.info("Fetched %d source results.", len(results) if results else 0)
-        return list(results) if results else []
+        """Fetch all sources via the SourceFetcher stage."""
+        self._state = await self._fetcher.run(self._state, self._context)
+        return self._state.sources
 
     # --- stage 2: parse ---
 
