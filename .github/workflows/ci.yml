@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Python
+        uses: actions/setup-python@39cd08fff0aebffb8b725b056f514cf9a305f6d5 # v5.1.1
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff check
+        run: ruff check --no-cache src tests
+
+      - name: Ruff format check
+        run: ruff format --check --no-cache src tests
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Python
+        uses: actions/setup-python@39cd08fff0aebffb8b725b056f514cf9a305f6d5 # v5.1.1
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: mypy
+        run: mypy --cache-dir=/dev/null src
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Python
+        uses: actions/setup-python@39cd08fff0aebffb8b725b056f514cf9a305f6d5 # v5.1.1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest -q -p no:cacheprovider
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Python
+        uses: actions/setup-python@39cd08fff0aebffb8b725b056f514cf9a305f6d5 # v5.1.1
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Bandit
+        run: bandit -c pyproject.toml -r src
+
+      - name: pip-audit
+        run: pip-audit --desc
+
+      - name: Secret detection
+        uses: trufflesecurity/trufflehog@6b462af8e8a7a37345b6c66af9b5c3e2f76dad3b # v3.80.1
+        with:
+          path: ./
+          base: main
+          head: HEAD
+          extra_args: --debug

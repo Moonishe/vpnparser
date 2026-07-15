@@ -102,7 +102,14 @@ cannot dominate the final 200 slots while other countries have live servers.
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+# Production dependencies
+pip install -e .
+
+# Development dependencies (lint, typecheck, tests, security)
+pip install -e ".[dev]"
+
+# Optional: install pre-commit hooks
+pre-commit install
 ```
 
 Local `.env` files are loaded automatically when `python-dotenv` is installed.

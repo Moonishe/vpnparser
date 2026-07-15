@@ -1,6 +1,6 @@
 # Auto-update VPN configs pipeline.
-# Runs on schedule (every hour), on manual dispatch, and on push to main
-# (so changes to the pipeline itself are validated end-to-end).
+# Runs on schedule (every hour) and on manual dispatch.
+# Push-triggered end-to-end validation is handled by ci.yml.
 name: Update Configs
 
 on:
@@ -8,47 +8,67 @@ on:
     # Every hour, at minute 0 (UTC)
     - cron: "0 * * * *"
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "config/**"
-      - "tests/**"
-      - "requirements.txt"
-      - ".github/workflows/update.yml"
+    inputs:
+      skip_publish:
+        description: "Run pipeline but do not publish output"
+        required: false
+        default: "false"
+        type: boolean
 
 # Cancel a previous run if a new one starts on the same ref.
 concurrency:
   group: update-configs-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write # needed to push the updated subscription back to the repo
+
+env:
+  XRAY_VERSION: "v26.3.27" # pin explicitly; update .github/xray.sha256 when bumping
+
 jobs:
   update-configs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: write # needed to push the updated subscription back to the repo
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          fetch-depth: 0 # needed for possible rollback tags
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@39cd08fff0aebffb8b725b056f514cf9a305f6d5 # v5.1.1
         with:
           python-version: "3.12"
-          cache: "pip" # caches the pip download cache between runs
-          cache-dependency-path: requirements.txt
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run lint/typecheck/security checks
+        run: |
+          ruff check --no-cache src tests
+          ruff format --check --no-cache src tests
+          mypy --cache-dir=/dev/null src
+          bandit -c pyproject.toml -r src
+          pip-audit --desc
 
       - name: Install Xray core
         run: |
           set -euo pipefail
-          curl -L --retry 3 --retry-delay 2 \
-            -o /tmp/xray.zip \
-            "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"
-          unzip -q /tmp/xray.zip -d /tmp/xray
+          asset="Xray-linux-64.zip"
+          url="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${asset}"
+          curl -L --retry 3 --retry-delay 2 -o "/tmp/${asset}" "$url"
+          if [ -f .github/xray.sha256 ]; then
+            echo "Verifying Xray checksum..."
+            sha256sum -c .github/xray.sha256
+          else
+            echo "::warning::No checksum file .github/xray.sha256; skipping verification."
+          fi
+          unzip -q "/tmp/${asset}" -d /tmp/xray
           chmod +x /tmp/xray/xray
           echo "/tmp/xray" >> "$GITHUB_PATH"
           /tmp/xray/xray version
@@ -57,7 +77,7 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider
 
       - name: Restore facts cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
         with:
           path: facts_history.json
           key: facts-history
@@ -65,7 +85,7 @@ jobs:
             facts-history
 
       - name: Restore health-history cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
         with:
           path: output/health-history.json
           key: health-history
@@ -73,22 +93,17 @@ jobs:
             health-history
 
       - name: Run pipeline
-        run: python -m src.main --run --publish
+        id: pipeline
+        run: python -m src.main --run
         env:
-          # Auto-provided by GitHub Actions; used for both fetching sources
-          # (higher API rate limits) and publishing the commit.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Repo owner/name — derived from the workflow context so the
-          # publisher knows where to commit the subscription file.
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
-          # Optional — only needed when llm.enabled is true in settings.yaml.
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          # Optional — SOCKS5 proxy for validation (when running from data center).
-          # Set VALIDATOR_PROXY secret to e.g. socks5://user:pass@host:port
           VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
 
       - name: Verify output
+        id: verify
         run: |
           set -euo pipefail
           test -f output/subscription.txt || { echo "ERROR: output/subscription.txt not created!"; exit 1; }
@@ -96,7 +111,6 @@ jobs:
           test -f output/subscription-blacklist.txt || { echo "ERROR: output/subscription-blacklist.txt not created!"; exit 1; }
           test -f output/subscription-whitelist.txt || { echo "ERROR: output/subscription-whitelist.txt not created!"; exit 1; }
           test -f output/run-summary.json || { echo "ERROR: output/run-summary.json not created!"; exit 1; }
-          # Decode base64 and count configs in the combined subscription.
           CONFIGS=$(python3 -c "
           import base64
           data = open('output/subscription.txt').read().strip()
@@ -114,10 +128,18 @@ jobs:
           STATUS=$(python3 -c "import json; print(json.load(open('output/run-summary.json')).get('status',''))")
           echo "run_status=$STATUS" >> "$GITHUB_ENV"
           echo "Run status: $STATUS"
-          # Soft warn on zero configs; the run summary keeps the failure reason.
-          if [ "$CONFIGS" = "0" ]; then
-            echo "::warning::Pipeline published 0 live configs (status=$STATUS). Check Xray/proxy validation."
+          if [ "$CONFIGS" -lt 10 ]; then
+            echo "::error::Pipeline produced critically low output ($CONFIGS configs). Aborting publish."
+            exit 1
           fi
+
+      - name: Publish output
+        if: ${{ !inputs.skip_publish && success() && env.configs_count != '' && env.configs_count != '0' }}
+        run: python -m src.main --publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
 
       - name: Telegram notify
         if: env.configs_count != ''
@@ -131,19 +153,20 @@ jobs:
           GITHUB_BRANCH: ${{ github.ref_name }}
 
       - name: Save facts cache
-        # Only save when the file actually exists. On forks without
-        # TELEGRAM_BOT_TOKEN (or when the pipeline fails before the notify
-        # step runs) facts_history.json is never created, and cache/save
-        # raises a "Path Validation Error" that turns a green run red.
         if: always() && hashFiles('facts_history.json') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
         with:
           path: facts_history.json
           key: facts-history-${{ github.run_id }}
 
       - name: Save health-history cache
         if: always() && hashFiles('output/health-history.json') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
         with:
           path: output/health-history.json
           key: health-history-${{ github.run_id }}
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          echo "::error::Pipeline or publish failed. Check logs and runbook docs/OPERATIONS.md"
