@@ -34,8 +34,11 @@ from src.scheduler.settings import Settings, load_settings
 from src.scheduler.stages.fetch import SourceFetcher
 from src.scheduler.stages.parse import LinkParser
 from src.scheduler.stages.filter import PreprocessFilter
+from src.scheduler.health_history import HealthHistory
 from src.scheduler.stages.aggregate import Aggregator
 from src.scheduler.stages.write import OutputWriter
+from src.scheduler.stages.quality import QualityFilter
+from src.scheduler.stages.liveness import LivenessValidator
 
 from src.sources.list_types import normalize_list_type
 
@@ -70,12 +73,20 @@ class PipelineRunner:
         self._health_history: dict[str, Any] | None = None
         self._proxy_health_history: Any | None = None
         self._proxy_health_file: str | None = None
-        self._init_proxy_health_history()
         self._fetcher = SourceFetcher()
         self._parser = LinkParser(self._context)
         self._preprocessor = PreprocessFilter(self._context)
         self._aggregator = Aggregator(self._context)
         self._writer = OutputWriter(self._context)
+        self._health_history = HealthHistory(self._settings)
+        self._liveness = LivenessValidator(
+            self._context,
+            health=self._health_history,
+            proxy_url_getter=lambda: self._validator_proxy_urls(),
+            update_health_callback=lambda configs: self._update_health_history(configs),
+            update_source_health_callback=lambda configs, stats: self._update_source_health(configs, stats),
+        )
+        self._quality = QualityFilter(self._context, health=self._health_history)
         self._state = PipelineState()
 
     # --- settings ---
@@ -340,67 +351,9 @@ class PipelineRunner:
             return [str(item).strip() for item in value if str(item).strip()]
         return []
 
-    def _liveness_min_alive(self, total: int) -> int:
-        if total <= 0:
-            return 0
-        vcfg = self._section("validator")
-        raw = vcfg.get("min_alive_to_filter", 1)
-        threshold = self._as_int(raw, 1, minimum=1)
-        return min(threshold, total)
-
-    def _proxy_pool_config(self) -> dict[str, Any]:
-        raw = self._section("validator").get("proxy_pool", {})
-        return raw if isinstance(raw, dict) else {}
-
-    def _proxy_health_config(self) -> dict[str, Any]:
-        pool_cfg = self._proxy_pool_config()
-        defaults = {
-            "health_enabled": True,
-            "health_history_file": "output/proxy-health-history.json",
-            "ban_after_consecutive_failures": 3,
-            "latency_window": 5,
-            "max_latency_ms": 8000.0,
-            "refresh_if_below_min": True,
-        }
-        provided = pool_cfg.get("health", {})
-        if not isinstance(provided, dict):
-            provided = {}
-        merged = dict(defaults)
-        merged.update(provided)
-        return merged
-
-    def _init_proxy_health_history(self) -> None:
-        try:
-            from src.validators.proxy_health import ProxyHealthHistory
-        except ImportError:
-            return
-        hcfg = self._proxy_health_config()
-        if not self._as_bool(hcfg.get("health_enabled"), True):
-            return
-        self._proxy_health_file = str(hcfg.get("health_history_file") or "")
-        self._proxy_health_history = ProxyHealthHistory.load(
-            self._proxy_health_file,
-            window=self._as_int(hcfg.get("latency_window"), 5, minimum=1),
-            ban_after_consecutive_failures=self._as_int(
-                hcfg.get("ban_after_consecutive_failures"), 3, minimum=1
-            ),
-            max_latency_ms=self._as_float(hcfg.get("max_latency_ms"), 8000.0, minimum=1.0),
-        )
-
-    @staticmethod
-    def _redact_proxy_url(proxy_url: str) -> str:
-        parsed = urlparse(proxy_url)
-        if not parsed.scheme or not parsed.hostname:
-            return "<invalid-proxy-url>"
-        host = parsed.hostname
-        if ":" in host and not host.startswith("["):
-            host = f"[{host}]"
-        try:
-            parsed_port = parsed.port
-        except ValueError:
-            return "<invalid-proxy-url>"
-        port = f":{parsed_port}" if parsed_port else ""
-        return f"{parsed.scheme}://{host}{port}"
+    async def _validator_proxy_urls(self) -> list[str]:
+        """Return configured validator proxies, including optional free pool."""
+        return await self._liveness._validator_proxy_urls()
 
     async def _search_validator_proxy_pool(
         self,
@@ -408,193 +361,25 @@ class PipelineRunner:
         sources: list[str] | None,
         pool_cfg: dict[str, Any],
     ) -> list[str]:
-        """Search for working SOCKS5 proxies, widening candidates on retries."""
-        max_proxies = self._as_int(pool_cfg.get("max_proxies"), 20, minimum=1)
-        min_proxies = self._as_int(
-            pool_cfg.get("min_proxies"), min(10, max_proxies), minimum=1
+        """Search for working SOCKS5 proxies. Kept for compatibility."""
+        result = await self._liveness._search_validator_proxy_pool(
+            load_proxy_pool, sources, pool_cfg
         )
-        if min_proxies > max_proxies:
-            max_proxies = min_proxies
+        self._liveness_stats = self._context.liveness_stats
+        return result
 
-        search_rounds = self._as_int(pool_cfg.get("search_rounds"), 3, minimum=1)
-        candidate_growth = self._as_float(
-            pool_cfg.get("candidate_growth_factor"), 2.0, minimum=1.0
-        )
-        retry_delay = self._as_float(
-            pool_cfg.get("retry_delay_seconds"), 0.0, minimum=0.0
-        )
-        base_max_candidates = self._as_int(
-            pool_cfg.get("max_candidates"), 200, minimum=1
-        )
-        base_per_source = self._as_int(
-            pool_cfg.get("max_candidates_per_source"), 80, minimum=1
-        )
-
-        self._liveness_stats.update(
-            {
-                "proxy_min_proxies": min_proxies,
-                "proxy_search_round_limit": search_rounds,
-                "proxy_search_rounds": 0,
-                "proxy_search": [],
-            }
-        )
-
-        pool_urls: list[str] = []
-        for round_index in range(search_rounds):
-            multiplier = candidate_growth**round_index
-            max_candidates = max(
-                base_max_candidates, int(base_max_candidates * multiplier)
-            )
-            max_candidates_per_source = max(
-                base_per_source, int(base_per_source * multiplier)
-            )
-            pool_urls = await load_proxy_pool(
-                sources,
-                fetch_timeout=self._as_float(
-                    pool_cfg.get("fetch_timeout_seconds"), 10.0, minimum=1.0
-                ),
-                max_candidates=max_candidates,
-                max_candidates_per_source=max_candidates_per_source,
-                max_proxies=max_proxies,
-                validate=self._as_bool(pool_cfg.get("validate"), True),
-                validation_timeout=self._as_float(
-                    pool_cfg.get("validation_timeout_seconds"), 5.0, minimum=1.0
-                ),
-                validation_concurrency=self._as_int(
-                    pool_cfg.get("validation_concurrency"), 50, minimum=1
-                ),
-                probe_host=str(pool_cfg.get("probe_host") or "api.github.com"),
-                probe_port=self._as_int(pool_cfg.get("probe_port"), 443, minimum=1),
-                history=self._proxy_health_history,
-            )
-            self._liveness_stats["proxy_search_rounds"] = round_index + 1
-            self._liveness_stats["proxy_search"].append(
-                {
-                    "round": round_index + 1,
-                    "max_candidates": max_candidates,
-                    "max_candidates_per_source": max_candidates_per_source,
-                    "working": len(pool_urls),
-                }
-            )
-            if len(pool_urls) >= min_proxies:
-                break
-            if retry_delay > 0 and round_index + 1 < search_rounds:
-                await asyncio.sleep(retry_delay)
-
-        if len(pool_urls) < min_proxies:
-            logger.warning(
-                "Proxy pool search found only %d/%d working SOCKS5 proxies "
-                "after %d round(s).",
-                len(pool_urls),
-                min_proxies,
-                search_rounds,
-            )
-        return pool_urls
-
-    async def _validator_proxy_urls(self) -> list[str]:
-        """Return configured validator proxies, including optional free pool."""
-        if self._validator_proxy_urls_cache is not None:
-            return list(self._validator_proxy_urls_cache)
-
-        vcfg = self._section("validator")
-        urls: list[str] = []
-        explicit = str(vcfg.get("proxy_url") or os.environ.get("VALIDATOR_PROXY") or "")
-        explicit = explicit.strip()
-        if explicit:
-            urls.append(explicit)
-
-        pool_cfg = self._proxy_pool_config()
-        self._liveness_stats.update(
-            {
-                "explicit_proxy": bool(explicit),
-                "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), False),
-                "proxy_pool_required": self._as_bool(pool_cfg.get("required"), False),
-                "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
-            }
-        )
-        if self._as_bool(pool_cfg.get("enabled"), False):
-            try:
-                from src.validators.proxy_pool import load_proxy_pool
-            except ImportError as exc:
-                logger.warning("Proxy pool unavailable: %s", exc)
-            else:
-                sources = self._source_list(pool_cfg.get("sources"))
-                try:
-                    pool_urls = await self._search_validator_proxy_pool(
-                        load_proxy_pool,
-                        sources,
-                        pool_cfg,
-                    )
-                except Exception as exc:
-                    logger.warning("Proxy pool load failed: %s", exc)
-                else:
-                    for proxy_url in pool_urls:
-                        if proxy_url not in urls:
-                            urls.append(proxy_url)
-
-        self._validator_proxy_urls_cache = urls
-        self._liveness_stats["proxy_count"] = len(urls)
-        if explicit:
-            self._liveness_stats["proxy_urls"] = [
-                "<explicit-proxy-hidden>",
-                *[self._redact_proxy_url(url) for url in urls[1:]],
-            ]
-        else:
-            self._liveness_stats["proxy_urls"] = [
-                self._redact_proxy_url(url) for url in urls
-            ]
-        return list(urls)
+    @staticmethod
+    def _redact_proxy_url(proxy_url: str) -> str:
+        """Redact credentials from a proxy URL."""
+        return LivenessValidator._redact_proxy_url(proxy_url)
 
     async def _validate_liveness_by_list(
         self, configs_by_list: dict[str, list[Config]]
     ) -> dict[str, list[Config]]:
-        """Optionally run TCP/TLS liveness checks for each list type."""
-        vcfg = self._section("validator")
-        tcp_enabled = self._as_bool(vcfg.get("tcp_enabled"), False)
-        tls_enabled = self._as_bool(vcfg.get("tls_enabled"), False)
-        xray_enabled = self._as_bool(vcfg.get("xray_enabled"), False)
-        pool_cfg = self._proxy_pool_config()
-        self._liveness_stats = {
-            "tcp_enabled": tcp_enabled,
-            "tls_enabled": tls_enabled,
-            "xray_enabled": xray_enabled,
-            "fail_open_on_low_alive": self._as_bool(
-                vcfg.get("fail_open_on_low_alive"), True
-            ),
-            "drop_unchecked_after_tls": self._as_bool(
-                vcfg.get("drop_unchecked_after_tls"), False
-            ),
-            "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), False),
-            "proxy_pool_required": self._as_bool(pool_cfg.get("required"), False),
-            "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
-            "proxy_attempts_per_config": self._as_int(
-                vcfg.get("proxy_attempts_per_config"), 5, minimum=0
-            ),
-            "tls_proxy_attempts_per_config": self._as_int(
-                vcfg.get("tls_proxy_attempts_per_config"),
-                self._as_int(vcfg.get("proxy_attempts_per_config"), 5, minimum=0),
-                minimum=0,
-            ),
-            "proxy_count": 0,
-            "lists": {},
-        }
-        if not tcp_enabled and not tls_enabled and not xray_enabled:
-            self._liveness_stats["status"] = "disabled"
-            return configs_by_list
-        self._liveness_stats["status"] = "enabled"
-
-        validated: dict[str, list[Config]] = {}
-        for list_type, configs in configs_by_list.items():
-            alive = await self._validate_liveness_configs(
-                list(configs),
-                label=list_type,
-                tcp_enabled=tcp_enabled,
-                tls_enabled=tls_enabled,
-                xray_enabled=xray_enabled,
-            )
-            if alive:
-                validated[list_type] = alive
-        return validated
+        """Optionally run TCP/TLS/Xray liveness checks for each list type."""
+        result = await self._liveness.validate_by_list(configs_by_list)
+        self._liveness_stats = self._context.liveness_stats
+        return result
 
     async def _validate_liveness_configs(
         self,
@@ -605,457 +390,16 @@ class PipelineRunner:
         tls_enabled: bool,
         xray_enabled: bool = False,
     ) -> list[Config]:
-        if not configs:
-            return []
-
-        vcfg = self._section("validator")
-        proxy_urls = await self._validator_proxy_urls()
-        pool_cfg = self._proxy_pool_config()
-        pool_required = self._as_bool(pool_cfg.get("required"), False)
-        pool_enabled = self._as_bool(pool_cfg.get("enabled"), False)
-        fail_open_on_low_alive = self._as_bool(
-            vcfg.get("fail_open_on_low_alive"), True
+        """Validate a single list's configs."""
+        result = await self._liveness.validate_configs(
+            configs,
+            label=label,
+            tcp_enabled=tcp_enabled,
+            tls_enabled=tls_enabled,
+            xray_enabled=xray_enabled,
         )
-        drop_unchecked_after_tls = self._as_bool(
-            vcfg.get("drop_unchecked_after_tls"), False
-        )
-        list_key = normalize_list_type(label)
-        list_stats = {
-            "input": len(configs),
-            "proxy_count": len(proxy_urls),
-            "checked": False,
-            "filtered": False,
-            "fail_open": False,
-            "reason": "",
-        }
-        self._liveness_stats.setdefault("lists", {})[list_key] = list_stats
-        if pool_enabled and pool_required and not proxy_urls:
-            list_stats["reason"] = "no_proxies"
-            if not xray_enabled:
-                logger.warning(
-                    "Liveness validation for %s skipped: proxy_pool.required=true "
-                    "but no proxies are available.",
-                    label,
-                )
-                return configs
-            logger.warning(
-                "%s proxy pool is empty; continuing with required direct Xray "
-                "validation and skipping proxy-network score.",
-                label,
-            )
-
-        current = list(configs)
-
-        if tcp_enabled:
-            checkable = [c for c in current if c.protocol not in _TCP_SKIP_PROTOCOLS]
-            passthrough = [c for c in current if c.protocol in _TCP_SKIP_PROTOCOLS]
-            list_stats["tcp_candidates"] = len(checkable)
-            list_stats["tcp_skipped_protocol"] = len(passthrough)
-            if checkable:
-                from src.validators.tcp_check import validate_configs_tcp
-
-                candidate_limit = self._as_int(
-                    vcfg.get("tcp_candidate_limit"), 1000, minimum=0
-                )
-                tcp_max_alive = self._as_int(vcfg.get("tcp_max_alive"), 0, minimum=0)
-                tcp_max_alive_by_list = vcfg.get("tcp_max_alive_by_list", {})
-                if isinstance(tcp_max_alive_by_list, dict):
-                    specific_max_alive = tcp_max_alive_by_list.get(
-                        normalize_list_type(label)
-                    )
-                    if specific_max_alive is not None:
-                        tcp_max_alive = self._as_int(
-                            specific_max_alive,
-                            tcp_max_alive,
-                            minimum=0,
-                        )
-                list_stats["tcp_max_alive"] = tcp_max_alive
-
-                min_alive = self._liveness_min_alive(len(checkable))
-                list_stats["min_alive_to_filter"] = min_alive
-                tcp_search_rounds = self._as_int(
-                    vcfg.get("tcp_search_rounds"), 3, minimum=1
-                )
-                if candidate_limit <= 0:
-                    tcp_search_rounds = 1
-                    candidate_limit = len(checkable)
-                list_stats["tcp_search_round_limit"] = tcp_search_rounds
-
-                alive_tcp: list[Config] = []
-                alive_keys: set[Any] = set()
-                checked_total = 0
-                offset = 0
-                round_count = 0
-                while offset < len(checkable) and round_count < tcp_search_rounds:
-                    batch = checkable[offset : offset + candidate_limit]
-                    if not batch:
-                        break
-                    round_count += 1
-                    offset += len(batch)
-                    checked_total += len(batch)
-                    remaining_alive = (
-                        max(0, tcp_max_alive - len(alive_tcp))
-                        if tcp_max_alive > 0
-                        else 0
-                    )
-                    if tcp_max_alive > 0 and remaining_alive <= 0:
-                        break
-                    logger.info(
-                        "%s TCP validation round %d: checking %d/%d candidates.",
-                        label,
-                        round_count,
-                        checked_total,
-                        len(checkable),
-                    )
-                    batch_alive = await validate_configs_tcp(
-                        batch,
-                        timeout=self._as_float(
-                            vcfg.get("tcp_timeout_seconds"), 5.0, minimum=0.1
-                        ),
-                        concurrency=self._as_int(
-                            vcfg.get("tcp_concurrency"), 300, minimum=1
-                        ),
-                        max_alive=remaining_alive,
-                        proxy_urls=proxy_urls,
-                        proxy_attempts_per_config=self._as_int(
-                            vcfg.get("proxy_attempts_per_config"), 5, minimum=0
-                        ),
-                    )
-                    for cfg in batch_alive:
-                        if cfg.dedup_key in alive_keys:
-                            continue
-                        alive_keys.add(cfg.dedup_key)
-                        alive_tcp.append(cfg)
-                    if tcp_max_alive > 0 and len(alive_tcp) >= tcp_max_alive:
-                        break
-
-                list_stats["tcp_checked"] = checked_total
-                list_stats["tcp_search_rounds"] = round_count
-                list_stats["checked"] = True
-                list_stats["tcp_alive"] = len(alive_tcp)
-                if len(alive_tcp) < min_alive:
-                    list_stats["reason"] = "below_min_alive"
-                    if fail_open_on_low_alive:
-                        logger.warning(
-                            "%s TCP validation found %d/%d alive (<%d). "
-                            "Keeping unfiltered configs.",
-                            label,
-                            len(alive_tcp),
-                            len(checkable),
-                            min_alive,
-                        )
-                        list_stats["fail_open"] = True
-                        return configs
-                    logger.warning(
-                        "%s TCP validation found %d/%d alive (<%d). "
-                        "Strict mode keeps only alive configs.",
-                        label,
-                        len(alive_tcp),
-                        len(checkable),
-                        min_alive,
-                    )
-                current = alive_tcp + passthrough
-                list_stats["filtered"] = True
-                list_stats["output_after_tcp"] = len(current)
-                logger.info(
-                    "%s after TCP validation: %d alive, %d TCP-skipped.",
-                    label,
-                    len(alive_tcp),
-                    len(passthrough),
-                )
-
-        if tls_enabled:
-            tls_checkable = [
-                c for c in current if str(c.security or "").lower() in ("tls", "reality")
-            ]
-            if tls_checkable:
-                from src.validators.tls_check import validate_configs_tls
-
-                before_tls = list(current)
-                tls_passthrough = [
-                    c
-                    for c in current
-                    if str(c.security or "").lower() not in ("tls", "reality")
-                ]
-                list_stats["tls_unchecked_passthrough"] = len(tls_passthrough)
-                list_stats["tls_drop_unchecked"] = drop_unchecked_after_tls
-                if drop_unchecked_after_tls:
-                    tls_passthrough = []
-                list_stats["tls_candidates"] = len(tls_checkable)
-                candidate_limit = self._as_int(
-                    vcfg.get("tls_candidate_limit"), 1000, minimum=0
-                )
-                if candidate_limit > 0 and len(tls_checkable) > candidate_limit:
-                    logger.info(
-                        "%s TLS validation candidate cap: checking first %d/%d.",
-                        label,
-                        candidate_limit,
-                        len(tls_checkable),
-                    )
-                    tls_checkable = tls_checkable[:candidate_limit]
-                list_stats["tls_checked"] = len(tls_checkable)
-                alive_tls = await validate_configs_tls(
-                    tls_checkable,
-                    timeout=self._as_float(
-                        vcfg.get("tls_timeout_seconds"), 5.0, minimum=0.1
-                    ),
-                    concurrency=self._as_int(
-                        vcfg.get("tls_concurrency"), 100, minimum=1
-                    ),
-                    proxy_urls=proxy_urls,
-                    proxy_attempts_per_config=self._as_int(
-                        vcfg.get("tls_proxy_attempts_per_config"),
-                        self._as_int(
-                            vcfg.get("proxy_attempts_per_config"), 5, minimum=0
-                        ),
-                        minimum=0,
-                    ),
-                )
-                list_stats["checked"] = True
-                list_stats["tls_alive"] = len(alive_tls)
-                min_alive = self._liveness_min_alive(len(tls_checkable))
-                if len(alive_tls) < min_alive:
-                    list_stats["reason"] = "tls_below_min_alive"
-                    if fail_open_on_low_alive:
-                        logger.warning(
-                            "%s TLS validation left %d/%d configs (<%d). "
-                            "Keeping pre-TLS configs.",
-                            label,
-                            len(alive_tls),
-                            len(tls_checkable),
-                            min_alive,
-                        )
-                        list_stats["fail_open"] = True
-                        return before_tls
-                    logger.warning(
-                        "%s TLS validation left %d/%d configs (<%d). "
-                        "Strict mode keeps only TLS-alive configs.",
-                        label,
-                        len(alive_tls),
-                        len(tls_checkable),
-                        min_alive,
-                    )
-                current = alive_tls + tls_passthrough
-                list_stats["filtered"] = True
-                list_stats["output_after_tls"] = len(current)
-                logger.info("%s after TLS validation: %d configs.", label, len(current))
-            elif drop_unchecked_after_tls:
-                list_stats["checked"] = True
-                list_stats["tls_candidates"] = 0
-                list_stats["tls_checked"] = 0
-                list_stats["tls_alive"] = 0
-                list_stats["tls_unchecked_passthrough"] = len(current)
-                list_stats["tls_drop_unchecked"] = True
-                list_stats["filtered"] = True
-                list_stats["output_after_tls"] = 0
-                logger.warning(
-                    "%s TLS validation has no TLS/REALITY candidates. "
-                    "Strict mode drops %d TCP-only configs.",
-                    label,
-                    len(current),
-                )
-                current = []
-
-        if xray_enabled and current:
-            from src.validators.xray_probe import (
-                find_xray_executable,
-                is_xray_supported,
-                validate_configs_xray,
-            )
-
-            xray_path = find_xray_executable(str(vcfg.get("xray_executable") or ""))
-            xray_required = self._as_bool(vcfg.get("xray_required"), False)
-            list_stats["xray_required"] = xray_required
-            list_stats["xray_available"] = bool(xray_path)
-            if not xray_path:
-                list_stats["xray_checked"] = 0
-                list_stats["xray_alive"] = 0
-                list_stats["reason"] = "xray_unavailable"
-                if xray_required:
-                    logger.warning(
-                        "%s Xray validation required but xray executable "
-                        "is unavailable. Dropping configs.",
-                        label,
-                    )
-                    return []
-                logger.warning(
-                    "%s Xray validation skipped: xray executable unavailable.",
-                    label,
-                )
-                return current
-
-            supported = [cfg for cfg in current if is_xray_supported(cfg)]
-            unsupported = len(current) - len(supported)
-            drop_unsupported = self._as_bool(
-                vcfg.get("xray_drop_unsupported"), True
-            )
-            list_stats["xray_candidates"] = len(supported)
-            list_stats["xray_unsupported"] = unsupported
-            list_stats["xray_drop_unsupported"] = drop_unsupported
-            if not supported:
-                list_stats["xray_checked"] = 0
-                list_stats["xray_alive"] = 0
-                list_stats["reason"] = "xray_no_supported_candidates"
-                return [] if drop_unsupported else current
-
-            candidate_limit = self._as_int(
-                vcfg.get("xray_candidate_limit"), 0, minimum=0
-            )
-            xray_candidate_limit_by_list = vcfg.get("xray_candidate_limit_by_list", {})
-            if isinstance(xray_candidate_limit_by_list, dict):
-                specific_candidate_limit = xray_candidate_limit_by_list.get(list_key)
-                if specific_candidate_limit is not None:
-                    candidate_limit = self._as_int(
-                        specific_candidate_limit,
-                        candidate_limit,
-                        minimum=0,
-                    )
-            if candidate_limit > 0:
-                supported = self._xray_candidate_preselect(
-                    supported,
-                    candidate_limit,
-                    list_key,
-                )
-            list_stats["xray_preselected"] = len(supported)
-
-            xray_max_alive = self._as_int(vcfg.get("xray_max_alive"), 0, minimum=0)
-            xray_max_alive_by_list = vcfg.get("xray_max_alive_by_list", {})
-            if isinstance(xray_max_alive_by_list, dict):
-                specific_max_alive = xray_max_alive_by_list.get(
-                    normalize_list_type(label)
-                )
-                if specific_max_alive is not None:
-                    xray_max_alive = self._as_int(
-                        specific_max_alive,
-                        xray_max_alive,
-                        minimum=0,
-                    )
-
-            list_stats["xray_checked"] = len(supported)
-            list_stats["xray_max_alive"] = xray_max_alive
-            probe_urls_raw = vcfg.get("xray_probe_urls")
-            if isinstance(probe_urls_raw, str):
-                xray_probe_urls = [
-                    part.strip()
-                    for part in probe_urls_raw.replace(";", ",").split(",")
-                    if part.strip()
-                ]
-            elif isinstance(probe_urls_raw, list):
-                xray_probe_urls = [
-                    str(part).strip() for part in probe_urls_raw if str(part).strip()
-                ]
-            else:
-                xray_probe_urls = []
-            if not xray_probe_urls:
-                xray_probe_urls = [
-                    str(
-                        vcfg.get("xray_probe_url")
-                        or "https://www.gstatic.com/generate_204"
-                    )
-                ]
-            xray_min_probe_successes = self._as_int(
-                vcfg.get("xray_min_probe_successes"),
-                1,
-                minimum=1,
-            )
-            xray_min_probe_successes = min(
-                xray_min_probe_successes,
-                len(xray_probe_urls),
-            )
-            xray_attempts_per_config = self._as_int(
-                vcfg.get("xray_attempts_per_config"),
-                1,
-                minimum=1,
-            )
-            xray_min_attempt_successes = self._as_int(
-                vcfg.get("xray_min_attempt_successes"),
-                xray_attempts_per_config,
-                minimum=1,
-            )
-            xray_min_attempt_successes = min(
-                xray_min_attempt_successes,
-                xray_attempts_per_config,
-            )
-            list_stats["xray_probe_count"] = len(xray_probe_urls)
-            list_stats["xray_min_probe_successes"] = xray_min_probe_successes
-            list_stats["xray_attempts_per_config"] = xray_attempts_per_config
-            list_stats["xray_min_attempt_successes"] = xray_min_attempt_successes
-            proxy_probe_count = self._as_int(
-                vcfg.get("xray_proxy_probe_count"),
-                0,
-                minimum=0,
-            )
-            xray_proxy_urls = proxy_urls[:proxy_probe_count] if proxy_probe_count else []
-            xray_min_proxy_successes = self._as_int(
-                vcfg.get("xray_min_proxy_successes"),
-                0,
-                minimum=0,
-            )
-            xray_min_proxy_successes = min(
-                xray_min_proxy_successes,
-                len(xray_proxy_urls),
-            )
-            list_stats["xray_proxy_checks"] = len(xray_proxy_urls)
-            list_stats["xray_min_proxy_successes"] = xray_min_proxy_successes
-            xray_require_distinct_outbound_ip = self._as_bool(
-                vcfg.get("xray_require_distinct_outbound_ip"),
-                False,
-            )
-            list_stats["xray_require_distinct_outbound_ip"] = (
-                xray_require_distinct_outbound_ip
-            )
-            alive_xray = await validate_configs_xray(
-                supported,
-                xray_path=xray_path,
-                probe_urls=xray_probe_urls,
-                min_probe_successes=xray_min_probe_successes,
-                attempts_per_config=xray_attempts_per_config,
-                min_attempt_successes=xray_min_attempt_successes,
-                probe_proxy_urls=xray_proxy_urls,
-                min_proxy_successes=xray_min_proxy_successes,
-                require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
-                timeout=self._as_float(
-                    vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0
-                ),
-                startup_timeout=self._as_float(
-                    vcfg.get("xray_startup_timeout_seconds"), 4.0, minimum=0.5
-                ),
-                concurrency=self._as_int(
-                    vcfg.get("xray_concurrency"), 6, minimum=1
-                ),
-                max_alive=xray_max_alive,
-            )
-            list_stats["checked"] = True
-            list_stats["filtered"] = True
-            list_stats["xray_alive"] = len(alive_xray)
-            xray_attempted = [
-                cfg for cfg in supported if getattr(cfg, "xray_was_checked", False)
-            ]
-            list_stats["xray_checked"] = len(xray_attempted)
-            self._update_health_history(xray_attempted)
-            self._update_source_health(xray_attempted, list_stats)
-            health_ban_min_alive = self._as_int(
-                self._quality_cfg().get("health_ban_min_alive"), 3, minimum=0
-            )
-            if len(alive_xray) > health_ban_min_alive:
-                alive_xray = [
-                    cfg for cfg in alive_xray if not self._is_health_or_source_banned(cfg)
-                ]
-            else:
-                logger.info(
-                    "%s Xray found %d alive configs (<= %d); "
-                    "skipping health history bans.",
-                    label,
-                    len(alive_xray),
-                    health_ban_min_alive,
-                )
-            list_stats["output_after_health"] = len(alive_xray)
-            list_stats["output_after_xray"] = len(alive_xray)
-            current = alive_xray
-            logger.info("%s after Xray validation: %d configs.", label, len(current))
-
-        return current
-
+        self._liveness_stats = self._context.liveness_stats
+        return result
     # --- stage 3+5: aggregate (split into dedup + sort/limit) ---
 
     def _xray_candidate_preselect(
@@ -1083,262 +427,53 @@ class PipelineRunner:
         return self._aggregator._country_balanced_limit(configs, max_total)
 
     def _quality_cfg(self) -> dict[str, Any]:
-        cfg = self._section("quality")
-        return cfg if isinstance(cfg, dict) else {}
+        """Access the quality settings section. Kept for compatibility."""
+        return self._quality.settings.section("quality")
 
     def _health_history_file(self) -> str | None:
-        raw = self._quality_cfg().get("health_history_file", "output/health-history.json")
-        return str(raw) if raw else None
+        return self._quality.health._file()
 
     def _load_health_history(self) -> dict[str, Any]:
-        if self._health_history is not None:
-            return self._health_history
-        path = self._health_history_file()
-        if not path:
-            self._health_history = {"configs": {}, "sources": {}}
-            return self._health_history
-        try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
-        data.setdefault("configs", {})
-        data.setdefault("sources", {})
-        self._health_history = data
-        return data
+        """Load health history. Kept for compatibility."""
+        return self._quality.health.load()
 
     def _write_health_history(self) -> str | None:
-        path = self._health_history_file()
-        if not path or self._health_history is None:
-            return None
-        payload = dict(self._health_history)
-        payload["updated_at"] = int(time.time())
-        try:
-            target = Path(path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            logger.warning("Could not write health history %s: %s", path, exc)
-            return None
-        return path
+        """Persist health history. Kept for compatibility."""
+        return self._quality.health.save()
 
     @staticmethod
     def _config_health_key(cfg: Config) -> str:
-        raw = cfg.raw_link or "|".join(
-            [
-                str(cfg.protocol),
-                str(cfg.address),
-                str(cfg.port),
-                str(cfg.uuid_or_password),
-                str(cfg.network),
-                str(cfg.security),
-            ]
-        )
-        return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
+        """Stable key for a config in health history."""
+        return HealthHistory.config_key(cfg)
 
     def _update_health_history(self, checked_configs: list[Config]) -> None:
-        if not self._as_bool(self._quality_cfg().get("health_history_enabled"), True):
-            return
-        history = self._load_health_history()
-        records = history.setdefault("configs", {})
-        now = int(time.time())
-        max_recent = self._as_int(
-            self._quality_cfg().get("health_recent_window"), 5, minimum=1
-        )
-        fail_threshold = self._as_int(
-            self._quality_cfg().get("ban_after_consecutive_failures"), 2, minimum=1
-        )
-        cooldown_seconds = int(
-            self._as_float(
-                self._quality_cfg().get("ban_cooldown_hours"), 12.0, minimum=0.1
-            )
-            * 3600
-        )
-        for cfg in checked_configs:
-            key = self._config_health_key(cfg)
-            record = records.setdefault(
-                key,
-                {
-                    "passes": 0,
-                    "fails": 0,
-                    "consecutive_failures": 0,
-                    "recent": [],
-                    "banned_until": 0,
-                },
-            )
-            alive = bool(getattr(cfg, "is_alive", False))
-            recent = list(record.get("recent") or [])
-            recent.append(alive)
-            record["recent"] = recent[-max_recent:]
-            record["last_seen"] = now
-            record["last_alive"] = now if alive else int(record.get("last_alive") or 0)
-            record["source"] = getattr(cfg, "source_name", "")
-            record["country"] = getattr(cfg, "country", "")
-            if alive:
-                record["passes"] = int(record.get("passes") or 0) + 1
-                record["consecutive_failures"] = 0
-                record["banned_until"] = 0
-            else:
-                failures = int(record.get("consecutive_failures") or 0) + 1
-                record["fails"] = int(record.get("fails") or 0) + 1
-                record["consecutive_failures"] = failures
-                if failures >= fail_threshold:
-                    record["banned_until"] = now + cooldown_seconds
-            setattr(cfg, "health_record", record)
+        """Update per-config health history. Kept for compatibility."""
+        self._quality.health.update(checked_configs)
 
     def _source_run_stats(self, checked_configs: list[Config]) -> dict[str, dict[str, int]]:
-        stats: dict[str, dict[str, int]] = {}
-        for cfg in checked_configs:
-            source = str(getattr(cfg, "source_name", "?") or "?")
-            item = stats.setdefault(source, {"checked": 0, "alive": 0})
-            item["checked"] += 1
-            if getattr(cfg, "is_alive", False):
-                item["alive"] += 1
-        return stats
+        """Compute source run statistics. Kept for compatibility."""
+        return self._quality.health.source_run_stats(checked_configs)
 
     def _update_source_health(
         self, checked_configs: list[Config], list_stats: dict[str, Any]
     ) -> None:
-        qcfg = self._quality_cfg()
-        source_stats = self._source_run_stats(checked_configs)
-        list_stats["sources"] = source_stats
-        if not self._as_bool(qcfg.get("source_health_enabled"), True):
-            return
-        min_checked = self._as_int(qcfg.get("source_min_checked"), 50, minimum=1)
-        bad_rate = self._as_float(qcfg.get("source_bad_alive_rate"), 0.02, minimum=0.0)
-        bad_runs = self._as_int(qcfg.get("source_bad_runs_to_ban"), 2, minimum=1)
-        cooldown_seconds = int(
-            self._as_float(qcfg.get("source_ban_cooldown_hours"), 12.0, minimum=0.1)
-            * 3600
-        )
-        now = int(time.time())
-        history = self._load_health_history().setdefault("sources", {})
-        for source, stats in source_stats.items():
-            checked = int(stats["checked"])
-            alive = int(stats["alive"])
-            rate = alive / checked if checked else 0.0
-            record = history.setdefault(
-                source, {"runs": 0, "bad_runs": 0, "banned_until": 0}
-            )
-            record["runs"] = int(record.get("runs") or 0) + 1
-            record["last_checked"] = checked
-            record["last_alive"] = alive
-            record["last_alive_rate"] = rate
-            record["updated_at"] = now
-            if checked >= min_checked and rate <= bad_rate:
-                record["bad_runs"] = int(record.get("bad_runs") or 0) + 1
-                if int(record["bad_runs"]) >= bad_runs:
-                    record["banned_until"] = now + cooldown_seconds
-            else:
-                record["bad_runs"] = 0
-                record["banned_until"] = 0
+        """Update per-source health history. Kept for compatibility."""
+        self._quality.health.update_sources(checked_configs, list_stats)
 
     def _is_health_or_source_banned(self, cfg: Config) -> bool:
-        if not self._as_bool(self._quality_cfg().get("health_history_enabled"), True):
-            return False
-        now = int(time.time())
-        history = self._load_health_history()
-        record = history.get("configs", {}).get(self._config_health_key(cfg), {})
-        if int(record.get("banned_until") or 0) > now:
-            setattr(cfg, "quality_block_reason", "health_ban")
-            return True
-        source = str(getattr(cfg, "source_name", "?") or "?")
-        source_record = history.get("sources", {}).get(source, {})
-        if int(source_record.get("banned_until") or 0) > now:
-            setattr(cfg, "quality_block_reason", "source_ban")
-            return True
-        return False
+        """Check if a config is banned. Kept for compatibility."""
+        return self._quality.is_banned(cfg)
 
     def _quality_score(self, cfg: Config) -> float:
-        qcfg = self._quality_cfg()
-        score = 60.0 if getattr(cfg, "is_alive", False) else 0.0
-        record = self._load_health_history().get("configs", {}).get(
-            self._config_health_key(cfg),
-            {},
-        )
-        recent = list(record.get("recent") or [])
-        if sum(1 for item in recent[-3:] if item) >= 2:
-            score += 20.0
-        if cfg.latency_ms is not None:
-            max_latency = self._as_float(qcfg.get("max_latency_ms"), 10000.0, minimum=1.0)
-            if cfg.latency_ms <= max_latency:
-                score += max(0.0, 10.0 * (1.0 - (float(cfg.latency_ms) / max_latency)))
-        if getattr(cfg, "country", None):
-            score += 5.0
-        source = str(getattr(cfg, "source_name", "?") or "?")
-        source_record = self._load_health_history().get("sources", {}).get(source, {})
-        source_rate = float(source_record.get("last_alive_rate") or 0.0)
-        if source_rate >= self._as_float(qcfg.get("source_good_alive_rate"), 0.2, minimum=0.0):
-            score += 5.0
-        proxy_checks = int(getattr(cfg, "xray_proxy_checks", 0) or 0)
-        proxy_successes = int(getattr(cfg, "xray_proxy_successes", 0) or 0)
-        if proxy_checks:
-            score += min(5.0, 5.0 * (proxy_successes / proxy_checks))
-        return score
+        """Compute quality score. Kept for compatibility."""
+        return self._quality.health.score(cfg)
 
     def _apply_quality_filters(
         self, configs_by_list: dict[str, list[Config]]
     ) -> dict[str, list[Config]]:
-        qcfg = self._quality_cfg()
-        max_latency = self._as_float(qcfg.get("max_latency_ms"), 10000.0, minimum=1.0)
-        drop_slow = self._as_bool(qcfg.get("drop_slow_configs"), True)
-        min_alive_to_skip_slow_drop = self._as_int(
-            qcfg.get("min_alive_to_skip_slow_drop"), 1, minimum=0
-        )
-        result: dict[str, list[Config]] = {}
-        quality_stats: dict[str, Any] = {
-            "drop_slow": drop_slow,
-            "max_latency_ms": max_latency,
-            "min_alive_to_skip_slow_drop": min_alive_to_skip_slow_drop,
-        }
-        for list_type, configs in configs_by_list.items():
-            fast: list[Config] = []
-            slow: list[Config] = []
-            for cfg in configs:
-                if drop_slow and cfg.latency_ms is not None and cfg.latency_ms > max_latency:
-                    slow.append(cfg)
-                else:
-                    fast.append(cfg)
-            kept = fast
-            slow_dropped = len(slow)
-            if fast and not slow:
-                for cfg in fast:
-                    setattr(cfg, "quality_score", self._quality_score(cfg))
-            elif len(fast) < min_alive_to_skip_slow_drop and slow:
-                # Preserve the last alive configs even if they are "slow".
-                for cfg in fast + slow:
-                    setattr(cfg, "quality_score", self._quality_score(cfg))
-                kept = fast + slow
-                slow_dropped = 0
-                quality_stats.setdefault("slow_preserved", {})[list_type] = len(slow)
-            else:
-                for cfg in fast:
-                    setattr(cfg, "quality_score", self._quality_score(cfg))
-            kept.sort(
-                key=lambda cfg: (
-                    -float(getattr(cfg, "quality_score", 0) or 0),
-                    cfg.latency_ms is None,
-                    float(cfg.latency_ms if cfg.latency_ms is not None else 10**9),
-                )
-            )
-            if kept:
-                result[list_type] = kept
-            quality_stats[list_type] = {
-                "input": len(configs),
-                "kept": len(kept),
-                "slow_dropped": slow_dropped,
-                "avg_score": (
-                    sum(float(getattr(cfg, "quality_score", 0) or 0) for cfg in kept)
-                    / len(kept)
-                    if kept
-                    else 0
-                ),
-            }
-        self._liveness_stats["quality"] = quality_stats
+        """Apply quality filters. Delegates to QualityFilter."""
+        result = self._quality.apply(configs_by_list)
+        self._liveness_stats["quality"] = self._context.liveness_stats["quality"]
         return result
 
     def _preprocess_configs(
