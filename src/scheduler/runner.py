@@ -35,6 +35,8 @@ from src.scheduler.stages.fetch import SourceFetcher
 from src.scheduler.stages.parse import LinkParser
 from src.scheduler.stages.filter import PreprocessFilter
 from src.scheduler.stages.aggregate import Aggregator
+from src.scheduler.stages.write import OutputWriter
+
 from src.sources.list_types import normalize_list_type
 
 logger = logging.getLogger(__name__)
@@ -73,6 +75,7 @@ class PipelineRunner:
         self._parser = LinkParser(self._context)
         self._preprocessor = PreprocessFilter(self._context)
         self._aggregator = Aggregator(self._context)
+        self._writer = OutputWriter(self._context)
         self._state = PipelineState()
 
     # --- settings ---
@@ -1364,6 +1367,8 @@ class PipelineRunner:
         """Take up to target configs, skipping keys already used by another list."""
         from src.scheduler.stages.aggregate import Aggregator
 
+
+
         return Aggregator._take_unique_configs(configs, target, used_keys)
 
     def _process_configs(
@@ -1693,54 +1698,16 @@ class PipelineRunner:
 
     def _write_output(self, configs: list[Config], output_file: str) -> int:
         """Write the subscription file via ``write_subscription``."""
-        try:
-            from src.aggregator.output import write_subscription
-        except (ImportError, AttributeError) as exc:
-            logger.error(
-                "Cannot import write_subscription: %s — writing plain fallback.", exc
-            )
-            return self._write_plain_fallback(configs, output_file)
-
-        try:
-            count = write_subscription(configs, output_file)
-        except Exception as exc:
-            logger.error("write_subscription failed: %s — plain fallback.", exc)
-            return self._write_plain_fallback(configs, output_file)
-
-        return int(count) if count else 0
+        return self._writer._write_output(configs, output_file)
 
     def _write_empty_output(self, output_file: str) -> None:
-        """Ensure the output file exists as a valid base64 subscription.
-
-        Even on empty / early-exit runs the file must be a decodable base64
-        subscription (containing at least the watermark entry) so that
-        consumers like Happ can always decode it and the CI ``verify output``
-        step counts configs consistently with the normal path.  Previously
-        this wrote a 0-byte plain file via ``_write_plain_fallback``, which
-        diverged from the normal path's ``write_subscription`` (base64 +
-        watermark) and left Happ with an undecodable file.  Falls back to a
-        plain empty file only if the subscription writer is unavailable.
-        """
-        try:
-            self._write_output([], output_file)
-        except Exception as exc:
-            logger.warning("Could not write empty output %s: %s", output_file, exc)
+        """Ensure the output file exists as a valid base64 subscription."""
+        self._writer._write_empty_output(output_file)
 
     @staticmethod
     def _write_plain_fallback(configs: list[Config], output_file: str) -> int:
-        """Last-resort writer: one ``raw_link`` per line (or ``to_dict``-derived)."""
-        try:
-            path = Path(output_file)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            lines = [c.raw_link for c in configs if c.raw_link]
-            with path.open("w", encoding="utf-8") as fh:
-                fh.write("\n".join(lines))
-                if lines:
-                    fh.write("\n")
-            return len(lines)
-        except Exception as exc:
-            logger.error("Plain fallback write failed for %s: %s", output_file, exc)
-            return 0
+        """Last-resort writer: one ``raw_link`` per line."""
+        return OutputWriter._write_plain_fallback(configs, output_file)
 
     # --- stage 6: publish ---
 
@@ -1780,9 +1747,6 @@ class PipelineRunner:
             )
             return
 
-        # Read the output file content in a worker thread so a slow/disk-bound
-        # read does not block the event loop (publish may run concurrently with
-        # other coroutines, and _publish_files could later be parallelised).
         try:
             content = await asyncio.to_thread(
                 Path(output_file).read_text, encoding="utf-8"
