@@ -10,6 +10,8 @@ from src.scheduler.stages.filter import (
     PreprocessFilter,
     Sampler,
 )
+from src.scheduler.stages.aggregate import Aggregator
+from src.scheduler.stages.write import OutputWriter
 from src.scheduler.stages.publish import Publisher
 
 __all__ = [
@@ -21,5 +23,7 @@ __all__ = [
     "DedupFilter",
     "Sampler",
     "PreprocessFilter",
+    "Aggregator",
+    "OutputWriter",
     "Publisher",
 ]
