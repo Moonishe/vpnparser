@@ -2410,7 +2410,7 @@ def test_url_list_source_fetches_each_url(monkeypatch) -> None:
         "https://example.com/b.txt": "vmess://b",
     }
 
-    async def fake_fetch_direct_url(url: str) -> str:
+    async def fake_fetch_direct_url(url: str, **kwargs) -> str:
         if url == "https://example.com/index.txt":
             return index_text
         return fetched.get(url, "")

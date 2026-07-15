@@ -403,11 +403,15 @@ class SourceManager:
         concurrency = self._int_source_value(source, "max_concurrent_urls", 10)
         concurrency = max(1, concurrency)
         semaphore = asyncio.Semaphore(concurrency)
+        timeout = self._float_source_value(source, "timeout", 30.0)
+        attempts = self._int_source_value(source, "attempts", 1)
 
         async def fetch_one(target: str) -> tuple[str, str] | None:
             async with semaphore:
                 try:
-                    content = await self._fetch_direct_url(target)
+                    content = await self._fetch_direct_url(
+                        target, timeout=timeout, attempts=attempts
+                    )
                 except Exception as exc:
                     logger.warning("url-list fetch failed for %s: %s", target, exc)
                     return None
@@ -464,6 +468,18 @@ class SourceManager:
         except (TypeError, ValueError):
             return default
         return max(1, value)
+
+    @staticmethod
+    def _float_source_value(source: dict, key: str, default: float) -> float:
+        """Read a float source setting, rejecting booleans."""
+        raw = source.get(key, default)
+        if isinstance(raw, bool):
+            return default
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return default
+        return value
 
     @staticmethod
     def _filter_files(
