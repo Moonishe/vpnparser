@@ -77,13 +77,17 @@ class LinkParser(PipelineStage):
         self.settings = context.settings
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         grouped = await self.parse_all_by_list(state.sources)
         state.parsed = grouped
         total = sum(len(cfgs) for cfgs in grouped.values())
         logger.info(
-            "Parsed %d configs total across %d list group(s).", total, len(grouped)
+            "Parsed %d configs total across %d list group(s).",
+            total,
+            len(grouped),
         )
         return state
 
@@ -102,7 +106,10 @@ class LinkParser(PipelineStage):
                     continue
 
                 links = await self.extract_links(
-                    sub_parser, content, filename, source_name
+                    sub_parser,
+                    content,
+                    filename,
+                    source_name,
                 )
                 if not links:
                     logger.debug("No links found in %s (%s).", filename, source_name)
@@ -139,12 +146,14 @@ class LinkParser(PipelineStage):
                     from src.validators.geoip import enrich_configs_geoip
 
                     api_url = str(
-                        vcfg.get("geoip_api_url", "http://ip-api.com/json/{ip}")
+                        vcfg.get("geoip_api_url", "http://ip-api.com/json/{ip}"),
                     )
                     await enrich_configs_geoip(to_enrich, api_url=api_url)
                     enriched = sum(1 for cfg in to_enrich if cfg.country is not None)
                     logger.info(
-                        "GeoIP enriched %d/%d configs.", enriched, len(to_enrich)
+                        "GeoIP enriched %d/%d configs.",
+                        enriched,
+                        len(to_enrich),
                     )
                 except Exception as exc:
                     logger.warning("GeoIP enrichment failed: %s", exc)
@@ -196,7 +205,10 @@ class LinkParser(PipelineStage):
         return links
 
     async def llm_fallback(
-        self, content: str, filename: str, source_name: str
+        self,
+        content: str,
+        filename: str,
+        source_name: str,
     ) -> list[str]:
         """Try LLM extraction when regex found 0 links."""
         lcfg = self.settings.section("llm")
@@ -212,7 +224,9 @@ class LinkParser(PipelineStage):
         provider = lcfg.get("provider", "gemini")
         model = lcfg.get("model", "gemini-2.0-flash")
         min_text_length = self.settings.as_int(
-            lcfg.get("min_text_length"), 100, minimum=0
+            lcfg.get("min_text_length"),
+            100,
+            minimum=0,
         )
 
         if not should_use_llm(content, [], min_text_length=min_text_length):
@@ -230,7 +244,10 @@ class LinkParser(PipelineStage):
             links = await llm.extract_links(content)
         except Exception as exc:
             logger.warning(
-                "LLM fallback failed for %s (%s): %s", filename, source_name, exc
+                "LLM fallback failed for %s (%s): %s",
+                filename,
+                source_name,
+                exc,
             )
             return []
 

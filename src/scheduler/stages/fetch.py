@@ -15,7 +15,9 @@ class SourceFetcher(PipelineStage):
     """Fetch all configured source files concurrently."""
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         assert context is not None  # runner always supplies context
         manager = SourceManager(

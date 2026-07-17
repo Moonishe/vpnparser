@@ -205,7 +205,7 @@ class GitHubPublisher:
         if wait > _RATELIMIT_WAIT_CAP:
             raise GitHubPublishError(
                 f"GitHub rate limit exhausted; reset in {wait:.0f}s "
-                f"(>{_RATELIMIT_WAIT_CAP}s cap) — aborting publish."
+                f"(>{_RATELIMIT_WAIT_CAP}s cap) — aborting publish.",
             )
         logger.warning(
             "GitHub rate limit hit while publishing; sleeping %.1fs before retrying.",
@@ -279,7 +279,11 @@ class GitHubPublisher:
         if response.status_code in (200, 201):
             action = "updated" if sha else "created"
             logger.info(
-                "Successfully %s %s in %s/%s.", action, path, self.owner, self.repo
+                "Successfully %s %s in %s/%s.",
+                action,
+                path,
+                self.owner,
+                self.repo,
             )
             return True
 

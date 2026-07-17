@@ -31,7 +31,7 @@ ALL_PARSERS: list[BaseParser] = [
 
 # O(1) scheme → parser dispatch table, built once at import.
 # Replaces the O(N) linear scan over ALL_PARSERS in _parse_one_link: instead
-# of calling can_parse() on every parser for every link (8 × N redundant
+# of calling can_parse() on every parser for every link (8 x N redundant
 # strip+lower+startswith), the scheme is extracted once per link and the
 # parser is found via a single dict lookup.
 # Each parser's ``schemes`` ClassVar declares which URL schemes it handles

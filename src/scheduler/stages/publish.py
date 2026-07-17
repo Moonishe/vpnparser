@@ -21,7 +21,9 @@ class Publisher(PipelineStage):
         self.context = context
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         assert context is not None  # runner always supplies context
         if not context.github_token:
@@ -37,7 +39,7 @@ class Publisher(PipelineStage):
 
         if not owner or not repo:
             logger.warning(
-                "Publish requested but GitHub owner/repo not configured — skipping."
+                "Publish requested but GitHub owner/repo not configured — skipping.",
             )
             return state
 
@@ -48,7 +50,8 @@ class Publisher(PipelineStage):
             return state
 
         commit_message = commit_tpl.replace(
-            "{timestamp}", time.strftime("%Y-%m-%d %H:%M:%S")
+            "{timestamp}",
+            time.strftime("%Y-%m-%d %H:%M:%S"),
         )
 
         async with GitHubPublisher(
@@ -66,7 +69,10 @@ class Publisher(PipelineStage):
                 ):
                     repo_path = str(configured_combined_path)
                 await self._publish_file(
-                    publisher, output_file, repo_path, commit_message
+                    publisher,
+                    output_file,
+                    repo_path,
+                    commit_message,
                 )
 
         state.published = True
@@ -74,7 +80,10 @@ class Publisher(PipelineStage):
 
     @staticmethod
     async def _publish_file(
-        publisher: Any, output_file: str, repo_path: str, commit_message: str
+        publisher: Any,
+        output_file: str,
+        repo_path: str,
+        commit_message: str,
     ) -> None:
         try:
             from src.utils.paths import resolve_safe_output_path
@@ -87,7 +96,8 @@ class Publisher(PipelineStage):
             content = await asyncio.to_thread(safe_path.read_text, encoding="utf-8")
         except FileNotFoundError:
             logger.exception(
-                "Cannot publish: output file %s does not exist.", output_file
+                "Cannot publish: output file %s does not exist.",
+                output_file,
             )
             return
         except Exception:
@@ -98,7 +108,8 @@ class Publisher(PipelineStage):
             ok = await publisher.publish_file(repo_path, content, commit_message)
             if not ok:
                 logger.error(
-                    "Publish completed but reported failure for %s.", repo_path
+                    "Publish completed but reported failure for %s.",
+                    repo_path,
                 )
         except Exception:
             logger.exception("Publish failed for %s", repo_path)

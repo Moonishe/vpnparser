@@ -17,28 +17,37 @@ class QualityFilter(PipelineStage):
     """Apply quality filters and health/source bans to validated configs."""
 
     def __init__(
-        self, context: PipelineContext, health: HealthHistory | None = None
+        self,
+        context: PipelineContext,
+        health: HealthHistory | None = None,
     ) -> None:
         self.context = context
         self.settings = context.settings
         self.health = health or HealthHistory(self.settings)
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         state.validated = self.apply(state.validated)
         return state
 
     def apply(
-        self, configs_by_list: dict[str, list[Config]]
+        self,
+        configs_by_list: dict[str, list[Config]],
     ) -> dict[str, list[Config]]:
         qcfg = self.settings.section("quality")
         max_latency = self.settings.as_float(
-            qcfg.get("max_latency_ms"), 10000.0, minimum=1.0
+            qcfg.get("max_latency_ms"),
+            10000.0,
+            minimum=1.0,
         )
         drop_slow = self.settings.as_bool(qcfg.get("drop_slow_configs"), True)
         min_alive_to_skip_slow_drop = self.settings.as_int(
-            qcfg.get("min_alive_to_skip_slow_drop"), 1, minimum=0
+            qcfg.get("min_alive_to_skip_slow_drop"),
+            1,
+            minimum=0,
         )
         result: dict[str, list[Config]] = {}
         quality_stats: dict[str, Any] = {
@@ -77,7 +86,7 @@ class QualityFilter(PipelineStage):
                     -float(getattr(cfg, "quality_score", 0) or 0),
                     cfg.latency_ms is None,
                     float(cfg.latency_ms if cfg.latency_ms is not None else 10**9),
-                )
+                ),
             )
             if kept:
                 result[list_type] = kept

@@ -202,7 +202,10 @@ def split_host_port(hostport: str) -> tuple[str, int] | None:
 
 
 def parse_password_host_port(
-    link: str, protocol: str, *, network: str = "tcp"
+    link: str,
+    protocol: str,
+    *,
+    network: str = "tcp",
 ) -> Config | None:
     """Parse a ``protocol://PASSWORD@HOST:PORT?params#REMARK`` link.
 
@@ -325,7 +328,7 @@ _PLACEHOLDER_PATTERNS = re.compile(
     r"|\bSHORT_ID"  # SHORT_ID, SHORT_ID_1, ... (no trailing \b: would block _N suffix)  # noqa: E501
     r"|\bPASSWORD\b"  # literal "PASSWORD"
     r"|\byour[_-]?domain\b"  # yourdomain.com, your-domain.com (word-bounded: not yourdomains.com)  # noqa: E501
-    r"|\bexample\.com\b"  # example.com (IANA reserved; word-bounded: not bestexample.com)  # noqa: E501
+    r"|\bexample\.com\b",  # example.com (IANA reserved; word-bounded: not bestexample.com)  # noqa: E501
 )
 
 # Advertising in remark — Telegram handles, URLs, promotional text.
@@ -357,7 +360,7 @@ _AD_PATTERNS = re.compile(
     r"|oneclickvpn"
     r"|v2ray.*pool"
     r"|shadowproxy"
-    r"|gozargah"
+    r"|gozargah",
 )
 
 # Valid UUID format (8-4-4-4-12 hex, hyphens optional). Module-level so it is
@@ -366,7 +369,7 @@ _AD_PATTERNS = re.compile(
 # (b831381d4cfa...) forms — some vmess/vless sources emit 32 hex chars without
 # hyphens, which is a valid RFC 4122 representation.
 _UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$"
+    r"^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$",
 )
 
 

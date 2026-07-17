@@ -65,8 +65,7 @@ def _git_origin_slug() -> str | None:
 
 def _slug_from_remote_url(url: str) -> str | None:
     cleaned = url.strip()
-    if cleaned.endswith(".git"):
-        cleaned = cleaned[:-4]
+    cleaned = cleaned.removesuffix(".git")
 
     if "github.com:" in cleaned:
         tail = cleaned.split("github.com:", 1)[1]

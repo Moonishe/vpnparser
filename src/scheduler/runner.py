@@ -22,7 +22,6 @@ import logging
 import os
 import time
 from collections import Counter
-from pathlib import Path
 from typing import Any
 
 from src.parsers.base import Config
@@ -149,7 +148,9 @@ class PipelineRunner:
         if not results:
             logger.warning("No source results fetched — pipeline produced nothing.")
             return await self._finish_empty_run(
-                output_file, status="no_sources", publish=publish
+                output_file,
+                status="no_sources",
+                publish=publish,
             )
 
         # 2. Parse all content into Config objects grouped by source list type.
@@ -162,10 +163,12 @@ class PipelineRunner:
         )
         if total_count == 0:
             logger.warning(
-                "No configs parsed from sources — pipeline produced nothing."
+                "No configs parsed from sources — pipeline produced nothing.",
             )
             return await self._finish_empty_run(
-                output_file, status="no_configs_parsed", publish=publish
+                output_file,
+                status="no_configs_parsed",
+                publish=publish,
             )
 
         # 3. Preprocess each list type: garbage -> sample -> dedup -> country.
@@ -182,22 +185,28 @@ class PipelineRunner:
         if not preprocessed_by_list:
             logger.warning("No configs matched allowed countries.")
             return await self._finish_empty_run(
-                output_file, status="no_allowed_countries", publish=publish
+                output_file,
+                status="no_allowed_countries",
+                publish=publish,
             )
 
         preprocessed_by_list = await self._validate_liveness_by_list(
-            preprocessed_by_list
+            preprocessed_by_list,
         )
         if not preprocessed_by_list:
             logger.warning("No configs survived liveness validation.")
             return await self._finish_empty_run(
-                output_file, status="no_live_configs", publish=publish
+                output_file,
+                status="no_live_configs",
+                publish=publish,
             )
         preprocessed_by_list = self._apply_quality_filters(preprocessed_by_list)
         if not preprocessed_by_list:
             logger.warning("No configs survived quality/history filters.")
             return await self._finish_empty_run(
-                output_file, status="no_quality_configs", publish=publish
+                output_file,
+                status="no_quality_configs",
+                publish=publish,
             )
 
         # 4. Build combined output from all live configs, then round-robin by
@@ -250,7 +259,10 @@ class PipelineRunner:
                 split_count = self._write_output(split_configs, split_file)
                 self._record_output_stats(list_type, split_file, split_configs)
                 logger.info(
-                    "Wrote %d %s configs to %s.", split_count, list_type, split_file
+                    "Wrote %d %s configs to %s.",
+                    split_count,
+                    list_type,
+                    split_file,
                 )
             else:
                 self._write_empty_output(split_file)
@@ -304,11 +316,15 @@ class PipelineRunner:
     # --- stage 3: country filter ---
 
     def _filter_countries(
-        self, configs: list[Config], *, list_type: str = "mixed"
+        self,
+        configs: list[Config],
+        *,
+        list_type: str = "mixed",
     ) -> list[Config]:
         """Filter configs by allowed countries. Delegates to CountryFilter."""
         return CountryFilter(self._context).filter_countries(
-            configs, list_type=list_type
+            configs,
+            list_type=list_type,
         )
 
     # --- optional network liveness validation ---
@@ -325,7 +341,9 @@ class PipelineRunner:
     ) -> list[str]:
         """Search for working SOCKS5 proxies. Kept for compatibility."""
         result = await self._liveness._search_validator_proxy_pool(
-            load_proxy_pool, sources, pool_cfg
+            load_proxy_pool,
+            sources,
+            pool_cfg,
         )
         self._liveness_stats = self._context.liveness_stats
         return result
@@ -336,7 +354,8 @@ class PipelineRunner:
         return LivenessValidator._redact_proxy_url(proxy_url)
 
     async def _validate_liveness_by_list(
-        self, configs_by_list: dict[str, list[Config]]
+        self,
+        configs_by_list: dict[str, list[Config]],
     ) -> dict[str, list[Config]]:
         """Optionally run TCP/TLS/Xray liveness checks for each list type."""
         result = await self._liveness.validate_by_list(configs_by_list)
@@ -366,7 +385,10 @@ class PipelineRunner:
     # --- stage 3+5: aggregate (split into dedup + sort/limit) ---
 
     def _xray_candidate_preselect(
-        self, configs: list[Config], max_total: int, list_type: str
+        self,
+        configs: list[Config],
+        max_total: int,
+        list_type: str,
     ) -> list[Config]:
         """Preselect only configs that could enter the final subscription."""
         if normalize_list_type(list_type) == "whitelist":
@@ -382,7 +404,9 @@ class PipelineRunner:
         return self._aggregator._sort_and_limit(configs)
 
     def _country_balanced_limit(
-        self, configs: list[Config], max_total: int
+        self,
+        configs: list[Config],
+        max_total: int,
     ) -> list[Config]:
         """Limit configs by taking one server per country in repeated rounds."""
         return self._aggregator._country_balanced_limit(configs, max_total)
@@ -412,13 +436,16 @@ class PipelineRunner:
         self._quality.health.update(checked_configs)
 
     def _source_run_stats(
-        self, checked_configs: list[Config]
+        self,
+        checked_configs: list[Config],
     ) -> dict[str, dict[str, int]]:
         """Compute source run statistics. Kept for compatibility."""
         return self._quality.health.source_run_stats(checked_configs)
 
     def _update_source_health(
-        self, checked_configs: list[Config], list_stats: dict[str, Any]
+        self,
+        checked_configs: list[Config],
+        list_stats: dict[str, Any],
     ) -> None:
         """Update per-source health history. Kept for compatibility."""
         self._quality.health.update_sources(checked_configs, list_stats)
@@ -432,7 +459,8 @@ class PipelineRunner:
         return self._quality.health.score(cfg)
 
     def _apply_quality_filters(
-        self, configs_by_list: dict[str, list[Config]]
+        self,
+        configs_by_list: dict[str, list[Config]],
     ) -> dict[str, list[Config]]:
         """Apply quality filters. Delegates to QualityFilter."""
         result = self._quality.apply(configs_by_list)
@@ -453,14 +481,18 @@ class PipelineRunner:
         return self._aggregator._whitelist_balance(configs, max_total)
 
     def _build_mixed_output(
-        self, preprocessed_by_list: dict[str, list[Config]], max_total: int
+        self,
+        preprocessed_by_list: dict[str, list[Config]],
+        max_total: int,
     ) -> list[Config]:
         """Build a strict 50/50 blacklist + whitelist mix from live configs."""
         return self._aggregator._build_mixed_output(preprocessed_by_list, max_total)
 
     @staticmethod
     def _take_unique_configs(
-        configs: list[Config], target: int, used_keys: set[Any]
+        configs: list[Config],
+        target: int,
+        used_keys: set[Any],
     ) -> list[Config]:
         """Take up to target configs, skipping keys already used by another list."""
         return Aggregator._take_unique_configs(configs, target, used_keys)
@@ -594,14 +626,16 @@ class PipelineRunner:
         split_output_files = self._split_output_files(combined_output_file)
         self._write_empty_split_outputs(combined_output_file)
         mix_output_file = self._mix_output_file(
-            combined_output_file, split_output_files
+            combined_output_file,
+            split_output_files,
         )
         if mix_output_file:
             self._write_empty_output(mix_output_file)
         self._clear_location_outputs()
 
     def _configured_subscription_output_paths(
-        self, combined_output_file: str
+        self,
+        combined_output_file: str,
     ) -> list[str]:
         """Return all subscription paths that should stay in sync on every run.
 
@@ -612,7 +646,8 @@ class PipelineRunner:
         split_output_files = self._split_output_files(combined_output_file)
         paths.extend(split_output_files.values())
         mix_output_file = self._mix_output_file(
-            combined_output_file, split_output_files
+            combined_output_file,
+            split_output_files,
         )
         if mix_output_file:
             paths.append(mix_output_file)
@@ -675,7 +710,9 @@ class PipelineRunner:
         self._writer._clear_location_outputs()
 
     def _build_location_outputs(
-        self, configs: list[Config], per_location_limit: int
+        self,
+        configs: list[Config],
+        per_location_limit: int,
     ) -> dict[str, list[Config]]:
         return self._writer._build_location_outputs(configs, per_location_limit)
 
@@ -708,7 +745,10 @@ class PipelineRunner:
         return str(raw)
 
     def _record_output_stats(
-        self, name: str, output_file: str, configs: list[Config]
+        self,
+        name: str,
+        output_file: str,
+        configs: list[Config],
     ) -> None:
         """Store exact output counts/countries before raw links lose metadata."""
         country_counts = Counter(
@@ -802,7 +842,7 @@ class PipelineRunner:
         if not owner or not repo:
             logger.warning(
                 "Publish requested but GitHub owner/repo not configured "
-                "(set publisher.owner/repo in settings or GITHUB_OWNER/GITHUB_REPO env) — skipping."  # noqa: E501
+                "(set publisher.owner/repo in settings or GITHUB_OWNER/GITHUB_REPO env) — skipping.",  # noqa: E501
             )
             return
 
@@ -815,7 +855,8 @@ class PipelineRunner:
             content = await asyncio.to_thread(safe_path.read_text, encoding="utf-8")
         except FileNotFoundError:
             logger.exception(
-                "Cannot publish: output file %s does not exist.", output_file
+                "Cannot publish: output file %s does not exist.",
+                output_file,
             )
             return
         except Exception:
@@ -823,7 +864,8 @@ class PipelineRunner:
             return
 
         commit_message = commit_tpl.replace(
-            "{timestamp}", time.strftime("%Y-%m-%d %H:%M:%S")
+            "{timestamp}",
+            time.strftime("%Y-%m-%d %H:%M:%S"),
         )
 
         try:
@@ -842,7 +884,8 @@ class PipelineRunner:
                 ok = await publisher.publish_file(repo_path, content, commit_message)
                 if not ok:
                     logger.error(
-                        "Publish completed but reported failure for %s.", repo_path
+                        "Publish completed but reported failure for %s.",
+                        repo_path,
                     )
         except Exception:
             logger.exception("Publish failed")

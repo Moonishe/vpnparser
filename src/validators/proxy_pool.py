@@ -33,7 +33,7 @@ _PROXY_RE = re.compile(
     r"(?:socks5h?://|socks://)?"
     r"(?P<host>(?:\d{1,3}\.){3}\d{1,3})"
     r"(?::|\s+)"
-    r"(?P<port>\d{1,5})"
+    r"(?P<port>\d{1,5})",
 )
 
 

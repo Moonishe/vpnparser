@@ -28,11 +28,17 @@ _EMPTY_SERVER_NAMES = {"", "none", "null", "false", "0", "-"}
 
 
 async def _open_connection_direct(
-    host: str, port: int, ssl_context: ssl.SSLContext, server_hostname: str | None
+    host: str,
+    port: int,
+    ssl_context: ssl.SSLContext,
+    server_hostname: str | None,
 ) -> tuple[Any, Any]:
     """Direct TLS connection."""
     return await asyncio.open_connection(
-        host, port, ssl=ssl_context, server_hostname=server_hostname
+        host,
+        port,
+        ssl=ssl_context,
+        server_hostname=server_hostname,
     )
 
 
@@ -50,7 +56,9 @@ async def _open_connection_via_socks(
     sock = await proxy.connect(dest_host=host, dest_port=port, timeout=None)
     # Wrap the raw socket into an SSL-wrapped asyncio connection.
     reader, writer = await asyncio.open_connection(
-        sock=sock, ssl=ssl_context, server_hostname=server_hostname
+        sock=sock,
+        ssl=ssl_context,
+        server_hostname=server_hostname,
     )
     return reader, writer
 
@@ -80,8 +88,7 @@ def _clean_server_name(value: str) -> str | None:
         cleaned = cleaned.split("/", 1)[0]
     cleaned = cleaned.strip().strip("[]").strip()
 
-    if cleaned.startswith("*."):
-        cleaned = cleaned[2:]
+    cleaned = cleaned.removeprefix("*.")
 
     if cleaned.count(":") == 1:
         host, port = cleaned.rsplit(":", 1)
@@ -152,7 +159,7 @@ async def tls_check(
 
     Returns True if the handshake completes successfully, False on any error.
     """
-    server_hostname = sni if sni else host
+    server_hostname = sni or host
     try:
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
@@ -167,7 +174,11 @@ async def tls_check(
         if proxy_url:
             reader, writer = await asyncio.wait_for(
                 _open_connection_via_socks(
-                    host, port, ssl_context, server_hostname, proxy_url
+                    host,
+                    port,
+                    ssl_context,
+                    server_hostname,
+                    proxy_url,
                 ),
                 timeout=timeout,
             )

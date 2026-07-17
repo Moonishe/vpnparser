@@ -50,7 +50,9 @@ def test_history_persistence() -> None:
         hist.record("socks5://1.2.3.4:1080", False)
         hist.save(str(path))
 
-        loaded = ProxyHealthHistory.load(str(path), window=3, ban_after_consecutive_failures=2)
+        loaded = ProxyHealthHistory.load(
+            str(path), window=3, ban_after_consecutive_failures=2
+        )
         assert loaded.records["socks5://1.2.3.4:1080"]["attempts"] == 2
         assert loaded.records["socks5://1.2.3.4:1080"]["successes"] == 1
 

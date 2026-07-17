@@ -81,7 +81,7 @@ class HealthHistory:
                 str(cfg.uuid_or_password),
                 str(cfg.network),
                 str(cfg.security),
-            ]
+            ],
         )
         return (
             __import__("hashlib")
@@ -112,16 +112,22 @@ class HealthHistory:
         records = history.setdefault("configs", {})
         now = int(__import__("time").time())
         max_recent = self.settings.as_int(
-            self._cfg().get("health_recent_window"), 5, minimum=1
+            self._cfg().get("health_recent_window"),
+            5,
+            minimum=1,
         )
         fail_threshold = self.settings.as_int(
-            self._cfg().get("ban_after_consecutive_failures"), 2, minimum=1
+            self._cfg().get("ban_after_consecutive_failures"),
+            2,
+            minimum=1,
         )
         cooldown_seconds = int(
             self.settings.as_float(
-                self._cfg().get("ban_cooldown_hours"), 12.0, minimum=0.1
+                self._cfg().get("ban_cooldown_hours"),
+                12.0,
+                minimum=0.1,
             )
-            * 3600
+            * 3600,
         )
         for cfg in checked_configs:
             key = self.config_key(cfg)
@@ -156,7 +162,8 @@ class HealthHistory:
             cfg.health_record = record
 
     def source_run_stats(
-        self, checked_configs: list[Config]
+        self,
+        checked_configs: list[Config],
     ) -> dict[str, dict[str, int]]:
         stats: dict[str, dict[str, int]] = {}
         for cfg in checked_configs:
@@ -168,7 +175,9 @@ class HealthHistory:
         return stats
 
     def update_sources(
-        self, checked_configs: list[Config], list_stats: dict[str, Any]
+        self,
+        checked_configs: list[Config],
+        list_stats: dict[str, Any],
     ) -> None:
         qcfg = self._cfg()
         source_stats = self.source_run_stats(checked_configs)
@@ -176,19 +185,27 @@ class HealthHistory:
         if not self.source_health_enabled():
             return
         min_checked = self.settings.as_int(
-            qcfg.get("source_min_checked"), 50, minimum=1
+            qcfg.get("source_min_checked"),
+            50,
+            minimum=1,
         )
         bad_rate = self.settings.as_float(
-            qcfg.get("source_bad_alive_rate"), 0.02, minimum=0.0
+            qcfg.get("source_bad_alive_rate"),
+            0.02,
+            minimum=0.0,
         )
         bad_runs = self.settings.as_int(
-            qcfg.get("source_bad_runs_to_ban"), 2, minimum=1
+            qcfg.get("source_bad_runs_to_ban"),
+            2,
+            minimum=1,
         )
         cooldown_seconds = int(
             self.settings.as_float(
-                qcfg.get("source_ban_cooldown_hours"), 12.0, minimum=0.1
+                qcfg.get("source_ban_cooldown_hours"),
+                12.0,
+                minimum=0.1,
             )
-            * 3600
+            * 3600,
         )
         now = int(__import__("time").time())
         history = self.load().setdefault("sources", {})
@@ -197,7 +214,8 @@ class HealthHistory:
             alive = int(stats["alive"])
             rate = alive / checked if checked else 0.0
             record = history.setdefault(
-                source, {"runs": 0, "bad_runs": 0, "banned_until": 0}
+                source,
+                {"runs": 0, "bad_runs": 0, "banned_until": 0},
             )
             record["runs"] = int(record.get("runs") or 0) + 1
             record["last_checked"] = checked
@@ -221,7 +239,9 @@ class HealthHistory:
             score += 20.0
         if cfg.latency_ms is not None:
             max_latency = self.settings.as_float(
-                qcfg.get("max_latency_ms"), 10000.0, minimum=1.0
+                qcfg.get("max_latency_ms"),
+                10000.0,
+                minimum=1.0,
             )
             if cfg.latency_ms <= max_latency:
                 score += max(0.0, 10.0 * (1.0 - (float(cfg.latency_ms) / max_latency)))
@@ -231,7 +251,9 @@ class HealthHistory:
         source_record = self.load().get("sources", {}).get(source, {})
         source_rate = float(source_record.get("last_alive_rate") or 0.0)
         if source_rate >= self.settings.as_float(
-            qcfg.get("source_good_alive_rate"), 0.2, minimum=0.0
+            qcfg.get("source_good_alive_rate"),
+            0.2,
+            minimum=0.0,
         ):
             score += 5.0
         proxy_checks = int(getattr(cfg, "xray_proxy_checks", 0) or 0)

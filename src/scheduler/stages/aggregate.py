@@ -21,7 +21,9 @@ class Aggregator(PipelineStage):
         self.settings = context.settings
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         """Aggregate preprocessed lists into a single combined list."""
         max_total = self._max_configs()
@@ -53,7 +55,9 @@ class Aggregator(PipelineStage):
             return configs[:max_configs]
 
     def _country_balanced_limit(
-        self, configs: list[Config], max_total: int
+        self,
+        configs: list[Config],
+        max_total: int,
     ) -> list[Config]:
         """Limit configs by taking one server per country in repeated rounds."""
         if max_total <= 0 or not configs:
@@ -102,7 +106,7 @@ class Aggregator(PipelineStage):
                     -float(getattr(cfg, "quality_score", 0) or 0),
                     cfg.latency_ms is None,
                     float(cfg.latency_ms if cfg.latency_ms is not None else 10**9),
-                )
+                ),
             )
             groups["__UNKNOWN__"] = unknown_bucket
 
@@ -112,7 +116,7 @@ class Aggregator(PipelineStage):
                     -float(getattr(cfg, "quality_score", 0) or 0),
                     cfg.latency_ms is None,
                     float(cfg.latency_ms if cfg.latency_ms is not None else 10**9),
-                )
+                ),
             )
 
         countries = sorted(groups)
@@ -179,7 +183,9 @@ class Aggregator(PipelineStage):
         return result
 
     def _build_mixed_output(
-        self, preprocessed_by_list: dict[str, list[Config]], max_total: int
+        self,
+        preprocessed_by_list: dict[str, list[Config]],
+        max_total: int,
     ) -> list[Config]:
         """Build a strict 50/50 blacklist + whitelist mix from live configs."""
         if max_total <= 0:
@@ -190,10 +196,12 @@ class Aggregator(PipelineStage):
         used_keys: set[Any] = set()
 
         blacklist_candidates = self._sort_and_limit(
-            preprocessed_by_list.get("blacklist", [])
+            preprocessed_by_list.get("blacklist", []),
         )
         blacklist_part = self._take_unique_configs(
-            blacklist_candidates, blacklist_target, used_keys
+            blacklist_candidates,
+            blacklist_target,
+            used_keys,
         )
 
         whitelist_source = [
@@ -202,10 +210,13 @@ class Aggregator(PipelineStage):
             if cfg.dedup_key not in used_keys
         ]
         whitelist_candidates = self._whitelist_balance(
-            whitelist_source, whitelist_target
+            whitelist_source,
+            whitelist_target,
         )
         whitelist_part = self._take_unique_configs(
-            whitelist_candidates, whitelist_target, used_keys
+            whitelist_candidates,
+            whitelist_target,
+            used_keys,
         )
 
         if len(blacklist_part) < blacklist_target:
@@ -232,7 +243,9 @@ class Aggregator(PipelineStage):
 
     @staticmethod
     def _take_unique_configs(
-        configs: list[Config], target: int, used_keys: set[Any]
+        configs: list[Config],
+        target: int,
+        used_keys: set[Any],
     ) -> list[Config]:
         """Take up to target configs, skipping keys already used by another list."""
         if target <= 0:
@@ -250,7 +263,11 @@ class Aggregator(PipelineStage):
         return selected
 
     def process_configs(
-        self, configs: list[Config], *, label: str, preprocessor: Any
+        self,
+        configs: list[Config],
+        *,
+        label: str,
+        preprocessor: Any,
     ) -> list[Config]:
         """Run configs through preprocess -> sort -> limit."""
         configs = preprocessor.preprocess(configs, label=label)

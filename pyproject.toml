@@ -78,7 +78,48 @@ ignore = [
     "S101",    # assert used in tests
     "S603",    # subprocess calls in validators (reviewed)
     "S607",    # partial executable paths in subprocess
-    "PLR2004", # magic value comparisons
+    "PLR2004", # magic value comparisons — many in data comparisons
+    "PLC0415", # lazy imports — intentional for circular deps / dynamic loading
+    "PLR0911", # too many returns — will refactor later
+    "PLR0912", # too many branches — will refactor later
+    "PLR0913", # too many arguments — will refactor later
+    "PLR0915", # too many statements — will refactor later
+    "TRY300",  # try body too long — readability preference
+    "ASYNC109",# async timeout param — intentional pattern
+    "RUF059",  # unpacked variable never used
+    "S310",    # URL security — reviewed safe
+    "S311",    # random — not security-sensitive
+    "S104",    # bind to all interfaces — intentional for service
+    "PLW0108", # unnecessary lambda — readability preference
+    "PLW2901", # loop variable overwritten — intentional pattern
+    "RUF002",  # docstring unicode — data content
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/notify/telegram.py" = [
+    "RUF001",   # confusing unicode — data content, not code
+    "TRY003",   # exception messages
+]
+"src/validators/xray_probe.py" = [
+    "TRY003",   # exception messages
+]
+"src/scheduler/stages/liveness.py" = [
+    "RUF001",   # confusing unicode
+]
+"src/publisher/github.py" = [
+    "TRY003",   # exception messages
+]
+"src/sources/github.py" = [
+    "TRY003",   # exception messages
+]
+"src/utils/paths.py" = [
+    "TRY003",   # exception messages
+]
+"src/validators/country_filter.py" = [
+    "TRY003",   # exception messages
+]
+"src/validators/geoip.py" = [
+    "TRY003",   # exception messages
 ]
 
 [tool.ruff.lint.pydocstyle]

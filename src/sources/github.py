@@ -195,7 +195,7 @@ class GitHubClient:
                 # Cap the wait so we never block forever in a pipeline.
                 if wait > 300:
                     raise GitHubRateLimitError(
-                        f"GitHub rate limit exhausted; reset in {wait:.0f}s (>300s cap)."  # noqa: E501
+                        f"GitHub rate limit exhausted; reset in {wait:.0f}s (>300s cap).",  # noqa: E501
                     )
                 logger.warning(
                     "GitHub rate limit hit; sleeping %.1fs before retrying %s",
@@ -210,7 +210,7 @@ class GitHubClient:
                     retry_after = response.headers.get("Retry-After")
                     if remaining == "0" or retry_after:
                         raise GitHubRateLimitError(
-                            "GitHub rate limit exhausted after retry."
+                            "GitHub rate limit exhausted after retry.",
                         )
 
         # --- 404: not found → graceful empty result ---
@@ -256,7 +256,7 @@ class GitHubClient:
                     "path": entry.get("path", ""),
                     "download_url": entry.get("download_url"),
                     "type": entry.get("type", "file"),
-                }
+                },
             )
         return result
 
@@ -273,17 +273,19 @@ class GitHubClient:
         response: httpx.Response | None = None
         for attempt in range(1, _RAW_FETCH_ATTEMPTS + 1):
             try:
-                async with httpx.AsyncClient(
-                    timeout=self._timeout,
-                    follow_redirects=True,
-                ) as client:
-                    # Bound concurrent raw downloads too — raw hosts also
-                    # rate-limit, and a burst of parallel fetches can trigger it.
-                    async with self._api_semaphore:
-                        response = await client.get(
-                            download_url,
-                            headers=self._raw_headers(),
-                        )
+                # Bound concurrent raw downloads too — raw hosts also
+                # rate-limit, and a burst of parallel fetches can trigger it.
+                async with (
+                    httpx.AsyncClient(
+                        timeout=self._timeout,
+                        follow_redirects=True,
+                    ) as client,
+                    self._api_semaphore,
+                ):
+                    response = await client.get(
+                        download_url,
+                        headers=self._raw_headers(),
+                    )
                 break
             except httpx.RequestError as exc:
                 if attempt < _RAW_FETCH_ATTEMPTS:
@@ -300,7 +302,8 @@ class GitHubClient:
         # The loop above either breaks (response set) or returns "" on exhaustion.
         if response is None:
             logger.warning(
-                "fetch_raw_file: no response after retries for %s", download_url
+                "fetch_raw_file: no response after retries for %s",
+                download_url,
             )
             return ""
         if response.status_code == 404:
@@ -402,7 +405,10 @@ class GitHubClient:
 
         if max_depth <= 0:
             logger.debug(
-                "max_depth reached for %s/%s/%s — skipping.", owner, repo, path
+                "max_depth reached for %s/%s/%s — skipping.",
+                owner,
+                repo,
+                path,
             )
             return []
 
@@ -466,7 +472,7 @@ class GitHubClient:
                     len(file_entries),
                 )
             file_results = await asyncio.gather(
-                *(_fetch_one_file(e) for e in files_to_fetch)
+                *(_fetch_one_file(e) for e in files_to_fetch),
             )
             fetched_here = 0
             for item in file_results:
@@ -491,7 +497,8 @@ class GitHubClient:
             sub_budgets = [base + (1 if i < extra else 0) for i in range(n_dirs)]
 
             async def _recurse_subdir(
-                entry: dict, sub_budget: int
+                entry: dict,
+                sub_budget: int,
             ) -> list[tuple[str, str]]:
                 if sub_budget <= 0:
                     return []
@@ -516,7 +523,7 @@ class GitHubClient:
                 *(
                     _recurse_subdir(e, b)
                     for e, b in zip(dir_entries, sub_budgets, strict=False)
-                )
+                ),
             )
             for sub in sub_results:
                 results.extend(sub)

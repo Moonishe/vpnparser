@@ -84,6 +84,7 @@ quality:
     assert filtered == {"blacklist": [fast]}
     assert runner._liveness_stats["quality"]["blacklist"]["slow_dropped"] == 1
 
+
 def _setup_banned_config(runner, cfg) -> None:
     """Seed a health-history ban on cfg and freeze it for the Xray stage."""
     cfg.is_alive = False

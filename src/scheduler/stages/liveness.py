@@ -41,7 +41,9 @@ class LivenessValidator(PipelineStage):
         self._init_proxy_health_history()
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         state.validated = await self.validate_by_list(state.preprocessed)
         return state
@@ -56,7 +58,11 @@ class LivenessValidator(PipelineStage):
         return self.settings.as_int(value, default, minimum=minimum)
 
     def _as_float(
-        self, value: Any, default: float, *, minimum: float | None = None
+        self,
+        value: Any,
+        default: float,
+        *,
+        minimum: float | None = None,
     ) -> float:
         return self.settings.as_float(value, default, minimum=minimum)
 
@@ -112,10 +118,14 @@ class LivenessValidator(PipelineStage):
             self._proxy_health_file,
             window=self._as_int(hcfg.get("latency_window"), 5, minimum=1),
             ban_after_consecutive_failures=self._as_int(
-                hcfg.get("ban_after_consecutive_failures"), 3, minimum=1
+                hcfg.get("ban_after_consecutive_failures"),
+                3,
+                minimum=1,
             ),
             max_latency_ms=self._as_float(
-                hcfg.get("max_latency_ms"), 8000.0, minimum=1.0
+                hcfg.get("max_latency_ms"),
+                8000.0,
+                minimum=1.0,
             ),
         )
 
@@ -153,22 +163,32 @@ class LivenessValidator(PipelineStage):
         """Search for working SOCKS5 proxies, widening candidates on retries."""
         max_proxies = self._as_int(pool_cfg.get("max_proxies"), 20, minimum=1)
         min_proxies = self._as_int(
-            pool_cfg.get("min_proxies"), min(10, max_proxies), minimum=1
+            pool_cfg.get("min_proxies"),
+            min(10, max_proxies),
+            minimum=1,
         )
         max_proxies = max(max_proxies, min_proxies)
 
         search_rounds = self._as_int(pool_cfg.get("search_rounds"), 3, minimum=1)
         candidate_growth = self._as_float(
-            pool_cfg.get("candidate_growth_factor"), 2.0, minimum=1.0
+            pool_cfg.get("candidate_growth_factor"),
+            2.0,
+            minimum=1.0,
         )
         retry_delay = self._as_float(
-            pool_cfg.get("retry_delay_seconds"), 0.0, minimum=0.0
+            pool_cfg.get("retry_delay_seconds"),
+            0.0,
+            minimum=0.0,
         )
         base_max_candidates = self._as_int(
-            pool_cfg.get("max_candidates"), 200, minimum=1
+            pool_cfg.get("max_candidates"),
+            200,
+            minimum=1,
         )
         base_per_source = self._as_int(
-            pool_cfg.get("max_candidates_per_source"), 80, minimum=1
+            pool_cfg.get("max_candidates_per_source"),
+            80,
+            minimum=1,
         )
 
         self.context.liveness_stats.update(
@@ -177,32 +197,40 @@ class LivenessValidator(PipelineStage):
                 "proxy_search_round_limit": search_rounds,
                 "proxy_search_rounds": 0,
                 "proxy_search": [],
-            }
+            },
         )
 
         pool_urls: list[str] = []
         for round_index in range(search_rounds):
             multiplier = candidate_growth**round_index
             max_candidates = max(
-                base_max_candidates, int(base_max_candidates * multiplier)
+                base_max_candidates,
+                int(base_max_candidates * multiplier),
             )
             max_candidates_per_source = max(
-                base_per_source, int(base_per_source * multiplier)
+                base_per_source,
+                int(base_per_source * multiplier),
             )
             pool_urls = await load_proxy_pool(
                 sources,
                 fetch_timeout=self._as_float(
-                    pool_cfg.get("fetch_timeout_seconds"), 10.0, minimum=1.0
+                    pool_cfg.get("fetch_timeout_seconds"),
+                    10.0,
+                    minimum=1.0,
                 ),
                 max_candidates=max_candidates,
                 max_candidates_per_source=max_candidates_per_source,
                 max_proxies=max_proxies,
                 validate=self._as_bool(pool_cfg.get("validate"), True),
                 validation_timeout=self._as_float(
-                    pool_cfg.get("validation_timeout_seconds"), 5.0, minimum=1.0
+                    pool_cfg.get("validation_timeout_seconds"),
+                    5.0,
+                    minimum=1.0,
                 ),
                 validation_concurrency=self._as_int(
-                    pool_cfg.get("validation_concurrency"), 50, minimum=1
+                    pool_cfg.get("validation_concurrency"),
+                    50,
+                    minimum=1,
                 ),
                 probe_host=str(pool_cfg.get("probe_host") or "api.github.com"),
                 probe_port=self._as_int(pool_cfg.get("probe_port"), 443, minimum=1),
@@ -215,7 +243,7 @@ class LivenessValidator(PipelineStage):
                     "max_candidates": max_candidates,
                     "max_candidates_per_source": max_candidates_per_source,
                     "working": len(pool_urls),
-                }
+                },
             )
             if len(pool_urls) >= min_proxies:
                 break
@@ -242,7 +270,7 @@ class LivenessValidator(PipelineStage):
         explicit = str(
             vcfg.get("proxy_url")
             or __import__("os").environ.get("VALIDATOR_PROXY")
-            or ""
+            or "",
         )
         explicit = explicit.strip()
         if explicit:
@@ -255,7 +283,7 @@ class LivenessValidator(PipelineStage):
                 "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), False),
                 "proxy_pool_required": self._as_bool(pool_cfg.get("required"), False),
                 "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
-            }
+            },
         )
         if self._as_bool(pool_cfg.get("enabled"), False):
             try:
@@ -291,7 +319,8 @@ class LivenessValidator(PipelineStage):
         return list(urls)
 
     async def validate_by_list(
-        self, configs_by_list: dict[str, list[Config]]
+        self,
+        configs_by_list: dict[str, list[Config]],
     ) -> dict[str, list[Config]]:
         vcfg = self._section("validator")
         tcp_enabled = self._as_bool(vcfg.get("tcp_enabled"), False)
@@ -303,16 +332,20 @@ class LivenessValidator(PipelineStage):
             "tls_enabled": tls_enabled,
             "xray_enabled": xray_enabled,
             "fail_open_on_low_alive": self._as_bool(
-                vcfg.get("fail_open_on_low_alive"), False
+                vcfg.get("fail_open_on_low_alive"),
+                False,
             ),
             "drop_unchecked_after_tls": self._as_bool(
-                vcfg.get("drop_unchecked_after_tls"), True
+                vcfg.get("drop_unchecked_after_tls"),
+                True,
             ),
             "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), True),
             "proxy_pool_required": self._as_bool(pool_cfg.get("required"), True),
             "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
             "proxy_attempts_per_config": self._as_int(
-                vcfg.get("proxy_attempts_per_config"), 3, minimum=0
+                vcfg.get("proxy_attempts_per_config"),
+                3,
+                minimum=0,
             ),
             "tls_proxy_attempts_per_config": self._as_int(
                 vcfg.get("tls_proxy_attempts_per_config"),
@@ -363,7 +396,8 @@ class LivenessValidator(PipelineStage):
         pool_enabled = self._as_bool(pool_cfg.get("enabled"), False)
         fail_open_on_low_alive = self._as_bool(vcfg.get("fail_open_on_low_alive"), True)
         drop_unchecked_after_tls = self._as_bool(
-            vcfg.get("drop_unchecked_after_tls"), False
+            vcfg.get("drop_unchecked_after_tls"),
+            False,
         )
         list_key = normalize_list_type(label)
         list_stats = {
@@ -401,13 +435,15 @@ class LivenessValidator(PipelineStage):
                 from src.validators.tcp_check import validate_configs_tcp
 
                 candidate_limit = self._as_int(
-                    vcfg.get("tcp_candidate_limit"), 1000, minimum=0
+                    vcfg.get("tcp_candidate_limit"),
+                    1000,
+                    minimum=0,
                 )
                 tcp_max_alive = self._as_int(vcfg.get("tcp_max_alive"), 0, minimum=0)
                 tcp_max_alive_by_list = vcfg.get("tcp_max_alive_by_list", {})
                 if isinstance(tcp_max_alive_by_list, dict):
                     specific_max_alive = tcp_max_alive_by_list.get(
-                        normalize_list_type(label)
+                        normalize_list_type(label),
                     )
                     if specific_max_alive is not None:
                         tcp_max_alive = self._as_int(
@@ -420,7 +456,9 @@ class LivenessValidator(PipelineStage):
                 min_alive = self._liveness_min_alive(len(checkable))
                 list_stats["min_alive_to_filter"] = min_alive
                 tcp_search_rounds = self._as_int(
-                    vcfg.get("tcp_search_rounds"), 3, minimum=1
+                    vcfg.get("tcp_search_rounds"),
+                    3,
+                    minimum=1,
                 )
                 if candidate_limit <= 0:
                     tcp_search_rounds = 1
@@ -456,15 +494,21 @@ class LivenessValidator(PipelineStage):
                     batch_alive = await validate_configs_tcp(
                         batch,
                         timeout=self._as_float(
-                            vcfg.get("tcp_timeout_seconds"), 5.0, minimum=0.1
+                            vcfg.get("tcp_timeout_seconds"),
+                            5.0,
+                            minimum=0.1,
                         ),
                         concurrency=self._as_int(
-                            vcfg.get("tcp_concurrency"), 300, minimum=1
+                            vcfg.get("tcp_concurrency"),
+                            300,
+                            minimum=1,
                         ),
                         max_alive=remaining_alive,
                         proxy_urls=proxy_urls,
                         proxy_attempts_per_config=self._as_int(
-                            vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                            vcfg.get("proxy_attempts_per_config"),
+                            5,
+                            minimum=0,
                         ),
                     )
                     for cfg in batch_alive:
@@ -532,7 +576,9 @@ class LivenessValidator(PipelineStage):
                 tls_min_alive = self._liveness_min_alive(len(tls_checkable))
                 list_stats["tls_candidates"] = len(tls_checkable)
                 candidate_limit = self._as_int(
-                    vcfg.get("tls_candidate_limit"), 1000, minimum=0
+                    vcfg.get("tls_candidate_limit"),
+                    1000,
+                    minimum=0,
                 )
                 if candidate_limit > 0 and len(tls_checkable) > candidate_limit:
                     logger.info(
@@ -546,16 +592,22 @@ class LivenessValidator(PipelineStage):
                 alive_tls = await validate_configs_tls(
                     tls_checkable,
                     timeout=self._as_float(
-                        vcfg.get("tls_timeout_seconds"), 5.0, minimum=0.1
+                        vcfg.get("tls_timeout_seconds"),
+                        5.0,
+                        minimum=0.1,
                     ),
                     concurrency=self._as_int(
-                        vcfg.get("tls_concurrency"), 120, minimum=1
+                        vcfg.get("tls_concurrency"),
+                        120,
+                        minimum=1,
                     ),
                     proxy_urls=proxy_urls,
                     proxy_attempts_per_config=self._as_int(
                         vcfg.get("tls_proxy_attempts_per_config"),
                         self._as_int(
-                            vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                            vcfg.get("proxy_attempts_per_config"),
+                            5,
+                            minimum=0,
                         ),
                         minimum=0,
                     ),
@@ -644,7 +696,9 @@ class LivenessValidator(PipelineStage):
                 return [] if drop_unsupported else current
 
             candidate_limit = self._as_int(
-                vcfg.get("xray_candidate_limit"), 0, minimum=0
+                vcfg.get("xray_candidate_limit"),
+                0,
+                minimum=0,
             )
             xray_candidate_limit_by_list = vcfg.get("xray_candidate_limit_by_list", {})
             if isinstance(xray_candidate_limit_by_list, dict):
@@ -667,7 +721,7 @@ class LivenessValidator(PipelineStage):
             xray_max_alive_by_list = vcfg.get("xray_max_alive_by_list", {})
             if isinstance(xray_max_alive_by_list, dict):
                 specific_max_alive = xray_max_alive_by_list.get(
-                    normalize_list_type(label)
+                    normalize_list_type(label),
                 )
                 if specific_max_alive is not None:
                     xray_max_alive = self._as_int(
@@ -695,8 +749,8 @@ class LivenessValidator(PipelineStage):
                 xray_probe_urls = [
                     str(
                         vcfg.get("xray_probe_url")
-                        or "https://www.gstatic.com/generate_204"
-                    )
+                        or "https://www.gstatic.com/generate_204",
+                    ),
                 ]
             xray_min_probe_successes = self._as_int(
                 vcfg.get("xray_min_probe_successes"),
@@ -762,10 +816,14 @@ class LivenessValidator(PipelineStage):
                 min_proxy_successes=xray_min_proxy_successes,
                 require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
                 timeout=self._as_float(
-                    vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0
+                    vcfg.get("xray_timeout_seconds"),
+                    12.0,
+                    minimum=1.0,
                 ),
                 startup_timeout=self._as_float(
-                    vcfg.get("xray_startup_timeout_seconds"), 4.0, minimum=0.5
+                    vcfg.get("xray_startup_timeout_seconds"),
+                    4.0,
+                    minimum=0.5,
                 ),
                 concurrency=self._as_int(vcfg.get("xray_concurrency"), 6, minimum=1),
                 max_alive=xray_max_alive,
@@ -810,7 +868,10 @@ class LivenessValidator(PipelineStage):
         return current
 
     def _xray_candidate_preselect(
-        self, configs: list[Config], max_total: int, list_type: str
+        self,
+        configs: list[Config],
+        max_total: int,
+        list_type: str,
     ) -> list[Config]:
         from src.scheduler.stages.aggregate import Aggregator
 

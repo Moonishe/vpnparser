@@ -29,7 +29,9 @@ async def _open_connection_direct(host: str, port: int) -> tuple[Any, Any]:
 
 
 async def _open_connection_via_socks(
-    host: str, port: int, proxy_url: str
+    host: str,
+    port: int,
+    proxy_url: str,
 ) -> tuple[Any, Any]:
     """TCP connection routed through a SOCKS5 proxy.
 
@@ -186,6 +188,6 @@ async def validate_configs_tcp(
     await asyncio.gather(*tasks, return_exceptions=True)
 
     alive_list.sort(
-        key=lambda c: c.latency_ms if c.latency_ms is not None else float("inf")
+        key=lambda c: c.latency_ms if c.latency_ms is not None else float("inf"),
     )
     return alive_list

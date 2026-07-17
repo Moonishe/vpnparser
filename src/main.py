@@ -39,10 +39,10 @@ def _setup_logging(verbose: bool) -> None:
     )
     # Quiet overly-noisy third-party loggers a bit.
     logging.getLogger("httpx").setLevel(
-        logging.WARNING if not verbose else logging.INFO
+        logging.WARNING if not verbose else logging.INFO,
     )
     logging.getLogger("httpcore").setLevel(
-        logging.WARNING if not verbose else logging.INFO
+        logging.WARNING if not verbose else logging.INFO,
     )
 
 
@@ -86,7 +86,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Enable DEBUG-level logging.",
     )
     parser.add_argument(
-        "--notify", action="store_true", help="Send Telegram notification after run."
+        "--notify",
+        action="store_true",
+        help="Send Telegram notification after run.",
     )
     return parser
 
@@ -103,12 +105,12 @@ def main() -> int:
         if args.publish:
             logger.error(
                 "--publish requires --run — it only publishes the result of "
-                "a pipeline run, it does not run the pipeline itself."
+                "a pipeline run, it does not run the pipeline itself.",
             )
         else:
             logger.error("No action specified. Use --run to execute the pipeline.")
         logger.info(
-            "Example: python -m src.main --run [--publish] [--output path] [-v]"
+            "Example: python -m src.main --run [--publish] [--output path] [-v]",
         )
         return 2
 
@@ -116,7 +118,7 @@ def main() -> int:
     if args.publish and not github_token:
         logger.warning(
             "--publish was set but GITHUB_TOKEN is not in the environment. "
-            "The pipeline will run but the publish step will be skipped."
+            "The pipeline will run but the publish step will be skipped.",
         )
 
     # Import lazily so that --help / argument errors do not require the full
@@ -152,8 +154,9 @@ def main() -> int:
 
                 status_file = str(
                     runner.settings.get("publisher", {}).get(
-                        "status_output_file", "output/run-summary.json"
-                    )
+                        "status_output_file",
+                        "output/run-summary.json",
+                    ),
                 )
                 tg.send_notification(
                     configs_count=count,

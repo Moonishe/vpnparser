@@ -140,14 +140,12 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     assert "<b>Blacklist TCP</b>: проверено 1000, порт открыт 150" in validation
     assert (
         "<b>Blacklist TLS/REALITY</b>: проверено 140, живых 90, "
-        "TCP-only отброшено 11"
-        in validation
+        "TCP-only отброшено 11" in validation
     )
     assert (
         "<b>Blacklist Xray</b>: проверено 90, реально рабочих 42, "
         "неподдержано 2, HTTPS-пробы 3/3, повторы 3/3, proxy-сети 2/3, "
-        "IP-check"
-        in validation
+        "IP-check" in validation
     )
     assert "<b>Whitelist TCP</b>: проверено 217, порт открыт 216" in validation
     assert "<b>Whitelist TLS/REALITY</b>: проверено 200, живых 184" in validation
@@ -866,8 +864,14 @@ validator:
     assert len(result) == 200
     assert sum(1 for cfg in result if cfg.remark == "blacklist") == 100
     assert sum(1 for cfg in result if cfg.remark == "whitelist") == 100
-    assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "RU") == 80
-    assert sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "DE") == 20
+    assert (
+        sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "RU")
+        == 80
+    )
+    assert (
+        sum(1 for cfg in result if cfg.remark == "whitelist" and cfg.country == "DE")
+        == 20
+    )
 
 
 def test_whitelist_balance_spreads_eu_countries(tmp_path) -> None:
@@ -1121,8 +1125,7 @@ def test_xray_http_status_code_accepts_only_http_status() -> None:
 def test_xray_extracts_identity_probe_ip() -> None:
     assert xray_module._extract_probe_ip("203.0.113.10") == "203.0.113.10"
     assert (
-        xray_module._extract_probe_ip("fl=1\nip=2001:db8::1\nts=1\n")
-        == "2001:db8::1"
+        xray_module._extract_probe_ip("fl=1\nip=2001:db8::1\nts=1\n") == "2001:db8::1"
     )
     assert xray_module._extract_probe_ip("not an ip") is None
 
@@ -1428,7 +1431,6 @@ def test_xray_validation_does_not_mark_unchecked_max_alive_candidates(
     assert second.xray_was_checked is False
 
 
-
 def test_xray_validation_relaxed_gate_allows_single_attempt(monkeypatch) -> None:
     """Regression: relaxed settings should accept a config after one real Xray
     probe without requiring a distinct outbound IP or proxy-network success."""
@@ -1507,9 +1509,7 @@ def test_proxy_pool_fetch_stops_after_candidate_limit(monkeypatch) -> None:
 def test_proxy_pool_limits_candidates_per_source(monkeypatch) -> None:
     async def fake_fetch_source(_client, url):
         if "first" in url:
-            return " ".join(
-                f"socks5://8.8.8.{i}:1080" for i in range(1, 5)
-            )
+            return " ".join(f"socks5://8.8.8.{i}:1080" for i in range(1, 5))
         return " ".join(f"socks5://1.1.1.{i}:9050" for i in range(1, 5))
 
     monkeypatch.setattr(proxy_pool_module, "_fetch_source", fake_fetch_source)
@@ -1703,7 +1703,9 @@ validator:
         raise AssertionError("liveness must be skipped without required proxies")
 
     monkeypatch.setattr(runner, "_validator_proxy_urls", no_proxies)
-    monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", should_not_check)
+    monkeypatch.setattr(
+        "src.validators.tcp_check.validate_configs_tcp", should_not_check
+    )
     cfg = Config(
         "vless",
         "example.com",
@@ -1851,9 +1853,7 @@ validator:
     assert captured["proxy_urls"] == ["socks5://8.8.8.8:1080"]
 
 
-def test_runner_liveness_searches_more_tcp_candidates(
-    tmp_path, monkeypatch
-) -> None:
+def test_runner_liveness_searches_more_tcp_candidates(tmp_path, monkeypatch) -> None:
     settings = tmp_path / "settings.yaml"
     settings.write_text(
         """

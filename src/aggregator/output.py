@@ -47,7 +47,7 @@ def _watermark_link() -> str:
     effects.
     """
     return "vmess://" + base64.b64encode(
-        json.dumps(_watermark_payload()).encode("utf-8")
+        json.dumps(_watermark_payload()).encode("utf-8"),
     ).decode("utf-8")
 
 
@@ -90,7 +90,9 @@ def generate_output(configs: list[Config], fmt: str = "base64") -> str:
 
 
 def write_subscription(
-    configs: list[Config], filepath: str, fmt: str = "base64"
+    configs: list[Config],
+    filepath: str,
+    fmt: str = "base64",
 ) -> int:
     """Write subscription to file. Returns number of configs written.
 

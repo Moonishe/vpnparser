@@ -173,8 +173,10 @@ class LLMFallbackParser:
 
         content = await self._call_api(
             self._build_chat_request(
-                system_prompt, user_content, max_tokens=_MAX_TOKENS_EXTRACT
-            )
+                system_prompt,
+                user_content,
+                max_tokens=_MAX_TOKENS_EXTRACT,
+            ),
         )
         if not content:
             logger.info("LLM extract_links: empty response from API")
@@ -241,8 +243,10 @@ class LLMFallbackParser:
 
         content = await self._call_api(
             self._build_chat_request(
-                system_prompt, user_content, max_tokens=_MAX_TOKENS_REMARK
-            )
+                system_prompt,
+                user_content,
+                max_tokens=_MAX_TOKENS_REMARK,
+            ),
         )
         cleaned = (content or "").strip().strip("`").strip()
         if not cleaned:
@@ -276,15 +280,18 @@ class LLMFallbackParser:
 
         content = await self._call_api(
             self._build_chat_request(
-                system_prompt, user_content, max_tokens=_MAX_TOKENS_CATEGORIZE
-            )
+                system_prompt,
+                user_content,
+                max_tokens=_MAX_TOKENS_CATEGORIZE,
+            ),
         )
         cleaned = (content or "").strip().strip("`").strip().lower()
         valid = {"gaming", "streaming", "standard", "torrent"}
         if cleaned in valid:
             return cleaned
         logger.info(
-            "LLM categorize: unexpected response %r, defaulting to 'standard'", cleaned
+            "LLM categorize: unexpected response %r, defaulting to 'standard'",
+            cleaned,
         )
         return "standard"
 
@@ -345,12 +352,16 @@ class LLMFallbackParser:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     response = await client.post(
-                        self.api_base, headers=headers, json=request_body
+                        self.api_base,
+                        headers=headers,
+                        json=request_body,
                     )
             except httpx.TimeoutException:
                 last_error = f"timeout after {self.timeout}s"
                 logger.warning(
-                    "LLM API attempt %d/%d timed out", attempt + 1, _MAX_RETRIES
+                    "LLM API attempt %d/%d timed out",
+                    attempt + 1,
+                    _MAX_RETRIES,
                 )
             except httpx.HTTPError as exc:
                 last_error = str(exc)
@@ -386,7 +397,9 @@ class LLMFallbackParser:
                 elif status >= 400:
                     # Non-retryable: 4xx client error (bad request, etc.).
                     logger.error(
-                        "LLM API client error %d: %s", status, response.text[:200]
+                        "LLM API client error %d: %s",
+                        status,
+                        response.text[:200],
                     )
                     return ""
                 else:
@@ -423,7 +436,9 @@ class LLMFallbackParser:
 
 
 def should_use_llm(
-    text: str, regex_results: list[str], min_text_length: int = 100
+    text: str,
+    regex_results: list[str],
+    min_text_length: int = 100,
 ) -> bool:
     """Decide whether to use the LLM fallback.
 

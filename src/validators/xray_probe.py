@@ -165,7 +165,7 @@ def _proxy_outbound(proxy_url: str) -> dict[str, Any] | None:
             {
                 "user": parsed.username or "",
                 "pass": parsed.password or "",
-            }
+            },
         ]
     return {
         "tag": "dial-proxy",
@@ -175,7 +175,10 @@ def _proxy_outbound(proxy_url: str) -> dict[str, Any] | None:
 
 
 def build_xray_config(
-    cfg: Config, socks_port: int, *, dial_proxy_url: str | None = None
+    cfg: Config,
+    socks_port: int,
+    *,
+    dial_proxy_url: str | None = None,
 ) -> dict[str, Any] | None:
     """Build a minimal Xray config for one outbound."""
     protocol = str(cfg.protocol or "").lower()
@@ -204,8 +207,8 @@ def build_xray_config(
                     "address": cfg.address,
                     "port": int(cfg.port),
                     "users": [user],
-                }
-            ]
+                },
+            ],
         }
     elif protocol == "trojan":
         outbound["settings"] = {
@@ -214,8 +217,8 @@ def build_xray_config(
                     "address": cfg.address,
                     "port": int(cfg.port),
                     "password": cfg.uuid_or_password,
-                }
-            ]
+                },
+            ],
         }
     elif protocol == "vmess":
         outbound["settings"] = {
@@ -228,10 +231,10 @@ def build_xray_config(
                             "id": cfg.uuid_or_password,
                             "alterId": 0,
                             "security": "auto",
-                        }
+                        },
                     ],
-                }
-            ]
+                },
+            ],
         }
     elif protocol == "ss":
         if not cfg.ss_method:
@@ -243,8 +246,8 @@ def build_xray_config(
                     "port": int(cfg.port),
                     "method": cfg.ss_method,
                     "password": cfg.uuid_or_password,
-                }
-            ]
+                },
+            ],
         }
 
     outbounds = [outbound]
@@ -263,7 +266,7 @@ def build_xray_config(
                 "port": socks_port,
                 "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": False},
-            }
+            },
         ],
         "outbounds": outbounds,
     }
@@ -452,7 +455,8 @@ async def discover_public_ip(
 
 
 def _rotated_proxy_urls_for_config(
-    cfg: Config, proxy_urls: list[str] | tuple[str, ...]
+    cfg: Config,
+    proxy_urls: list[str] | tuple[str, ...],
 ) -> list[str]:
     """Rotate proxy order per config so one bad proxy prefix cannot poison a run."""
     urls = [str(url).strip() for url in proxy_urls if str(url).strip()]

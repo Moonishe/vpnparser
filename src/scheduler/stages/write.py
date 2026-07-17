@@ -26,11 +26,15 @@ class OutputWriter(PipelineStage):
         self.aggregator = Aggregator(context)
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         """Write all configured outputs from the aggregated and split configs."""
         output_files = self._write_outputs(
-            state.aggregated, state.split_configs, state.summary_file
+            state.aggregated,
+            state.split_configs,
+            state.summary_file,
         )
         state.output_files = output_files
         return state
@@ -58,7 +62,9 @@ class OutputWriter(PipelineStage):
             root = resolve_safe_output_path(output_dir)
         except ValueError as exc:
             logger.warning(
-                "Unsafe location output dir %r rejected: %s", output_dir, exc
+                "Unsafe location output dir %r rejected: %s",
+                output_dir,
+                exc,
             )
             return
         if not root.exists():
@@ -68,11 +74,15 @@ class OutputWriter(PipelineStage):
                 path.unlink()
             except OSError as exc:
                 logger.warning(
-                    "Failed to remove stale location output %s: %s", path, exc
+                    "Failed to remove stale location output %s: %s",
+                    path,
+                    exc,
                 )
 
     def _build_location_outputs(
-        self, configs: list[Config], per_location_limit: int
+        self,
+        configs: list[Config],
+        per_location_limit: int,
     ) -> dict[str, list[Config]]:
         groups: dict[str, list[Config]] = {}
         for cfg in configs:
@@ -83,7 +93,8 @@ class OutputWriter(PipelineStage):
         result: dict[str, list[Config]] = {}
         for country, country_configs in sorted(groups.items()):
             result[country] = self.aggregator._country_balanced_limit(
-                country_configs, per_location_limit
+                country_configs,
+                per_location_limit,
             )
         return result
 
@@ -96,15 +107,20 @@ class OutputWriter(PipelineStage):
         output_files: list[str] = []
         for country, country_configs in outputs.items():
             output_file = str(
-                Path(output_dir) / self._location_output_filename(country)
+                Path(output_dir) / self._location_output_filename(country),
             )
             count = self._write_output(country_configs, output_file)
             self._record_output_stats(
-                f"location_{country.lower()}", output_file, country_configs
+                f"location_{country.lower()}",
+                output_file,
+                country_configs,
             )
             output_files.append(output_file)
             logger.info(
-                "Wrote %d %s location configs to %s.", count, country, output_file
+                "Wrote %d %s location configs to %s.",
+                count,
+                country,
+                output_file,
             )
         return output_files
 
@@ -117,7 +133,7 @@ class OutputWriter(PipelineStage):
         pcfg = self._publisher_section()
         combined_output_file = str(pcfg.get("output_file") or "output/subscription.txt")
         mix_output_file = str(
-            pcfg.get("mix_output_file") or "output/subscription-mix.txt"
+            pcfg.get("mix_output_file") or "output/subscription-mix.txt",
         )
         split_output_files = pcfg.get("split_output_files") or {}
 
@@ -142,7 +158,7 @@ class OutputWriter(PipelineStage):
         pcfg = self._publisher_section()
         combined_output_file = str(pcfg.get("output_file") or "output/subscription.txt")
         mix_output_file = str(
-            pcfg.get("mix_output_file") or "output/subscription-mix.txt"
+            pcfg.get("mix_output_file") or "output/subscription-mix.txt",
         )
         split_output_files = pcfg.get("split_output_files") or {}
 
@@ -198,7 +214,7 @@ class OutputWriter(PipelineStage):
             from src.aggregator.output import write_subscription
         except (ImportError, AttributeError):
             logger.exception(
-                "Cannot import write_subscription — writing plain fallback."
+                "Cannot import write_subscription — writing plain fallback.",
             )
             return self._write_plain_fallback(configs, str(safe_path))
         try:
@@ -249,7 +265,10 @@ class OutputWriter(PipelineStage):
             self._write_empty_output(output_file)
 
     def _record_output_stats(
-        self, name: str, output_file: str, configs: list[Config]
+        self,
+        name: str,
+        output_file: str,
+        configs: list[Config],
     ) -> None:
         country_counts = Counter(
             str(cfg.country).upper()
@@ -270,7 +289,9 @@ class OutputWriter(PipelineStage):
         return str(raw)
 
     def _write_run_summary(
-        self, status: str, output_file: str | None = None
+        self,
+        status: str,
+        output_file: str | None = None,
     ) -> str | None:
         output_file = output_file or self._status_output_file()
         if not output_file:

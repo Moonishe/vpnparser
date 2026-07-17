@@ -21,14 +21,18 @@ class GarbageFilter(PipelineStage):
         self.context = context
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         filtered: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
             clean, count = self.filter_garbage(configs)
             if count:
                 logger.info(
-                    "Filtered %d garbage/placeholder configs for %s.", count, label
+                    "Filtered %d garbage/placeholder configs for %s.",
+                    count,
+                    label,
                 )
             filtered[label] = clean
         state.parsed = filtered
@@ -62,7 +66,9 @@ class CountryFilter(PipelineStage):
         self.settings = context.settings
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         filtered: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
@@ -70,7 +76,10 @@ class CountryFilter(PipelineStage):
         return state
 
     def filter_countries(
-        self, configs: list[Config], *, list_type: str = "mixed"
+        self,
+        configs: list[Config],
+        *,
+        list_type: str = "mixed",
     ) -> list[Config]:
         """Filter configs by allowed countries."""
         vcfg = self.settings.section("validator")
@@ -117,7 +126,9 @@ class DedupFilter(PipelineStage):
     """Deduplicate configs by (address, port)."""
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         deduped: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
@@ -149,11 +160,15 @@ class Sampler(PipelineStage):
         self.settings = context.settings
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         vcfg = self.settings.section("validator")
         max_to_process = self.settings.as_int(
-            vcfg.get("max_configs_to_validate"), 20000, minimum=0
+            vcfg.get("max_configs_to_validate"),
+            20000,
+            minimum=0,
         )
         sampled: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
@@ -183,7 +198,9 @@ class PreprocessFilter(PipelineStage):
         self.country = CountryFilter(context)
 
     async def run(
-        self, state: PipelineState, context: PipelineContext | None = None
+        self,
+        state: PipelineState,
+        context: PipelineContext | None = None,
     ) -> PipelineState:
         preprocessed: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():

@@ -107,9 +107,8 @@ class SubscriptionParser:
 
         # If base64-decoding reveals proxy links, treat as subscription.
         decoded = safe_b64decode(text)
-        if decoded:
-            if find_all_links(decoded):
-                return True
+        if decoded and find_all_links(decoded):
+            return True
 
         # Last resort: plain text with multiple proxy links and no
         # leading scheme — also treat as a subscription-style blob.

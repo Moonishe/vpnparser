@@ -51,7 +51,9 @@ class ProxyHealthHistory:
             return cls(data, **kwargs)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning(
-                "Failed to load proxy health history from %s: %s", target, exc
+                "Failed to load proxy health history from %s: %s",
+                target,
+                exc,
             )
             return cls(**kwargs)
 

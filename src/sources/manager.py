@@ -73,7 +73,8 @@ class SourceManager:
 
         # GitHub client (lazily used inside fetch_source; lifecycle owned here)
         api_base = self._settings_sources().get(
-            "github_api_base", "https://api.github.com"
+            "github_api_base",
+            "https://api.github.com",
         )
         self._github = GitHubClient(token=github_token, api_base=api_base)
 
@@ -212,7 +213,10 @@ class SourceManager:
 
             if stype == "url-list":
                 return await self._fetch_url_list(
-                    source, name, list_type, default_country
+                    source,
+                    name,
+                    list_type,
+                    default_country,
                 )
 
             # subscription requires path; raw allows empty path (= root directory).
@@ -298,7 +302,8 @@ class SourceManager:
         """Fetch a direct HTTPS text source."""
         parsed = urlparse((url or "").strip())
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError(f"source url must be absolute HTTP/HTTPS: {url!r}")
+            msg = f"source url must be absolute HTTP/HTTPS: {url!r}"
+            raise ValueError(msg)
 
         max_attempts = max(1, attempts)
         last_error: Exception | None = None
@@ -416,7 +421,9 @@ class SourceManager:
             async with semaphore:
                 try:
                     content = await self._fetch_direct_url(
-                        target, timeout=timeout, attempts=attempts
+                        target,
+                        timeout=timeout,
+                        attempts=attempts,
                     )
                 except Exception as exc:
                     logger.warning("url-list fetch failed for %s: %s", target, exc)
@@ -459,7 +466,11 @@ class SourceManager:
 
     @staticmethod
     def _int_source_value(
-        source: dict, key: str, default: int, *, minimum: int = 1
+        source: dict,
+        key: str,
+        default: int,
+        *,
+        minimum: int = 1,
     ) -> int:
         """Read an integer source setting with a configurable lower bound.
 

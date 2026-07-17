@@ -351,7 +351,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             xray_min_probe_successes = int(item.get("xray_min_probe_successes") or 0)
             xray_attempts_per_config = int(item.get("xray_attempts_per_config") or 0)
             xray_min_attempt_successes = int(
-                item.get("xray_min_attempt_successes") or 0
+                item.get("xray_min_attempt_successes") or 0,
             )
             xray_proxy_checks = int(item.get("xray_proxy_checks") or 0)
             xray_min_proxy_successes = int(item.get("xray_min_proxy_successes") or 0)
@@ -388,7 +388,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 lines.append(
                     f"  {_b(f'{label}{tcp_label}')}: проверено {tcp_checked}, "
                     f"порт открыт {tcp_alive}, пропущено {skipped}"
-                    f"{round_text}{suffix}"
+                    f"{round_text}{suffix}",
                 )
             if tls_checked > 0:
                 dropped_text = (
@@ -398,7 +398,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 )
                 lines.append(
                     f"  {_b(f'{label} TLS/REALITY')}: проверено {tls_checked}, "
-                    f"живых {tls_alive}{dropped_text}{suffix}"
+                    f"живых {tls_alive}{dropped_text}{suffix}",
                 )
             if item.get("reason") == "xray_unavailable":
                 lines.append(f"  {_b(f'{label} Xray')}: пропущен, xray не установлен")
@@ -425,7 +425,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 lines.append(
                     f"  {_b(f'{label} Xray')}: проверено {xray_checked}, "
                     f"реально рабочих {xray_alive}{unsupported_text}{probe_text}"
-                    f"{attempt_text}{proxy_text}{ip_text}"
+                    f"{attempt_text}{proxy_text}{ip_text}",
                 )
     quality = validation.get("quality")
     if isinstance(quality, dict):
@@ -439,13 +439,14 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             avg_score = float(item.get("avg_score") or 0)
             lines.append(
                 f"  {_b(f'{label} quality')}: прошло {kept}, "
-                f"медленных удалено {slow_dropped}, score {avg_score:.1f}"
+                f"медленных удалено {slow_dropped}, score {avg_score:.1f}",
             )
     return "\n".join(lines)
 
 
 def _format_subscriptions_section(
-    summary: dict[str, Any], subscription_file: str
+    summary: dict[str, Any],
+    subscription_file: str,
 ) -> str:
     outputs = summary.get("outputs")
     lines = [f"{_b('📍 Подписки и страны')}:"]
@@ -459,7 +460,7 @@ def _format_subscriptions_section(
             count = int(item.get("count") or 0)
             countries = item.get("countries")
             country_text = _format_country_counts(
-                countries if isinstance(countries, dict) else {}
+                countries if isinstance(countries, dict) else {},
             )
             lines.append(f"  {_b(label)}: {count} — {country_text}")
         location_outputs = [
@@ -471,7 +472,7 @@ def _format_subscriptions_section(
             total_locations = len(location_outputs)
             max_count = max(int(item.get("count") or 0) for item in location_outputs)
             lines.append(
-                f"  {_b('Локации')}: {total_locations} файлов, до {max_count} серверов"
+                f"  {_b('Локации')}: {total_locations} файлов, до {max_count} серверов",
             )
         if len(lines) > 1:
             return "\n".join(lines)
@@ -482,7 +483,7 @@ def _format_subscriptions_section(
             continue
         label = _SUBSCRIPTION_LABELS.get(key, key)
         lines.append(
-            f"  {_b(label)}: {sum(counts.values())} — {_format_country_counts(counts)}"
+            f"  {_b(label)}: {sum(counts.values())} — {_format_country_counts(counts)}",
         )
 
     if len(lines) == 1:
@@ -543,7 +544,8 @@ def _load_facts_history() -> list[str]:
     """Load previously generated facts from cache file."""
     try:
         with resolve_safe_output_path(_FACT_HISTORY_FILE).open(
-            "r", encoding="utf-8"
+            "r",
+            encoding="utf-8",
         ) as f:
             data = json.load(f)
             return data if isinstance(data, list) else []
@@ -560,7 +562,8 @@ def _save_fact(fact: str) -> None:
     history = history[-_FACT_HISTORY_MAX:]
     try:
         with resolve_safe_output_path(_FACT_HISTORY_FILE).open(
-            "w", encoding="utf-8"
+            "w",
+            encoding="utf-8",
         ) as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
     except Exception as exc:
@@ -582,7 +585,7 @@ def _call_gemini(api_key: str, prompt: str) -> str | None:
                 ],
                 "temperature": 0.9,
                 "max_tokens": 150,
-            }
+            },
         ).encode("utf-8")
 
         req = urllib.request.Request(
@@ -623,7 +626,7 @@ def _generate_fun_fact(api_key: str) -> str:
         import random
 
         history = _load_facts_history()
-        all_fallbacks = [_FACT_FALLBACK_NO_KEY] + _FACT_FALLBACKS
+        all_fallbacks = [_FACT_FALLBACK_NO_KEY, *_FACT_FALLBACKS]
         available = [
             f
             for f in all_fallbacks
@@ -657,7 +660,8 @@ def _generate_fun_fact(api_key: str) -> str:
         fact_lower = fact.lower().strip()
         if any(fact_lower == h.lower().strip() for h in history):
             logger.info(
-                "Gemini returned duplicate fact (attempt %d) — retrying", attempt + 1
+                "Gemini returned duplicate fact (attempt %d) — retrying",
+                attempt + 1,
             )
             continue
         # Found a unique fact — save and return.
@@ -720,7 +724,7 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
                 "chat_id": chat_id,
                 "text": text,
                 "parse_mode": "HTML",
-            }
+            },
         ).encode("utf-8")
 
         req = urllib.request.Request(
@@ -848,9 +852,8 @@ def main() -> int:
     if ok:
         logger.info("Notification sent")
         return 0
-    else:
-        logger.info("Notification skipped or failed (non-fatal)")
-        return 0  # Non-fatal — don't fail the workflow.
+    logger.info("Notification skipped or failed (non-fatal)")
+    return 0  # Non-fatal — don't fail the workflow.
 
 
 if __name__ == "__main__":

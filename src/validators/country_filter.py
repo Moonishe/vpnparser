@@ -307,7 +307,7 @@ _SUPPORTED_CODES: tuple[str, ...] = (
 # bracket, pipe, slash) — otherwise "CONTACT US", "SERVER ID", "SIGN IN",
 # "5TH FLOOR", "MY SERVER", "DO IT" are misread as countries.
 _AMBIGUOUS_CODES: frozenset[str] = frozenset(
-    {"US", "IN", "ID", "AT", "BE", "IT", "MY", "TH", "ES"}
+    {"US", "IN", "ID", "AT", "BE", "IT", "MY", "TH", "ES"},
 )
 
 # Import-time sanity check: every value in the detection dicts must be a
@@ -323,7 +323,7 @@ _UNKNOWN_DICT_CODES = _DICT_VALUES - set(_SUPPORTED_CODES)
 if _UNKNOWN_DICT_CODES:
     raise RuntimeError(
         "country_filter: detection dict maps to code(s) not in "
-        f"_SUPPORTED_CODES: {sorted(_UNKNOWN_DICT_CODES)}"
+        f"_SUPPORTED_CODES: {sorted(_UNKNOWN_DICT_CODES)}",
     )
 
 # Safe codes = supported minus ambiguous.  A 2-letter combo like "DE" or
