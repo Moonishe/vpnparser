@@ -10,6 +10,8 @@ import types
 from collections import Counter
 from pathlib import Path
 
+from unittest.mock import MagicMock
+
 import httpx
 import pytest
 
@@ -18,7 +20,13 @@ from src.env import load_dotenv_if_available
 from src.notify import telegram as telegram_module
 from src.parsers.base import Config, is_garbage_config
 from src.publisher.github import _contents_url as publisher_contents_url
-from src.repo_info import _slug_from_remote_url, github_branch
+from src.repo_info import (
+    _branch_from_github_ref,
+    _git_origin_slug,
+    _slug_from_remote_url,
+    github_branch,
+    github_repo_slug,
+)
 from src.scheduler.runner import PipelineRunner
 from src.sources.github import (
     GitHubClient,
@@ -2435,3 +2443,167 @@ def test_url_list_source_fetches_each_url(monkeypatch) -> None:
     filenames = {f[0] for f in result.files}
     assert "a.txt" in filenames
     assert "b.txt" in filenames
+
+
+# ── repo_info: additional coverage ──────────────────────────────────────
+
+
+class TestRepoInfoFullCoverage:
+    """Cover remaining uncovered lines in src/repo_info.py.
+
+    Uncovered: 22, 43, 58-59, 62, 75, 79, 84
+    """
+
+    # -- github_repo_slug (line 22) --
+
+    def test_github_repo_slug_uses_github_repository_env(self, monkeypatch) -> None:
+        """Line 22: GITHUB_REPOSITORY env var with '/' returns it directly."""
+        monkeypatch.delenv("GITHUB_OWNER", raising=False)
+        monkeypatch.delenv("GITHUB_REPO", raising=False)
+        monkeypatch.setenv("GITHUB_REPOSITORY", "custom/other-repo")
+        assert github_repo_slug() == "custom/other-repo"
+
+    def test_github_repo_slug_empty_repository_env_falls_back(
+        self, monkeypatch
+    ) -> None:
+        """Line 21-22: GITHUB_REPOSITORY without '/' falls through to git."""
+        monkeypatch.delenv("GITHUB_OWNER", raising=False)
+        monkeypatch.delenv("GITHUB_REPO", raising=False)
+        monkeypatch.setenv("GITHUB_REPOSITORY", "no-slash-here")
+        # Falls through to _git_origin_slug, which will fail, then default
+        result = github_repo_slug()
+        assert result == "Moonishe/vpnparser"  # default
+
+    def test_github_repo_slug_from_env(self, monkeypatch) -> None:
+        """Lines 15-18: GITHUB_OWNER + GITHUB_REPO used."""
+        monkeypatch.setenv("GITHUB_OWNER", "test-owner")
+        monkeypatch.setenv("GITHUB_REPO", "test-repo")
+        assert github_repo_slug() == "test-owner/test-repo"
+
+    # -- _branch_from_github_ref (line 43) --
+
+    def test_branch_from_github_ref_no_prefix(self, monkeypatch) -> None:
+        """Line 43: GITHUB_REF without 'refs/heads/' prefix returns None."""
+        monkeypatch.setenv("GITHUB_REF", "refs/tags/v1.0")
+        assert _branch_from_github_ref() is None
+
+    def test_branch_from_github_ref_with_prefix(self, monkeypatch) -> None:
+        """Line 41-42: GITHUB_REF with 'refs/heads/' prefix returns branch."""
+        monkeypatch.setenv("GITHUB_REF", "refs/heads/develop")
+        assert _branch_from_github_ref() == "develop"
+
+    # -- _git_origin_slug (lines 58-59, 62) --
+    # NOTE: _git_origin_slug is cached with @lru_cache.  We must clear the
+    # cache before each test that calls it with a mock, otherwise the cached
+    # result from a previous test is returned and the mock is never seen.
+
+    def test_git_origin_slug_subprocess_exception(self, monkeypatch) -> None:
+        """Lines 58-59: exception during subprocess returns None."""
+        _git_origin_slug.cache_clear()
+        monkeypatch.setattr(
+            "src.repo_info.subprocess.run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                FileNotFoundError("git not found")
+            ),
+        )
+        assert _git_origin_slug() is None
+
+    def test_git_origin_slug_nonzero_returncode(self, monkeypatch) -> None:
+        """Line 62: non-zero returncode returns None."""
+        _git_origin_slug.cache_clear()
+        fake_proc = MagicMock()
+        fake_proc.returncode = 1
+        fake_proc.stdout = ""
+        monkeypatch.setattr(
+            "src.repo_info.subprocess.run",
+            lambda *args, **kwargs: fake_proc,
+        )
+        assert _git_origin_slug() is None
+
+    def test_git_origin_slug_success(self, monkeypatch) -> None:
+        """Happy path: git remote returns valid URL."""
+        _git_origin_slug.cache_clear()
+        fake_proc = MagicMock()
+        fake_proc.returncode = 0
+        fake_proc.stdout = "https://github.com/owner/repo.git"
+        monkeypatch.setattr(
+            "src.repo_info.subprocess.run",
+            lambda *args, **kwargs: fake_proc,
+        )
+        assert _git_origin_slug() == "owner/repo"
+
+    # -- _slug_from_remote_url (lines 75, 79, 84) --
+
+    def test_slug_from_remote_url_no_github_dot_com(self) -> None:
+        """Line 75: URL without github.com returns None."""
+        assert _slug_from_remote_url("https://gitlab.com/owner/repo.git") is None
+
+    def test_slug_from_remote_url_too_few_parts(self) -> None:
+        """Line 79: less than 2 path parts returns None."""
+        assert _slug_from_remote_url("https://github.com/only-one") is None
+
+    def test_slug_from_remote_url_empty_repo(self) -> None:
+        """Line 84: empty repo (from empty path segment) returns None."""
+        assert _slug_from_remote_url("https://github.com/a//b") is None
+
+    def test_slug_from_remote_url_ssh_format(self) -> None:
+        """SSH format git@github.com:owner/repo.git."""
+        assert _slug_from_remote_url("git@github.com:owner/repo.git") == "owner/repo"
+
+    def test_slug_from_remote_url_query_params(self) -> None:
+        """URL with query params: .git suffix NOT removed (not at end)."""
+        assert (
+            _slug_from_remote_url("https://github.com/owner/repo.git?param=value")
+            == "owner/repo.git"  # .git not at the end, query is stripped
+        )
+
+    def test_slug_from_remote_url_fragment(self) -> None:
+        """URL with fragment: .git suffix NOT removed (not at end)."""
+        assert (
+            _slug_from_remote_url("https://github.com/owner/repo.git#readme")
+            == "owner/repo.git"  # .git not at the end, fragment is stripped
+        )
+
+    def test_slug_from_remote_url_trailing_slash(self) -> None:
+        """URL with trailing slash."""
+        assert _slug_from_remote_url("https://github.com/owner/repo/") == "owner/repo"
+
+    # -- github_branch additional coverage --
+
+    def test_github_branch_empty_ref_falls_to_default(self, monkeypatch) -> None:
+        """github_branch with no env set falls to default."""
+        monkeypatch.delenv("GITHUB_BRANCH", raising=False)
+        monkeypatch.delenv("GITHUB_REF_NAME", raising=False)
+        monkeypatch.delenv("GITHUB_REF", raising=False)
+        assert github_branch() == "main"
+
+    def test_github_branch_uses_ref_name(self, monkeypatch) -> None:
+        """github_branch uses GITHUB_REF_NAME."""
+        monkeypatch.delenv("GITHUB_BRANCH", raising=False)
+        monkeypatch.setenv("GITHUB_REF_NAME", "feature-branch")
+        monkeypatch.delenv("GITHUB_REF", raising=False)
+        assert github_branch() == "feature-branch"
+
+    def test_github_branch_strips_whitespace(self, monkeypatch) -> None:
+        """github_branch strips whitespace from result."""
+        monkeypatch.delenv("GITHUB_BRANCH", raising=False)
+        monkeypatch.setenv("GITHUB_REF_NAME", "  main  ")
+        monkeypatch.delenv("GITHUB_REF", raising=False)
+        assert github_branch() == "main"
+
+    # -- github_repo_slug edge: empty parts --
+
+    def test_github_repo_slug_empty_owner_repo(self, monkeypatch) -> None:
+        """Empty owner/repo from env vars (stripped) — falls to git then default."""
+        monkeypatch.setenv("GITHUB_OWNER", "  ")
+        monkeypatch.setenv("GITHUB_REPO", "  ")
+        monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+        _git_origin_slug.cache_clear()
+        monkeypatch.setattr(
+            "src.repo_info.subprocess.run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                FileNotFoundError("git not found")
+            ),
+        )
+        result = github_repo_slug()
+        assert result == "Moonishe/vpnparser"

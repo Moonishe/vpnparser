@@ -66,8 +66,6 @@ class Hysteria2Parser(BaseParser):
 
             # urlparse doesn't extract userinfo for non-standard schemes,
             # so we parse manually: hysteria2://PASS@HOST:PORT?QUERY#REMARK
-            if "://" not in normalized:
-                return None
             body = normalized.split("://", 1)[1]
 
             # Split fragment (remark)

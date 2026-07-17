@@ -481,3 +481,187 @@ def test_parser_init_custom_api_base_overrides_provider() -> None:
         provider="groq", api_key="k", api_base="https://custom.example.com/v1"
     )
     assert parser.api_base == "https://custom.example.com/v1"
+
+
+# ---------------------------------------------------------------------------
+# extract_links — empty API response (lines 182-183)
+# ---------------------------------------------------------------------------
+
+
+async def test_extract_links_returns_empty_on_empty_api_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When _call_api returns empty string, extract_links returns []."""
+
+    async def fake_call_api(
+        self: object,
+        body: dict[str, object],
+    ) -> str:
+        return ""
+
+    monkeypatch.setattr(LLMFallbackParser, "_call_api", fake_call_api)
+
+    parser = LLMFallbackParser(api_key="test-key")
+    result = await parser.extract_links("some long text worth processing")
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# extract_links — skip empty/backtick lines (line 189)
+# ---------------------------------------------------------------------------
+
+
+async def test_extract_links_skips_empty_and_backtick_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty lines, whitespace-only lines, and standalone backticks are skipped."""
+
+    async def fake_call_api(
+        self: object,
+        body: dict[str, object],
+    ) -> str:
+        return (
+            "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ==\n"  # noqa: E501
+            "\n"
+            "   \n"
+            "```\n"
+            "vless://11111111-1111-4111-8111-111111111111@example.com:443\n"
+        )
+
+    monkeypatch.setattr(LLMFallbackParser, "_call_api", fake_call_api)
+
+    parser = LLMFallbackParser(api_key="test-key")
+    result = await parser.extract_links("some text")
+    # Two valid links should be found, empty/backtick lines skipped
+    assert len(result) == 2
+    assert result[0].startswith("vmess://")
+    assert result[1].startswith("vless://")
+
+
+# ---------------------------------------------------------------------------
+# _call_api — openrouter sets referer header  (lines 346-347)
+# ---------------------------------------------------------------------------
+
+
+async def test_call_api_openrouter_sets_referer_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """openrouter provider should set HTTP-Referer and X-Title headers."""
+    captured_headers: dict[str, str] = {}
+
+    class _FakeClientCaptureHeaders:
+        async def __aenter__(self) -> _FakeClientCaptureHeaders:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def post(
+            self,
+            url: str,
+            **kwargs: object,
+        ) -> _FakeResp:
+            captured_headers.clear()
+            captured_headers.update(
+                kwargs.get("headers", {}),  # type: ignore[arg-type]
+            )
+            payload = {"choices": [{"message": {"content": "result"}}]}
+            return _FakeResp(200, json_data=payload)
+
+    monkeypatch.setattr(
+        "src.parsers.llm_fallback.httpx.AsyncClient",
+        lambda *a, **kw: _FakeClientCaptureHeaders(),
+    )
+
+    parser = LLMFallbackParser(provider="openrouter", api_key="test-key")
+    result = await parser._call_api(parser._build_chat_request("s", "u"))
+
+    assert result == "result"
+    assert (
+        captured_headers.get("HTTP-Referer") == "https://github.com/vpn-config-parser"
+    )
+    assert captured_headers.get("X-Title") == "vpn-config-parser"
+
+
+# ---------------------------------------------------------------------------
+# _call_api — httpx.HTTPError (lines 366-368)
+# ---------------------------------------------------------------------------
+
+
+async def test_call_api_handles_generic_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generic httpx.HTTPError should retry then return ''."""
+    call_count: list[int] = [0]
+
+    class _FakeClientHTTPError:
+        async def __aenter__(self) -> _FakeClientHTTPError:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def post(
+            self,
+            url: str,
+            **kwargs: object,
+        ) -> _FakeResp:
+            call_count[0] += 1
+            raise httpx.HTTPError("connection error")
+
+    monkeypatch.setattr(
+        "src.parsers.llm_fallback.httpx.AsyncClient",
+        lambda *a, **kw: _FakeClientHTTPError(),
+    )
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("src.parsers.llm_fallback.asyncio.sleep", fake_sleep)
+
+    parser = LLMFallbackParser(api_key="test-key")
+    result = await parser._call_api(parser._build_chat_request("s", "u"))
+
+    assert result == ""
+    assert call_count[0] == 3
+    assert len(sleeps) == 2  # exponential backoff
+
+
+# ---------------------------------------------------------------------------
+# _call_api — 4xx client error (lines 399-404)
+# ---------------------------------------------------------------------------
+
+
+async def test_call_api_handles_400_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """400 client error should return '' immediately without retry."""
+    call_count: list[int] = [0]
+
+    class _FakeClient400:
+        async def __aenter__(self) -> _FakeClient400:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def post(
+            self,
+            url: str,
+            **kwargs: object,
+        ) -> _FakeResp:
+            call_count[0] += 1
+            return _FakeResp(400, text="Bad Request")
+
+    monkeypatch.setattr(
+        "src.parsers.llm_fallback.httpx.AsyncClient",
+        lambda *a, **kw: _FakeClient400(),
+    )
+
+    parser = LLMFallbackParser(api_key="test-key")
+    result = await parser._call_api(parser._build_chat_request("s", "u"))
+
+    assert result == ""
+    assert call_count[0] == 1  # no retry

@@ -644,3 +644,337 @@ async def test_publisher_async_context_manager(monkeypatch) -> None:
         assert pub.owner == "o"
 
     assert closed
+
+
+# ---------------------------------------------------------------------------
+# _headers
+# ---------------------------------------------------------------------------
+
+
+def test_headers_returns_dict() -> None:
+    """_headers() returns the expected dict with auth and version headers."""
+    pub = GitHubPublisher(token="test-token", owner="o", repo="r")
+    headers = pub._headers()
+    assert headers["User-Agent"] == GitHubPublisher.USER_AGENT
+    assert headers["Authorization"] == "Bearer test-token"
+    assert headers["X-GitHub-Api-Version"] == "2022-11-28"
+    assert "application/vnd.github+json" in headers["Accept"]
+
+
+# ---------------------------------------------------------------------------
+# _get_client (real, not monkeypatched)
+# ---------------------------------------------------------------------------
+
+
+async def test_get_client_double_check_locking() -> None:
+    """_get_client creates the client on first call and reuses it on subsequent calls.
+
+    Covers both branches of the double-checked locking pattern.
+    """
+    pub = GitHubPublisher(
+        token="t",
+        owner="o",
+        repo="r",
+        api_base="http://localhost:0",  # safe — no real requests made
+    )
+    # First call: client is None → enters lock → creates client (lines 106-114).
+    client1 = await pub._get_client()
+    assert client1 is not None
+    assert pub._client is client1
+
+    # Second call: client already exists → returns immediately (lines 104-105).
+    client2 = await pub._get_client()
+    assert client2 is client1
+
+    await pub.aclose()
+    assert pub._client is None
+
+
+# ---------------------------------------------------------------------------
+# _get_file_sha: rate-limited 403 then 404
+# ---------------------------------------------------------------------------
+
+
+async def test_get_file_sha_rate_limit_then_404(monkeypatch) -> None:
+    """Rate-limited 403 on GET, then 404 on retry -> None (file missing)."""
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.get_count = 0
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            self.get_count += 1
+            if self.get_count == 1:
+                return _FakeResp(
+                    403,
+                    headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1"},
+                )
+            return _FakeResp(404)
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    sha = await pub._get_file_sha("f.txt")
+    assert sha is None
+    assert len(slept) == 1  # waited once for rate limit
+    assert _FakeClient().get_count == 0  # just a type hint, ignore
+
+
+# ---------------------------------------------------------------------------
+# _get_file_sha: 409 conflict
+# ---------------------------------------------------------------------------
+
+
+async def test_get_file_sha_409_conflict(monkeypatch) -> None:
+    """409 on GET -> treated as file missing, returns None."""
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(409)
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    sha = await pub._get_file_sha("f.txt")
+    assert sha is None
+
+
+# ---------------------------------------------------------------------------
+# _get_file_sha: unexpected response shape
+# ---------------------------------------------------------------------------
+
+
+async def test_get_file_sha_unexpected_response(monkeypatch) -> None:
+    """Non-dict JSON / dict missing 'sha' key -> returns None."""
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.call = 0
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            self.call += 1
+            if self.call == 1:
+                return _FakeResp(200, json_data=["not", "a", "dict"])
+            return _FakeResp(200, json_data={"sha": None})  # sha not a str
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    sha1 = await pub._get_file_sha("f1.txt")
+    assert sha1 is None
+    sha2 = await pub._get_file_sha("f2.txt")
+    assert sha2 is None
+
+
+# ---------------------------------------------------------------------------
+# _wait_for_rate_limit: unparseable Retry-After date
+# ---------------------------------------------------------------------------
+
+
+async def test_wait_for_rate_limit_invalid_retry_after_date(monkeypatch) -> None:
+    """Retry-After with a value that is neither a number nor an HTTP-date
+    falls back to _DEFAULT_RATELIMIT_WAIT (~60s)."""
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    fake_resp = type(
+        "FakeResp",
+        (),
+        {"status_code": 403, "headers": {"Retry-After": "garbage-value"}},
+    )()
+
+    pub = GitHubPublisher(token="t", owner="o", repo="r")
+    await pub._wait_for_rate_limit(fake_resp)  # type: ignore[arg-type]
+
+    assert len(slept) == 1
+    assert 59 <= slept[0] <= 61
+
+
+# ---------------------------------------------------------------------------
+# publish_file: unexpected exception in _get_file_sha
+# ---------------------------------------------------------------------------
+
+
+async def test_publish_file_unexpected_error_on_get_sha(monkeypatch) -> None:
+    """A generic Exception (not HTTPStatusError / GitHubPublishError) from
+    _get_file_sha is caught and returns False."""
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            raise RuntimeError("unexpected internal failure")
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            raise AssertionError("should not reach PUT")
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    result = await pub.publish_file("f.txt", "data", "msg")
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# publish_file: network error on PUT after rate-limit retry
+# ---------------------------------------------------------------------------
+
+
+async def test_publish_file_network_error_on_rate_limit_retry(monkeypatch) -> None:
+    """First PUT is rate-limited. Retry PUT raises RequestError -> False."""
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.put_count = 0
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(200, json_data={"sha": "abc"})
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            self.put_count += 1
+            if self.put_count == 1:
+                return _FakeResp(
+                    403,
+                    headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1"},
+                )
+            raise httpx.ConnectError("connection refused on retry")
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    result = await pub.publish_file("f.txt", "data", "msg")
+    assert result is False
+    assert len(slept) == 1
+
+
+# ---------------------------------------------------------------------------
+# publish_file: 422 with non-JSON body
+# ---------------------------------------------------------------------------
+
+
+async def test_publish_file_422_invalid_json(monkeypatch) -> None:
+    """422 where response.json() raises -> falls back to response.text."""
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(404)
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            # No json_data -> _FakeResp.json() raises ValueError
+            return _FakeResp(422, text="raw error text")
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    result = await pub.publish_file("f.txt", "data", "msg")
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# publish_file: unexpected HTTP status (not explicitly handled)
+# ---------------------------------------------------------------------------
+
+
+async def test_publish_file_unexpected_status_code(monkeypatch) -> None:
+    """Unexpected HTTP status (401) on PUT triggers raise_for_status -> False."""
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(200, json_data={"sha": "abc"})
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(401, text="Unauthorized")
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    result = await pub.publish_file("f.txt", "data", "msg")
+    assert result is False
+
+
+async def test_publish_file_2xx_non_200_201(monkeypatch) -> None:
+    """A 2xx response that is not 200/201 (e.g. 202) reaches the final
+    ``return False`` after ``raise_for_status()`` (line 317)."""
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(200, json_data={"sha": "abc"})
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(202, json_data={"status": "accepted"})
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    result = await pub.publish_file("f.txt", "data", "msg")
+    assert result is False

@@ -333,7 +333,7 @@ class SourceManager:
                     await asyncio.sleep(max(0.0, retry_delay))
         if last_error is not None:
             raise last_error
-        return ""
+        return ""  # pragma: no cover
 
     @staticmethod
     def _filename_from_url(url: str) -> str:

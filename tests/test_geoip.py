@@ -175,6 +175,21 @@ async def test_resolve_to_ip_hostname_gaierror(monkeypatch) -> None:
     assert await geoip._resolve_to_ip("bad.example") is None
 
 
+async def test_resolve_to_ip_empty_sockaddr_skipped(monkeypatch) -> None:
+    """Line 117: ``if not sockaddr: continue`` covers empty/None sockaddr."""
+
+    def _fake_getaddrinfo_empty(host, port, *args, **kwargs):
+        return [
+            # First entry has AF_INET but empty sockaddr -> continue (line 117)
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ()),
+            # Second entry is valid -> returned
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo_empty)
+    assert await geoip._resolve_to_ip("some.host") == "93.184.216.34"
+
+
 # --- enrich_configs_geoip --------------------------------------------------
 
 

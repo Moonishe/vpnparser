@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
 import pytest
 
 from src.parsers.base import Config
+from src.scheduler.context import PipelineState
 from src.scheduler.runner import PipelineRunner
+from src.scheduler.stages.write import OutputWriter
 
 
 # ---------------------------------------------------------------------------
@@ -746,3 +749,237 @@ publisher:
     for f in files:
         p = Path(f)
         assert p.exists()
+
+
+# ---------------------------------------------------------------------------
+# run (async)  —  lines 34-40
+# ---------------------------------------------------------------------------
+
+
+def test_run_method_returns_state_with_output_files(tmp_path: Path) -> None:
+    """Async run() should call _write_outputs and return state with output_files."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  output_file: {tmp_path / "combined.txt"}
+  mix_output_file: {tmp_path / "mix.txt"}
+  split_output_files:
+    blacklist: {tmp_path / "bl.txt"}
+  location_output_dir: {tmp_path / "locations"}
+  location_output_limit: 5
+  location_outputs_enabled: false
+aggregator:
+  max_per_country: 20
+  max_configs_in_output: 50
+""",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    state = PipelineState(aggregated=[], split_configs={}, summary_file=None)
+    result = asyncio.run(r._writer.run(state))
+    assert result is state
+    assert isinstance(result.output_files, list)
+
+
+# ---------------------------------------------------------------------------
+# _clear_location_outputs — unsafe path  (lines 63-69)
+# ---------------------------------------------------------------------------
+
+
+def test_clear_location_outputs_unsafe_path(tmp_path: Path) -> None:
+    """ValueError from resolve_safe_output_path is caught and logged."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "publisher:\n  location_output_dir: ../../etc/unsafe\n",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    # Should not raise
+    r._writer._clear_location_outputs()
+
+
+# ---------------------------------------------------------------------------
+# _clear_location_outputs — OSError during unlink  (lines 75-76)
+# ---------------------------------------------------------------------------
+
+
+def test_clear_location_outputs_oserror_on_unlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OSError from path.unlink should be caught and logged."""
+    loc_dir = tmp_path / "loc"
+    loc_dir.mkdir()
+    (loc_dir / "subscription-DE.txt").write_text("old", encoding="utf-8")
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"publisher:\n  location_output_dir: {loc_dir}\n",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+
+    orig_unlink = Path.unlink
+
+    def _raising_unlink(path_self: Path, **kwargs: bool) -> None:
+        if "subscription" in str(path_self):
+            msg = "Permission denied"
+            raise OSError(msg)
+        return orig_unlink(path_self, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _raising_unlink)
+    # Should not raise
+    r._writer._clear_location_outputs()
+
+
+# ---------------------------------------------------------------------------
+# _write_output — write_subscription raises  (lines 222-224)
+# ---------------------------------------------------------------------------
+
+
+def test_write_output_falls_to_plain_fallback_on_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When write_subscription raises, _write_output falls back to plain text."""
+    out = tmp_path / "output.txt"
+    configs = [
+        Config(
+            "vless",
+            "a.example",
+            443,
+            "id",
+            raw_link="vless://id@a.example:443",
+            country="DE",
+        ),
+    ]
+
+    def _raising_write_subscription(
+        _configs: list[Config],
+        _path: str,
+    ) -> int:
+        msg = "subscription write failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(
+        "src.aggregator.output.write_subscription",
+        _raising_write_subscription,
+    )
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "publisher:\n  output_file: output.txt\n",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    count = r._writer._write_output(configs, str(out))
+    assert count == 1
+    assert out.read_text(encoding="utf-8").strip() == "vless://id@a.example:443"
+
+
+# ---------------------------------------------------------------------------
+# _write_empty_output — Exception from _write_output  (lines 232-233)
+# ---------------------------------------------------------------------------
+
+
+def test_write_empty_output_handles_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exception in _write_output is caught by _write_empty_output."""
+    out = tmp_path / "empty-out.txt"
+
+    def _raising_write_output(
+        _self: object,
+        _configs: list[Config],
+        _output_file: str,
+    ) -> int:
+        msg = "write failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(OutputWriter, "_write_output", _raising_write_output)
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text("publisher:\n", encoding="utf-8")
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    # Should not raise
+    r._writer._write_empty_output(str(out))
+
+
+# ---------------------------------------------------------------------------
+# _write_plain_fallback — exception handler  (lines 246-248)
+# ---------------------------------------------------------------------------
+
+
+def test_write_plain_fallback_exception_returns_zero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exception in _write_plain_fallback is caught, returns 0."""
+    out = tmp_path / "out" / "sub.txt"
+    configs = [
+        Config(
+            "vless",
+            "a.example",
+            443,
+            "id",
+            raw_link="vless://id@a.example:443",
+            country="DE",
+        ),
+    ]
+
+    def _raising_open(*args: object, **kwargs: object) -> object:
+        msg = "read-only filesystem"
+        raise OSError(msg)
+
+    monkeypatch.setattr(Path, "open", _raising_open)
+
+    count = OutputWriter._write_plain_fallback(configs, str(out))
+    assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# _write_run_summary — exception handler  (lines 313-315)
+# ---------------------------------------------------------------------------
+
+
+def test_write_run_summary_exception_returns_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exception during write is caught, returns None."""
+    summary_file = tmp_path / "summary.json"
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "publisher:\n  status_output_file: output/summary.json\n",
+        encoding="utf-8",
+    )
+
+    def _raising_write_text(self: Path, *args: object, **kwargs: object) -> int:
+        msg = "disk full"
+        raise OSError(msg)
+
+    monkeypatch.setattr(Path, "write_text", _raising_write_text)
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    result = r._writer._write_run_summary("success", str(summary_file))
+    assert result is None

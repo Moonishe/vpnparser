@@ -47,3 +47,10 @@ output/*
 !output/locations/
 output/locations/*
 !output/locations/.gitkeep
+# Coverage artifacts
+*.cover
+.coverage*
+# Output files
+output/
+*.txt
+*.json

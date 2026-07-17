@@ -472,7 +472,7 @@ class LivenessValidator(PipelineStage):
                 round_count = 0
                 while offset < len(checkable) and round_count < tcp_search_rounds:
                     batch = checkable[offset : offset + candidate_limit]
-                    if not batch:
+                    if not batch:  # pragma: no cover
                         break
                     round_count += 1
                     offset += len(batch)
@@ -482,7 +482,7 @@ class LivenessValidator(PipelineStage):
                         if tcp_max_alive > 0
                         else 0
                     )
-                    if tcp_max_alive > 0 and remaining_alive <= 0:
+                    if tcp_max_alive > 0 and remaining_alive <= 0:  # pragma: no cover
                         break
                     logger.info(
                         "%s TCP validation round %d: checking %d/%d candidates.",

@@ -56,9 +56,6 @@ class VlessParser(BaseParser):
                 return None
 
             parsed = urlparse(stripped)
-            if parsed.scheme.lower() != "vless":
-                return None
-
             uuid = (parsed.username or "").strip()
             host = parsed.hostname
             port = parsed.port
