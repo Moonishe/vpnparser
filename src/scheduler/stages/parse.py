@@ -7,11 +7,10 @@ import os
 from typing import Any
 
 from src.parsers import PARSER_BY_SCHEME
-from src.parsers.base import Config, find_all_links, is_garbage_config
+from src.parsers.base import Config, find_all_links
 from src.parsers.llm_fallback import LLMFallbackParser, should_use_llm
 from src.parsers.subscription import SubscriptionParser
 from src.scheduler.context import PipelineContext, PipelineState
-from src.scheduler.settings import Settings
 from src.scheduler.stages.base import PipelineStage
 from src.sources.list_types import normalize_list_type
 
@@ -62,7 +61,7 @@ def _result_default_country(result: Any) -> str | None:
     """Best-effort default country hint carried by a source result."""
     raw: Any = None
     if hasattr(result, "default_country"):
-        raw = getattr(result, "default_country")
+        raw = result.default_country
     elif isinstance(result, dict):
         raw = result.get("default_country")
     if raw is None or raw == "":
@@ -77,11 +76,15 @@ class LinkParser(PipelineStage):
         self.context = context
         self.settings = context.settings
 
-    async def run(self, state: PipelineState, context: PipelineContext) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         grouped = await self.parse_all_by_list(state.sources)
         state.parsed = grouped
         total = sum(len(cfgs) for cfgs in grouped.values())
-        logger.info("Parsed %d configs total across %d list group(s).", total, len(grouped))
+        logger.info(
+            "Parsed %d configs total across %d list group(s).", total, len(grouped)
+        )
         return state
 
     async def parse_all_by_list(self, results: list[Any]) -> dict[str, list[Config]]:
@@ -98,7 +101,9 @@ class LinkParser(PipelineStage):
                 if not content or not content.strip():
                     continue
 
-                links = await self.extract_links(sub_parser, content, filename, source_name)
+                links = await self.extract_links(
+                    sub_parser, content, filename, source_name
+                )
                 if not links:
                     logger.debug("No links found in %s (%s).", filename, source_name)
                     continue
@@ -110,9 +115,9 @@ class LinkParser(PipelineStage):
                     if cfg is not None:
                         source_default_country = _result_default_country(result)
                         if source_default_country:
-                            setattr(cfg, "source_default_country", source_default_country)
-                        setattr(cfg, "source_name", source_name)
-                        setattr(cfg, "source_file", filename)
+                            cfg.source_default_country = source_default_country
+                        cfg.source_name = source_name
+                        cfg.source_file = filename
                         bucket.append(cfg)
                         parsed_here += 1
                 logger.debug(
@@ -123,6 +128,26 @@ class LinkParser(PipelineStage):
                     source_name,
                     list_type,
                 )
+
+        # Optional GeoIP enrichment for configs without a detected country.
+        vcfg = self.settings.section("validator")
+        if self.settings.as_bool(vcfg.get("geoip_enabled"), False):
+            all_configs = [cfg for bucket in grouped.values() for cfg in bucket]
+            to_enrich = [cfg for cfg in all_configs if cfg.country is None]
+            if to_enrich:
+                try:
+                    from src.validators.geoip import enrich_configs_geoip
+
+                    api_url = str(
+                        vcfg.get("geoip_api_url", "http://ip-api.com/json/{ip}")
+                    )
+                    await enrich_configs_geoip(to_enrich, api_url=api_url)
+                    enriched = sum(1 for cfg in to_enrich if cfg.country is not None)
+                    logger.info(
+                        "GeoIP enriched %d/%d configs.", enriched, len(to_enrich)
+                    )
+                except Exception as exc:
+                    logger.warning("GeoIP enrichment failed: %s", exc)
 
         return grouped
 
@@ -137,17 +162,27 @@ class LinkParser(PipelineStage):
         try:
             is_sub = sub_parser.is_subscription(content)
         except Exception as exc:
-            logger.debug("is_subscription raised for %s (%s): %s — treating as raw.", filename, source_name, exc)
+            logger.debug(
+                "is_subscription raised for %s (%s): %s — treating as raw.",
+                filename,
+                source_name,
+                exc,
+            )
             is_sub = False
 
         if is_sub:
             try:
                 links = sub_parser.parse_subscription(content) or []
-                logger.debug("Subscription blob %s (%s) -> %d links.", filename, source_name, len(links))
+                logger.debug(
+                    "Subscription blob %s (%s) -> %d links.",
+                    filename,
+                    source_name,
+                    len(links),
+                )
                 return [ln for ln in links if isinstance(ln, str) and ln]
             except Exception as exc:
                 logger.warning(
-                    "SubscriptionParser.parse_subscription failed for %s (%s): %s — falling back to find_all_links.",
+                    "SubscriptionParser.parse_subscription failed for %s (%s): %s — falling back to find_all_links.",  # noqa: E501
                     filename,
                     source_name,
                     exc,
@@ -160,7 +195,9 @@ class LinkParser(PipelineStage):
 
         return links
 
-    async def llm_fallback(self, content: str, filename: str, source_name: str) -> list[str]:
+    async def llm_fallback(
+        self, content: str, filename: str, source_name: str
+    ) -> list[str]:
         """Try LLM extraction when regex found 0 links."""
         lcfg = self.settings.section("llm")
         if not self.settings.as_bool(lcfg.get("enabled"), False):
@@ -174,7 +211,9 @@ class LinkParser(PipelineStage):
 
         provider = lcfg.get("provider", "gemini")
         model = lcfg.get("model", "gemini-2.0-flash")
-        min_text_length = self.settings.as_int(lcfg.get("min_text_length"), 100, minimum=0)
+        min_text_length = self.settings.as_int(
+            lcfg.get("min_text_length"), 100, minimum=0
+        )
 
         if not should_use_llm(content, [], min_text_length=min_text_length):
             return []
@@ -190,11 +229,18 @@ class LinkParser(PipelineStage):
             llm = LLMFallbackParser(provider=provider, model=model, api_key=api_key)
             links = await llm.extract_links(content)
         except Exception as exc:
-            logger.warning("LLM fallback failed for %s (%s): %s", filename, source_name, exc)
+            logger.warning(
+                "LLM fallback failed for %s (%s): %s", filename, source_name, exc
+            )
             return []
 
         if links:
-            logger.info("LLM fallback extracted %d links from %s (%s).", len(links), filename, source_name)
+            logger.info(
+                "LLM fallback extracted %d links from %s (%s).",
+                len(links),
+                filename,
+                source_name,
+            )
         return links
 
     @staticmethod

@@ -3,7 +3,10 @@
 .venv/
 venv/
 env/
-bin/
+bin/*
+!bin/README.md
+!bin/LICENSE
+!bin/LICENSE-*
 *.log
 data/
 .opencode/

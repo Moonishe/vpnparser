@@ -9,7 +9,6 @@ from typing import Any
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
-from src.scheduler.settings import Settings
 from src.scheduler.stages.base import PipelineStage
 from src.sources.list_types import normalize_list_type
 
@@ -41,7 +40,9 @@ class LivenessValidator(PipelineStage):
         self._proxy_health_file: str | None = None
         self._init_proxy_health_history()
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         state.validated = await self.validate_by_list(state.preprocessed)
         return state
 
@@ -54,7 +55,9 @@ class LivenessValidator(PipelineStage):
     def _as_int(self, value: Any, default: int, *, minimum: int | None = None) -> int:
         return self.settings.as_int(value, default, minimum=minimum)
 
-    def _as_float(self, value: Any, default: float, *, minimum: float | None = None) -> float:
+    def _as_float(
+        self, value: Any, default: float, *, minimum: float | None = None
+    ) -> float:
         return self.settings.as_float(value, default, minimum=minimum)
 
     def _source_list(self, value: Any) -> list[str] | None:
@@ -111,7 +114,9 @@ class LivenessValidator(PipelineStage):
             ban_after_consecutive_failures=self._as_int(
                 hcfg.get("ban_after_consecutive_failures"), 3, minimum=1
             ),
-            max_latency_ms=self._as_float(hcfg.get("max_latency_ms"), 8000.0, minimum=1.0),
+            max_latency_ms=self._as_float(
+                hcfg.get("max_latency_ms"), 8000.0, minimum=1.0
+            ),
         )
 
     def save_proxy_health_history(self) -> None:
@@ -138,6 +143,7 @@ class LivenessValidator(PipelineStage):
             return "<invalid-proxy-url>"
         port = f":{parsed_port}" if parsed_port else ""
         return f"{parsed.scheme}://{host}{port}"
+
     async def _search_validator_proxy_pool(
         self,
         load_proxy_pool: Any,
@@ -149,8 +155,7 @@ class LivenessValidator(PipelineStage):
         min_proxies = self._as_int(
             pool_cfg.get("min_proxies"), min(10, max_proxies), minimum=1
         )
-        if min_proxies > max_proxies:
-            max_proxies = min_proxies
+        max_proxies = max(max_proxies, min_proxies)
 
         search_rounds = self._as_int(pool_cfg.get("search_rounds"), 3, minimum=1)
         candidate_growth = self._as_float(
@@ -234,7 +239,11 @@ class LivenessValidator(PipelineStage):
 
         vcfg = self._section("validator")
         urls: list[str] = []
-        explicit = str(vcfg.get("proxy_url") or __import__("os").environ.get("VALIDATOR_PROXY") or "")
+        explicit = str(
+            vcfg.get("proxy_url")
+            or __import__("os").environ.get("VALIDATOR_PROXY")
+            or ""
+        )
         explicit = explicit.strip()
         if explicit:
             urls.append(explicit)
@@ -280,6 +289,7 @@ class LivenessValidator(PipelineStage):
                 self._redact_proxy_url(url) for url in urls
             ]
         return list(urls)
+
     async def validate_by_list(
         self, configs_by_list: dict[str, list[Config]]
     ) -> dict[str, list[Config]]:
@@ -293,20 +303,20 @@ class LivenessValidator(PipelineStage):
             "tls_enabled": tls_enabled,
             "xray_enabled": xray_enabled,
             "fail_open_on_low_alive": self._as_bool(
-                vcfg.get("fail_open_on_low_alive"), True
+                vcfg.get("fail_open_on_low_alive"), False
             ),
             "drop_unchecked_after_tls": self._as_bool(
-                vcfg.get("drop_unchecked_after_tls"), False
+                vcfg.get("drop_unchecked_after_tls"), True
             ),
-            "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), False),
-            "proxy_pool_required": self._as_bool(pool_cfg.get("required"), False),
+            "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), True),
+            "proxy_pool_required": self._as_bool(pool_cfg.get("required"), True),
             "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
             "proxy_attempts_per_config": self._as_int(
-                vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                vcfg.get("proxy_attempts_per_config"), 3, minimum=0
             ),
             "tls_proxy_attempts_per_config": self._as_int(
                 vcfg.get("tls_proxy_attempts_per_config"),
-                self._as_int(vcfg.get("proxy_attempts_per_config"), 5, minimum=0),
+                self._as_int(vcfg.get("proxy_attempts_per_config"), 3, minimum=0),
                 minimum=0,
             ),
             "proxy_count": 0,
@@ -343,13 +353,15 @@ class LivenessValidator(PipelineStage):
             return []
 
         vcfg = self._section("validator")
-        proxy_urls = await self._proxy_url_getter() if self._proxy_url_getter else await self._validator_proxy_urls()
+        proxy_urls = (
+            await self._proxy_url_getter()
+            if self._proxy_url_getter
+            else await self._validator_proxy_urls()
+        )
         pool_cfg = self._proxy_pool_config()
         pool_required = self._as_bool(pool_cfg.get("required"), False)
         pool_enabled = self._as_bool(pool_cfg.get("enabled"), False)
-        fail_open_on_low_alive = self._as_bool(
-            vcfg.get("fail_open_on_low_alive"), True
-        )
+        fail_open_on_low_alive = self._as_bool(vcfg.get("fail_open_on_low_alive"), True)
         drop_unchecked_after_tls = self._as_bool(
             vcfg.get("drop_unchecked_after_tls"), False
         )
@@ -500,7 +512,9 @@ class LivenessValidator(PipelineStage):
 
         if tls_enabled:
             tls_checkable = [
-                c for c in current if str(c.security or "").lower() in ("tls", "reality")
+                c
+                for c in current
+                if str(c.security or "").lower() in ("tls", "reality")
             ]
             if tls_checkable:
                 from src.validators.tls_check import validate_configs_tls
@@ -540,7 +554,9 @@ class LivenessValidator(PipelineStage):
                     proxy_urls=proxy_urls,
                     proxy_attempts_per_config=self._as_int(
                         vcfg.get("tls_proxy_attempts_per_config"),
-                        self._as_int(vcfg.get("proxy_attempts_per_config"), 5, minimum=0),
+                        self._as_int(
+                            vcfg.get("proxy_attempts_per_config"), 5, minimum=0
+                        ),
                         minimum=0,
                     ),
                 )
@@ -617,9 +633,7 @@ class LivenessValidator(PipelineStage):
 
             supported = [cfg for cfg in current if is_xray_supported(cfg)]
             unsupported = len(current) - len(supported)
-            drop_unsupported = self._as_bool(
-                vcfg.get("xray_drop_unsupported"), True
-            )
+            drop_unsupported = self._as_bool(vcfg.get("xray_drop_unsupported"), True)
             list_stats["xray_candidates"] = len(supported)
             list_stats["xray_unsupported"] = unsupported
             list_stats["xray_drop_unsupported"] = drop_unsupported
@@ -716,7 +730,9 @@ class LivenessValidator(PipelineStage):
                 0,
                 minimum=0,
             )
-            xray_proxy_urls = proxy_urls[:proxy_probe_count] if proxy_probe_count else []
+            xray_proxy_urls = (
+                proxy_urls[:proxy_probe_count] if proxy_probe_count else []
+            )
             xray_min_proxy_successes = self._as_int(
                 vcfg.get("xray_min_proxy_successes"),
                 0,
@@ -751,9 +767,7 @@ class LivenessValidator(PipelineStage):
                 startup_timeout=self._as_float(
                     vcfg.get("xray_startup_timeout_seconds"), 4.0, minimum=0.5
                 ),
-                concurrency=self._as_int(
-                    vcfg.get("xray_concurrency"), 6, minimum=1
-                ),
+                concurrency=self._as_int(vcfg.get("xray_concurrency"), 6, minimum=1),
                 max_alive=xray_max_alive,
             )
             list_stats["checked"] = True
@@ -772,7 +786,9 @@ class LivenessValidator(PipelineStage):
             else:
                 self.health.update_sources(xray_attempted, list_stats)
             health_ban_min_alive = self._as_int(
-                self.settings.section("quality").get("health_ban_min_alive"), 3, minimum=0
+                self.settings.section("quality").get("health_ban_min_alive"),
+                3,
+                minimum=0,
             )
             if len(alive_xray) > health_ban_min_alive:
                 alive_xray = [

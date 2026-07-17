@@ -7,10 +7,8 @@ from typing import Any
 
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
-from src.scheduler.settings import Settings
 from src.scheduler.stages.base import PipelineStage
 from src.scheduler.stages.filter import DedupFilter
-from src.sources.list_types import normalize_list_type
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +20,9 @@ class Aggregator(PipelineStage):
         self.context = context
         self.settings = context.settings
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         """Aggregate preprocessed lists into a single combined list."""
         max_total = self._max_configs()
         combined: list[Config] = []
@@ -34,7 +34,9 @@ class Aggregator(PipelineStage):
 
     def _max_configs(self) -> int:
         return self.settings.as_int(
-            self.settings.section("aggregator").get("max_configs_in_output"), 500, minimum=0
+            self.settings.section("aggregator").get("max_configs_in_output"),
+            500,
+            minimum=0,
         )
 
     @staticmethod
@@ -46,8 +48,8 @@ class Aggregator(PipelineStage):
         max_configs = self._max_configs()
         try:
             return self._country_balanced_limit(configs, max_configs)
-        except Exception as exc:
-            logger.error("sort_and_limit failed: %s — passing through.", exc)
+        except Exception:
+            logger.exception("sort_and_limit failed — passing through.")
             return configs[:max_configs]
 
     def _country_balanced_limit(
@@ -66,8 +68,8 @@ class Aggregator(PipelineStage):
 
         try:
             from src.aggregator.merger import sort_configs
-        except (ImportError, AttributeError) as exc:
-            logger.error("Cannot import sort_configs: %s — skipping sort.", exc)
+        except (ImportError, AttributeError):
+            logger.exception("Cannot import sort_configs — skipping sort.")
             sorted_configs = list(configs)
         else:
             sorted_configs = sort_configs(
@@ -76,14 +78,33 @@ class Aggregator(PipelineStage):
             )
 
         groups: dict[str, list[Config]] = {}
+        unknown_bucket: list[Config] = []
         for cfg in sorted_configs:
             if cfg.country is None:
+                # Preserve configs with an unknown country in a fallback bucket
+                # instead of silently dropping them. They participate in the
+                # round-robin after known-country configs are exhausted.
+                unknown_bucket.append(cfg)
                 continue
             country = str(cfg.country).upper()
             bucket = groups.setdefault(country, [])
             if max_per_country > 0 and len(bucket) >= max_per_country:
                 continue
             bucket.append(cfg)
+        if unknown_bucket:
+            logger.info(
+                "country-balanced limit: %d config(s) have no detected country; "
+                "kept in fallback bucket.",
+                len(unknown_bucket),
+            )
+            unknown_bucket.sort(
+                key=lambda cfg: (
+                    -float(getattr(cfg, "quality_score", 0) or 0),
+                    cfg.latency_ms is None,
+                    float(cfg.latency_ms if cfg.latency_ms is not None else 10**9),
+                )
+            )
+            groups["__UNKNOWN__"] = unknown_bucket
 
         for bucket in groups.values():
             bucket.sort(
@@ -96,7 +117,7 @@ class Aggregator(PipelineStage):
 
         countries = sorted(groups)
         result: list[Config] = []
-        indexes = {country: 0 for country in countries}
+        indexes = dict.fromkeys(countries, 0)
         while len(result) < max_total:
             progressed = False
             for country in countries:
@@ -180,7 +201,9 @@ class Aggregator(PipelineStage):
             for cfg in preprocessed_by_list.get("whitelist", [])
             if cfg.dedup_key not in used_keys
         ]
-        whitelist_candidates = self._whitelist_balance(whitelist_source, whitelist_target)
+        whitelist_candidates = self._whitelist_balance(
+            whitelist_source, whitelist_target
+        )
         whitelist_part = self._take_unique_configs(
             whitelist_candidates, whitelist_target, used_keys
         )

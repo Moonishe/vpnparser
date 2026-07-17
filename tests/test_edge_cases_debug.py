@@ -16,7 +16,6 @@ from src.sources.list_types import infer_source_list_type
 from src.sources.manager import SourceManager
 from src.validators import tls_check as tls_module
 
-
 # --- Edge Case 1: Empty sources.json ---------------------------------------
 
 

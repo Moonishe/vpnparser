@@ -6,7 +6,6 @@ import asyncio
 import logging
 import os
 import time
-from pathlib import Path
 from typing import Any
 
 from src.scheduler.context import PipelineContext, PipelineState
@@ -21,7 +20,10 @@ class Publisher(PipelineStage):
     def __init__(self, context: PipelineContext) -> None:
         self.context = context
 
-    async def run(self, state: PipelineState, context: PipelineContext) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
+        assert context is not None  # runner always supplies context
         if not context.github_token:
             logger.warning("Publish requested but GITHUB_TOKEN is not set — skipping.")
             return state
@@ -41,8 +43,8 @@ class Publisher(PipelineStage):
 
         try:
             from src.publisher.github import GitHubPublisher
-        except ImportError as exc:
-            logger.error("Cannot import GitHubPublisher: %s — skipping publish.", exc)
+        except ImportError:
+            logger.exception("Cannot import GitHubPublisher — skipping publish.")
             return state
 
         commit_message = commit_tpl.replace(
@@ -63,7 +65,9 @@ class Publisher(PipelineStage):
                     and output_file == configured_combined_path
                 ):
                     repo_path = str(configured_combined_path)
-                await self._publish_file(publisher, output_file, repo_path, commit_message)
+                await self._publish_file(
+                    publisher, output_file, repo_path, commit_message
+                )
 
         state.published = True
         return state
@@ -73,17 +77,28 @@ class Publisher(PipelineStage):
         publisher: Any, output_file: str, repo_path: str, commit_message: str
     ) -> None:
         try:
-            content = await asyncio.to_thread(Path(output_file).read_text, encoding="utf-8")
-        except FileNotFoundError:
-            logger.error("Cannot publish: output file %s does not exist.", output_file)
+            from src.utils.paths import resolve_safe_output_path
+
+            safe_path = resolve_safe_output_path(output_file)
+        except ValueError:
+            logger.exception("Unsafe output file %r rejected for publish", output_file)
             return
-        except Exception as exc:
-            logger.error("Cannot read output file %s for publish: %s", output_file, exc)
+        try:
+            content = await asyncio.to_thread(safe_path.read_text, encoding="utf-8")
+        except FileNotFoundError:
+            logger.exception(
+                "Cannot publish: output file %s does not exist.", output_file
+            )
+            return
+        except Exception:
+            logger.exception("Cannot read output file %s for publish", output_file)
             return
 
         try:
             ok = await publisher.publish_file(repo_path, content, commit_message)
             if not ok:
-                logger.error("Publish completed but reported failure for %s.", repo_path)
-        except Exception as exc:
-            logger.error("Publish failed for %s: %s", repo_path, exc)
+                logger.error(
+                    "Publish completed but reported failure for %s.", repo_path
+                )
+        except Exception:
+            logger.exception("Publish failed for %s", repo_path)

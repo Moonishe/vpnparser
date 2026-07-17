@@ -16,18 +16,26 @@ logger = logging.getLogger(__name__)
 class QualityFilter(PipelineStage):
     """Apply quality filters and health/source bans to validated configs."""
 
-    def __init__(self, context: PipelineContext, health: HealthHistory | None = None) -> None:
+    def __init__(
+        self, context: PipelineContext, health: HealthHistory | None = None
+    ) -> None:
         self.context = context
         self.settings = context.settings
         self.health = health or HealthHistory(self.settings)
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         state.validated = self.apply(state.validated)
         return state
 
-    def apply(self, configs_by_list: dict[str, list[Config]]) -> dict[str, list[Config]]:
+    def apply(
+        self, configs_by_list: dict[str, list[Config]]
+    ) -> dict[str, list[Config]]:
         qcfg = self.settings.section("quality")
-        max_latency = self.settings.as_float(qcfg.get("max_latency_ms"), 10000.0, minimum=1.0)
+        max_latency = self.settings.as_float(
+            qcfg.get("max_latency_ms"), 10000.0, minimum=1.0
+        )
         drop_slow = self.settings.as_bool(qcfg.get("drop_slow_configs"), True)
         min_alive_to_skip_slow_drop = self.settings.as_int(
             qcfg.get("min_alive_to_skip_slow_drop"), 1, minimum=0
@@ -42,7 +50,11 @@ class QualityFilter(PipelineStage):
             fast: list[Config] = []
             slow: list[Config] = []
             for cfg in configs:
-                if drop_slow and cfg.latency_ms is not None and cfg.latency_ms > max_latency:
+                if (
+                    drop_slow
+                    and cfg.latency_ms is not None
+                    and cfg.latency_ms > max_latency
+                ):
                     slow.append(cfg)
                 else:
                     fast.append(cfg)
@@ -50,16 +62,16 @@ class QualityFilter(PipelineStage):
             slow_dropped = len(slow)
             if fast and not slow:
                 for cfg in fast:
-                    setattr(cfg, "quality_score", self.health.score(cfg))
+                    cfg.quality_score = self.health.score(cfg)
             elif len(fast) < min_alive_to_skip_slow_drop and slow:
                 for cfg in fast + slow:
-                    setattr(cfg, "quality_score", self.health.score(cfg))
+                    cfg.quality_score = self.health.score(cfg)
                 kept = fast + slow
                 slow_dropped = 0
                 quality_stats.setdefault("slow_preserved", {})[list_type] = len(slow)
             else:
                 for cfg in fast:
-                    setattr(cfg, "quality_score", self.health.score(cfg))
+                    cfg.quality_score = self.health.score(cfg)
             kept.sort(
                 key=lambda cfg: (
                     -float(getattr(cfg, "quality_score", 0) or 0),

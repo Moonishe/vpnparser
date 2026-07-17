@@ -49,9 +49,8 @@ dev = [
 Homepage = "https://github.com/Moonishe/vpnparser"
 Repository = "https://github.com/Moonishe/vpnparser"
 
-[tool.setuptools]
-package-dir = { "" = "src" }
-packages = ["src"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.ruff]
 target-version = "py311"

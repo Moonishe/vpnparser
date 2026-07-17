@@ -15,6 +15,7 @@ are routed through it. This is essential when running from a data center
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 import time
 from typing import Any
@@ -73,20 +74,16 @@ async def tcp_check(
                 _open_connection_direct(host, port),
                 timeout=timeout,
             )
-    except (ConnectionRefusedError, asyncio.TimeoutError, socket.gaierror, OSError):
+    except (TimeoutError, ConnectionRefusedError, socket.gaierror, OSError):
         return (False, None)
     except Exception:
         return (False, None)
 
     latency_ms = (time.monotonic() - start) * 1000.0
-    try:
+    with contextlib.suppress(OSError, Exception):
         writer.close()
-        try:
+        with contextlib.suppress(OSError, Exception):
             await writer.wait_closed()
-        except (OSError, Exception):
-            pass
-    except (OSError, Exception):
-        pass
 
     return (True, latency_ms)
 
@@ -132,9 +129,12 @@ async def validate_configs_tcp(
         else:
             attempts = min(max(1, proxy_attempts_per_config), len(proxy_choices))
         start = index % len(proxy_choices)
-        return [proxy_choices[(start + offset) % len(proxy_choices)] for offset in range(attempts)]
+        return [
+            proxy_choices[(start + offset) % len(proxy_choices)]
+            for offset in range(attempts)
+        ]
 
-    semaphore = asyncio.Semaphore(concurrency)
+    semaphore = asyncio.Semaphore(max(1, int(concurrency)))
     alive_list: list[Config] = []
     alive_lock = asyncio.Lock()
     done_event = asyncio.Event()

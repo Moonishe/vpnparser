@@ -64,14 +64,16 @@ jobs:
           curl -L --retry 3 --retry-delay 2 -o "/tmp/${asset}" "$url"
           if [ -f .github/xray.sha256 ]; then
             echo "Verifying Xray checksum..."
-            sha256sum -c .github/xray.sha256
+            sed "s|${asset}|/tmp/${asset}|" .github/xray.sha256 > /tmp/xray.sha256
+            sha256sum -c /tmp/xray.sha256
           else
             echo "::warning::No checksum file .github/xray.sha256; skipping verification."
           fi
-          unzip -q "/tmp/${asset}" -d /tmp/xray
-          chmod +x /tmp/xray/xray
-          echo "/tmp/xray" >> "$GITHUB_PATH"
-          /tmp/xray/xray version
+          mkdir -p bin/xray
+          unzip -q "/tmp/${asset}" -d bin/xray
+          chmod +x bin/xray/xray
+          echo "${{ github.workspace }}/bin/xray" >> "$GITHUB_PATH"
+          bin/xray/xray version
 
       - name: Run tests
         run: python -m pytest -q -p no:cacheprovider
@@ -94,13 +96,20 @@ jobs:
 
       - name: Run pipeline
         id: pipeline
-        run: python -m src.main --run
+        run: |
+          if [ "${{ inputs.skip_publish }}" = "true" ]; then
+            python -m src.main --run
+          else
+            python -m src.main --run --publish
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
+          XRAY_EXECUTABLE: ${{ github.workspace }}/bin/xray/xray
+          XRAY_LOCATION_ASSET: ${{ github.workspace }}/bin/xray
 
       - name: Verify output
         id: verify
@@ -132,14 +141,6 @@ jobs:
             echo "::error::Pipeline produced critically low output ($CONFIGS configs). Aborting publish."
             exit 1
           fi
-
-      - name: Publish output
-        if: ${{ !inputs.skip_publish && success() && env.configs_count != '' && env.configs_count != '0' }}
-        run: python -m src.main --publish
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
       - name: Telegram notify
         if: env.configs_count != ''

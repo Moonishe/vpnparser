@@ -50,6 +50,8 @@ _PROVIDER_URLS: dict[str, str] = {
 _DEFAULT_TIMEOUT = 30.0
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0  # seconds; doubled per attempt (1, 2, 4)
+# Guard against huge/poisoned inputs; limits cost and prompt-injection surface.
+_MAX_INPUT_CHARS = 100_000
 
 # Per-response max-tokens defaults per method type.
 # 2000 is safe for DashScope qwen-flash (max output ~2000 tokens) and still
@@ -85,8 +87,8 @@ class LLMFallbackParser:
         """Initialise the fallback parser.
 
         Args:
-            provider: One of ``"groq"``, ``"openrouter"``, ``"gemini"``, ``"dashscope"``.
-                Used to resolve the default ``api_base`` when ``api_base`` is
+            provider: Provider — ``"groq"``, ``"openrouter"``, ``"gemini"``,
+                or ``"dashscope"``.
                 not supplied.
             model: Model name understood by the provider, e.g.
                 ``"llama-3.1-8b-instant"`` (groq) or
@@ -141,6 +143,14 @@ class LLMFallbackParser:
         """
         if not text.strip():
             return []
+
+        # Bound the untrusted input size to limit cost and prompt-injection surface.
+        if len(text) > _MAX_INPUT_CHARS:
+            text = text[:_MAX_INPUT_CHARS]
+            logger.warning(
+                "LLM fallback input truncated to %d chars for safety/cost",
+                _MAX_INPUT_CHARS,
+            )
 
         system_prompt = (
             "You are a precise extraction tool. "
@@ -384,17 +394,16 @@ class LLMFallbackParser:
                     try:
                         payload = response.json()
                     except ValueError:
-                        logger.error(
+                        logger.exception(
                             "LLM API returned non-JSON response: %s",
                             response.text[:200],
                         )
                         return ""
                     try:
                         return payload["choices"][0]["message"]["content"] or ""
-                    except (KeyError, IndexError, TypeError) as exc:
-                        logger.error(
-                            "LLM API response missing choices[0].message.content: %s",
-                            exc,
+                    except (KeyError, IndexError, TypeError):
+                        logger.exception(
+                            "LLM API response missing choices[0].message.content",
                         )
                         return ""
 

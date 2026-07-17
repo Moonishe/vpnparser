@@ -7,8 +7,8 @@ Usage::
     python -m src.main --run -v
 
 Flags:
-    --run       Run the full pipeline (fetch -> parse -> validate -> aggregate -> write).
-    --publish   Also publish the result to a GitHub repo (needs GITHUB_TOKEN).
+    --run      Run the full pipeline (fetch -> parse -> validate -> aggregate -> write).
+    --publish  Also publish the result to a GitHub repo (needs GITHUB_TOKEN).
     --settings  Path to settings.yaml (default: config/settings.yaml).
     --sources   Path to sources.json (default: config/sources.json).
     --output    Path to the output subscription file (default: output/subscription.txt).
@@ -55,7 +55,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--run",
         action="store_true",
-        help="Run the full pipeline (fetch -> parse -> validate -> aggregate -> write).",
+        help=(
+            "Run the full pipeline (fetch -> parse -> validate -> aggregate -> write)."
+        ),
     )
     parser.add_argument(
         "--publish",
@@ -82,6 +84,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "-v",
         action="store_true",
         help="Enable DEBUG-level logging.",
+    )
+    parser.add_argument(
+        "--notify", action="store_true", help="Send Telegram notification after run."
     )
     return parser
 
@@ -118,8 +123,8 @@ def main() -> int:
     # dependency tree (and missing sibling modules) to be importable.
     try:
         from src.scheduler.runner import PipelineRunner
-    except ImportError as exc:
-        logger.error("Failed to import PipelineRunner: %s", exc)
+    except ImportError:
+        logger.exception("Failed to import PipelineRunner")
         return 1
 
     runner = PipelineRunner(
@@ -141,6 +146,22 @@ def main() -> int:
         logger.info("Done. %d configs written to %s.", count, args.output)
         if args.publish:
             logger.info("Result published to GitHub (check logs above for status).")
+        if args.notify:
+            try:
+                from src.notify import telegram as tg
+
+                status_file = str(
+                    runner.settings.get("publisher", {}).get(
+                        "status_output_file", "output/run-summary.json"
+                    )
+                )
+                tg.send_notification(
+                    configs_count=count,
+                    subscription_file=args.output,
+                    status_file=status_file,
+                )
+            except Exception as exc:
+                logger.warning("Telegram notification failed: %s", exc)
         return 0
 
     logger.warning("Pipeline completed but produced 0 configs.")

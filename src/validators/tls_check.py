@@ -11,6 +11,7 @@ are routed through it (same rationale as TCP check).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import re
@@ -116,10 +117,7 @@ def _tls_server_names(cfg: Config) -> list[str | None]:
         names.append(candidate)
 
     explicit_names = [
-        name
-        for raw in (cfg.sni, cfg.host)
-        for name in _split_server_names(raw)
-        if name
+        name for raw in (cfg.sni, cfg.host) for name in _split_server_names(raw) if name
     ]
     for name in explicit_names:
         add(name)
@@ -178,19 +176,15 @@ async def tls_check(
                 _open_connection_direct(host, port, ssl_context, server_hostname),
                 timeout=timeout,
             )
-    except (ssl.SSLError, ConnectionRefusedError, asyncio.TimeoutError, OSError):
+    except (TimeoutError, ssl.SSLError, ConnectionRefusedError, OSError):
         return False
     except Exception:
         return False
 
-    try:
+    with contextlib.suppress(OSError, ssl.SSLError, Exception):
         writer.close()
-        try:
+        with contextlib.suppress(OSError, ssl.SSLError, Exception):
             await writer.wait_closed()
-        except (OSError, ssl.SSLError, Exception):
-            pass
-    except (OSError, ssl.SSLError, Exception):
-        pass
 
     return True
 
@@ -231,9 +225,12 @@ async def validate_configs_tls(
         else:
             attempts = min(max(1, proxy_attempts_per_config), len(proxy_choices))
         start = index % len(proxy_choices)
-        return [proxy_choices[(start + offset) % len(proxy_choices)] for offset in range(attempts)]
+        return [
+            proxy_choices[(start + offset) % len(proxy_choices)]
+            for offset in range(attempts)
+        ]
 
-    semaphore = asyncio.Semaphore(concurrency)
+    semaphore = asyncio.Semaphore(max(1, int(concurrency)))
 
     async def _check_one(index: int, cfg: Config) -> None:
         if not _is_tls_security(cfg.security):

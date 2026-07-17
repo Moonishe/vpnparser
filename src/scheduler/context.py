@@ -29,6 +29,7 @@ class PipelineContext:
     settings: Settings
     github_token: str | None
     sources_path: str
+    settings_path: str | None = None
     liveness_stats: dict[str, Any] = field(default_factory=dict)
     output_stats: dict[str, Any] = field(default_factory=dict)
     health_history: dict[str, Any] | None = None

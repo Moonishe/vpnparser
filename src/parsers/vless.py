@@ -31,9 +31,9 @@ from typing import ClassVar
 from urllib.parse import urlparse
 
 from src.parsers.base import (
+    _UUID_RE,
     BaseParser,
     Config,
-    _UUID_RE,
     extract_remark,
     parse_qs_single,
 )

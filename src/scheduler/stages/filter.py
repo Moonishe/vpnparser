@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any
 
 from src.parsers.base import Config, is_garbage_config
 from src.scheduler.context import PipelineContext, PipelineState
@@ -21,12 +20,16 @@ class GarbageFilter(PipelineStage):
     def __init__(self, context: PipelineContext) -> None:
         self.context = context
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         filtered: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
             clean, count = self.filter_garbage(configs)
             if count:
-                logger.info("Filtered %d garbage/placeholder configs for %s.", count, label)
+                logger.info(
+                    "Filtered %d garbage/placeholder configs for %s.", count, label
+                )
             filtered[label] = clean
         state.parsed = filtered
         return state
@@ -58,7 +61,9 @@ class CountryFilter(PipelineStage):
         self.context = context
         self.settings = context.settings
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         filtered: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
             filtered[label] = self.filter_countries(configs, list_type=label)
@@ -111,7 +116,9 @@ class CountryFilter(PipelineStage):
 class DedupFilter(PipelineStage):
     """Deduplicate configs by (address, port)."""
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         deduped: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
             deduped[label] = self.dedup_only(configs)
@@ -124,13 +131,13 @@ class DedupFilter(PipelineStage):
         """Deduplicate configs by (address, port)."""
         try:
             from src.aggregator.merger import deduplicate
-        except (ImportError, AttributeError) as exc:
-            logger.error("Cannot import deduplicate: %s — skipping dedup.", exc)
+        except (ImportError, AttributeError):
+            logger.exception("Cannot import deduplicate — skipping dedup.")
             return configs
         try:
             return deduplicate(configs)
-        except Exception as exc:
-            logger.error("deduplicate failed: %s — passing through.", exc)
+        except Exception:
+            logger.exception("deduplicate failed — passing through.")
             return configs
 
 
@@ -141,9 +148,13 @@ class Sampler(PipelineStage):
         self.context = context
         self.settings = context.settings
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         vcfg = self.settings.section("validator")
-        max_to_process = self.settings.as_int(vcfg.get("max_configs_to_validate"), 20000, minimum=0)
+        max_to_process = self.settings.as_int(
+            vcfg.get("max_configs_to_validate"), 20000, minimum=0
+        )
         sampled: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
             if max_to_process > 0 and len(configs) > max_to_process:
@@ -171,7 +182,9 @@ class PreprocessFilter(PipelineStage):
         self.dedup = DedupFilter()
         self.country = CountryFilter(context)
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
         preprocessed: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
             preprocessed[label] = self.preprocess(configs, label=label)
@@ -186,10 +199,17 @@ class PreprocessFilter(PipelineStage):
         if not configs:
             return []
         max_to_process = self.settings.as_int(
-            self.settings.section("validator").get("max_configs_to_validate"), 20000, minimum=0
+            self.settings.section("validator").get("max_configs_to_validate"),
+            20000,
+            minimum=0,
         )
         if max_to_process > 0 and len(configs) > max_to_process:
-            logger.info("Sampling %d configs from %d for %s processing.", max_to_process, len(configs), label)
+            logger.info(
+                "Sampling %d configs from %d for %s processing.",
+                max_to_process,
+                len(configs),
+                label,
+            )
             configs = random.sample(configs, max_to_process)
         configs = self.dedup.dedup_only(configs)
         logger.info("%s after dedup: %d configs.", label, len(configs))

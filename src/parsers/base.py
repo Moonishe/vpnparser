@@ -10,7 +10,7 @@ import base64
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar
 from urllib.parse import parse_qs, unquote
 
 
@@ -46,6 +46,20 @@ class Config:
     latency_ms: float | None = None
     country: str | None = None
     is_alive: bool | None = None
+    # source metadata (filled by the parsing stage)
+    source_name: str | None = None
+    source_file: str | None = None
+    source_default_country: str | None = None
+    # Xray probe bookkeeping (filled by xray_probe validator)
+    xray_was_checked: bool | None = None
+    xray_attempt_successes: int | None = None
+    xray_attempts_per_config: int | None = None
+    xray_proxy_successes: int | None = None
+    xray_proxy_checks: int | None = None
+    # quality / health bookkeeping (filled by quality filter / health history)
+    quality_score: float | None = None
+    quality_block_reason: str | None = None
+    health_record: dict[str, Any] | None = None
 
     @property
     def dedup_key(self) -> tuple[str, int]:
@@ -306,12 +320,12 @@ def find_all_links(text: str) -> list[str]:
 _PLACEHOLDER_PATTERNS = re.compile(
     r"(?i)"
     r"\bUUID\b"  # literal "UUID" instead of real uuid
-    r"|\bSERVER_IP"  # SERVER_IP, SERVER_IP_1, SERVER_IP_2... (no trailing \b: _ is a word char)
-    r"|\bPUBLIC_KEY"  # PUBLIC_KEY, PUBLIC_KEY_1, ... (no trailing \b: would block _N suffix)
-    r"|\bSHORT_ID"  # SHORT_ID, SHORT_ID_1, ... (no trailing \b: would block _N suffix)
+    r"|\bSERVER_IP"  # SERVER_IP, SERVER_IP_1, SERVER_IP_2... (no trailing \b: _ is a word char)  # noqa: E501
+    r"|\bPUBLIC_KEY"  # PUBLIC_KEY, PUBLIC_KEY_1, ... (no trailing \b: would block _N suffix)  # noqa: E501
+    r"|\bSHORT_ID"  # SHORT_ID, SHORT_ID_1, ... (no trailing \b: would block _N suffix)  # noqa: E501
     r"|\bPASSWORD\b"  # literal "PASSWORD"
-    r"|\byour[_-]?domain\b"  # yourdomain.com, your-domain.com (word-bounded: not yourdomains.com)
-    r"|\bexample\.com\b"  # example.com (IANA reserved; word-bounded: not bestexample.com)
+    r"|\byour[_-]?domain\b"  # yourdomain.com, your-domain.com (word-bounded: not yourdomains.com)  # noqa: E501
+    r"|\bexample\.com\b"  # example.com (IANA reserved; word-bounded: not bestexample.com)  # noqa: E501
 )
 
 # Advertising in remark — Telegram handles, URLs, promotional text.
@@ -429,11 +443,10 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
                     return True
                 if not _UUID_RE.match(uuid_part):
                     return True
-        else:
-            # vless/vmess/tuic with empty credential = garbage (parsers reject
-            # these, but is_garbage_config must be safe if called directly).
-            if cfg.protocol in ("vless", "vmess", "tuic"):
-                return True
+        # vless/vmess/tuic with empty credential = garbage (parsers reject
+        # these, but is_garbage_config must be safe if called directly).
+        elif cfg.protocol in ("vless", "vmess", "tuic"):
+            return True
         return False
 
     # String link — check raw text for placeholders.

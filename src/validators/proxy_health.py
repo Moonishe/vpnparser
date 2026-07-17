@@ -33,8 +33,14 @@ class ProxyHealthHistory:
         self.max_latency_ms = max(1.0, max_latency_ms)
 
     @classmethod
-    def load(cls, path: str | Path, **kwargs: Any) -> "ProxyHealthHistory":
-        target = Path(path)
+    def load(cls, path: str | Path, **kwargs: Any) -> ProxyHealthHistory:
+        from src.utils.paths import resolve_safe_output_path
+
+        try:
+            target = resolve_safe_output_path(path)
+        except ValueError as exc:
+            logger.warning("Unsafe proxy health path %r: %s", path, exc)
+            return cls(**kwargs)
         if not target.exists():
             return cls(**kwargs)
         try:
@@ -44,11 +50,19 @@ class ProxyHealthHistory:
                 return cls(**kwargs)
             return cls(data, **kwargs)
         except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Failed to load proxy health history from %s: %s", target, exc)
+            logger.warning(
+                "Failed to load proxy health history from %s: %s", target, exc
+            )
             return cls(**kwargs)
 
     def save(self, path: str | Path) -> None:
-        target = Path(path)
+        from src.utils.paths import resolve_safe_output_path
+
+        try:
+            target = resolve_safe_output_path(path)
+        except ValueError as exc:
+            logger.warning("Unsafe proxy health path %r: %s", path, exc)
+            return
         try:
             if target.parent and not target.parent.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +106,10 @@ class ProxyHealthHistory:
         entry = self.records.get(key)
         if not entry:
             return False
-        return int(entry.get("consecutive_failures", 0)) >= self.ban_after_consecutive_failures
+        return (
+            int(entry.get("consecutive_failures", 0))
+            >= self.ban_after_consecutive_failures
+        )
 
     def _avg_latency(self, proxy_url: str) -> float:
         entry = self.records.get(proxy_url.strip())
@@ -135,7 +152,11 @@ class ProxyHealthHistory:
             if drop_banned and self.is_banned(key):
                 logger.debug("Proxy %s is banned by health history.", key)
                 continue
-            if drop_slow and self._has_history(key) and self._avg_latency(key) > self.max_latency_ms:
+            if (
+                drop_slow
+                and self._has_history(key)
+                and self._avg_latency(key) > self.max_latency_ms
+            ):
                 logger.debug("Proxy %s is too slow by health history.", key)
                 continue
             result.append(key)

@@ -126,7 +126,7 @@ validator:
 
     async def fake_validate_configs_xray(configs, **kwargs):
         for item in configs:
-            setattr(item, "xray_was_checked", True)
+            item.xray_was_checked = True
             item.is_alive = True
         return list(configs)
 
@@ -191,7 +191,7 @@ validator:
 
     async def fake_validate_configs_xray(configs, **kwargs):
         for item in configs:
-            setattr(item, "xray_was_checked", True)
+            item.xray_was_checked = True
             item.is_alive = True
         return list(configs)
 

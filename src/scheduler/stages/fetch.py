@@ -1,9 +1,8 @@
-﻿"""Source-fetching stage."""
+"""Source-fetching stage."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.stages.base import PipelineStage
@@ -15,10 +14,13 @@ logger = logging.getLogger(__name__)
 class SourceFetcher(PipelineStage):
     """Fetch all configured source files concurrently."""
 
-    async def run(self, state: PipelineState, context: PipelineContext) -> PipelineState:
+    async def run(
+        self, state: PipelineState, context: PipelineContext | None = None
+    ) -> PipelineState:
+        assert context is not None  # runner always supplies context
         manager = SourceManager(
             sources_file=context.sources_path,
-            settings_file="config/settings.yaml",
+            settings_file=context.settings_path or "config/settings.yaml",
             github_token=context.github_token,
         )
         async with manager:

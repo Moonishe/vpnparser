@@ -4,7 +4,7 @@
 
 1. **Fetch**    — ``SourceManager.fetch_all()`` pulls files from configured sources.
 2. **Parse**    — ``_parse_all_by_list()`` extracts proxy links and turns them into
-                  ``Config`` objects grouped by source ``list_type`` (blacklist/whitelist).
+                   ``Config`` objects grouped by source ``list_type`` (list type).
 3. **Filter**   — garbage/placeholder filter -> sample -> dedup -> country filter.
 4. **Aggregate**— interleave blacklist+whitelist -> sort -> per-country limit.
 5. **Write**    — ``write_subscription()`` emits combined, mix, and split files.
@@ -17,7 +17,6 @@ continues with whatever data survived the previous stage.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
@@ -25,22 +24,25 @@ import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
-
 
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
-from src.scheduler.settings import Settings, load_settings
-from src.scheduler.stages.fetch import SourceFetcher
-from src.scheduler.stages.parse import LinkParser
-from src.scheduler.stages.filter import PreprocessFilter
 from src.scheduler.health_history import HealthHistory
+from src.scheduler.settings import Settings, load_settings
 from src.scheduler.stages.aggregate import Aggregator
-from src.scheduler.stages.write import OutputWriter
-from src.scheduler.stages.quality import QualityFilter
+from src.scheduler.stages.fetch import SourceFetcher
+from src.scheduler.stages.filter import (
+    CountryFilter,
+    DedupFilter,
+    GarbageFilter,
+    PreprocessFilter,
+)
 from src.scheduler.stages.liveness import LivenessValidator
-
+from src.scheduler.stages.parse import LinkParser
+from src.scheduler.stages.quality import QualityFilter
+from src.scheduler.stages.write import OutputWriter
 from src.sources.list_types import normalize_list_type
+from src.utils.paths import resolve_safe_output_path
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ _TCP_SKIP_PROTOCOLS = {"tuic", "hysteria2"}
 
 
 class PipelineRunner:
-    """Orchestrates the full pipeline: fetch -> parse -> validate -> aggregate -> publish."""
+    """Orchestrates the full pipeline: fetch -> parse -> validate -> aggregate -> publish."""  # noqa: E501
 
     def __init__(
         self,
@@ -66,6 +68,7 @@ class PipelineRunner:
             settings=self._settings,
             github_token=self.github_token,
             sources_path=self.sources_path,
+            settings_path=self.settings_path,
         )
         self._validator_proxy_urls_cache: list[str] | None = None
         self._liveness_stats: dict[str, Any] = {}
@@ -84,10 +87,16 @@ class PipelineRunner:
             health=self._health_history,
             proxy_url_getter=lambda: self._validator_proxy_urls(),
             update_health_callback=lambda configs: self._update_health_history(configs),
-            update_source_health_callback=lambda configs, stats: self._update_source_health(configs, stats),
+            update_source_health_callback=lambda configs, stats: (
+                self._update_source_health(configs, stats)
+            ),
         )
         self._quality = QualityFilter(self._context, health=self._health_history)
         self._state = PipelineState()
+        # Delegate proxy health history to the LivenessValidator (single source
+        # of truth) so _save_proxy_health_history() actually persists it.
+        self._proxy_health_history = self._liveness._proxy_health_history
+        self._proxy_health_file = self._liveness._proxy_health_file
 
     # --- settings ---
 
@@ -288,11 +297,8 @@ class PipelineRunner:
         return self._state.parsed
 
     @staticmethod
-    @staticmethod
     def _filter_garbage(configs: list[Config]) -> tuple[list[Config], int]:
         """Remove placeholder/template configs. Delegates to GarbageFilter."""
-        from src.scheduler.stages.filter import GarbageFilter
-
         return GarbageFilter.filter_garbage(configs)
 
     # --- stage 3: country filter ---
@@ -301,55 +307,11 @@ class PipelineRunner:
         self, configs: list[Config], *, list_type: str = "mixed"
     ) -> list[Config]:
         """Filter configs by allowed countries. Delegates to CountryFilter."""
-        from src.scheduler.stages.filter import CountryFilter
-
-        return CountryFilter(self._context).filter_countries(configs, list_type=list_type)
+        return CountryFilter(self._context).filter_countries(
+            configs, list_type=list_type
+        )
 
     # --- optional network liveness validation ---
-
-    @staticmethod
-    def _as_bool(value: Any, default: bool = False) -> bool:
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return default
-        text = str(value).strip().lower()
-        if text in {"1", "true", "yes", "on"}:
-            return True
-        if text in {"0", "false", "no", "off"}:
-            return False
-        return default
-
-    @staticmethod
-    def _as_int(value: Any, default: int, *, minimum: int = 0) -> int:
-        if isinstance(value, bool):
-            return default
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            return default
-        return max(minimum, parsed)
-
-    @staticmethod
-    def _as_float(value: Any, default: float, *, minimum: float = 0.0) -> float:
-        if isinstance(value, bool):
-            return default
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            return default
-        return max(minimum, parsed)
-
-    @staticmethod
-    def _source_list(value: Any) -> list[str] | None:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            text = value.strip()
-            return [text] if text else []
-        if isinstance(value, list):
-            return [str(item).strip() for item in value if str(item).strip()]
-        return []
 
     async def _validator_proxy_urls(self) -> list[str]:
         """Return configured validator proxies, including optional free pool."""
@@ -400,6 +362,7 @@ class PipelineRunner:
         )
         self._liveness_stats = self._context.liveness_stats
         return result
+
     # --- stage 3+5: aggregate (split into dedup + sort/limit) ---
 
     def _xray_candidate_preselect(
@@ -412,8 +375,6 @@ class PipelineRunner:
 
     def _dedup_only(self, configs: list[Config]) -> list[Config]:
         """Deduplicate configs by (address, port). Delegates to DedupFilter."""
-        from src.scheduler.stages.filter import DedupFilter
-
         return DedupFilter.dedup_only(configs)
 
     def _sort_and_limit(self, configs: list[Config]) -> list[Config]:
@@ -450,7 +411,9 @@ class PipelineRunner:
         """Update per-config health history. Kept for compatibility."""
         self._quality.health.update(checked_configs)
 
-    def _source_run_stats(self, checked_configs: list[Config]) -> dict[str, dict[str, int]]:
+    def _source_run_stats(
+        self, checked_configs: list[Config]
+    ) -> dict[str, dict[str, int]]:
         """Compute source run statistics. Kept for compatibility."""
         return self._quality.health.source_run_stats(checked_configs)
 
@@ -500,10 +463,6 @@ class PipelineRunner:
         configs: list[Config], target: int, used_keys: set[Any]
     ) -> list[Config]:
         """Take up to target configs, skipping keys already used by another list."""
-        from src.scheduler.stages.aggregate import Aggregator
-
-
-
         return Aggregator._take_unique_configs(configs, target, used_keys)
 
     def _process_configs(
@@ -706,65 +665,26 @@ class PipelineRunner:
             self._write_empty_output(split_file)
 
     def _location_output_config(self) -> tuple[bool, str, int]:
-        pcfg = self._section("publisher")
-        enabled = self._as_bool(pcfg.get("location_outputs_enabled"), True)
-        output_dir = str(pcfg.get("location_output_dir") or "output/locations")
-        limit = self._as_int(pcfg.get("location_output_limit"), 50, minimum=1)
-        return enabled, output_dir, limit
+        return self._writer._location_output_config()
 
     @staticmethod
     def _location_output_filename(country: str) -> str:
-        code = "".join(ch for ch in country.upper() if ch.isalnum())
-        return f"subscription-{code or 'XX'}.txt"
+        return OutputWriter._location_output_filename(country)
 
     def _clear_location_outputs(self) -> None:
-        enabled, output_dir, _limit = self._location_output_config()
-        if not enabled:
-            return
-        root = Path(output_dir)
-        if not root.exists():
-            return
-        for path in root.glob("subscription-*.txt"):
-            try:
-                path.unlink()
-            except OSError as exc:
-                logger.warning("Failed to remove stale location output %s: %s", path, exc)
+        self._writer._clear_location_outputs()
 
     def _build_location_outputs(
         self, configs: list[Config], per_location_limit: int
     ) -> dict[str, list[Config]]:
-        groups: dict[str, list[Config]] = {}
-        for cfg in configs:
-            if not cfg.raw_link or not getattr(cfg, "country", None):
-                continue
-            country = str(cfg.country).upper()
-            groups.setdefault(country, []).append(cfg)
-
-        return {
-            country: self._country_balanced_limit(country_configs, per_location_limit)
-            for country, country_configs in sorted(groups.items())
-        }
+        return self._writer._build_location_outputs(configs, per_location_limit)
 
     def _write_location_outputs(self, configs: list[Config]) -> list[str]:
-        enabled, output_dir, limit = self._location_output_config()
-        if not enabled:
-            return []
-
-        self._clear_location_outputs()
-        outputs = self._build_location_outputs(configs, limit)
-        output_files: list[str] = []
-        for country, country_configs in outputs.items():
-            output_file = str(Path(output_dir) / self._location_output_filename(country))
-            count = self._write_output(country_configs, output_file)
-            self._record_output_stats(f"location_{country.lower()}", output_file, country_configs)
-            output_files.append(output_file)
-            logger.info(
-                "Wrote %d %s location configs to %s.",
-                count,
-                country,
-                output_file,
-            )
-        return output_files
+        result = self._writer._write_location_outputs(configs)
+        for key, value in self._writer.context.output_stats.items():
+            if key.startswith("location_"):
+                self._output_stats[key] = value
+        return result
 
     def _save_proxy_health_history(self) -> None:
         if self._proxy_health_history is None or not self._proxy_health_file:
@@ -817,7 +737,11 @@ class PipelineRunner:
             "outputs": self._output_stats,
             "validation": validation,
         }
-        path = Path(output_file)
+        try:
+            path = resolve_safe_output_path(output_file)
+        except ValueError:
+            logger.exception("Unsafe run summary path %r rejected", output_file)
+            return None
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
@@ -878,19 +802,24 @@ class PipelineRunner:
         if not owner or not repo:
             logger.warning(
                 "Publish requested but GitHub owner/repo not configured "
-                "(set publisher.owner/repo in settings or GITHUB_OWNER/GITHUB_REPO env) — skipping."
+                "(set publisher.owner/repo in settings or GITHUB_OWNER/GITHUB_REPO env) — skipping."  # noqa: E501
             )
             return
 
         try:
-            content = await asyncio.to_thread(
-                Path(output_file).read_text, encoding="utf-8"
-            )
-        except FileNotFoundError:
-            logger.error("Cannot publish: output file %s does not exist.", output_file)
+            safe_path = resolve_safe_output_path(output_file)
+        except ValueError:
+            logger.exception("Unsafe output path for publish %r", output_file)
             return
-        except Exception as exc:
-            logger.error("Cannot read output file %s for publish: %s", output_file, exc)
+        try:
+            content = await asyncio.to_thread(safe_path.read_text, encoding="utf-8")
+        except FileNotFoundError:
+            logger.exception(
+                "Cannot publish: output file %s does not exist.", output_file
+            )
+            return
+        except Exception:
+            logger.exception("Cannot read output file %s for publish", output_file)
             return
 
         commit_message = commit_tpl.replace(
@@ -899,8 +828,8 @@ class PipelineRunner:
 
         try:
             from src.publisher.github import GitHubPublisher
-        except ImportError as exc:
-            logger.error("Cannot import GitHubPublisher: %s — skipping publish.", exc)
+        except ImportError:
+            logger.exception("Cannot import GitHubPublisher — skipping publish.")
             return
 
         try:
@@ -915,5 +844,5 @@ class PipelineRunner:
                     logger.error(
                         "Publish completed but reported failure for %s.", repo_path
                     )
-        except Exception as exc:
-            logger.error("Publish failed: %s", exc)
+        except Exception:
+            logger.exception("Publish failed")

@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 def load_settings(path: str) -> dict[str, Any]:
     """Load settings from a YAML file, returning an empty dict on failure."""
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
     except FileNotFoundError:
-        logger.error("Settings file not found: %s — using defaults.", path)
+        logger.exception("Settings file not found: %s — using defaults.", path)
         return {}
-    except yaml.YAMLError as exc:
-        logger.error("Failed to parse settings %s: %s — using defaults.", path, exc)
+    except yaml.YAMLError:
+        logger.exception("Failed to parse settings %s — using defaults.", path)
         return {}
     return data or {}
 
@@ -55,9 +55,7 @@ class Settings:
         return result
 
     @staticmethod
-    def as_float(
-        value: Any, default: float, *, minimum: float | None = None
-    ) -> float:
+    def as_float(value: Any, default: float, *, minimum: float | None = None) -> float:
         """Coerce ``value`` to float, falling back to ``default`` and optional bound."""
         try:
             result = float(value)

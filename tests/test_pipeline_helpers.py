@@ -17,18 +17,20 @@ from src.aggregator.output import generate_plain
 from src.env import load_dotenv_if_available
 from src.notify import telegram as telegram_module
 from src.parsers.base import Config, is_garbage_config
+from src.publisher.github import _contents_url as publisher_contents_url
 from src.repo_info import _slug_from_remote_url, github_branch
 from src.scheduler.runner import PipelineRunner
-from src.publisher.github import _contents_url as publisher_contents_url
 from src.sources.github import (
     GitHubClient,
     GitHubRateLimitError,
+)
+from src.sources.github import (
     _contents_url as source_contents_url,
 )
 from src.sources.list_types import infer_source_list_type, normalize_list_type
 from src.sources.manager import SourceManager, SourceResult
-from src.validators import tcp_check as tcp_module
 from src.validators import proxy_pool as proxy_pool_module
+from src.validators import tcp_check as tcp_module
 from src.validators import tls_check as tls_module
 from src.validators import xray_probe as xray_module
 from src.validators.proxy_pool import parse_proxy_candidates
@@ -731,7 +733,7 @@ validator:
         "11111111-1111-4111-8111-111111111111",
         remark="WHITE",
     )
-    setattr(cfg, "source_default_country", "RU")
+    cfg.source_default_country = "RU"
 
     result = runner._filter_countries([cfg], list_type="whitelist")
 
@@ -1382,8 +1384,8 @@ def test_xray_validation_rotates_proxy_pool_and_stops_after_required_successes(
     rotated = xray_module._rotated_proxy_urls_for_config(cfg, proxy_urls)
     assert result == [cfg]
     assert proxy_calls == rotated[:2]
-    assert getattr(cfg, "xray_proxy_successes") == 2
-    assert getattr(cfg, "xray_proxy_checks") == len(proxy_urls)
+    assert cfg.xray_proxy_successes == 2
+    assert cfg.xray_proxy_checks == len(proxy_urls)
 
 
 def test_xray_validation_does_not_mark_unchecked_max_alive_candidates(
@@ -1421,9 +1423,9 @@ def test_xray_validation_does_not_mark_unchecked_max_alive_candidates(
 
     assert result == [first]
     assert first.is_alive is True
-    assert getattr(first, "xray_was_checked") is True
+    assert first.xray_was_checked is True
     assert second.is_alive is False
-    assert getattr(second, "xray_was_checked") is False
+    assert second.xray_was_checked is False
 
 
 
@@ -1461,9 +1463,9 @@ def test_xray_validation_relaxed_gate_allows_single_attempt(monkeypatch) -> None
 
     assert result == [cfg]
     assert cfg.is_alive is True
-    assert getattr(cfg, "xray_attempt_successes") == 1
-    assert getattr(cfg, "xray_proxy_successes") == 0
-    assert getattr(cfg, "xray_proxy_checks") == 0
+    assert cfg.xray_attempt_successes == 1
+    assert cfg.xray_proxy_successes == 0
+    assert cfg.xray_proxy_checks == 0
 
 
 def test_proxy_pool_parses_public_socks5_candidates() -> None:
@@ -1757,7 +1759,7 @@ validator:
         assert kwargs["probe_proxy_urls"] == []
         assert kwargs["min_proxy_successes"] == 0
         for item in configs:
-            setattr(item, "xray_was_checked", True)
+            item.xray_was_checked = True
             item.is_alive = True
         return configs
 
@@ -2127,7 +2129,7 @@ validator:
         assert kwargs["attempts_per_config"] == 3
         assert kwargs["min_attempt_successes"] == 3
         for item in configs:
-            setattr(item, "xray_was_checked", True)
+            item.xray_was_checked = True
             item.is_alive = item is alive
         return [alive]
 
@@ -2203,7 +2205,7 @@ validator:
         assert kwargs["min_proxy_successes"] == 2
         assert kwargs["require_distinct_outbound_ip"] is True
         for item in configs:
-            setattr(item, "xray_was_checked", True)
+            item.xray_was_checked = True
             item.is_alive = True
         return configs
 
@@ -2312,7 +2314,7 @@ quality:
     filtered = runner._apply_quality_filters({"blacklist": [slow, fast]})
 
     assert filtered == {"blacklist": [fast]}
-    assert getattr(fast, "quality_score") > 60
+    assert fast.quality_score > 60
     assert runner._liveness_stats["quality"]["blacklist"]["slow_dropped"] == 1
 
 
@@ -2363,7 +2365,7 @@ aggregator:
     async def fake_validate_configs_xray(configs, **kwargs):
         captured["checked"] = len(configs)
         for item in configs:
-            setattr(item, "xray_was_checked", True)
+            item.xray_was_checked = True
             item.is_alive = item in configs[:123]
         return configs[:123]
 

@@ -92,8 +92,8 @@ class SourceManager:
             with self.settings_file.open("r", encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             return data if isinstance(data, dict) else {}
-        except (yaml.YAMLError, OSError) as exc:
-            logger.error("Failed to load settings %s: %s", self.settings_file, exc)
+        except (yaml.YAMLError, OSError):
+            logger.exception("Failed to load settings %s", self.settings_file)
             return {}
 
     def _load_sources(self) -> list[dict]:
@@ -103,8 +103,8 @@ class SourceManager:
         try:
             with self.sources_file.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.error("Failed to load sources %s: %s", self.sources_file, exc)
+        except (json.JSONDecodeError, OSError):
+            logger.exception("Failed to load sources %s", self.sources_file)
             return []
         sources = data.get("sources", []) if isinstance(data, dict) else []
         return [s for s in sources if isinstance(s, dict)]
@@ -112,8 +112,12 @@ class SourceManager:
     # --- public API ---
 
     def enabled_sources(self) -> list[dict]:
-        """Return only sources with ``enabled: true``."""
-        return [s for s in self.sources if s.get("enabled", False) is True]
+        """Return only sources that are enabled.
+
+        Accepts any truthy value (true, "true", 1) so hand-edited JSON/YAML
+        sources are not silently disabled by minor formatting differences.
+        """
+        return [s for s in self.sources if bool(s.get("enabled", False))]
 
     async def fetch_all(self) -> list[SourceResult]:
         """Fetch from all enabled sources concurrently.
@@ -133,7 +137,7 @@ class SourceManager:
         # results of all the others — fulfils the "never propagate" contract.
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
         results: list[SourceResult] = []
-        for source, raw in zip(enabled, raw_results):
+        for source, raw in zip(enabled, raw_results, strict=False):
             if isinstance(raw, Exception):
                 name = (
                     source.get("name", "<unnamed>")
@@ -163,7 +167,7 @@ class SourceManager:
 
         Supported source types:
             * ``subscription`` — fetch a single file at ``path``; its content
-              is a base64 subscription blob (kept as a single (filename, content) tuple).
+              is a base64 blob (kept as a single (filename, content) tuple).
             * ``raw`` — fetch all files in the directory at ``path``; each file
               may contain one or more proxy config links.
             * ``url-list`` — fetch an index file at ``url`` containing one URL
@@ -207,7 +211,9 @@ class SourceManager:
                 )
 
             if stype == "url-list":
-                return await self._fetch_url_list(source, name, list_type, default_country)
+                return await self._fetch_url_list(
+                    source, name, list_type, default_country
+                )
 
             # subscription requires path; raw allows empty path (= root directory).
             if not (owner and repo):
@@ -431,7 +437,7 @@ class SourceManager:
         if not files:
             return SourceResult(
                 source_name=name,
-                error=f"url-list source '{name}' fetched {len(urls)} URLs but none returned content",
+                error=f"url-list source '{name}' fetched {len(urls)} URLs but none returned content",  # noqa: E501
                 list_type=list_type,
                 default_country=default_country,
             )
@@ -452,13 +458,14 @@ class SourceManager:
         return text if len(text) == 2 and text.isalpha() else None
 
     @staticmethod
-    def _int_source_value(source: dict, key: str, default: int) -> int:
-        """Read a positive integer source setting.
+    def _int_source_value(
+        source: dict, key: str, default: int, *, minimum: int = 1
+    ) -> int:
+        """Read an integer source setting with a configurable lower bound.
 
-        Booleans are explicitly rejected — ``bool`` is a subclass of ``int``
-        in Python (``int(True) == 1``), so without this guard a config value
-        like ``max_files: false`` would silently become ``1`` instead of
-        falling back to the default.
+        Booleans are explicitly rejected — bool is a subclass of int in Python
+        (int(True) == 1), so without this guard ``max_files: false`` would
+        silently become 1. Pass minimum=0 to allow 0 as a sentinel (unlimited).
         """
         raw = source.get(key, default)
         if isinstance(raw, bool):
@@ -467,7 +474,7 @@ class SourceManager:
             value = int(raw)
         except (TypeError, ValueError):
             return default
-        return max(1, value)
+        return max(minimum, value)
 
     @staticmethod
     def _float_source_value(source: dict, key: str, default: float) -> float:

@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import base64
 import json
-from pathlib import Path
 
 from src.parsers.base import Config
 from src.repo_info import github_repo_slug
+from src.utils.paths import resolve_safe_output_path
 
 # Watermark config — shown first in Happ as a "title" entry.
 # Uses a dummy vmess link with the configured GitHub repo name as remark.
@@ -25,30 +25,30 @@ def _repo_slug() -> str:
 
 
 def _watermark_payload() -> dict[str, object]:
-    return (
-        {
-            "v": "2",
-            "ps": _repo_slug(),
-            "add": "0.0.0.0",
-            "port": "1",
-            "id": "00000000-0000-0000-0000-000000000000",
-            "aid": 0,
-            "scy": "auto",
-            "net": "tcp",
-            "type": "none",
-            "tls": "none",
-        }
-    )
+    return {
+        "v": "2",
+        "ps": _repo_slug(),
+        "add": "0.0.0.0",
+        "port": "1",
+        "id": "00000000-0000-0000-0000-000000000000",
+        "aid": 0,
+        "scy": "auto",
+        "net": "tcp",
+        "type": "none",
+        "tls": "none",
+    }
 
 
 def _watermark_link() -> str:
-    """Build the display-only vmess watermark from the current repo env."""
+    """Build the display-only vmess watermark from the current repo env.
+
+    Computed on every call (cheap) so changes to GITHUB_OWNER/GITHUB_REPO
+    after import — e.g. in tests — are reflected. Avoids import-time side
+    effects.
+    """
     return "vmess://" + base64.b64encode(
         json.dumps(_watermark_payload()).encode("utf-8")
     ).decode("utf-8")
-
-
-_WATERMARK_LINK = _watermark_link()
 
 
 def generate_plain(configs: list[Config]) -> str:
@@ -102,7 +102,7 @@ def write_subscription(
     """
     output = generate_output(configs, fmt=fmt)
 
-    path = Path(filepath)
+    path = resolve_safe_output_path(filepath)
     if path.parent and not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
 

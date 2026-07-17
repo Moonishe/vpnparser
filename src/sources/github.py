@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import time
 from typing import Any
@@ -156,7 +157,7 @@ class GitHubClient:
         Returns:
             - Parsed JSON (dict or list) when ``parse_json=True``
             - Raw text (str) when ``parse_json=False``
-            - Empty list ``[]`` or empty string ``""`` for 404s (depending on parse_json)
+            - Empty list ``[]`` or ``""`` for 404s (depending on parse_json)
 
         Raises:
             GitHubRateLimitError: if rate limited and wait time exceeds a sane bound.
@@ -188,15 +189,13 @@ class GitHubClient:
                     wait = _DEFAULT_RATELIMIT_WAIT
                     reset = response.headers.get("X-RateLimit-Reset")
                     if reset:
-                        try:
+                        with contextlib.suppress(TypeError, ValueError):
                             # X-RateLimit-Reset is a unix timestamp (UTC, in seconds).
                             wait = max(1.0, float(reset) - time.time())
-                        except (TypeError, ValueError):
-                            pass
                 # Cap the wait so we never block forever in a pipeline.
                 if wait > 300:
                     raise GitHubRateLimitError(
-                        f"GitHub rate limit exhausted; reset in {wait:.0f}s (>300s cap)."
+                        f"GitHub rate limit exhausted; reset in {wait:.0f}s (>300s cap)."  # noqa: E501
                     )
                 logger.warning(
                     "GitHub rate limit hit; sleeping %.1fs before retrying %s",
@@ -299,7 +298,11 @@ class GitHubClient:
                 )
                 return ""
         # The loop above either breaks (response set) or returns "" on exhaustion.
-        assert response is not None
+        if response is None:
+            logger.warning(
+                "fetch_raw_file: no response after retries for %s", download_url
+            )
+            return ""
         if response.status_code == 404:
             logger.debug("404 fetching raw file %s", download_url)
             return ""
@@ -330,7 +333,7 @@ class GitHubClient:
         except GitHubRateLimitError:
             raw_url = _raw_url(owner, repo, branch, path)
             logger.warning(
-                "GitHub Contents API rate-limited for %s/%s/%s; falling back to raw URL.",
+                "GitHub Contents API rate-limited for %s/%s/%s; falling back to raw URL.",  # noqa: E501
                 owner,
                 repo,
                 path,
@@ -510,7 +513,10 @@ class GitHubClient:
                     return []
 
             sub_results = await asyncio.gather(
-                *(_recurse_subdir(e, b) for e, b in zip(dir_entries, sub_budgets))
+                *(
+                    _recurse_subdir(e, b)
+                    for e, b in zip(dir_entries, sub_budgets, strict=False)
+                )
             )
             for sub in sub_results:
                 results.extend(sub)

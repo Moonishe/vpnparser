@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 from typing import ClassVar
 
-from src.parsers.base import BaseParser, Config, _UUID_RE, safe_b64decode
+from src.parsers.base import _UUID_RE, BaseParser, Config, safe_b64decode
 
 
 class VmessParser(BaseParser):

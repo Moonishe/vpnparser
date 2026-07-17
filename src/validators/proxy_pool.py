@@ -7,12 +7,12 @@ untrusted input, so only public IPv4 ``host:port`` candidates are accepted.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import re
 import time
 from collections.abc import Iterable
-from typing import Any
 
 import httpx
 
@@ -86,9 +86,7 @@ async def _fetch_source(client: httpx.AsyncClient, url: str) -> str:
         return ""
 
     if response.status_code != 200:
-        logger.warning(
-            "Proxy source %s returned HTTP %d", url, response.status_code
-        )
+        logger.warning("Proxy source %s returned HTTP %d", url, response.status_code)
         return ""
     return response.text
 
@@ -162,10 +160,8 @@ async def proxy_connects(
     except Exception:
         return False
 
-    try:
+    with contextlib.suppress(Exception):
         sock.close()
-    except Exception:
-        pass
     return True
 
 

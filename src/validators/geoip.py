@@ -138,7 +138,7 @@ async def enrich_configs_geoip(
 
     Returns the same list (mutated in place) for convenience.
     """
-    semaphore = asyncio.Semaphore(concurrency)
+    semaphore = asyncio.Semaphore(max(1, int(concurrency)))
 
     async def _enrich_one(cfg: Config) -> None:
         async with semaphore:

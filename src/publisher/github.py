@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import time
 from typing import Any
@@ -154,7 +155,7 @@ class GitHubPublisher:
         if response.status_code == 409:
             # Repository is empty or branch mismatch — treat as "no file yet".
             logger.warning(
-                "GitHub returned 409 for %s/%s (empty repo or branch gone) — treating as missing.",
+                "GitHub returned 409 for %s/%s (empty repo or branch gone) — treating as missing.",  # noqa: E501
                 self.owner,
                 self.repo,
             )
@@ -171,18 +172,36 @@ class GitHubPublisher:
 
     @staticmethod
     def _is_rate_limited(response: httpx.Response) -> bool:
-        """True when a 403 is due to an exhausted primary rate limit."""
-        return response.headers.get("X-RateLimit-Remaining") == "0"
+        """True when a 403 is due to a primary or secondary rate limit."""
+        if response.headers.get("X-RateLimit-Remaining") == "0":
+            return True
+        # Secondary rate limit: GitHub sends Retry-After.
+        return bool(response.headers.get("Retry-After"))
 
     async def _wait_for_rate_limit(self, response: httpx.Response) -> None:
-        """Sleep until the rate limit resets (bounded by the cap)."""
-        reset = response.headers.get("X-RateLimit-Reset")
+        """Sleep until the rate limit resets (bounded by the cap).
+
+        Handles both primary (X-RateLimit-Reset) and secondary
+        (Retry-After: seconds or HTTP-date) rate limits.
+        """
         wait = _DEFAULT_RATELIMIT_WAIT
-        if reset:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
             try:
-                wait = max(1.0, float(reset) - time.time())
-            except (TypeError, ValueError):
-                pass
+                wait = max(1.0, float(retry_after))
+            except ValueError:
+                try:
+                    from email.utils import parsedate_to_datetime
+
+                    retry_dt = parsedate_to_datetime(retry_after)
+                    wait = max(1.0, retry_dt.timestamp() - time.time())
+                except (TypeError, ValueError, OSError):
+                    pass
+        else:
+            reset = response.headers.get("X-RateLimit-Reset")
+            if reset:
+                with contextlib.suppress(TypeError, ValueError):
+                    wait = max(1.0, float(reset) - time.time())
         if wait > _RATELIMIT_WAIT_CAP:
             raise GitHubPublishError(
                 f"GitHub rate limit exhausted; reset in {wait:.0f}s "
@@ -213,8 +232,8 @@ class GitHubPublisher:
 
         try:
             content_bytes = content.encode("utf-8")
-        except Exception as exc:
-            logger.error("Failed to encode content for %s: %s", path, exc)
+        except Exception:
+            logger.exception("Failed to encode content for %s", path)
             return False
 
         content_b64 = base64.b64encode(content_bytes).decode("ascii")
@@ -222,13 +241,13 @@ class GitHubPublisher:
         # Step 1: fetch current sha (None if file does not exist yet).
         try:
             sha = await self._get_file_sha(path)
-        except httpx.HTTPStatusError as exc:
-            logger.error("Failed to GET %s for SHA: %s", path, exc)
+        except httpx.HTTPStatusError:
+            logger.exception("Failed to GET %s for SHA", path)
             return False
         except GitHubPublishError:
             raise
-        except Exception as exc:
-            logger.error("Unexpected error fetching SHA for %s: %s", path, exc)
+        except Exception:
+            logger.exception("Unexpected error fetching SHA for %s", path)
             return False
 
         # Step 2: PUT the file.
@@ -244,8 +263,8 @@ class GitHubPublisher:
         client = await self._get_client()
         try:
             response = await client.put(url, json=body)
-        except httpx.RequestError as exc:
-            logger.error("Network error publishing %s: %s", path, exc)
+        except httpx.RequestError:
+            logger.exception("Network error publishing %s", path)
             return False
 
         # Rate-limited 403 -> wait & retry once.
@@ -253,8 +272,8 @@ class GitHubPublisher:
             await self._wait_for_rate_limit(response)
             try:
                 response = await client.put(url, json=body)
-            except httpx.RequestError as exc:
-                logger.error("Network error on retry publishing %s: %s", path, exc)
+            except httpx.RequestError:
+                logger.exception("Network error on retry publishing %s", path)
                 return False
 
         if response.status_code in (200, 201):
@@ -266,7 +285,7 @@ class GitHubPublisher:
 
         if response.status_code == 409:
             logger.error(
-                "GitHub 409 conflict publishing %s (race or empty repo). Aborting this publish.",
+                "GitHub 409 conflict publishing %s (race or empty repo). Aborting this publish.",  # noqa: E501
                 path,
             )
             return False
@@ -283,12 +302,11 @@ class GitHubPublisher:
         # Any other non-2xx.
         try:
             response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            logger.error(
-                "GitHub publish failed for %s: HTTP %s — %s",
+        except httpx.HTTPStatusError:
+            logger.exception(
+                "GitHub publish failed for %s: HTTP %s",
                 path,
                 response.status_code,
-                exc,
             )
             return False
 

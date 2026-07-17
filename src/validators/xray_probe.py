@@ -378,7 +378,12 @@ async def _https_probe_response(
 
             proxy = Proxy.from_url(proxy_url or f"socks5://127.0.0.1:{socks_port}")
             sock = await proxy.connect(dest_host=host, dest_port=port, timeout=timeout)
-        context = ssl.create_default_context()
+        # Many VPN endpoints use self-signed certificates. Use an unverified
+        # context (matching tls_check.py) so a config that passes TLS does not
+        # fail the HTTPS probe for certificate reasons.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
         if sock is not None:
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(sock=sock, ssl=context, server_hostname=host),
@@ -453,7 +458,7 @@ def _rotated_proxy_urls_for_config(
     urls = [str(url).strip() for url in proxy_urls if str(url).strip()]
     if len(urls) <= 1:
         return urls
-    key = f"{cfg.address}:{cfg.port}:{cfg.uuid_or_password}".encode("utf-8")
+    key = f"{cfg.address}:{cfg.port}:{cfg.uuid_or_password}".encode()
     offset = int.from_bytes(hashlib.sha256(key).digest()[:4], "big") % len(urls)
     return [*urls[offset:], *urls[:offset]]
 
@@ -481,7 +486,9 @@ async def xray_probe_check(
     urls = _normalize_probe_urls(probe_url, probe_urls)
     required_successes = min(len(urls), max(1, min_probe_successes))
     accepted = accepted_status_codes or _DEFAULT_ACCEPTED_STATUS_CODES
-    rejected_ips = {str(ip).strip() for ip in (reject_outbound_ips or set()) if str(ip).strip()}
+    rejected_ips = {
+        str(ip).strip() for ip in (reject_outbound_ips or set()) if str(ip).strip()
+    }
 
     with tempfile.TemporaryDirectory(prefix="vpnparser-xray-") as tmpdir:
         config_path = Path(tmpdir) / "config.json"
@@ -529,7 +536,7 @@ async def xray_probe_check(
                 proc.terminate()
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=2.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     proc.kill()
                     with contextlib.suppress(Exception):
                         await proc.wait()
@@ -557,7 +564,7 @@ async def validate_configs_xray(
         return []
 
     for cfg in configs:
-        setattr(cfg, "xray_was_checked", False)
+        cfg.xray_was_checked = False
         cfg.is_alive = False
 
     semaphore = asyncio.Semaphore(max(1, concurrency))
@@ -605,7 +612,7 @@ async def validate_configs_xray(
         async with semaphore:
             if done_event.is_set():
                 return
-            setattr(cfg, "xray_was_checked", True)
+            cfg.xray_was_checked = True
             attempts = max(1, attempts_per_config)
             required_attempts = min(attempts, max(1, min_attempt_successes))
             failures_allowed = attempts - required_attempts
@@ -650,9 +657,7 @@ async def validate_configs_xray(
                         min_probe_successes=min_probe_successes,
                         dial_proxy_url=proxy_url,
                         require_distinct_outbound_ip=require_distinct_outbound_ip,
-                        reject_outbound_ips=proxy_reject_ips.get(
-                            proxy_url, reject_ips
-                        ),
+                        reject_outbound_ips=proxy_reject_ips.get(proxy_url, reject_ips),
                         timeout=timeout,
                         startup_timeout=startup_timeout,
                     )
@@ -662,10 +667,10 @@ async def validate_configs_xray(
                             break
                 ok = proxy_successes >= required_proxy_successes
 
-            setattr(cfg, "xray_attempt_successes", attempt_successes)
-            setattr(cfg, "xray_attempts_per_config", attempts)
-            setattr(cfg, "xray_proxy_successes", proxy_successes)
-            setattr(cfg, "xray_proxy_checks", len(proxy_urls))
+            cfg.xray_attempt_successes = attempt_successes
+            cfg.xray_attempts_per_config = attempts
+            cfg.xray_proxy_successes = proxy_successes
+            cfg.xray_proxy_checks = len(proxy_urls)
             if successful_latencies:
                 successful_latencies.sort()
                 mid = len(successful_latencies) // 2

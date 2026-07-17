@@ -20,14 +20,15 @@ import html
 import json
 import logging
 import os
-import sys
 import socket
-import urllib.request
+import sys
 import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 from src.repo_info import github_branch, github_repo_slug
+from src.utils.paths import resolve_safe_output_path
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,61 @@ _TOKEN_MIN_LEN = 20
 # LLM endpoint — OpenAI-compatible. DashScope (Alibaba) qwen-flash is fast and free.
 _LLM_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 _LLM_MODEL = "qwen-plus"
+
+# HTML tags used in the notification template that need closing when truncated.
+_SELF_CLOSING_TAGS = {"br", "hr"}
+_PAIRED_TAGS = ("b", "i", "u", "s", "a", "code", "pre", "blockquote")
+
+
+def _truncate_html_safe(text: str, limit: int) -> str:
+    """Truncate Telegram HTML text to at most limit characters.
+
+    Cuts at a safe offset (never inside a <tag>), appends an ellipsis, and
+    closes any tags left open by the cut. Prevents a 400 from Telegram when
+    parse_mode="HTML" receives a half-open tag.
+    """
+    if len(text) <= limit:
+        return text
+    cut = limit
+    # Avoid cutting inside an HTML entity (&...;) — back up to '&'.
+    if "&" in text[max(0, limit - 7) : limit + 1]:
+        last_amp = text.rfind("&", 0, limit)
+        semi = text.find(";", last_amp, limit + 1)
+        if semi == -1:
+            cut = last_amp
+    # Avoid cutting between '<' and '>' (inside a tag).
+    last_open = text.rfind("<", 0, cut)
+    if last_open != -1 and text.find(">", last_open, cut) == -1:
+        cut = last_open
+    truncated = text[:cut].rstrip()
+    open_stack: list[str] = []
+    pos = 0
+    while pos < len(truncated):
+        lt = truncated.find("<", pos)
+        if lt == -1:
+            break
+        gt = truncated.find(">", lt)
+        if gt == -1:
+            break
+        tag_text = truncated[lt + 1 : gt].strip()
+        pos = gt + 1
+        if not tag_text:
+            continue
+        if tag_text.startswith("/"):
+            name = tag_text[1:].split()[0].lower()
+            for i in range(len(open_stack) - 1, -1, -1):
+                if open_stack[i] == name:
+                    open_stack.pop(i)
+                    break
+            continue
+        name = tag_text.split()[0].lower()
+        if name in _SELF_CLOSING_TAGS or name not in _PAIRED_TAGS:
+            continue
+        open_stack.append(name)
+    truncated = truncated + "..."
+    for name in reversed(open_stack):
+        truncated += f"</{name}>"
+    return truncated
 
 
 def _repo_slug() -> str:
@@ -72,6 +128,7 @@ def _bot_intro() -> str:
         f"🔗 {_link(repo_slug, repo_url)}"
     )
 
+
 _FACT_PROMPT = (
     "Сгенерируй ОДИН короткий забавный факт о VPN, приватности или "
     "интернет-цензуре. Не больше 2 предложений. На русском. "
@@ -88,21 +145,21 @@ _FACT_FALLBACK_NO_KEY = (
 
 # Multiple fallback facts — rotate so they don't repeat when Gemini is unavailable.
 _FACT_FALLBACKS = [
-    "Первый VPN был создан в 1996 году компанией Microsoft. С тех пор мы прячемся от провайдеров уже 30 лет.",
-    "Слово VPN на латыни звучит бы как 'privatus iter', что примерно переводится как 'тайный путь'. Римляне бы оценили.",
-    "Если бы VPN был человеком, он бы носил плащ, шляпу и говорил бы 'я не был здесь' каждому встречному.",
-    "В некоторых странах за использование VPN можно получить штраф. В других — просто нормальный интернет.",
-    "VPN не делает вас анонимным. Он делает вас 'труднодоступным'. Это как прятаться за ширмой — видно ноги, но не лицо.",
-    "Самый популярный пароль для WiFi в 2024 году — '12345678'. VPN хотя бы пытается вас защитить.",
-    "Без VPN ваш провайдер знает каждый сайт, который вы посещаете. С VPN — он знает только что вы зашли в туннель.",
-    "VPN-протокол WireGuard состоит всего из 4000 строк кода. OpenVPN — из 70 000. Иногда меньше — значит лучше.",
-    "Первый протокол VPN (PPTP) был создан Microsoft в 1996 году. Сейчас его не рекомендуют даже сами разработчики.",
-    "Tor и VPN — это не одно и то же. Tor — это лук, VPN — это труба. Оба прячут, но по-разному.",
-    "В Китае более 700 миллионов пользователей VPN. Это больше, чем население всей Европы.",
-    "VPN-серверы в Швейцарии и Исландии популярны из-за строгих законов о приватности. Банки данных — не банки денег.",
-    "Самый дорогой VPN стоит около $15 в месяц. Самый дешёвый — ваш сосед с OpenVPN на Raspberry Pi.",
-    "Слово 'туннелирование' в VPN — это не метафора. Ваш трафик реально упаковывается в другой пакет, как матрёшка.",
-    "Если вы используете бесплатный VPN, вы — товар. Ваш данные могут продаваться. К счастью, наш парсер находит бесплатные серверы, а не бесплатный VPN-сервис.",
+    "Первый VPN был создан в 1996 году компанией Microsoft. С тех пор мы прячемся от провайдеров уже 30 лет.",  # noqa: E501
+    "Слово VPN на латыни звучит бы как 'privatus iter', что примерно переводится как 'тайный путь'. Римляне бы оценили.",  # noqa: E501
+    "Если бы VPN был человеком, он бы носил плащ, шляпу и говорил бы 'я не был здесь' каждому встречному.",  # noqa: E501
+    "В некоторых странах за использование VPN можно получить штраф. В других — просто нормальный интернет.",  # noqa: E501
+    "VPN не делает вас анонимным. Он делает вас 'труднодоступным'. Это как прятаться за ширмой — видно ноги, но не лицо.",  # noqa: E501
+    "Самый популярный пароль для WiFi в 2024 году — '12345678'. VPN хотя бы пытается вас защитить.",  # noqa: E501
+    "Без VPN ваш провайдер знает каждый сайт, который вы посещаете. С VPN — он знает только что вы зашли в туннель.",  # noqa: E501
+    "VPN-протокол WireGuard состоит всего из 4000 строк кода. OpenVPN — из 70 000. Иногда меньше — значит лучше.",  # noqa: E501
+    "Первый протокол VPN (PPTP) был создан Microsoft в 1996 году. Сейчас его не рекомендуют даже сами разработчики.",  # noqa: E501
+    "Tor и VPN — это не одно и то же. Tor — это лук, VPN — это труба. Оба прячут, но по-разному.",  # noqa: E501
+    "В Китае более 700 миллионов пользователей VPN. Это больше, чем население всей Европы.",  # noqa: E501
+    "VPN-серверы в Швейцарии и Исландии популярны из-за строгих законов о приватности. Банки данных — не банки денег.",  # noqa: E501
+    "Самый дорогой VPN стоит около $15 в месяц. Самый дешёвый — ваш сосед с OpenVPN на Raspberry Pi.",  # noqa: E501
+    "Слово 'туннелирование' в VPN — это не метафора. Ваш трафик реально упаковывается в другой пакет, как матрёшка.",  # noqa: E501
+    "Если вы используете бесплатный VPN, вы — товар. Ваш данные могут продаваться. К счастью, наш парсер находит бесплатные серверы, а не бесплатный VPN-сервис.",  # noqa: E501
 ]
 
 # Country flag emojis + Russian names for output.
@@ -170,7 +227,7 @@ def _load_run_summary(filepath: str) -> dict[str, Any]:
     if not filepath:
         return {}
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with resolve_safe_output_path(filepath).open("r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception:
         return {}
@@ -270,7 +327,9 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
             f"{min_text}{proxy_search_text}{strict_text}{unchecked_text}"
         )
     else:
-        first = f"{_b('🧪 Проверка')}: включена, без прокси{strict_text}{unchecked_text}"
+        first = (
+            f"{_b('🧪 Проверка')}: включена, без прокси{strict_text}{unchecked_text}"
+        )
 
     lines = [first]
     if isinstance(lists, dict):
@@ -345,9 +404,7 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                 lines.append(f"  {_b(f'{label} Xray')}: пропущен, xray не установлен")
             elif xray_checked > 0:
                 unsupported_text = (
-                    f", неподдержано {xray_unsupported}"
-                    if xray_unsupported > 0
-                    else ""
+                    f", неподдержано {xray_unsupported}" if xray_unsupported > 0 else ""
                 )
                 probe_text = (
                     f", HTTPS-пробы {xray_min_probe_successes}/{xray_probe_count}"
@@ -355,10 +412,8 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
                     else ""
                 )
                 attempt_text = (
-                    ", повторы "
-                    f"{xray_min_attempt_successes}/{xray_attempts_per_config}"
-                    if xray_attempts_per_config > 1
-                    and xray_min_attempt_successes > 0
+                    f", повторы {xray_min_attempt_successes}/{xray_attempts_per_config}"
+                    if xray_attempts_per_config > 1 and xray_min_attempt_successes > 0
                     else ""
                 )
                 proxy_text = (
@@ -442,10 +497,11 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
     Returns empty dict if file can't be read or decoded.
     """
     from collections import Counter
+
     from src.validators.country_filter import detect_country
 
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with resolve_safe_output_path(filepath).open("r", encoding="utf-8") as f:
             raw = f.read().strip()
     except Exception:
         return {}
@@ -486,7 +542,9 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
 def _load_facts_history() -> list[str]:
     """Load previously generated facts from cache file."""
     try:
-        with open(_FACT_HISTORY_FILE, "r", encoding="utf-8") as f:
+        with resolve_safe_output_path(_FACT_HISTORY_FILE).open(
+            "r", encoding="utf-8"
+        ) as f:
             data = json.load(f)
             return data if isinstance(data, list) else []
     except (FileNotFoundError, json.JSONDecodeError):
@@ -501,7 +559,9 @@ def _save_fact(fact: str) -> None:
     history.append(fact)
     history = history[-_FACT_HISTORY_MAX:]
     try:
-        with open(_FACT_HISTORY_FILE, "w", encoding="utf-8") as f:
+        with resolve_safe_output_path(_FACT_HISTORY_FILE).open(
+            "w", encoding="utf-8"
+        ) as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
     except Exception as exc:
         logger.warning("Could not save fact history: %s", exc)
@@ -516,7 +576,7 @@ def _call_gemini(api_key: str, prompt: str) -> str | None:
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Ты — забавный ассистент, который знает факты о VPN. Отвечай кратко на русском.",
+                        "content": "Ты — забавный ассистент, который знает факты о VPN. Отвечай кратко на русском.",  # noqa: E501
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -638,10 +698,10 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
     text = text or ""
 
     # Telegram sendMessage rejects text longer than 4096 chars with a 400.
-    # Truncate defensively — the fact is bounded by max_tokens, but a future
-    # prompt change or a huge countries list could otherwise blow the limit.
+    # Truncate defensively; avoid cutting inside an HTML tag which would break
+    # parse_mode="HTML" and produce a 400.
     if len(text) > 4096:
-        text = text[:4093] + "..."
+        text = _truncate_html_safe(text, 4093)
         logger.warning("Telegram message truncated to 4096 chars")
 
     # Validate token format — fail fast instead of a 10s network timeout.
@@ -720,8 +780,7 @@ def send_notification(
             configs_count = int(configs_count)
         except (TypeError, ValueError):
             configs_count = 0
-    if configs_count < 0:
-        configs_count = 0
+    configs_count = max(configs_count, 0)
 
     summary = _load_run_summary(status_file)
 

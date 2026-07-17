@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
 from src.parsers.base import Config
 from src.scheduler.settings import Settings
+from src.utils.paths import resolve_safe_output_path
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,8 @@ class HealthHistory:
             self._cache = {"configs": {}, "sources": {}}
             return self._cache
         try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            safe_path = resolve_safe_output_path(path)
+            data = json.loads(safe_path.read_text(encoding="utf-8"))
         except Exception:
             data = {}
         if not isinstance(data, dict):
@@ -59,7 +60,7 @@ class HealthHistory:
         payload = dict(self._cache)
         payload["updated_at"] = int(__import__("time").time())
         try:
-            target = Path(path)
+            target = resolve_safe_output_path(path)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
@@ -82,7 +83,11 @@ class HealthHistory:
                 str(cfg.security),
             ]
         )
-        return __import__("hashlib").sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
+        return (
+            __import__("hashlib")
+            .sha256(raw.encode("utf-8", errors="ignore"))
+            .hexdigest()
+        )
 
     def is_banned(self, cfg: Config, *, now: int | None = None) -> bool:
         if not self.is_enabled():
@@ -91,12 +96,12 @@ class HealthHistory:
         history = self.load()
         record = history.get("configs", {}).get(self.config_key(cfg), {})
         if int(record.get("banned_until") or 0) > now:
-            setattr(cfg, "quality_block_reason", "health_ban")
+            cfg.quality_block_reason = "health_ban"
             return True
         source = str(getattr(cfg, "source_name", "?") or "?")
         source_record = history.get("sources", {}).get(source, {})
         if int(source_record.get("banned_until") or 0) > now:
-            setattr(cfg, "quality_block_reason", "source_ban")
+            cfg.quality_block_reason = "source_ban"
             return True
         return False
 
@@ -106,12 +111,16 @@ class HealthHistory:
         history = self.load()
         records = history.setdefault("configs", {})
         now = int(__import__("time").time())
-        max_recent = self.settings.as_int(self._cfg().get("health_recent_window"), 5, minimum=1)
+        max_recent = self.settings.as_int(
+            self._cfg().get("health_recent_window"), 5, minimum=1
+        )
         fail_threshold = self.settings.as_int(
             self._cfg().get("ban_after_consecutive_failures"), 2, minimum=1
         )
         cooldown_seconds = int(
-            self.settings.as_float(self._cfg().get("ban_cooldown_hours"), 12.0, minimum=0.1)
+            self.settings.as_float(
+                self._cfg().get("ban_cooldown_hours"), 12.0, minimum=0.1
+            )
             * 3600
         )
         for cfg in checked_configs:
@@ -144,9 +153,11 @@ class HealthHistory:
                 record["consecutive_failures"] = failures
                 if failures >= fail_threshold:
                     record["banned_until"] = now + cooldown_seconds
-            setattr(cfg, "health_record", record)
+            cfg.health_record = record
 
-    def source_run_stats(self, checked_configs: list[Config]) -> dict[str, dict[str, int]]:
+    def source_run_stats(
+        self, checked_configs: list[Config]
+    ) -> dict[str, dict[str, int]]:
         stats: dict[str, dict[str, int]] = {}
         for cfg in checked_configs:
             source = str(getattr(cfg, "source_name", "?") or "?")
@@ -164,11 +175,19 @@ class HealthHistory:
         list_stats["sources"] = source_stats
         if not self.source_health_enabled():
             return
-        min_checked = self.settings.as_int(qcfg.get("source_min_checked"), 50, minimum=1)
-        bad_rate = self.settings.as_float(qcfg.get("source_bad_alive_rate"), 0.02, minimum=0.0)
-        bad_runs = self.settings.as_int(qcfg.get("source_bad_runs_to_ban"), 2, minimum=1)
+        min_checked = self.settings.as_int(
+            qcfg.get("source_min_checked"), 50, minimum=1
+        )
+        bad_rate = self.settings.as_float(
+            qcfg.get("source_bad_alive_rate"), 0.02, minimum=0.0
+        )
+        bad_runs = self.settings.as_int(
+            qcfg.get("source_bad_runs_to_ban"), 2, minimum=1
+        )
         cooldown_seconds = int(
-            self.settings.as_float(qcfg.get("source_ban_cooldown_hours"), 12.0, minimum=0.1)
+            self.settings.as_float(
+                qcfg.get("source_ban_cooldown_hours"), 12.0, minimum=0.1
+            )
             * 3600
         )
         now = int(__import__("time").time())
