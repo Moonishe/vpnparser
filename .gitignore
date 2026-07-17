@@ -50,7 +50,9 @@ output/locations/*
 # Coverage artifacts
 *.cover
 .coverage*
-# Output files
-output/
-*.txt
-*.json
+# Runtime artifacts
+status.json
+summary.json
+bl.txt
+mix.txt
+wl.txt
