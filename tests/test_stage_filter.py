@@ -209,9 +209,10 @@ class TestCountryFilterRun:
             },
         )
         result = await cf.run(state)
-        # run() does not update state.parsed — filtered list is local-only
+        # run() now updates state.parsed with filtered list
         assert result is state
-        assert len(result.parsed["blacklist"]) == 2
+        assert len(result.parsed["blacklist"]) == 1
+        assert result.parsed["blacklist"][0].country == "DE"
 
     async def test_run_no_allowed(self) -> None:
         """No allowed countries -> run() still returns state unchanged."""

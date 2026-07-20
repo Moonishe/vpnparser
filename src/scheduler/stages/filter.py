@@ -73,6 +73,7 @@ class CountryFilter(PipelineStage):
         filtered: dict[str, list[Config]] = {}
         for label, configs in state.parsed.items():
             filtered[label] = self.filter_countries(configs, list_type=label)
+        state.parsed = filtered
         return state
 
     def filter_countries(

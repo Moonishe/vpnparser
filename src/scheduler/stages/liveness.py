@@ -88,6 +88,10 @@ class LivenessValidator(PipelineStage):
         raw = self._section("validator").get("proxy_pool", {})
         return raw if isinstance(raw, dict) else {}
 
+    def reset_proxy_cache(self) -> None:
+        """Clear cached proxy URLs so they are re-fetched on the next run."""
+        self._validator_proxy_urls_cache = None
+
     def _proxy_health_config(self) -> dict[str, Any]:
         pool_cfg = self._proxy_pool_config()
         defaults = {
@@ -333,11 +337,11 @@ class LivenessValidator(PipelineStage):
             "xray_enabled": xray_enabled,
             "fail_open_on_low_alive": self._as_bool(
                 vcfg.get("fail_open_on_low_alive"),
-                False,
+                True,
             ),
             "drop_unchecked_after_tls": self._as_bool(
                 vcfg.get("drop_unchecked_after_tls"),
-                True,
+                False,
             ),
             "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), True),
             "proxy_pool_required": self._as_bool(pool_cfg.get("required"), True),

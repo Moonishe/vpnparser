@@ -141,6 +141,8 @@ class PipelineRunner:
         start = time.monotonic()
         self._liveness_stats = {}
         self._output_stats = {}
+        self._publish_ok = False
+        self._liveness.reset_proxy_cache()
         logger.info("Pipeline started.")
 
         # 1. Fetch all sources.
@@ -284,7 +286,10 @@ class PipelineRunner:
 
         # 7. Publish (optional).
         if publish:
-            await self._publish_files(output_files, combined_output_file=output_file)
+            self._publish_ok = await self._publish_files(
+                output_files,
+                combined_output_file=output_file,
+            )
 
         elapsed = time.monotonic() - start
         logger.info("Pipeline finished in %.2fs with %d configs.", elapsed, count)
@@ -682,6 +687,7 @@ class PipelineRunner:
 
         summary_file = self._write_run_summary(status)
         health_file = self._write_health_history()
+        self._save_proxy_health_history()
         if publish:
             publish_paths = self._configured_subscription_output_paths(output_file)
             if summary_file:
@@ -815,22 +821,27 @@ class PipelineRunner:
         output_files: list[str],
         *,
         combined_output_file: str | None = None,
-    ) -> None:
-        """Publish multiple output files, preserving each repo path."""
+    ) -> bool:
+        """Publish multiple output files, preserving each repo path.
+        Returns True if all files were published successfully."""
         pcfg = self._section("publisher")
         configured_combined_path = pcfg.get("output_file")
 
+        all_ok = True
         for output_file in dict.fromkeys(output_files):
             repo_path = output_file
             if combined_output_file is not None and output_file == combined_output_file:
                 repo_path = str(configured_combined_path or output_file)
-            await self._publish(output_file, repo_path=repo_path)
+            if not await self._publish(output_file, repo_path=repo_path):
+                all_ok = False
+        return all_ok
 
-    async def _publish(self, output_file: str, repo_path: str | None = None) -> None:
-        """Publish the output file to a GitHub repo via ``GitHubPublisher``."""
+    async def _publish(self, output_file: str, repo_path: str | None = None) -> bool:
+        """Publish the output file to a GitHub repo via ``GitHubPublisher``.
+        Returns True on success, False on failure/skip."""
         if not self.github_token:
             logger.warning("Publish requested but GITHUB_TOKEN is not set — skipping.")
-            return
+            return False
 
         pcfg = self._section("publisher")
         owner = pcfg.get("owner") or os.environ.get("GITHUB_OWNER")
@@ -844,13 +855,13 @@ class PipelineRunner:
                 "Publish requested but GitHub owner/repo not configured "
                 "(set publisher.owner/repo in settings or GITHUB_OWNER/GITHUB_REPO env) — skipping.",  # noqa: E501
             )
-            return
+            return False
 
         try:
             safe_path = resolve_safe_output_path(output_file)
         except ValueError:
             logger.exception("Unsafe output path for publish %r", output_file)
-            return
+            return False
         try:
             content = await asyncio.to_thread(safe_path.read_text, encoding="utf-8")
         except FileNotFoundError:
@@ -858,10 +869,10 @@ class PipelineRunner:
                 "Cannot publish: output file %s does not exist.",
                 output_file,
             )
-            return
+            return False
         except Exception:
             logger.exception("Cannot read output file %s for publish", output_file)
-            return
+            return False
 
         commit_message = commit_tpl.replace(
             "{timestamp}",
@@ -872,7 +883,7 @@ class PipelineRunner:
             from src.publisher.github import GitHubPublisher
         except ImportError:
             logger.exception("Cannot import GitHubPublisher — skipping publish.")
-            return
+            return False
 
         try:
             async with GitHubPublisher(
@@ -887,5 +898,7 @@ class PipelineRunner:
                         "Publish completed but reported failure for %s.",
                         repo_path,
                     )
+                return bool(ok)
         except Exception:
             logger.exception("Publish failed")
+            return False

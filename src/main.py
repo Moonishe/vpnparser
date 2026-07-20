@@ -146,8 +146,12 @@ def main() -> int:
 
     if count > 0:
         logger.info("Done. %d configs written to %s.", count, args.output)
-        if args.publish:
-            logger.info("Result published to GitHub (check logs above for status).")
+        if args.publish and hasattr(runner, "_publish_ok") and runner._publish_ok:
+            logger.info("Result published to GitHub.")
+        elif args.publish:
+            logger.warning(
+                "Publish was requested but failed — check logs above for details."
+            )
         if args.notify:
             try:
                 from src.notify import telegram as tg

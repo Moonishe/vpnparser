@@ -24,7 +24,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from src.parsers.base import Config
 
@@ -163,8 +163,8 @@ def _proxy_outbound(proxy_url: str) -> dict[str, Any] | None:
     if parsed.username or parsed.password:
         server["users"] = [
             {
-                "user": parsed.username or "",
-                "pass": parsed.password or "",
+                "user": unquote(parsed.username) if parsed.username else "",
+                "pass": unquote(parsed.password) if parsed.password else "",
             },
         ]
     return {
@@ -403,6 +403,8 @@ async def _https_probe_response(
             "User-Agent: vpn-config-parser/1.0\r\n"
             "Connection: close\r\n\r\n"
         )
+        if writer is None:
+            return (None, "")
         writer.write(request.encode("ascii"))
         await writer.drain()
         chunk = await asyncio.wait_for(reader.read(4096), timeout=timeout)
@@ -578,6 +580,7 @@ async def validate_configs_xray(
     proxy_urls = [url for url in (probe_proxy_urls or []) if str(url).strip()]
     reject_ips: set[str] = set()
     proxy_reject_ips: dict[str, set[str]] = {}
+    identity_urls: list[str] = []
     if require_distinct_outbound_ip:
         identity_urls = [
             url
@@ -591,6 +594,12 @@ async def validate_configs_xray(
             probe_urls=identity_urls,
             timeout=timeout,
         )
+        if direct_ip is None and require_distinct_outbound_ip:
+            logger.warning(
+                "require_distinct_outbound_ip is True but cannot determine "
+                "direct public IP — failing closed (no configs pass).",
+            )
+            return []
         if direct_ip:
             reject_ips.add(direct_ip)
         if proxy_urls:

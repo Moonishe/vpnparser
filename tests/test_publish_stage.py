@@ -259,8 +259,9 @@ async def test_run_output_file_equals_configured_path(
 
     async def fake_publish_file(
         publisher: object, output_file: str, repo_path: str, commit_message: str
-    ) -> None:
+    ) -> bool:
         captured.append(repo_path)
+        return True
 
     monkeypatch.setattr(Publisher, "_publish_file", staticmethod(fake_publish_file))
 

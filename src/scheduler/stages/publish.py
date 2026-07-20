@@ -60,6 +60,7 @@ class Publisher(PipelineStage):
             repo=repo,
             branch=branch,
         ) as publisher:
+            all_ok = True
             for output_file in dict.fromkeys(state.output_files):
                 repo_path = output_file
                 if (
@@ -68,14 +69,16 @@ class Publisher(PipelineStage):
                     and output_file == configured_combined_path
                 ):
                     repo_path = str(configured_combined_path)
-                await self._publish_file(
+                ok = await self._publish_file(
                     publisher,
                     output_file,
                     repo_path,
                     commit_message,
                 )
+                if not ok:
+                    all_ok = False
 
-        state.published = True
+        state.published = all_ok
         return state
 
     @staticmethod
@@ -84,14 +87,14 @@ class Publisher(PipelineStage):
         output_file: str,
         repo_path: str,
         commit_message: str,
-    ) -> None:
+    ) -> bool:
         try:
             from src.utils.paths import resolve_safe_output_path
 
             safe_path = resolve_safe_output_path(output_file)
         except ValueError:
             logger.exception("Unsafe output file %r rejected for publish", output_file)
-            return
+            return False
         try:
             content = await asyncio.to_thread(safe_path.read_text, encoding="utf-8")
         except FileNotFoundError:
@@ -99,10 +102,10 @@ class Publisher(PipelineStage):
                 "Cannot publish: output file %s does not exist.",
                 output_file,
             )
-            return
+            return False
         except Exception:
             logger.exception("Cannot read output file %s for publish", output_file)
-            return
+            return False
 
         try:
             ok = await publisher.publish_file(repo_path, content, commit_message)
@@ -111,5 +114,7 @@ class Publisher(PipelineStage):
                     "Publish completed but reported failure for %s.",
                     repo_path,
                 )
+            return bool(ok)
         except Exception:
             logger.exception("Publish failed for %s", repo_path)
+            return False

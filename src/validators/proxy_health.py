@@ -120,7 +120,8 @@ class ProxyHealthHistory:
         latencies = entry.get("latency_ms", [])
         if not latencies:
             return float("inf")
-        return sum(latencies) / len(latencies)
+        total = float(sum(latencies))
+        return total / len(latencies)
 
     def _has_history(self, proxy_url: str) -> bool:
         return proxy_url.strip() in self.records

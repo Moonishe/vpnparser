@@ -62,15 +62,16 @@ class Config:
     health_record: dict[str, Any] | None = None
 
     @property
-    def dedup_key(self) -> tuple[str, int]:
-        """Key for deduplication: (address, port).
+    def dedup_key(self) -> tuple[str, str, int]:
+        """Key for deduplication: (protocol, address, port).
 
-        One server = one config, regardless of protocol/uuid.
-        This avoids cluttering output with multiple configs for the same server.
+        Different protocols or credentials on the same address:port are
+        independent configs (e.g. VLESS + Trojan on one server).  The
+        protocol is included so they are not merged.
         """
-        return (self.address, self.port)
+        return (self.protocol, self.address, self.port)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             k: v
             for k, v in self.__dict__.items()
@@ -307,14 +308,16 @@ PROTOCOL_PATTERN = re.compile(
     # match to a scheme boundary.  Without it, substrings matched the ``ss``
     # alternative inside unrelated words — e.g. ``boss://x``, ``sss://x`` and
     # ``less://x`` were all extracted as ``ss://x`` false positives.
-    r"\b(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)://[^\s<>'\"]+",
+    r"\b(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)://[^\s<>'\"()\[\]{}]+",
     re.IGNORECASE,
 )
 
 
 def find_all_links(text: str) -> list[str]:
     """Find all proxy links in arbitrary text."""
-    return PROTOCOL_PATTERN.findall(text)
+    links = PROTOCOL_PATTERN.findall(text)
+    # Strip trailing prose punctuation that may have been captured.
+    return [link.rstrip(".,;:!?)]}>") for link in links]
 
 
 # --- garbage / placeholder detection ---

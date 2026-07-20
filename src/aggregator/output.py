@@ -8,7 +8,10 @@ Happ (and most VPN clients) consume subscriptions in two formats:
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
+import os
+import tempfile
 
 from src.parsers.base import Config
 from src.repo_info import github_repo_slug
@@ -108,6 +111,15 @@ def write_subscription(
     if path.parent and not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    path.write_text(output, encoding="utf-8")
+    # Atomic write — write to temp file then rename.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(output)
+        os.replace(tmp, str(path))
+    except Exception:
+        with contextlib.suppress(Exception):
+            os.unlink(tmp)
+        raise
 
     return sum(1 for c in configs if c.raw_link)

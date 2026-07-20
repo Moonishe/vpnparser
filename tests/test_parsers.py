@@ -607,7 +607,7 @@ def test_base64_output_contains_raw_links() -> None:
 def test_config_dedup_key() -> None:
     """line 71: dedup_key returns (address, port)."""
     cfg = Config(protocol="vmess", address="a.com", port=443, uuid_or_password="u")
-    assert cfg.dedup_key == ("a.com", 443)
+    assert cfg.dedup_key == ("vmess", "a.com", 443)
 
 
 def test_config_to_dict_excludes_none_and_metadata() -> None:

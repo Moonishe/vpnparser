@@ -77,7 +77,7 @@ class Aggregator(PipelineStage):
             sorted_configs = list(configs)
         else:
             sorted_configs = sort_configs(
-                [cfg for cfg in configs if cfg.country is not None],
+                configs,
                 sort_by=sort_by,
             )
 

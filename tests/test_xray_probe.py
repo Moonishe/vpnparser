@@ -1223,7 +1223,8 @@ async def test_validate_distinct_ip_no_direct() -> None:
             timeout=5.0,
             require_distinct_outbound_ip=True,
         )
-        assert len(result) == 1
+        # Fail-closed: require_distinct_outbound_ip=True + None direct IP = empty.
+        assert len(result) == 0
 
 
 @pytest.mark.asyncio

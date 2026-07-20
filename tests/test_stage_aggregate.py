@@ -675,7 +675,7 @@ class TestTakeUniqueConfigs:
 
     def test_used_keys_skipped(self) -> None:
         """Configs with dedup_key already in used_keys are skipped. (line 258)"""
-        used = {("a.com", 443)}
+        used = {("vless", "a.com", 443)}
         configs = [
             _make_config("a.com", 443, country="DE"),  # skipped
             _make_config("b.com", 444, country="FI"),  # taken
@@ -684,7 +684,7 @@ class TestTakeUniqueConfigs:
         result = Aggregator._take_unique_configs(configs, 5, used)
         assert len(result) == 1
         assert result[0].address == "b.com"
-        assert ("b.com", 444) in used
+        assert ("vless", "b.com", 444) in used
 
     def test_take_all(self) -> None:
         """Take up to target unique configs."""

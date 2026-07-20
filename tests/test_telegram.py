@@ -572,7 +572,7 @@ class TestSaveFact:
         assert "new fact" in data
 
 
-# ── _call_gemini ────────────────────────────────────────────────────────
+# ── _call_llm ────────────────────────────────────────────────────────
 
 
 class FakeResponse:
@@ -592,7 +592,7 @@ class FakeResponse:
         return None
 
 
-class TestCallGemini:
+class TestCallLlm:
     """Cover lines 575-613."""
 
     def test_success_returns_content(self, monkeypatch) -> None:
@@ -604,7 +604,7 @@ class TestCallGemini:
                 json.dumps(response_data).encode("utf-8")
             ),
         )
-        result = telegram_module._call_gemini("fake-key", "prompt")
+        result = telegram_module._call_llm("fake-key", "prompt")
         assert result == "Interesting fact"
 
     def test_no_choices_returns_none(self, monkeypatch) -> None:
@@ -616,7 +616,7 @@ class TestCallGemini:
                 json.dumps(response_data).encode("utf-8")
             ),
         )
-        assert telegram_module._call_gemini("fake-key", "prompt") is None
+        assert telegram_module._call_llm("fake-key", "prompt") is None
 
     def test_empty_content_returns_none(self, monkeypatch) -> None:
         response_data = {"choices": [{"message": {"content": ""}}]}
@@ -627,7 +627,7 @@ class TestCallGemini:
                 json.dumps(response_data).encode("utf-8")
             ),
         )
-        assert telegram_module._call_gemini("fake-key", "prompt") is None
+        assert telegram_module._call_llm("fake-key", "prompt") is None
 
     def test_exception_returns_none(self, monkeypatch, caplog) -> None:
         def fake_urlopen(req, timeout=15):
@@ -635,9 +635,9 @@ class TestCallGemini:
 
         monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
         caplog.set_level("WARNING")
-        result = telegram_module._call_gemini("fake-key", "prompt")
+        result = telegram_module._call_llm("fake-key", "prompt")
         assert result is None
-        assert "Gemini API call failed" in caplog.text
+        assert "LLM API call failed" in caplog.text
 
     def test_no_valid_choices_key(self, monkeypatch) -> None:
         response_data = {"not_choices": []}
@@ -648,7 +648,7 @@ class TestCallGemini:
                 json.dumps(response_data).encode("utf-8")
             ),
         )
-        assert telegram_module._call_gemini("fake-key", "prompt") is None
+        assert telegram_module._call_llm("fake-key", "prompt") is None
 
     def test_content_not_string(self, monkeypatch) -> None:
         response_data = {"choices": [{"message": {"content": 123}}]}
@@ -659,7 +659,7 @@ class TestCallGemini:
                 json.dumps(response_data).encode("utf-8")
             ),
         )
-        assert telegram_module._call_gemini("fake-key", "prompt") is None
+        assert telegram_module._call_llm("fake-key", "prompt") is None
 
 
 # ── _generate_fun_fact ──────────────────────────────────────────────────
@@ -694,8 +694,8 @@ class TestGenerateFunFact:
         monkeypatch.setattr(telegram_module, "_load_facts_history", lambda: [])
         monkeypatch.setattr(
             telegram_module,
-            "_call_gemini",
-            lambda key, prompt: "unique gemini fact",
+            "_call_llm",
+            lambda key, prompt: "unique llm fact",
         )
         saved = []
 
@@ -704,8 +704,8 @@ class TestGenerateFunFact:
 
         monkeypatch.setattr(telegram_module, "_save_fact", fake_save)
         result = telegram_module._generate_fun_fact("real-key")
-        assert result == "unique gemini fact"
-        assert "unique gemini fact" in saved
+        assert result == "unique llm fact"
+        assert "unique llm fact" in saved
 
     def test_api_key_duplicate_retries_then_fallback(self, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -715,11 +715,11 @@ class TestGenerateFunFact:
         )
         call_count = [0]
 
-        def fake_call_gemini(key, prompt):
+        def fake_call_llm(key, prompt):
             call_count[0] += 1
             return "existing fact"  # Always returns duplicate
 
-        monkeypatch.setattr(telegram_module, "_call_gemini", fake_call_gemini)
+        monkeypatch.setattr(telegram_module, "_call_llm", fake_call_llm)
 
         saved = []
         monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
@@ -736,7 +736,7 @@ class TestGenerateFunFact:
             "_load_facts_history",
             lambda: list(telegram_module._FACT_FALLBACKS),
         )
-        monkeypatch.setattr(telegram_module, "_call_gemini", lambda key, prompt: None)
+        monkeypatch.setattr(telegram_module, "_call_llm", lambda key, prompt: None)
 
         saved = []
         monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
@@ -747,7 +747,7 @@ class TestGenerateFunFact:
 
     def test_api_key_api_fails_uses_fallback(self, monkeypatch) -> None:
         monkeypatch.setattr(telegram_module, "_load_facts_history", lambda: [])
-        monkeypatch.setattr(telegram_module, "_call_gemini", lambda key, prompt: None)
+        monkeypatch.setattr(telegram_module, "_call_llm", lambda key, prompt: None)
         saved = []
         monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
 
@@ -760,11 +760,11 @@ class TestGenerateFunFact:
         monkeypatch.setattr(telegram_module, "_load_facts_history", lambda: history)
         seen_prompts = []
 
-        def fake_call_gemini(key, prompt):
+        def fake_call_llm(key, prompt):
             seen_prompts.append(prompt)
             return "brand new fact"
 
-        monkeypatch.setattr(telegram_module, "_call_gemini", fake_call_gemini)
+        monkeypatch.setattr(telegram_module, "_call_llm", fake_call_llm)
         monkeypatch.setattr(telegram_module, "_save_fact", lambda f: None)
 
         result = telegram_module._generate_fun_fact("real-key")

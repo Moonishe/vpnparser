@@ -13,6 +13,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -60,8 +61,8 @@ class SourceManager:
         self.github_token = github_token
 
         # Loaded config ------------------------------------------------------
-        self.settings: dict = self._load_settings()
-        self.sources: list[dict] = self._load_sources()
+        self.settings: dict[str, Any] = self._load_settings()
+        self.sources: list[dict[str, Any]] = self._load_sources()
 
         # Concurrency control ------------------------------------------------
         max_concurrent = self._settings_sources().get("max_concurrent_fetches", 10)
@@ -80,12 +81,12 @@ class SourceManager:
 
     # --- config loading ---
 
-    def _settings_sources(self) -> dict:
+    def _settings_sources(self) -> dict[str, Any]:
         return (
             self.settings.get("sources", {}) if isinstance(self.settings, dict) else {}
         )
 
-    def _load_settings(self) -> dict:
+    def _load_settings(self) -> dict[str, Any]:
         if not self.settings_file.exists():
             logger.warning("Settings file not found: %s", self.settings_file)
             return {}
@@ -97,7 +98,7 @@ class SourceManager:
             logger.exception("Failed to load settings %s", self.settings_file)
             return {}
 
-    def _load_sources(self) -> list[dict]:
+    def _load_sources(self) -> list[dict[str, Any]]:
         if not self.sources_file.exists():
             logger.warning("Sources file not found: %s", self.sources_file)
             return []
@@ -112,7 +113,7 @@ class SourceManager:
 
     # --- public API ---
 
-    def enabled_sources(self) -> list[dict]:
+    def enabled_sources(self) -> list[dict[str, Any]]:
         """Return only sources that are enabled.
 
         Accepts any truthy value (true, "true", 1) so hand-edited JSON/YAML
@@ -159,11 +160,11 @@ class SourceManager:
                 results.append(raw)
         return results
 
-    async def _fetch_with_semaphore(self, source: dict) -> SourceResult:
+    async def _fetch_with_semaphore(self, source: dict[str, Any]) -> SourceResult:
         async with self._semaphore:
             return await self.fetch_source(source)
 
-    async def fetch_source(self, source: dict) -> SourceResult:
+    async def fetch_source(self, source: dict[str, Any]) -> SourceResult:
         """Fetch a single source. Never raises — errors become ``SourceResult.error``.
 
         Supported source types:

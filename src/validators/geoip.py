@@ -139,6 +139,8 @@ async def enrich_configs_geoip(
     Returns the same list (mutated in place) for convenience.
     """
     semaphore = asyncio.Semaphore(max(1, int(concurrency)))
+    # ip-api.com free tier: 45 req/min. Rate-limit each request to stay under.
+    rate_limit_delay = 60.0 / 45  # ~1.33s between requests
 
     async def _enrich_one(cfg: Config) -> None:
         async with semaphore:
@@ -147,6 +149,7 @@ async def enrich_configs_geoip(
                 cfg.country = None
                 return
             cfg.country = await lookup_country(ip, api_url=api_url)
+            await asyncio.sleep(rate_limit_delay)
 
     await asyncio.gather(*(_enrich_one(c) for c in configs))
     return configs

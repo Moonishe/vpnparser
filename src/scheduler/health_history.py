@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
+import tempfile
 from typing import Any
 
 from src.parsers.base import Config
@@ -62,10 +65,16 @@ class HealthHistory:
         try:
             target = resolve_safe_output_path(path)
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
+            # Atomic write — write to temp file then rename.
+            fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2, sort_keys=True)
+                os.replace(tmp, str(target))
+            except Exception:
+                with contextlib.suppress(Exception):
+                    os.unlink(tmp)
+                raise
         except Exception as exc:
             logger.warning("Could not write health history %s: %s", path, exc)
             return None
@@ -83,11 +92,14 @@ class HealthHistory:
                 str(cfg.security),
             ],
         )
-        return (
+        hashed = (
             __import__("hashlib")
-            .sha256(raw.encode("utf-8", errors="ignore"))
+            .sha256(
+                raw.encode("utf-8", errors="ignore"),
+            )
             .hexdigest()
         )
+        return hashed
 
     def is_banned(self, cfg: Config, *, now: int | None = None) -> bool:
         if not self.is_enabled():

@@ -139,7 +139,12 @@ class GitHubClient:
         await self._get_client()
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
         await self.aclose()
 
     # --- low-level request helper ---
@@ -232,7 +237,7 @@ class GitHubClient:
         repo: str,
         path: str,
         branch: str = "main",
-    ) -> list[dict]:
+    ) -> list[dict[str, object]]:
         """List files in a repo directory.
 
         Returns a list of dicts with keys: ``name``, ``path``, ``download_url``,
@@ -243,10 +248,10 @@ class GitHubClient:
         if isinstance(data, dict):
             # Single file returned (path points to a file, not a dir).
             data = [data]
+        result: list[dict[str, object]] = []
         if not isinstance(data, list):
             logger.warning("Unexpected GitHub contents response for %s: %r", url, data)
             return []
-        result: list[dict] = []
         for entry in data:
             if not isinstance(entry, dict):
                 continue
@@ -416,8 +421,8 @@ class GitHubClient:
         results: list[tuple[str, str]] = []
 
         # Separate files and directories for concurrent processing.
-        file_entries: list[dict] = []
-        dir_entries: list[dict] = []
+        file_entries: list[dict[str, object]] = []
+        dir_entries: list[dict[str, object]] = []
         for entry in entries:
             etype = entry.get("type", "file")
             if etype == "file":
@@ -497,7 +502,7 @@ class GitHubClient:
             sub_budgets = [base + (1 if i < extra else 0) for i in range(n_dirs)]
 
             async def _recurse_subdir(
-                entry: dict,
+                entry: dict[str, object],
                 sub_budget: int,
             ) -> list[tuple[str, str]]:
                 if sub_budget <= 0:

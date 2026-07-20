@@ -27,6 +27,13 @@ def load_settings(path: str) -> dict[str, Any]:
         return {}
     return data or {}
 
+    if not isinstance(data, dict):
+        logger.warning(
+            "Settings root is %s, expected dict — using defaults.",
+            type(data).__name__,
+        )
+        return {}
+
 
 class Settings:
     """Thin wrapper around the raw settings dict with typed accessors."""

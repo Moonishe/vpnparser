@@ -516,7 +516,7 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
 
     lines = [line.strip() for line in text.strip().split("\n") if "://" in line]
 
-    countries = Counter()
+    countries: Counter[str] = Counter()
     for line in lines:
         # Skip watermark
         if "0.0.0.0" in line and "vmess://" in line:
@@ -570,8 +570,8 @@ def _save_fact(fact: str) -> None:
         logger.warning("Could not save fact history: %s", exc)
 
 
-def _call_gemini(api_key: str, prompt: str) -> str | None:
-    """Single Gemini API call. Returns text or None on failure."""
+def _call_llm(api_key: str, prompt: str) -> str | None:
+    """Single LLM API call (DashScope Qwen). Returns text or None on failure."""
     try:
         body = json.dumps(
             {
@@ -609,14 +609,14 @@ def _call_gemini(api_key: str, prompt: str) -> str | None:
                 return None
             return " ".join(content.split())
     except Exception as exc:
-        logger.warning("Gemini API call failed: %s", exc)
+        logger.warning("LLM API call failed: %s", exc)
         return None
 
 
 def _generate_fun_fact(api_key: str) -> str:
-    """Call Gemini API to generate a fun VPN fact.
+    """Call LLM API (DashScope Qwen) to generate a fun VPN fact.
 
-    Loads history of previous facts, tells Gemini not to repeat them,
+    Loads history of previous facts, tells the LLM not to repeat them,
     retries up to 3 times if the generated fact is a duplicate.
     Saves the new fact to history.
     Returns a fallback if API fails or no API key.
@@ -644,7 +644,7 @@ def _generate_fun_fact(api_key: str) -> str:
     # Build prompt with "don't repeat" list.
     dont_repeat = ""
     if history:
-        recent = history[-10:]  # show last 10 to Gemini
+        recent = history[-10:]  # show last 10 to the LLM
         dont_repeat = "\n\nНе повторяй эти факты:\n" + "\n".join(
             f"- {h}" for h in recent
         )
@@ -653,14 +653,14 @@ def _generate_fun_fact(api_key: str) -> str:
 
     # Try up to 3 times to get a non-duplicate fact.
     for attempt in range(3):
-        fact = _call_gemini(api_key, prompt)
+        fact = _call_llm(api_key, prompt)
         if fact is None:
             break
         # Check if it's a duplicate (case-insensitive, stripped).
         fact_lower = fact.lower().strip()
         if any(fact_lower == h.lower().strip() for h in history):
             logger.info(
-                "Gemini returned duplicate fact (attempt %d) — retrying",
+                "LLM returned duplicate fact (attempt %d) — retrying",
                 attempt + 1,
             )
             continue
@@ -739,7 +739,8 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
 
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read().decode("utf-8"))
-            return result.get("ok", False)
+            ok = result.get("ok", False)
+            return bool(ok) if ok is not None else False
     except urllib.error.HTTPError as exc:
         # HTTPError is file-like — read Telegram's error description.
         try:
