@@ -54,7 +54,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: mypy
-        run: mypy --cache-dir=/dev/null src
+        run: mypy --no-incremental src
 
   test:
     runs-on: ubuntu-latest
@@ -104,6 +104,6 @@ jobs:
         uses: trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55 # v3.95.9
         with:
           path: ./
-          base: main
-          head: HEAD
-          extra_args: --debug
+          base: ${{ github.event.before }}
+          head: ${{ github.event.after }}
+          extra_args: --debug --since-commit ${{ github.event.before }}

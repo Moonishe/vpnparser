@@ -52,7 +52,7 @@ jobs:
         run: |
           ruff check --no-cache src tests
           ruff format --check --no-cache src tests
-          mypy --cache-dir=/dev/null src
+          mypy --no-incremental src
           bandit -c pyproject.toml -r src
           pip-audit --desc
 
