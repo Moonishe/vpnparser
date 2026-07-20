@@ -5,14 +5,16 @@ Usage::
     python -m src.main --run
     python -m src.main --run --publish --output output/subscription.txt
     python -m src.main --run -v
+    python -m src.main --run --continuous
 
 Flags:
-    --run      Run the full pipeline (fetch -> parse -> validate -> aggregate -> write).
-    --publish  Also publish the result to a GitHub repo (needs GITHUB_TOKEN).
-    --settings  Path to settings.yaml (default: config/settings.yaml).
-    --sources   Path to sources.json (default: config/sources.json).
-    --output    Path to the output subscription file (default: output/subscription.txt).
-    --verbose   Enable DEBUG-level logging (default: INFO).
+    --run        Run the full pipeline (fetch -> parse -> validate -> aggregate -> write).
+    --publish    Also publish the result to a GitHub repo (needs GITHUB_TOKEN).
+    --settings   Path to settings.yaml (default: config/settings.yaml).
+    --sources    Path to sources.json (default: config/sources.json).
+    --output     Path to the output subscription file (default: output/subscription.txt).
+    --verbose    Enable DEBUG-level logging (default: INFO).
+    --continuous Keep running in a loop — next run starts immediately after previous finishes.
 """
 
 from __future__ import annotations
@@ -26,8 +28,25 @@ import sys
 from src.env import load_dotenv_if_available
 
 
+class _Cp1251SafeStreamHandler(logging.StreamHandler):
+    """Stream handler that replaces unencodable unicode on Windows cp1251."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            try:
+                stream.write(msg + self.terminator)
+            except UnicodeEncodeError:
+                encoded = msg.encode("cp1251", errors="replace").decode("cp1251")
+                stream.write(encoded + self.terminator)
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
+
 def _setup_logging(verbose: bool) -> None:
-    """Configure the root logger with a stream handler on stderr/stdout."""
+    """Configure the root logger with a cp1251-safe stream handler."""
     level = logging.DEBUG if verbose else logging.INFO
     fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     logging.basicConfig(
@@ -37,6 +56,12 @@ def _setup_logging(verbose: bool) -> None:
         stream=sys.stdout,
         force=True,
     )
+    # Replace the default StreamHandler with our cp1251-safe version.
+    root = logging.getLogger()
+    handler = _Cp1251SafeStreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter(fmt, datefmt="%Y-%m-%d %H:%M:%S"))
+    root.handlers = [handler]
+    root.setLevel(level)
     # Quiet overly-noisy third-party loggers a bit.
     logging.getLogger("httpx").setLevel(
         logging.WARNING if not verbose else logging.INFO,
@@ -86,11 +111,61 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Enable DEBUG-level logging.",
     )
     parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Keep running in a loop — next run starts immediately after previous finishes.",
+    )
+    parser.add_argument(
         "--notify",
         action="store_true",
         help="Send Telegram notification after run.",
     )
     return parser
+
+
+def _run_once(
+    args: argparse.Namespace,
+    github_token: str | None,
+    logger: logging.Logger,
+) -> int:
+    """Execute a single pipeline run. Returns config count or raises."""
+    from src.scheduler.runner import PipelineRunner  # noqa: PLC0415 — lazy import
+
+    runner = PipelineRunner(
+        settings_path=args.settings,
+        sources_path=args.sources,
+        github_token=github_token,
+    )
+    count = asyncio.run(runner.run(output_file=args.output, publish=args.publish))
+
+    if count > 0:
+        logger.info("Done. %d configs written to %s.", count, args.output)
+        if args.publish and hasattr(runner, "_publish_ok") and runner._publish_ok:
+            logger.info("Result published to GitHub.")
+        elif args.publish:
+            logger.warning(
+                "Publish was requested but failed — check logs above for details."
+            )
+        if args.notify:
+            try:
+                from src.notify import telegram as tg  # noqa: PLC0415
+
+                status_file = str(
+                    runner.settings.get("publisher", {}).get(
+                        "status_output_file",
+                        "output/run-summary.json",
+                    ),
+                )
+                tg.send_notification(
+                    configs_count=count,
+                    subscription_file=args.output,
+                    status_file=status_file,
+                )
+            except Exception as exc:
+                logger.warning("Telegram notification failed: %s", exc)
+    else:
+        logger.warning("Pipeline completed but produced 0 configs.")
+    return count
 
 
 def main() -> int:
@@ -124,55 +199,35 @@ def main() -> int:
     # Import lazily so that --help / argument errors do not require the full
     # dependency tree (and missing sibling modules) to be importable.
     try:
-        from src.scheduler.runner import PipelineRunner
+        from src.scheduler.runner import PipelineRunner  # noqa: PLC0415,F811
     except ImportError:
         logger.exception("Failed to import PipelineRunner")
         return 1
 
-    runner = PipelineRunner(
-        settings_path=args.settings,
-        sources_path=args.sources,
-        github_token=github_token,
-    )
+    def single_run() -> int:
+        try:
+            return _run_once(args, github_token, logger)
+        except KeyboardInterrupt:
+            logger.warning("Interrupted by user.")
+            return 130
+        except Exception as exc:
+            logger.error("Pipeline crashed: %s", exc, exc_info=True)
+            return 1
 
-    try:
-        count = asyncio.run(runner.run(output_file=args.output, publish=args.publish))
-    except KeyboardInterrupt:
-        logger.warning("Interrupted by user.")
-        return 130
-    except Exception as exc:
-        logger.error("Pipeline crashed: %s", exc, exc_info=True)
-        return 1
+    if not args.continuous:
+        return single_run()
 
-    if count > 0:
-        logger.info("Done. %d configs written to %s.", count, args.output)
-        if args.publish and hasattr(runner, "_publish_ok") and runner._publish_ok:
-            logger.info("Result published to GitHub.")
-        elif args.publish:
-            logger.warning(
-                "Publish was requested but failed — check logs above for details."
-            )
-        if args.notify:
-            try:
-                from src.notify import telegram as tg
-
-                status_file = str(
-                    runner.settings.get("publisher", {}).get(
-                        "status_output_file",
-                        "output/run-summary.json",
-                    ),
-                )
-                tg.send_notification(
-                    configs_count=count,
-                    subscription_file=args.output,
-                    status_file=status_file,
-                )
-            except Exception as exc:
-                logger.warning("Telegram notification failed: %s", exc)
-        return 0
-
-    logger.warning("Pipeline completed but produced 0 configs.")
-    return 0
+    # --continuous mode: loop forever
+    logger.info("Continuous mode enabled — restarting immediately after each run.")
+    while True:
+        exit_code = single_run()
+        if exit_code == 130:
+            logger.warning("Exiting continuous loop due to KeyboardInterrupt.")
+            return 130
+        logger.info(
+            "Run finished (exit=%d). Starting next run immediately.",
+            exit_code,
+        )
 
 
 if __name__ == "__main__":
