@@ -54,16 +54,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: mypy
-        continue-on-error: true
-        run: mypy --no-incremental src 2>&1 | tee /tmp/mypy_output.txt
-        shell: bash
-
-      - name: Upload mypy output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mypy-output
-          path: /tmp/mypy_output.txt
+        run: mypy --no-incremental src
 
   test:
     runs-on: ubuntu-latest
