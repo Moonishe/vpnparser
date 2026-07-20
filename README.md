@@ -1,95 +1,97 @@
 # VPN Config Parser
 
-Fetches public VPN subscription files from GitHub, parses supported proxy links,
-filters and deduplicates them, then writes Happ/v2ray-compatible base64
-subscriptions.
+<p align="center">
+  <img src="https://img.shields.io/github/actions/workflow/status/Moonishe/vpnparser/update.yml?branch=main&label=CI&logo=github" alt="CI">
+  <img src="https://img.shields.io/badge/python-%3E%3D3.11-blue?logo=python" alt="Python">
+  <img src="https://img.shields.io/github/license/Moonishe/vpnparser" alt="License">
+  <img src="https://img.shields.io/github/last-commit/Moonishe/vpnparser" alt="Last commit">
+</p>
 
-The current pipeline produces four files:
+Fetches public VPN proxy configurations from GitHub sources, parses supported
+protocol links, filters & deduplicates them, runs liveness checks (TCP/TLS/Xray
+L3 probe), then publishes Happ/v2ray-compatible base64 subscriptions.
 
-- `output/subscription.txt` - combined pool.
-- `output/subscription-mix.txt` - strict 100 blacklist + 100 whitelist mix.
-- `output/subscription-blacklist.txt` - normal "blacklist" VPN pool.
-- `output/subscription-whitelist.txt` - "whitelist" / restricted-network pool.
-- `output/locations/subscription-XX.txt` - per-country subconfigs, up to 50
-  checked servers per location.
-- `output/run-summary.json` - validation and per-output country metadata for Telegram.
+---
 
 ## Pipeline
 
-```text
-fetch -> parse -> garbage filter -> dedup -> country filter -> aggregate -> write -> publish
+```
+fetch ──► parse ──► garbage filter ──► dedup ──► country filter
+                                                │
+                                                ▼
+                                         aggregate ──► write ──► publish
 ```
 
-The default mode keeps the country filter fast, then runs network liveness
-checks. GitHub Actions often cannot reach VPN servers directly, so the
-validator can build a small free SOCKS5 proxy pool from GitHub-hosted proxy
-lists and route TCP/TLS checks through it. TCP only proves that a port opens;
-TLS/REALITY configs then get a stricter TLS handshake pass using the parsed SNI
-and Host values. After that, the GitHub Actions workflow installs Xray-core and
-runs an L3 client probe: each supported config is loaded as an Xray outbound,
-then a real HTTPS request is made through a local SOCKS inbound. Each VPN config
-can be tried through several different SOCKS5 proxies before it is treated as
-unreachable. If too few SOCKS5 proxies are found, the proxy search widens the
-candidate sample for several rounds before giving up. The production settings
-use strict low-live handling, so a weak validation result publishes fewer
-configs instead of putting unchecked/dead configs back into the subscriptions.
-TCP-only configs are dropped after the TLS/REALITY pass in the production
-settings, and unsupported Xray candidates are dropped before the final output.
+1. **Fetch** — downloads subscription files from configured GitHub repos and URLs.
+2. **Parse** — extracts proxy links (`vmess://`, `vless://`, `trojan://`, …), decodes base64 blobs.
+3. **Garbage filter** — drops malformed or obviously invalid configs.
+4. **Dedup** — removes duplicates by `(protocol, address, port)`.
+5. **Country filter** — keeps only allowed countries, applies per-list rules.
+6. **Aggregate** — country-balanced round-robin selection caps per output.
+7. **Write** — produces base64-encoded subscription files.
+8. **Publish** — pushes outputs to a configured GitHub repository.
 
-Configured SOCKS5 proxy pool sources:
+### Network validation
 
-- `proxifly/free-proxy-list`
-- `ProxyScrape/free-proxy-list`
-- `VPSLabCloud/VPSLab-Free-Proxy-List`
-- `gfpcom/free-proxy-list` wiki list, used last because it is much larger
+GitHub Actions runners often cannot reach VPN servers directly, so the
+validator can build a small SOCKS5 proxy pool from public proxy lists and
+route checks through it:
+
+| Check | What it proves |
+|-------|---------------|
+| TCP | Port is open |
+| TLS | TLS handshake succeeds (uses SNI / Host from config) |
+| Xray L3 | Full proxied HTTPS request through the actual protocol |
+
+Each config is tried through multiple SOCKS5 proxies before being marked
+unreachable. If too few proxies are found, the search widens across
+candidate lists for several rounds. Production settings use **fail-closed**
+mode: weak validation publishes fewer configs instead of putting unchecked
+ones back into subscriptions.
+
+### Output files
+
+| File | Contents |
+|------|----------|
+| `output/subscription.txt` | Combined pool (country-balanced, ~200 configs) |
+| `output/subscription-blacklist.txt` | Blacklist pool |
+| `output/subscription-whitelist.txt` | Whitelist / restricted-network pool |
+| `output/subscription-mix.txt` | 100 black + 100 white |
+| `output/locations/subscription-XX.txt` | Per-country subsets (≤50 per country) |
+| `output/run-summary.json` | Validation metadata for Telegram notifications |
+
+---
 
 ## Sources
 
-Sources live in `config/sources.json`. Each source supports:
+Sources are configured in [`config/sources.json`](config/sources.json).
 
-- `type`: `subscription` for one GitHub file, `raw` for a GitHub directory,
-  or `url` for a direct HTTPS text source.
-- `list_type`: `blacklist`, `whitelist`, or `mixed`.
-- GitHub sources use `owner`, `repo`, `path`, `branch`, `enabled`.
-- Direct URL sources use `url`; optional `default_country` is used only when
-  country detection from the config itself fails.
-- For raw directories: optional `max_depth`, `max_files`, `include_files`, `exclude_files`.
+Each source supports:
 
-Currently included upstream pools:
+| Field | Description |
+|-------|-------------|
+| `type` | `subscription` (single file), `raw` (directory), `url` (direct HTTPS) |
+| `list_type` | `blacklist`, `whitelist`, or `mixed` |
+| `owner`, `repo`, `path`, `branch` | GitHub source location |
+| `url` | Direct URL (for `url` type) |
+| `default_country` | Fallback when country detection fails |
+| `max_depth`, `max_files`, `include_files`, `exclude_files` | Directory crawl options |
 
-- `igareck/vpn-configs-for-russia`
-  - Black: `BLACK_VLESS_RUS_mobile.txt`
-  - White: `Vless-Reality-White-Lists-Rus-Mobile.txt`, `Vless-Reality-White-Lists-Rus-Mobile-2.txt`, `WHITE-CIDR-RU-checked.txt`,
-    `WHITE-CIDR-RU-all.txt`, `WHITE-SNI-RU-all.txt`
-- `luxxuria/harvester`
-  - Black: `top_600.txt`, `speed_tested.txt`
-- `DarkRoyalty/shnajder-vpn-configs`
-  - White: `githubmirror/26.txt`
-- `V2RayRoot/V2RayConfig`
-  - Black: `Config/vless.txt`
-- `sakha1370/OpenRay`
-  - Black: `output/all_valid_proxies.txt`
-- `jsxta/whitelist-russia`
-  - White subscription: `https://gbr.mydan.online/configs`
+### Included upstreams
 
-Blacklist output keeps only `DE`, `FI`, `NL`, `US`, `GB`, `FR`, `JP`, `CA`.
-Whitelist output targets 200 checked configs with an 80% RU / 20% EU split.
-The mix output targets 100 checked blacklist configs plus 100 checked whitelist
-configs. Subscription titles and Telegram raw GitHub links use
-`GITHUB_OWNER/GITHUB_REPO` (or GitHub Actions' `GITHUB_REPOSITORY`) when set.
-Telegram notifications read `output/run-summary.json`, so they can show whether
-TCP/SOCKS5 validation ran and list countries separately for the combined,
-blacklist, whitelist, and 100/100 mix subscriptions.
-Per-country location outputs are generated from the same Xray-validated pool
-and are capped at 50 servers per country.
-Blacklist and combined outputs are country-balanced with round-robin selection:
-one server per available country per round, so a large pool such as Canada
-cannot dominate the final 200 slots while other countries have live servers.
+- **igareck/vpn-configs-for-russia** — Black + White lists
+- **luxxuria/harvester** — Top tested configs
+- **DarkRoyalty/shnajder-vpn-configs** — Whitelist entries
+- **V2RayRoot/V2RayConfig**, **sakha1370/OpenRay** — Blacklist pools
+- **jsxta/whitelist-russia** — Whitelist subscription
+- **proxifly/free-proxy-list**, **ProxyScrape/free-proxy-list**, **VPSLabCloud/VPSLab-Free-Proxy-List**, **gfpcom/free-proxy-list** — SOCKS5 proxy pool
+
+---
 
 ## Supported Protocols
 
 | Protocol | Schemes |
-| --- | --- |
+|----------|---------|
 | VMess | `vmess://` |
 | VLESS | `vless://` |
 | Trojan | `trojan://` |
@@ -98,6 +100,8 @@ cannot dominate the final 200 slots while other countries have live servers.
 | TUIC | `tuic://` |
 | ShadowTLS | `shadowtls://` |
 | AnyTLS | `anytls://` |
+
+---
 
 ## Setup
 
@@ -108,77 +112,93 @@ pip install -e .
 # Development dependencies (lint, typecheck, tests, security)
 pip install -e ".[dev]"
 
-# Optional: install pre-commit hooks
+# Optional: pre-commit hooks
 pre-commit install
 ```
 
+### Environment
+
 Local `.env` files are loaded automatically when `python-dotenv` is installed.
-Useful variables:
 
-```text
-GITHUB_TOKEN=
-GITHUB_OWNER=
-GITHUB_REPO=
-GITHUB_BRANCH=main
-LLM_API_KEY=
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-VALIDATOR_PROXY=
-```
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` | GitHub API token (unauthenticated rate limits are tight) |
+| `GITHUB_OWNER` | Repository owner for publishing |
+| `GITHUB_REPO` | Repository name for publishing |
+| `GITHUB_BRANCH`| Branch for publishing (default: `main`) |
+| `LLM_API_KEY` | DashScope Qwen key for LLM fallback parsing |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for notifications |
+| `TELEGRAM_CHAT_ID` | Target chat ID for notifications |
+| `VALIDATOR_PROXY` | Optional HTTP proxy for validation |
 
-`GITHUB_TOKEN` is useful even for fetch-only runs because unauthenticated GitHub
-API calls hit rate limits quickly.
+---
 
 ## Usage
 
 ```bash
+# Run pipeline (fetch → validate → write, no publish)
 python -m src.main --run
+
+# Run and publish results
 python -m src.main --run --publish
+
+# Verbose mode
 python -m src.main --run -v
 ```
 
-Run tests:
+### Tests
 
 ```bash
 python -m pytest -q -p no:cacheprovider
 ```
 
+---
+
 ## Configuration
 
-Important settings in `config/settings.yaml`:
+Key settings in [`config/settings.yaml`](config/settings.yaml):
 
-| Section | Key | Meaning |
-| --- | --- | --- |
-| `sources` | `max_concurrent_fetches` | Concurrent source fetch limit |
-| `validator` | `allowed_countries` | Empty list keeps all countries |
-| `validator` | `allowed_countries_by_list` | Per-list country filters |
-| `validator` | `whitelist_ru_ratio`, `whitelist_eu_countries` | Whitelist RU/EU split |
-| `validator` | `max_configs_to_validate` | `0` means process all parsed configs |
-| `validator` | `tcp_enabled`, `tls_enabled`, `xray_enabled` | Network and real-client liveness checks |
-| `validator` | `tcp_candidate_limit`, `tcp_search_rounds` | TCP validation batch size and retry batches |
-| `validator` | `proxy_attempts_per_config`, `tls_proxy_attempts_per_config` | `0` tries all working SOCKS5 proxies for each config |
-| `validator` | `xray_max_alive_by_list`, `xray_concurrency`, `xray_probe_url` | Xray L3 probe limits and HTTPS test URL |
-| `validator` | `proxy_pool` | Optional free SOCKS5 pool for GitHub Actions validation |
-| `validator` | `min_alive_to_filter`, `fail_open_on_low_alive`, `drop_unchecked_after_tls` | Low-live threshold and whether to restore/drop unchecked configs |
-| `aggregator` | `max_configs_in_output` | Hard cap per generated file |
-| `aggregator` | `max_per_country` | Per-country cap |
-| `publisher` | `output_file` | Combined output path |
-| `publisher` | `split_output_files` | Blacklist/whitelist output paths |
-| `publisher` | `location_output_dir`, `location_output_limit` | Per-country subconfig folder and cap |
-| `llm` | `enabled` | Optional LLM fallback when regex finds no links |
+| Section | Key | Default | Description |
+|---------|-----|---------|-------------|
+| `sources` | `max_concurrent_fetches` | `10` | Concurrent fetch limit |
+| `validator` | `allowed_countries` | `[]` | Global country allowlist (empty = all) |
+| `validator` | `allowed_countries_by_list` | `–` | Per-list country overrides |
+| `validator` | `whitelist_ru_ratio`, `whitelist_eu_countries` | `0.8` | RU/EU split in whitelist |
+| `validator` | `max_configs_to_validate` | `0` | Cap on parsed configs (0 = unlimited) |
+| `validator` | `tcp_enabled`, `tls_enabled`, `xray_enabled` | `true` | Liveness check toggles |
+| `validator` | `proxy_attempts_per_config`, `tls_proxy_attempts_per_config` | `3` | SOCKS5 proxy retries |
+| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `200`, `20` | Xray probe limits |
+| `validator` | `require_distinct_outbound_ip` | `false` | Fail-closed when direct IP unknown |
+| `validator` | `min_alive_to_filter`, `fail_open_on_low_alive` | `10`, `false` | Low-live thresholds |
+| `aggregator` | `max_configs_in_output` | `200` | Hard cap per file |
+| `aggregator` | `max_per_country` | `50` | Per-country cap |
+| `publisher` | `output_file` | `output/subscription.txt` | Combined output path |
+| `llm` | `enabled` | `false` | LLM fallback when regex finds no links |
+
+---
 
 ## GitHub Actions
 
-`.github/workflows/update.yml` runs hourly, on manual dispatch, and on pushes
-touching the pipeline. It installs dependencies, runs tests, executes the
-pipeline, publishes generated subscription files, and sends an optional Telegram
-notification.
+[`.github/workflows/update.yml`](.github/workflows/update.yml) runs:
+
+- **Schedule:** every hour
+- **Triggers:** manual dispatch, pushes touching pipeline code
+
+It installs dependencies, runs tests, executes the pipeline, publishes
+subscription files, and sends an optional Telegram notification with a
+summary and a fun VPN fact.
+
+---
 
 ## Notes
 
 - Output files are base64-encoded subscriptions containing newline-separated
   raw proxy links.
-- Each output starts with a harmless VMess watermark entry so the subscription
-  is easy to identify in clients.
-- Fetch failures are isolated per source; one dead upstream does not fail the
-  whole run.
+- Each output starts with a harmless VMess watermark entry for client
+  identification.
+- Fetch failures are isolated per source — one dead upstream does not fail
+  the whole run.
+- Blacklist output keeps only `DE`, `FI`, `NL`, `US`, `GB`, `FR`, `JP`, `CA`.
+- Whitelist targets 200 checked configs with an 80% RU / 20% EU split.
+- LLM fallback ([DashScope Qwen](https://dashscope.aliyun.com)) can extract
+  links from pages where regex parsing fails.
