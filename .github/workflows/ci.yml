@@ -106,4 +106,4 @@ jobs:
           path: ./
           base: ${{ github.event.before }}
           head: ${{ github.event.after }}
-          extra_args: --debug --since-commit ${{ github.event.before }}
+          extra_args: --debug
