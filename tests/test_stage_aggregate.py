@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import builtins
-import sys
-from unittest.mock import MagicMock
-
 import pytest
 
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.settings import Settings
 from src.scheduler.stages.aggregate import Aggregator
-
 
 # ---------------------------------------------------------------------------
 # helpers

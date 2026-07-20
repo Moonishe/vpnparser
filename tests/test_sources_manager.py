@@ -4,17 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 from unittest import mock
 
 import httpx
 import pytest
-import yaml
 
-from src.sources.github import GitHubClient
-from src.sources.manager import SourceManager, SourceResult
 from src.sources.list_types import DEFAULT_LIST_TYPE
-
+from src.sources.manager import SourceManager, SourceResult
 
 # ===================================================================
 # _FakeResponse helper
@@ -1211,7 +1207,7 @@ class TestFetchUrlList:
         async def fake_direct(url, **kw):
             captured.append(url)
             if "index" in url:
-                return f"https://example.com/{{YYYY}}/{{MM}}/data.txt"
+                return "https://example.com/{YYYY}/{MM}/data.txt"
             return "content"
 
         monkeypatch.setattr(sm, "_fetch_direct_url", fake_direct)

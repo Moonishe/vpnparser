@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -15,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.parsers.base import Config
 from src.scheduler.runner import PipelineRunner
-
 
 # ---------------------------------------------------------------------------
 # helpers

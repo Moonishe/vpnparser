@@ -7,7 +7,6 @@ real HTTP calls and asyncio.sleep.
 from __future__ import annotations
 
 import asyncio
-import base64
 import time
 from email.utils import formatdate
 from typing import Any
@@ -16,12 +15,11 @@ import httpx
 import pytest
 
 from src.publisher.github import (
-    GitHubPublishError,
     GitHubPublisher,
+    GitHubPublishError,
     _clean_repo_path,
     _contents_url,
 )
-
 
 # ---------------------------------------------------------------------------
 # _clean_repo_path
@@ -277,7 +275,7 @@ def _make_publisher(monkeypatch, fake_client: Any) -> GitHubPublisher:
     ``aclose()`` works properly.
     """
 
-    async def fake_get_client(self) -> Any:  # noqa: ARG001
+    async def fake_get_client(self) -> Any:
         self._client = fake_client  # type: ignore[attr-defined]
         return fake_client
 
@@ -634,7 +632,7 @@ async def test_publisher_async_context_manager(monkeypatch) -> None:
             nonlocal closed
             closed = True
 
-    async def fake_get_client(self: Any) -> FakeClient:  # noqa: ARG001
+    async def fake_get_client(self: Any) -> FakeClient:
         self._client = FakeClient()  # type: ignore[attr-defined]
         return self._client
 

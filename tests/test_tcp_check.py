@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,11 +11,9 @@ import pytest
 from src.parsers.base import Config
 from src.validators.tcp_check import (
     _open_connection_direct,
-    _open_connection_via_socks,
     tcp_check,
     validate_configs_tcp,
 )
-
 
 # ===========================================================================
 # _open_connection_direct
@@ -61,19 +58,21 @@ class TestOpenConnectionViaSocks:
         mock_proxy_instance = MagicMock()
         mock_proxy_instance.connect = AsyncMock(return_value=mock_sock)
 
-        with patch(
-            "python_socks.async_.asyncio.Proxy.from_url",
-            return_value=mock_proxy_instance,
-        ):
-            with patch(
+        with (
+            patch(
+                "python_socks.async_.asyncio.Proxy.from_url",
+                return_value=mock_proxy_instance,
+            ),
+            patch(
                 "src.validators.tcp_check.asyncio.open_connection",
                 new=AsyncMock(return_value=(mock_reader, mock_writer)),
-            ) as mock_open:
-                is_alive, latency = await tcp_check(
-                    "example.com",
-                    443,
-                    proxy_url="socks5://proxy.example:1080",
-                )
+            ) as mock_open,
+        ):
+            is_alive, latency = await tcp_check(
+                "example.com",
+                443,
+                proxy_url="socks5://proxy.example:1080",
+            )
         assert is_alive is True
         assert latency is not None
         mock_open.assert_called_once_with(sock=mock_sock)

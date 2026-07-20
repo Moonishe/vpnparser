@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -12,7 +11,6 @@ import pytest
 from src.parsers.base import Config
 from src.scheduler.health_history import HealthHistory
 from src.scheduler.settings import Settings
-
 
 # ---------------------------------------------------------------------------
 # Helpers

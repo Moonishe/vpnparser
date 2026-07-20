@@ -38,8 +38,8 @@ def deduplicate(configs: list[Config]) -> list[Config]:
     if not configs:
         return []
 
-    seen: dict[tuple[str, int], Config] = {}
-    order: list[tuple[str, int]] = []
+    seen: dict[tuple[str, str, int], Config] = {}
+    order: list[tuple[str, str, int]] = []
 
     for config in configs:
         key = config.dedup_key

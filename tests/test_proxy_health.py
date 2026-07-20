@@ -10,7 +10,6 @@ import pytest
 
 from src.validators.proxy_health import ProxyHealthHistory
 
-
 # ---------------------------------------------------------------------------
 # Basic operations
 # ---------------------------------------------------------------------------

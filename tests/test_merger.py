@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from src.aggregator.merger import (
     _latency_sort_key,
     deduplicate,
@@ -12,7 +10,6 @@ from src.aggregator.merger import (
     sort_configs,
 )
 from src.parsers.base import Config
-
 
 # ---------------------------------------------------------------------------
 # Helpers

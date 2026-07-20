@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import builtins
-import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,7 +11,6 @@ import pytest
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.settings import Settings
 from src.scheduler.stages.publish import Publisher
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

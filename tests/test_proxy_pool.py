@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from src.validators.proxy_health import ProxyHealthHistory
 from src.validators.proxy_pool import (
     _fetch_source,
     _is_public_ipv4,
@@ -18,8 +19,6 @@ from src.validators.proxy_pool import (
     proxy_connects,
     validate_proxy_candidates,
 )
-from src.validators.proxy_health import ProxyHealthHistory
-
 
 # ---------------------------------------------------------------------------
 # _is_public_ipv4

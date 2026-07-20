@@ -72,7 +72,7 @@ class PipelineRunner:
         self._validator_proxy_urls_cache: list[str] | None = None
         self._liveness_stats: dict[str, Any] = {}
         self._output_stats: dict[str, Any] = {}
-        self._health_history: dict[str, Any] | None = None
+        self._health_history: HealthHistory | None = None
         self._proxy_health_history: Any | None = None
         self._proxy_health_file: str | None = None
         self._fetcher = SourceFetcher()

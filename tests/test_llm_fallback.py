@@ -6,18 +6,16 @@ calls.  All tests are async (asyncio_mode=auto).
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
 import pytest
 
 from src.parsers.llm_fallback import (
-    LLMFallbackParser,
     _MAX_INPUT_CHARS,
+    LLMFallbackParser,
     should_use_llm,
 )
-
 
 # ---------------------------------------------------------------------------
 # should_use_llm
@@ -90,7 +88,7 @@ async def test_extract_links_parses_successful_llm_response(monkeypatch) -> None
 
     async def fake_call_api(self, body: dict[str, Any]) -> str:
         return (
-            "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ==\n"  # noqa: E501
+            "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ==\n"
             "trojan://secret@example.com:443\n"
             "vless://11111111-1111-4111-8111-111111111111@example.com:443\n"
         )
@@ -111,7 +109,7 @@ async def test_extract_links_filters_hallucinated_urls(monkeypatch) -> None:
 
     async def fake_call_api(self, body: dict[str, Any]) -> str:
         return (
-            "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ==\n"  # noqa: E501
+            "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ==\n"
             "https://example.com\n"
             "not-a-link\n"
         )
@@ -129,7 +127,7 @@ async def test_extract_links_deduplicates(monkeypatch) -> None:
     """Duplicate links from the LLM response should be deduplicated."""
 
     async def fake_call_api(self, body: dict[str, Any]) -> str:
-        link = "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ=="  # noqa: E501
+        link = "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ=="
         return f"{link}\n{link}\n"
 
     monkeypatch.setattr(LLMFallbackParser, "_call_api", fake_call_api)
@@ -521,7 +519,7 @@ async def test_extract_links_skips_empty_and_backtick_lines(
         body: dict[str, object],
     ) -> str:
         return (
-            "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ==\n"  # noqa: E501
+            "vmess://eyJ2IjoiMiIsInBzIjoiREUtMDEiLCJhZGQiOiJkZS5leGFtcGxlLmNvbSIsInBvcnQiOiA0NDMsICJpZCI6ICIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEifQ==\n"
             "\n"
             "   \n"
             "```\n"

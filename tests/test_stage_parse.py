@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.parsers.base import Config, find_all_links
+from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.settings import Settings
 from src.scheduler.stages.parse import (
@@ -514,15 +514,17 @@ class TestLlmFallback:
         os.environ["LLM_API_KEY"] = "test-key"
         fake_llm = MagicMock()
         fake_llm.extract_links = AsyncMock(return_value=[_vless("x.com")])
-        with patch(
-            "src.scheduler.stages.parse.LLMFallbackParser",
-            return_value=fake_llm,
-        ):
-            with patch(
+        with (
+            patch(
+                "src.scheduler.stages.parse.LLMFallbackParser",
+                return_value=fake_llm,
+            ),
+            patch(
                 "src.scheduler.stages.parse.should_use_llm",
                 return_value=True,
-            ):
-                result = await lp.llm_fallback("x" * 200, "f.txt", "src")
+            ),
+        ):
+            result = await lp.llm_fallback("x" * 200, "f.txt", "src")
         assert result == [_vless("x.com")]
 
     async def test_llm_extract_exception(self) -> None:
@@ -532,15 +534,17 @@ class TestLlmFallback:
         os.environ["LLM_API_KEY"] = "test-key"
         fake_llm = MagicMock()
         fake_llm.extract_links = AsyncMock(side_effect=RuntimeError("API error"))
-        with patch(
-            "src.scheduler.stages.parse.LLMFallbackParser",
-            return_value=fake_llm,
-        ):
-            with patch(
+        with (
+            patch(
+                "src.scheduler.stages.parse.LLMFallbackParser",
+                return_value=fake_llm,
+            ),
+            patch(
                 "src.scheduler.stages.parse.should_use_llm",
                 return_value=True,
-            ):
-                result = await lp.llm_fallback("x" * 200, "f.txt", "src")
+            ),
+        ):
+            result = await lp.llm_fallback("x" * 200, "f.txt", "src")
         assert result == []
 
     async def test_custom_api_key_env(self) -> None:

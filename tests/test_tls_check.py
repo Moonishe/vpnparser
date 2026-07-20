@@ -16,13 +16,11 @@ from src.validators.tls_check import (
     _is_ip_address,
     _is_tls_security,
     _open_connection_direct,
-    _open_connection_via_socks,
     _split_server_names,
     _tls_server_names,
     tls_check,
     validate_configs_tls,
 )
-
 
 # ===========================================================================
 # Helper: _is_tls_security
@@ -339,19 +337,21 @@ class TestOpenConnectionViaSocks:
         mock_proxy_instance = MagicMock()
         mock_proxy_instance.connect = AsyncMock(return_value=mock_sock)
 
-        with patch(
-            "python_socks.async_.asyncio.Proxy.from_url",
-            return_value=mock_proxy_instance,
-        ):
-            with patch(
+        with (
+            patch(
+                "python_socks.async_.asyncio.Proxy.from_url",
+                return_value=mock_proxy_instance,
+            ),
+            patch(
                 "src.validators.tls_check.asyncio.open_connection",
                 new=AsyncMock(return_value=(mock_reader, mock_writer)),
-            ) as mock_open:
-                result = await tls_check(
-                    "example.com",
-                    443,
-                    proxy_url="socks5://proxy:1080",
-                )
+            ) as mock_open,
+        ):
+            result = await tls_check(
+                "example.com",
+                443,
+                proxy_url="socks5://proxy:1080",
+            )
         assert result is True
         # Verify open_connection was called with the mock sock (SSL wrapped)
         call_kwargs = mock_open.call_args.kwargs
@@ -479,16 +479,18 @@ class TestTlsCheck:
     @pytest.mark.asyncio
     async def test_alpn_protocols_applied(self) -> None:
         """ALPN protocols set on SSL context."""
-        with patch(
-            "src.validators.tls_check._open_connection_direct",
-            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
-        ):
-            with patch(
+        with (
+            patch(
+                "src.validators.tls_check._open_connection_direct",
+                new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+            ),
+            patch(
                 "src.validators.tls_check.ssl.create_default_context"
-            ) as mock_ctx_factory:
-                mock_ctx = MagicMock()
-                mock_ctx_factory.return_value = mock_ctx
-                result = await tls_check("example.com", 443, alpn="h2,http/1.1")
+            ) as mock_ctx_factory,
+        ):
+            mock_ctx = MagicMock()
+            mock_ctx_factory.return_value = mock_ctx
+            result = await tls_check("example.com", 443, alpn="h2,http/1.1")
         assert result is True
         mock_ctx.set_alpn_protocols.assert_called_once_with(["h2", "http/1.1"])
 

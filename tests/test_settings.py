@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-import yaml
-
 from src.scheduler.settings import Settings, load_settings
-
 
 # ---------------------------------------------------------------------------
 # load_settings

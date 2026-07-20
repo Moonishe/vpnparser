@@ -121,6 +121,24 @@ ignore = [
 "src/validators/geoip.py" = [
     "TRY003",   # exception messages
 ]
+"tests/*" = [
+    "S105",     # hardcoded password string — test fixtures use fake secrets
+    "S106",     # hardcoded password func arg — test fixtures use fake secrets
+    "S108",     # hardcoded temp file — test paths are ephemeral
+    "S306",     # mktemp usage — tests use tempfile
+    "TRY003",   # exception messages — not useful in test helpers
+    "F841",     # unused variable — sometimes intentional in test setup
+    "ASYNC240", # blocking path in async function — test fixtures
+    "E501",     # line too long — docstrings and test data
+    "N806",     # non-lowercase variable — mock class names
+    "SIM117",   # nested with — readability preference in tests
+    "C401",     # unnecessary generator — test style preference
+    "C408",     # unnecessary dict() — test style preference
+    "PLR1714",  # repeated equality — test clarity preference
+    "RUF012",   # mutable class default — test configs
+    "RUF043",   # ambiguous regex pattern — test patterns
+    "UP041",    # replace aliased error — compatibility preference
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

@@ -13,7 +13,6 @@ from src.utils.paths import (
     validate_safe_output_path,
 )
 
-
 # ---------------------------------------------------------------------------
 # _find_project_root
 # ---------------------------------------------------------------------------
@@ -47,7 +46,6 @@ def test_resolve_safe_output_path_relative_escapes_base(tmp_path):
     We use ``mklink /J`` (directory junction) on Windows.
     """
     import subprocess
-    import sys
 
     base = tmp_path / "base"
     base.mkdir()

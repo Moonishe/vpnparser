@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 import pytest
 
 from src.notify import telegram as telegram_module
-
 
 # ── _truncate_html_safe ─────────────────────────────────────────────────
 
@@ -847,7 +844,7 @@ class TestSendTelegram:
         caplog.set_level("WARNING")
 
         def fake_urlopen(req, timeout=15):
-            raise urllib.error.URLError(socket.timeout("timed out"))
+            raise urllib.error.URLError(TimeoutError("timed out"))
 
         monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
         assert (

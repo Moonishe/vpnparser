@@ -101,7 +101,7 @@ jobs:
         run: pip-audit --desc
 
       - name: Secret detection
-        uses: trufflesecurity/trufflehog@6b462af8e8a7a37345b6c66af9b5c3e2f76dad3b # v3.80.1
+        uses: trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55 # v3.95.9
         with:
           path: ./
           base: main

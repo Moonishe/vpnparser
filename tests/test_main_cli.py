@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import sys
 
-import pytest
-
 import src.main as main_module
 from src.main import _build_parser, main
 

@@ -13,7 +13,6 @@ from src.scheduler.context import PipelineState
 from src.scheduler.runner import PipelineRunner
 from src.scheduler.stages.write import OutputWriter
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

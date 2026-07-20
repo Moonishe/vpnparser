@@ -5,11 +5,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
-
 from src.scheduler.context import PipelineState
 from src.scheduler.runner import PipelineRunner
-
 
 # ---------------------------------------------------------------------------
 # run (async)  —  lines 33-34

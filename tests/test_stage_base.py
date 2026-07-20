@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from src.scheduler.context import PipelineContext, PipelineState
-from src.scheduler.settings import Settings
 from src.scheduler.stages.base import PipelineStage
 
 

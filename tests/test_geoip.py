@@ -11,7 +11,6 @@ import httpx
 from src.parsers.base import Config
 from src.validators import geoip
 
-
 # --- _is_private_ip --------------------------------------------------------
 
 

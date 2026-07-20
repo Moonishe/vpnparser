@@ -13,16 +13,13 @@ Covers:
 from __future__ import annotations
 
 import importlib
-import pathlib
 import sys
 import typing
-from unittest.mock import patch
 
 import pytest
 
 from src.parsers.base import Config
 from src.validators.country_filter import detect_country, filter_by_country
-
 
 # ---------------------------------------------------------------------------
 # Line 19 — TYPE_CHECKING import
