@@ -431,7 +431,7 @@ class GitHubClient:
                 dir_entries.append(entry)
 
         # --- Concurrent file fetches at this level ---
-        async def _fetch_one_file(entry: dict) -> tuple[str, str] | None:
+        async def _fetch_one_file(entry: dict[str, Any]) -> tuple[str, str] | None:
             name = entry.get("name", "")
             file_path = entry.get("path") or name
             download_url = entry.get("download_url")
@@ -510,7 +510,7 @@ class GitHubClient:
                 # Use `or` fallback so a present-but-None "path" (which GitHub
                 # never sends but defensive code should survive) doesn't crash
                 # the recursive fetch_directory with NoneType.strip().
-                sub_path = entry.get("path") or entry.get("name") or ""
+                sub_path = str(entry.get("path") or entry.get("name") or "")
                 try:
                     return await self.fetch_directory(
                         owner,

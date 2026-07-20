@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -92,13 +93,9 @@ class HealthHistory:
                 str(cfg.security),
             ],
         )
-        hashed = (
-            __import__("hashlib")
-            .sha256(
-                raw.encode("utf-8", errors="ignore"),
-            )
-            .hexdigest()
-        )
+        hashed = hashlib.sha256(
+            raw.encode("utf-8", errors="ignore"),
+        ).hexdigest()
         return hashed
 
     def is_banned(self, cfg: Config, *, now: int | None = None) -> bool:

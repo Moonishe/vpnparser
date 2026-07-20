@@ -82,9 +82,11 @@ class SourceManager:
     # --- config loading ---
 
     def _settings_sources(self) -> dict[str, Any]:
-        return (
+        raw = (
             self.settings.get("sources", {}) if isinstance(self.settings, dict) else {}
         )
+        assert isinstance(raw, dict)
+        return raw
 
     def _load_settings(self) -> dict[str, Any]:
         if not self.settings_file.exists():
@@ -343,7 +345,7 @@ class SourceManager:
 
     async def _fetch_url_list(
         self,
-        source: dict,
+        source: dict[str, Any],
         name: str,
         list_type: str,
         default_country: str | None,
@@ -458,7 +460,7 @@ class SourceManager:
         )
 
     @staticmethod
-    def _source_default_country(source: dict) -> str | None:
+    def _source_default_country(source: dict[str, Any]) -> str | None:
         raw = source.get("default_country")
         if raw is None:
             return None
@@ -467,7 +469,7 @@ class SourceManager:
 
     @staticmethod
     def _int_source_value(
-        source: dict,
+        source: dict[str, Any],
         key: str,
         default: int,
         *,
@@ -489,7 +491,7 @@ class SourceManager:
         return max(minimum, value)
 
     @staticmethod
-    def _float_source_value(source: dict, key: str, default: float) -> float:
+    def _float_source_value(source: dict[str, Any], key: str, default: float) -> float:
         """Read a float source setting, rejecting booleans."""
         raw = source.get(key, default)
         if isinstance(raw, bool):
@@ -502,7 +504,7 @@ class SourceManager:
 
     @staticmethod
     def _filter_files(
-        source: dict,
+        source: dict[str, Any],
         files: list[tuple[str, str]],
     ) -> list[tuple[str, str]]:
         """Apply optional include_files/exclude_files filters to raw sources.
@@ -555,5 +557,10 @@ class SourceManager:
     async def __aenter__(self) -> SourceManager:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
         await self.aclose()

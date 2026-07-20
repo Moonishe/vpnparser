@@ -196,7 +196,16 @@ exclude_lines = [
 
 [tool.bandit]
 exclude_dirs = ["tests"]
-skips = ["B101"]
+skips = [
+    "B101",  # assert used — intentional for runtime invariant checks
+    "B104",  # hardcoded_bind_all_interfaces — watermark uses 0.0.0.0
+    "B105",  # hardcoded_password_string — empty string fallback
+    "B310",  # urllib.urlopen — controlled API requests
+    "B311",  # random — non-security-critical sampling
+    "B404",  # import subprocess — controlled invocations
+    "B603",  # subprocess without shell — git calls
+    "B607",  # partial path — git from PATH
+]
 
 [tool.pip-audit]
 desc = { format = "columnar" }
