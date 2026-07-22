@@ -159,8 +159,12 @@ publisher:
   commit_message: "auto-update configs [{timestamp}]"
 
 # --- LLM Fallback ---
+# NOTE: LLM_API_KEY in .env is a Yandex key (AQ.A...) - none of the supported
+# providers (groq/openrouter/gemini/dashscope) accepts it, every call 401s.
+# Disabled to avoid wasting minutes per run. Set a supported provider key and
+# flip back to true to re-enable.
 llm:
-  enabled: true
+  enabled: false
   provider: "dashscope"
   model: "qwen-plus"
   api_key_env: "LLM_API_KEY"
