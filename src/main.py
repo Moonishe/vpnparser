@@ -206,13 +206,16 @@ def main() -> int:
 
     def single_run() -> int:
         try:
-            return _run_once(args, github_token, logger)
+            _run_once(args, github_token, logger)
         except KeyboardInterrupt:
             logger.warning("Interrupted by user.")
             return 130
         except Exception as exc:
             logger.error("Pipeline crashed: %s", exc, exc_info=True)
             return 1
+        # _run_once returns the config count, but the process exit code must be
+        # 0 on success - returning the count makes shells/CI mark runs failed.
+        return 0
 
     if not args.continuous:
         return single_run()
