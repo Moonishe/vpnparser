@@ -809,6 +809,16 @@ class LivenessValidator(PipelineStage):
             list_stats["xray_require_distinct_outbound_ip"] = (
                 xray_require_distinct_outbound_ip
             )
+            logger.info(
+                "%s Xray validation: checking %d candidates "
+                "(concurrency %d, timeout %.0fs) — this stage is slow, "
+                "progress is silent by design.",
+                label,
+                len(supported),
+                self._as_int(vcfg.get("xray_concurrency"), 6, minimum=1),
+                self._as_float(vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0),
+            )
+
             alive_xray = await validate_configs_xray(
                 supported,
                 xray_path=xray_path,
