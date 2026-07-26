@@ -823,3 +823,70 @@ class TestMaxConfigs:
             )
         )
         assert agg._max_configs() == 500
+
+
+# ---------------------------------------------------------------------------
+# _build_mixed_output — configured mix sizes
+# ---------------------------------------------------------------------------
+
+
+class TestMixOutputCounts:
+    """publisher.mix_*_count must reach the mix the runner actually builds."""
+
+    def _context(self) -> PipelineContext:
+        return _make_context(
+            {
+                "aggregator": {"max_configs_in_output": 10, "sort_by": "country"},
+                "validator": {
+                    "whitelist_ru_ratio": 0.8,
+                    "whitelist_eu_countries": ["DE"],
+                },
+                "publisher": {"mix_blacklist_count": 3, "mix_whitelist_count": 6},
+            },
+        )
+
+    def test_configured_counts_are_honoured(self) -> None:
+        """The mix was always max_configs_in_output halved.
+
+        ``mix_blacklist_count``/``mix_whitelist_count`` were only read by
+        ``OutputWriter._build_mix``, which the pipeline never calls, so setting
+        them had no effect on the published mix file.
+        """
+        agg = Aggregator(self._context())
+        blacklist = [
+            _make_config(f"bl-{i}.com", 4000 + i, country="DE") for i in range(10)
+        ]
+        whitelist = [
+            _make_config(f"wl-{i}.com", 5000 + i, country="RU") for i in range(10)
+        ]
+        result = agg._build_mixed_output(
+            {"blacklist": blacklist, "whitelist": whitelist},
+            10,
+        )
+        assert sum(1 for c in result if "bl-" in c.address) == 3
+        assert sum(1 for c in result if "wl-" in c.address) == 6
+
+    def test_default_stays_a_half_and_half_split(self) -> None:
+        """Without the keys the previous 50/50 behaviour is unchanged."""
+        context = _make_context(
+            {
+                "aggregator": {"max_configs_in_output": 10, "sort_by": "country"},
+                "validator": {
+                    "whitelist_ru_ratio": 0.8,
+                    "whitelist_eu_countries": ["DE"],
+                },
+            },
+        )
+        agg = Aggregator(context)
+        blacklist = [
+            _make_config(f"bl-{i}.com", 4000 + i, country="DE") for i in range(10)
+        ]
+        whitelist = [
+            _make_config(f"wl-{i}.com", 5000 + i, country="RU") for i in range(10)
+        ]
+        result = agg._build_mixed_output(
+            {"blacklist": blacklist, "whitelist": whitelist},
+            10,
+        )
+        assert sum(1 for c in result if "bl-" in c.address) == 5
+        assert sum(1 for c in result if "wl-" in c.address) == 5

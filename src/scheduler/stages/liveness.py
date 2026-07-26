@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from typing import Any
 
 from src.parsers.base import Config
@@ -15,6 +17,28 @@ from src.sources.list_types import normalize_list_type
 logger = logging.getLogger(__name__)
 
 _TCP_SKIP_PROTOCOLS = {"tuic", "hysteria2"}
+
+
+@dataclass
+class _ProbeLog:
+    """Configs a TCP/TLS check actually judged, plus the list's statistics.
+
+    Only the validators set ``Config.is_alive``, and only for the configs they
+    really connected to, so the flag is what separates "checked and dead" from
+    "never tried" (candidate cap, early stop, address guard).
+    """
+
+    configs: list[Config] = field(default_factory=list)
+    stats: dict[str, Any] = field(default_factory=dict)
+
+    def add(self, configs: Iterable[Config]) -> None:
+        """Remember every config that carries a verdict, without duplicates."""
+        seen = {id(cfg) for cfg in self.configs}
+        for cfg in configs:
+            if cfg.is_alive is None or id(cfg) in seen:
+                continue
+            seen.add(id(cfg))
+            self.configs.append(cfg)
 
 
 class LivenessValidator(PipelineStage):
@@ -388,6 +412,111 @@ class LivenessValidator(PipelineStage):
         tls_enabled: bool,
         xray_enabled: bool = False,
     ) -> list[Config]:
+        """Validate one list and keep the health history in sync.
+
+        ``health.update()`` / ``update_sources()`` / ``is_banned()`` used to be
+        called only inside the Xray branch, so with ``xray_enabled: false`` the
+        history file was rewritten empty every run and
+        ``ban_after_consecutive_failures``, ``ban_cooldown_hours`` and
+        ``source_bad_runs_to_ban`` never did anything. Runs without Xray now
+        record and enforce the TCP/TLS verdicts here; when Xray is enabled it
+        stays the single source of truth, exactly as before.
+
+        Args:
+            configs: Configs of one list type.
+            label: List label used for logging and per-list statistics.
+            tcp_enabled: Run the TCP connect check.
+            tls_enabled: Run the TLS handshake check.
+            xray_enabled: Run the Xray probe.
+
+        Returns:
+            The configs that survived every enabled check.
+        """
+        probe_log = _ProbeLog()
+        try:
+            result = await self._validate_configs(
+                configs,
+                label=label,
+                tcp_enabled=tcp_enabled,
+                tls_enabled=tls_enabled,
+                xray_enabled=xray_enabled,
+                probe_log=probe_log,
+            )
+        finally:
+            if not xray_enabled:
+                self._record_probe_health(probe_log)
+        if xray_enabled or not probe_log.configs:
+            return result
+        return self._drop_banned(result, label=label, stats=probe_log.stats)
+
+    def _record_probe_health(self, probe_log: _ProbeLog) -> None:
+        """Persist the health of everything the TCP/TLS checks judged.
+
+        Args:
+            probe_log: Configs carrying a verdict from this validation.
+        """
+        if not probe_log.configs:
+            return
+        if self._update_health_callback:
+            self._update_health_callback(probe_log.configs)
+        else:
+            self.health.update(probe_log.configs)
+        if self._update_source_health_callback:
+            self._update_source_health_callback(probe_log.configs, probe_log.stats)
+        else:
+            self.health.update_sources(probe_log.configs, probe_log.stats)
+
+    def _drop_banned(
+        self,
+        configs: list[Config],
+        *,
+        label: str,
+        stats: dict[str, Any],
+    ) -> list[Config]:
+        """Apply health/source bans, mirroring the Xray branch's ban step.
+
+        Args:
+            configs: Configs that survived the enabled checks.
+            label: List label, for logging.
+            stats: Per-list statistics to annotate.
+
+        Returns:
+            The configs that are not currently banned, or all of them when too
+            few survived to risk erasing them with stale history.
+        """
+        health_ban_min_alive = self._as_int(
+            self.settings.section("quality").get("health_ban_min_alive"),
+            3,
+            minimum=0,
+        )
+        if len(configs) <= health_ban_min_alive:
+            logger.info(
+                "%s liveness kept %d config(s) (<= %d); skipping health history bans.",
+                label,
+                len(configs),
+                health_ban_min_alive,
+            )
+            return configs
+        kept = [cfg for cfg in configs if not self.health.is_banned(cfg)]
+        stats["output_after_health"] = len(kept)
+        if len(kept) < len(configs):
+            logger.info(
+                "%s health history bans dropped %d config(s).",
+                label,
+                len(configs) - len(kept),
+            )
+        return kept
+
+    async def _validate_configs(
+        self,
+        configs: list[Config],
+        *,
+        label: str,
+        tcp_enabled: bool,
+        tls_enabled: bool,
+        xray_enabled: bool = False,
+        probe_log: _ProbeLog,
+    ) -> list[Config]:
         if not configs:
             return []
 
@@ -415,15 +544,21 @@ class LivenessValidator(PipelineStage):
             "reason": "",
         }
         self.context.liveness_stats.setdefault("lists", {})[list_key] = list_stats
+        probe_log.stats = list_stats
         if pool_enabled and pool_required and not proxy_urls:
-            list_stats["reason"] = "no_proxies"
             if not xray_enabled:
+                list_stats["reason"] = "no_proxies"
                 logger.warning(
                     "Liveness validation for %s skipped: proxy_pool.required=true "
                     "but no proxies are available.",
                     label,
                 )
                 return configs
+            # The list *is* validated below (directly, without the pool), so
+            # ``reason`` must stay free for the real outcome: leaving
+            # "no_proxies" there told every run-summary reader that nothing was
+            # checked while TCP/TLS/Xray had run in full.
+            list_stats["proxy_pool_empty"] = True
             logger.warning(
                 "%s proxy pool is empty; continuing with required direct Xray "
                 "validation and skipping proxy-network score.",
@@ -462,8 +597,6 @@ class LivenessValidator(PipelineStage):
                         )
                 list_stats["tcp_max_alive"] = tcp_max_alive
 
-                min_alive = self._liveness_min_alive(len(checkable))
-                list_stats["min_alive_to_filter"] = min_alive
                 tcp_search_rounds = self._as_int(
                     vcfg.get("tcp_search_rounds"),
                     3,
@@ -520,6 +653,7 @@ class LivenessValidator(PipelineStage):
                             minimum=0,
                         ),
                     )
+                    probe_log.add(batch)
                     for cfg in batch_alive:
                         if cfg.dedup_key in alive_keys:
                             continue
@@ -532,16 +666,25 @@ class LivenessValidator(PipelineStage):
                 list_stats["tcp_search_rounds"] = round_count
                 list_stats["checked"] = True
                 list_stats["tcp_alive"] = len(alive_tcp)
+                # The threshold counts the configs a socket was actually opened
+                # for. Measuring it against every candidate made it unreachable
+                # whenever tcp_candidate_limit * tcp_search_rounds was smaller
+                # than the candidate list: the untried remainder was reported as
+                # dead and the fail-open branch fired on every run.
+                min_alive = self._liveness_min_alive(checked_total)
+                list_stats["min_alive_to_filter"] = min_alive
                 if len(alive_tcp) < min_alive:
                     list_stats["reason"] = "below_min_alive"
                     if fail_open_on_low_alive:
                         logger.warning(
-                            "%s TCP validation found %d/%d alive (<%d). "
+                            "%s TCP validation found %d/%d checked alive (<%d; "
+                            "%d candidates were not tried). "
                             "Keeping unfiltered configs.",
                             label,
                             len(alive_tcp),
-                            len(checkable),
+                            checked_total,
                             min_alive,
+                            len(checkable) - checked_total,
                         )
                         list_stats["fail_open"] = True
                         # The stage output is the unfiltered input; record it so
@@ -557,12 +700,14 @@ class LivenessValidator(PipelineStage):
                         fail_open_active = True
                     else:
                         logger.warning(
-                            "%s TCP validation found %d/%d alive (<%d). "
+                            "%s TCP validation found %d/%d checked alive (<%d; "
+                            "%d candidates were not tried). "
                             "Strict mode keeps only alive configs.",
                             label,
                             len(alive_tcp),
-                            len(checkable),
+                            checked_total,
                             min_alive,
+                            len(checkable) - checked_total,
                         )
                 if not fail_open_active:
                     current = alive_tcp + passthrough
@@ -575,6 +720,16 @@ class LivenessValidator(PipelineStage):
                         len(passthrough),
                     )
 
+        if tls_enabled and fail_open_active:
+            # Leave a trace: without it run-summary shows tls_enabled=true and
+            # no tls_* key at all, which reads exactly like "TLS ran and found
+            # nothing" instead of "TLS never started".
+            list_stats["tls_skipped"] = "tcp_fail_open"
+            logger.info(
+                "%s TLS validation skipped: the TCP fail-open already kept the "
+                "unfiltered list.",
+                label,
+            )
         if tls_enabled and not fail_open_active:
             tls_checkable = [
                 c
@@ -633,6 +788,7 @@ class LivenessValidator(PipelineStage):
                         minimum=0,
                     ),
                 )
+                probe_log.add(tls_checkable)
                 list_stats["tls_checked"] = len(tls_checkable)
                 list_stats["tls_alive"] = len(alive_tls)
                 if len(alive_tls) < tls_min_alive:

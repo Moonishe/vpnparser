@@ -191,12 +191,41 @@ class Aggregator(PipelineStage):
         preprocessed_by_list: dict[str, list[Config]],
         max_total: int,
     ) -> list[Config]:
-        """Build a strict 50/50 blacklist + whitelist mix from live configs."""
+        """Build the blacklist + whitelist mix output from live configs.
+
+        The split defaults to 50/50 of ``max_total`` and is overridden by
+        ``publisher.mix_blacklist_count`` / ``publisher.mix_whitelist_count``.
+        Those keys are documented (and read by ``OutputWriter._build_mix``,
+        which the runner does not call), so honouring them here is what makes
+        the documented "100 + 100" mix reachable at all — previously the mix
+        was always ``max_configs_in_output`` halved, no matter what was
+        configured.
+
+        Candidates come from the same sorted, limited list the split output
+        uses, so a target above ``aggregator.max_configs_in_output`` can only
+        be filled by raising that key too — the shortfall is logged.
+
+        Args:
+            preprocessed_by_list: Live configs grouped by normalized list type.
+            max_total: Default size of the mix output.
+
+        Returns:
+            The blacklist part followed by the whitelist part, without repeats.
+        """
         if max_total <= 0:
             return []
 
-        blacklist_target = max_total // 2
-        whitelist_target = max_total - blacklist_target
+        pcfg = self.settings.section("publisher")
+        blacklist_target = self.settings.as_int(
+            pcfg.get("mix_blacklist_count"),
+            max_total // 2,
+            minimum=0,
+        )
+        whitelist_target = self.settings.as_int(
+            pcfg.get("mix_whitelist_count"),
+            max_total - max_total // 2,
+            minimum=0,
+        )
         used_keys: set[Any] = set()
 
         blacklist_candidates = self._sort_and_limit(

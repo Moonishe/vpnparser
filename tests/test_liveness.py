@@ -2219,3 +2219,295 @@ class TestLivenessStatsDefaults:
         assert stats["proxy_pool_required"] is False
         assert stats["proxy_attempts_per_config"] == 5
         assert stats["tls_proxy_attempts_per_config"] == 5
+
+
+# ============================================================================
+# Regression: health history, thresholds and reasons outside the Xray branch
+# ============================================================================
+
+
+class TestHealthHistoryWithoutXray:
+    """The quality block must not depend on the Xray stage running."""
+
+    async def test_tcp_only_run_updates_health_and_sources(self, monkeypatch) -> None:
+        """health.update()/update_sources() ran only inside the Xray branch.
+
+        With xray_enabled: false the history file was rewritten empty on every
+        run, so ban_after_consecutive_failures, ban_cooldown_hours and
+        source_bad_runs_to_ban never had anything to work with.
+        """
+        lv = _make_liveness(
+            {
+                "validator": {"tcp_enabled": True, "min_alive_to_filter": 1},
+                "quality": {"health_history_enabled": True},
+            },
+            proxy_url_getter=_empty_proxy_list,
+        )
+
+        async def mock_tcp(batch, **kwargs):
+            alive = []
+            for index, cfg in enumerate(batch):
+                cfg.is_alive = index == 0
+                if cfg.is_alive:
+                    alive.append(cfg)
+            return alive
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+
+        configs = [
+            _make_config(f"h{i}.com", 4000 + i, source_name="src-a") for i in range(3)
+        ]
+        await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+
+        history = lv.health.load()
+        assert len(history["configs"]) == 3
+        records = list(history["configs"].values())
+        assert sum(1 for r in records if r["passes"] == 1) == 1
+        assert sum(1 for r in records if r["fails"] == 1) == 2
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["sources"]["src-a"] == {"checked": 3, "alive": 1}
+
+    async def test_tcp_only_run_applies_bans(self, monkeypatch) -> None:
+        """Recorded bans must also be enforced when Xray never runs.
+
+        ``is_banned`` was called only in the Xray branch, so a banned source
+        kept publishing every config it produced on TCP/TLS-only runs.
+        """
+        lv = _make_liveness(
+            {
+                "validator": {"tcp_enabled": True, "min_alive_to_filter": 1},
+                "quality": {
+                    "health_history_enabled": True,
+                    "health_ban_min_alive": 0,
+                },
+            },
+            proxy_url_getter=_empty_proxy_list,
+        )
+        configs = [
+            _make_config(f"h{i}.com", 4000 + i, source_name="bad-src") for i in range(3)
+        ]
+        lv.health._cache = {
+            "configs": {},
+            "sources": {"bad-src": {"banned_until": 4102444800}},
+        }
+
+        async def mock_tcp(batch, **kwargs):
+            for cfg in batch:
+                cfg.is_alive = True
+            return list(batch)
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+
+        result = await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        assert result == []
+        assert configs[0].quality_block_reason == "source_ban"
+
+    async def test_health_updates_go_through_injected_callbacks(
+        self,
+        monkeypatch,
+    ) -> None:
+        """The runner injects its own health callbacks; they must be used."""
+        recorded: list[list[Config]] = []
+        source_calls: list[dict] = []
+        lv = _make_liveness(
+            {
+                "validator": {"tcp_enabled": True, "min_alive_to_filter": 1},
+                "quality": {"health_history_enabled": True},
+            },
+            proxy_url_getter=_empty_proxy_list,
+            update_health_callback=recorded.append,
+            update_source_health_callback=lambda cfgs, stats: source_calls.append(
+                stats,
+            ),
+        )
+
+        async def mock_tcp(batch, **kwargs):
+            for cfg in batch:
+                cfg.is_alive = True
+            return list(batch)
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+
+        await lv.validate_configs(
+            [_make_config("h1.com", 443)],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        assert len(recorded) == 1
+        assert len(recorded[0]) == 1
+        list_stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert source_calls == [list_stats]
+
+    async def test_unprobed_configs_are_not_recorded(self, monkeypatch) -> None:
+        """Only configs a validator actually judged reach the history."""
+        lv = _make_liveness(
+            {
+                "validator": {"tcp_enabled": True, "min_alive_to_filter": 1},
+                "quality": {"health_history_enabled": True},
+            },
+            proxy_url_getter=_empty_proxy_list,
+        )
+
+        async def mock_tcp(batch, **kwargs):
+            # Emulates the address guard: the second config never gets a socket.
+            batch[0].is_alive = True
+            return [batch[0]]
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+
+        configs = [_make_config("h0.com", 4000), _make_config("h1.com", 4001)]
+        await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        assert len(lv.health.load()["configs"]) == 1
+
+
+class TestLivenessReportingRegressions:
+    """Per-list statistics must describe what really happened."""
+
+    async def test_no_proxies_reason_cleared_when_xray_validates(
+        self,
+        monkeypatch,
+    ) -> None:
+        """An empty required pool plus Xray still validates the list in full.
+
+        Leaving reason="no_proxies" told every run-summary reader that nothing
+        was checked while TCP/TLS/Xray had run.
+        """
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "xray_enabled": True,
+                    "xray_executable": "/usr/bin/xray",
+                    "proxy_pool": {"enabled": True, "required": True},
+                },
+            },
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+
+        async def mock_xray(configs, **kwargs):
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+
+        await lv.validate_configs(
+            [_make_config("h1.com", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["reason"] != "no_proxies"
+        assert stats["proxy_pool_empty"] is True
+        assert stats["xray_checked"] == 1
+
+    async def test_min_alive_counts_only_checked_candidates(
+        self,
+        monkeypatch,
+        caplog,
+    ) -> None:
+        """The fail-open threshold must not include candidates never tried.
+
+        With tcp_candidate_limit * tcp_search_rounds below the candidate count
+        the untried remainder was counted as dead, which made the threshold
+        unreachable and fired the fail-open on every run.
+        """
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "tcp_enabled": True,
+                    "tcp_candidate_limit": 2,
+                    "tcp_search_rounds": 1,
+                    "min_alive_to_filter": 5,
+                    "fail_open_on_low_alive": True,
+                },
+            },
+            proxy_url_getter=_empty_proxy_list,
+        )
+
+        async def mock_tcp(batch, **kwargs):
+            for cfg in batch:
+                cfg.is_alive = True
+            return list(batch)
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+
+        caplog.set_level(logging.WARNING)
+        configs = [_make_config(f"h{i}.com", 4000 + i) for i in range(10)]
+        result = await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["tcp_checked"] == 2
+        assert stats["min_alive_to_filter"] == 2
+        assert stats["fail_open"] is False
+        assert len(result) == 2
+
+    async def test_tls_skip_after_tcp_fail_open_is_recorded(self, monkeypatch) -> None:
+        """A TLS stage skipped by the fail-open must leave a trace."""
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "tcp_enabled": True,
+                    "tls_enabled": True,
+                    "xray_enabled": True,
+                    "xray_executable": "/usr/bin/xray",
+                    "min_alive_to_filter": 10,
+                    "fail_open_on_low_alive": True,
+                },
+            },
+            proxy_url_getter=_empty_proxy_list,
+        )
+
+        async def mock_tcp(batch, **kwargs):
+            for cfg in batch:
+                cfg.is_alive = False
+            return []
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "",
+        )
+
+        await lv.validate_configs(
+            [_make_config("h1.com", 443, security="tls")],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=True,
+            xray_enabled=True,
+        )
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["tls_skipped"] == "tcp_fail_open"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -229,6 +230,55 @@ class TestSave:
         result = h.save()
         assert result is not None
         assert Path(result).exists()
+
+    def test_save_prunes_records_unseen_past_retention(self, tmp_path: Path) -> None:
+        """Stale records are dropped so the published file stops growing."""
+        now = int(time.time())
+        f = tmp_path / "health-history.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "configs": {
+                        "fresh": {"last_seen": now - 3600, "banned_until": 0},
+                        "stale": {"last_seen": now - 40 * 86400, "banned_until": 0},
+                        # Still banned: the ban is why the config is skipped,
+                        # so dropping it would silently unban it.
+                        "stale_but_banned": {
+                            "last_seen": now - 40 * 86400,
+                            "banned_until": now + 3600,
+                        },
+                    },
+                    "sources": {},
+                },
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(
+            _make_settings(
+                {"health_history_file": str(f), "health_history_retention_days": 30},
+            ),
+        )
+        h.load()
+
+        assert h.save() is not None
+
+        kept = json.loads(f.read_text(encoding="utf-8"))["configs"]
+        assert set(kept) == {"fresh", "stale_but_banned"}
+
+    def test_prune_keeps_everything_within_retention(self, tmp_path: Path) -> None:
+        """A short-lived history is left untouched."""
+        now = int(time.time())
+        f = tmp_path / "health-history.json"
+        f.write_text(
+            json.dumps(
+                {"configs": {"a": {"last_seen": now - 86400}}, "sources": {}},
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        h.load()
+
+        assert h.prune(now=now) == 0
 
     def test_save_exception_logs_warning(self, monkeypatch, caplog) -> None:
         """save() catches OSError, logs warning, returns None."""
@@ -529,3 +579,40 @@ class TestScore:
         s = h.score(cfg)
         # base 60 + latency: 10*(1 - 100/10000) = 10*0.99 = 9.9
         assert s == pytest.approx(69.9, rel=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# load() — a broken history file must never vanish silently
+# ---------------------------------------------------------------------------
+
+
+class TestLoadReportsUnreadableFile:
+    """A truncated file is overwritten by the next save(), so it must be logged."""
+
+    def test_corrupt_json_is_reported(self, tmp_path: Path, caplog) -> None:
+        """Every accumulated ban used to disappear without a single message."""
+        caplog.set_level("WARNING")
+        f = tmp_path / "health.json"
+        f.write_text('{"configs": {"aaa": {"passes": 5, "conse', encoding="utf-8")
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+
+        assert h.load() == {"configs": {}, "sources": {}}
+        assert "Failed to load health history" in caplog.text
+
+    def test_unsafe_path_is_reported(self, caplog) -> None:
+        """A traversal path is refused loudly instead of loading nothing."""
+        caplog.set_level("WARNING")
+        h = HealthHistory(_make_settings({"health_history_file": "../../evil.json"}))
+
+        assert h.load() == {"configs": {}, "sources": {}}
+        assert "Unsafe health history path" in caplog.text
+
+    def test_missing_file_stays_silent(self, tmp_path: Path, caplog) -> None:
+        """A first run has no history file — that is not a problem."""
+        caplog.set_level("WARNING")
+        h = HealthHistory(
+            _make_settings({"health_history_file": str(tmp_path / "none.json")}),
+        )
+
+        assert h.load() == {"configs": {}, "sources": {}}
+        assert "health history" not in caplog.text

@@ -762,3 +762,68 @@ class TestLinkParserIntegration:
         grouped = await lp.parse_all_by_list([result])
         assert "mixed" in grouped
         assert len(grouped["mixed"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# GeoIP budget: only configs whose country nothing else can supply
+# ---------------------------------------------------------------------------
+
+
+class TestGeoIPCandidateSelection:
+    """The lookup budget must go to the configs that really need it."""
+
+    async def test_only_configs_without_a_detectable_country_are_enriched(
+        self,
+    ) -> None:
+        """No parser sets Config.country, so "country is None" selected everyone.
+
+        The budget was then spent on the first N addresses in parse order —
+        usually servers whose remark already names the country — while the
+        configs that only GeoIP can resolve were left behind.
+        """
+        ctx = _make_context(
+            {"validator": {"geoip_enabled": True, "geoip_max_lookups": 2}},
+        )
+        lp = LinkParser(ctx)
+        enriched: list[str] = []
+
+        async def fake_enrich(configs, api_url=None, **kwargs):
+            enriched.extend(cfg.address for cfg in configs)
+
+        files = [
+            ("a.txt", _vless("a1.example", remark="Germany-01")),
+            ("b.txt", _vless("b1.example", remark="Finland-03")),
+            ("c.txt", _vless("c1.example", remark="node-7")),
+        ]
+        with patch(
+            "src.validators.geoip.enrich_configs_geoip",
+            side_effect=fake_enrich,
+        ):
+            result = _ns(list_type="blacklist", files=files, name="src")
+            grouped = await lp.parse_all_by_list([result])
+
+        assert len(grouped["blacklist"]) == 3
+        assert enriched == ["c1.example"]
+
+    async def test_source_default_country_skips_the_lookup(self) -> None:
+        """A source that declares its country needs no request either."""
+        ctx = _make_context({"validator": {"geoip_enabled": True}})
+        lp = LinkParser(ctx)
+        enriched: list[str] = []
+
+        async def fake_enrich(configs, api_url=None, **kwargs):
+            enriched.extend(cfg.address for cfg in configs)
+
+        with patch(
+            "src.validators.geoip.enrich_configs_geoip",
+            side_effect=fake_enrich,
+        ):
+            result = _ns(
+                list_type="blacklist",
+                files=[("a.txt", _vless("a1.example", remark="node-7"))],
+                name="src",
+                default_country="NL",
+            )
+            await lp.parse_all_by_list([result])
+
+        assert enriched == []

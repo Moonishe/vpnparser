@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -106,13 +107,56 @@ class OutputWriter(PipelineStage):
             return None
         return root
 
-    def _clear_location_outputs(self) -> list[str]:
+    def _reserved_output_paths(self, extra: Iterable[str] | None = None) -> set[Path]:
+        """Resolve the output paths the location cleanup must never touch.
+
+        ``subscription-blacklist.txt``, ``subscription-whitelist.txt`` and
+        ``subscription-mix.txt`` all match the ``subscription-*.txt`` cleanup
+        mask, so pointing ``location_output_dir`` at the directory that already
+        holds them made the cleanup delete the freshly written split/mix files
+        and publish empty placeholders in their place — while the run summary
+        still reported the counts written a moment earlier.
+
+        Args:
+            extra: Additional paths the caller knows about, e.g. the combined
+                output file, which comes from ``--output`` rather than settings.
+
+        Returns:
+            Resolved paths that must survive the cleanup.
+        """
+        pcfg = self._publisher_section()
+        candidates: list[str] = [str(path) for path in (extra or []) if path]
+        for key in ("output_file", "mix_output_file"):
+            value = pcfg.get(key)
+            if value:
+                candidates.append(str(value))
+        splits = pcfg.get("split_output_files")
+        if isinstance(splits, dict):
+            candidates.extend(str(value) for value in splits.values() if value)
+
+        reserved: set[Path] = set()
+        for candidate in candidates:
+            try:
+                reserved.add(resolve_safe_output_path(candidate))
+            except ValueError:
+                # An unsafe path is never written either, so nothing to protect.
+                continue
+        return reserved
+
+    def _clear_location_outputs(
+        self,
+        reserved_paths: Iterable[str] | None = None,
+    ) -> list[str]:
         """Remove stale per-country subscription files and report their paths.
 
         The caller is expected to leave an empty subscription behind for every
         returned path: a published location file is only replaced when the same
         path is written again, so a country that merely disappears locally would
         keep serving the previous run's configs from the repository forever.
+
+        Args:
+            reserved_paths: Output paths that belong to another stage and must
+                not be cleared even when they sit in the location directory.
 
         Returns:
             Paths (relative to the configured output dir) of the stale files.
@@ -124,6 +168,7 @@ class OutputWriter(PipelineStage):
         if root is None or not root.exists():
             return []
         removable_root = self._removable_location_root(output_dir)
+        reserved = self._reserved_output_paths(reserved_paths)
         stale: list[str] = []
         for path in sorted(root.glob("subscription-*.txt")):
             # Symlinks may point anywhere, so only plain files inside the
@@ -131,6 +176,15 @@ class OutputWriter(PipelineStage):
             if path.is_symlink() or not path.is_file():
                 continue
             if path.resolve().parent != root:
+                continue
+            if path.resolve() in reserved:
+                logger.warning(
+                    "location_output_dir %r also holds the subscription output "
+                    "%s — keeping it. Fix: give the location outputs their own "
+                    "directory.",
+                    output_dir,
+                    path.name,
+                )
                 continue
             stale.append(str(Path(output_dir) / path.name))
             if removable_root is None:
@@ -164,11 +218,17 @@ class OutputWriter(PipelineStage):
             )
         return result
 
-    def _write_location_outputs(self, configs: list[Config]) -> list[str]:
+    def _write_location_outputs(
+        self,
+        configs: list[Config],
+        reserved_paths: Iterable[str] | None = None,
+    ) -> list[str]:
         """Write one subscription per country and retire the vanished ones.
 
         Args:
             configs: Configs to split by country.
+            reserved_paths: Output paths owned by another stage that must not be
+                retired even when they live in the location directory.
 
         Returns:
             Paths of every location file to publish: the ones written this run
@@ -177,7 +237,7 @@ class OutputWriter(PipelineStage):
         enabled, output_dir, limit = self._location_output_config()
         if not enabled:
             return []
-        stale_files = self._clear_location_outputs()
+        stale_files = self._clear_location_outputs(reserved_paths)
         outputs = self._build_location_outputs(configs, limit)
         output_files: list[str] = []
         for country, country_configs in outputs.items():
@@ -203,9 +263,32 @@ class OutputWriter(PipelineStage):
             # Empty, not missing: the placeholder is what replaces the stale
             # copy already published for a country that is gone.
             self._write_empty_output(output_file)
+            # Retired files are rewritten and published like any other output,
+            # so they belong in the run summary too — without this an empty run
+            # reports no location outputs at all while replacing every one.
+            self._record_output_stats(
+                f"location_{self._location_country_key(output_file)}",
+                output_file,
+                [],
+            )
             output_files.append(output_file)
             logger.info("Retired location output %s (now empty).", output_file)
         return output_files
+
+    @staticmethod
+    def _location_country_key(output_file: str) -> str:
+        """Return the lowercase country key encoded in a location file name.
+
+        Args:
+            output_file: Path of a ``subscription-<code>.txt`` location file.
+
+        Returns:
+            The country code in lower case, matching the key
+            :meth:`_write_location_outputs` uses for freshly written files.
+        """
+        stem = Path(output_file).stem
+        _, _, code = stem.partition("-")
+        return (code or stem).lower()
 
     def _write_outputs(
         self,

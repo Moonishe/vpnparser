@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -1115,3 +1116,121 @@ def test_write_run_summary_rejects_traversal_path(
 
     assert r._writer._write_run_summary("success") is None
     assert written == []
+
+
+# ---------------------------------------------------------------------------
+# location cleanup must not eat the split/mix subscriptions
+# ---------------------------------------------------------------------------
+
+
+def test_clear_location_outputs_keeps_configured_subscriptions(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A location_output_dir shared with the splits must not delete them.
+
+    ``subscription-blacklist.txt`` / ``-whitelist.txt`` / ``-mix.txt`` all match
+    the ``subscription-*.txt`` cleanup mask, so pointing location_output_dir at
+    the directory holding them deleted the files written moments earlier and
+    published empty placeholders instead — while run-summary still reported the
+    counts of the deleted content.
+    """
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "publisher:\n"
+        "  output_file: output/subscription.txt\n"
+        "  mix_output_file: output/subscription-mix.txt\n"
+        "  location_output_dir: output\n"
+        "  split_output_files:\n"
+        "    blacklist: output/subscription-blacklist.txt\n"
+        "    whitelist: output/subscription-whitelist.txt\n",
+        encoding="utf-8",
+    )
+    out_dir = resolve_safe_output_path("output")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name in (
+        "subscription-blacklist.txt",
+        "subscription-whitelist.txt",
+        "subscription-mix.txt",
+    ):
+        (out_dir / name).write_text("live-list", encoding="utf-8")
+    (out_dir / "subscription-DE.txt").write_text("old-location", encoding="utf-8")
+
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    caplog.set_level(logging.WARNING)
+    stale = r._writer._clear_location_outputs()
+
+    assert (out_dir / "subscription-blacklist.txt").read_text(encoding="utf-8") == (
+        "live-list"
+    )
+    assert (out_dir / "subscription-whitelist.txt").exists()
+    assert (out_dir / "subscription-mix.txt").exists()
+    assert not (out_dir / "subscription-DE.txt").exists()
+    assert stale == [str(Path("output") / "subscription-DE.txt")]
+    assert "also holds the subscription output" in caplog.text
+
+
+def test_clear_location_outputs_keeps_caller_reserved_paths(tmp_path: Path) -> None:
+    """The combined output comes from --output, so the caller reserves it."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text("publisher:\n  location_output_dir: output\n", encoding="utf-8")
+    out_dir = resolve_safe_output_path("output")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "subscription-cli.txt").write_text("live-list", encoding="utf-8")
+
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    stale = r._writer._clear_location_outputs(["output/subscription-cli.txt"])
+
+    assert (out_dir / "subscription-cli.txt").exists()
+    assert stale == []
+
+
+def test_write_location_outputs_records_retired_files(tmp_path: Path) -> None:
+    """Retired per-country files belong in the run summary as empty outputs.
+
+    They are rewritten and republished on every run, so leaving them out of
+    ``outputs`` made an empty run look like the location files were untouched.
+    """
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "publisher:\n  location_output_dir: output/locations\n",
+        encoding="utf-8",
+    )
+    loc_dir = resolve_safe_output_path("output/locations")
+    loc_dir.mkdir(parents=True, exist_ok=True)
+    (loc_dir / "subscription-DE.txt").write_text("old", encoding="utf-8")
+
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    written = r._writer._write_location_outputs([])
+
+    assert written == [str(Path("output/locations") / "subscription-DE.txt")]
+    assert r._writer.context.output_stats["location_de"]["count"] == 0
+
+
+def test_reserved_output_paths_ignores_unsafe_entries(tmp_path: Path) -> None:
+    """A configured path that escapes the project cannot be protected.
+
+    It is never written either, so it is simply skipped instead of raising
+    inside the location cleanup.
+    """
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        'publisher:\n  output_file: "../../evil.txt"\n'
+        "  mix_output_file: output/subscription-mix.txt\n",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    reserved = r._writer._reserved_output_paths()
+    assert reserved == {resolve_safe_output_path("output/subscription-mix.txt")}
