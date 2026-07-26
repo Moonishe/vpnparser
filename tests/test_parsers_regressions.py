@@ -17,12 +17,17 @@ Second pass (bugs found in / left by the first one):
 9. ``safe_b64decode`` must ignore a UTF-8 BOM.
 10. ``Hysteria2Parser`` must accept port-hopping ports.
 11. ``VmessParser`` must unbracket an IPv6 ``add``.
+
+Third pass:
+
+12. The ad filter must stay linear on a hostile remark (ReDoS).
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import time
 
 from src.parsers import PARSER_BY_SCHEME
 from src.parsers.base import (
@@ -451,3 +456,64 @@ def test_strict_b64decode_rejects_invalid_lengths_without_raising() -> None:
     cfg = ShadowsocksParser().parse("ss://aes-256-gcm:YWJjZ@real-server.net:8388")
     assert cfg is not None
     assert (cfg.ss_method, cfg.uuid_or_password) == ("aes-256-gcm", "YWJjZ")
+
+
+def _ad_probe(remark: str) -> Config:
+    """Build a Config that is clean except for its *remark*."""
+    return Config(
+        protocol="vless",
+        address="93.184.216.34",
+        port=443,
+        uuid_or_password=_GOOD_UUID,
+        remark=remark,
+    )
+
+
+def test_ad_filter_stays_linear_on_a_hostile_remark() -> None:
+    """A long ``v2ray``-repeating remark must not hang the garbage filter.
+
+    Regression (ReDoS): the ad pattern held ``v2ray.*pool``, so every ``v2ray``
+    occurrence scanned the rest of the remark for a ``pool`` that never came —
+    quadratic.  The remark is a link's ``#fragment``, i.e. verbatim source text
+    capped only by the 12 MB download limit, and ``GarbageFilter`` runs on every
+    parsed config before sampling or dedup can shrink anything.  Measured before
+    the fix: 0.15 s at 20 KB, 2.5 s at 80 KB, 68 s at 320 KB — and the hang was
+    silent (``garbage`` stayed ``False``, nothing logged) until the CI job hit
+    its 45-minute timeout and subscriptions stopped updating.
+    """
+    remark = "v2ray" * (256 * 1024 // 5)  # 256 KB, never contains "pool"
+    link = f"vless://{_GOOD_UUID}@93.184.216.34:443#{remark}"
+    # The fragment really does reach the parser whole — otherwise the timing
+    # below would pass for the wrong reason.
+    assert find_all_links(link) == [link]
+    cfg = PARSER_BY_SCHEME["vless"].parse(link)
+    assert cfg is not None
+    assert len(cfg.remark) == len(remark)
+
+    started = time.perf_counter()
+    assert is_garbage_config(cfg) is False
+    assert is_garbage_config(link) is False
+    elapsed = time.perf_counter() - started
+    assert elapsed < 5.0, f"ad filter took {elapsed:.1f}s on {len(remark)} chars"
+
+
+def test_ad_filter_still_catches_spaced_v2ray_pool_remarks() -> None:
+    """Bounding the quantifier must not narrow it to ``[^\\s]``.
+
+    "V2Ray Pool" — the ad remark the alternative was written for — carries a
+    space, so a whitespace-excluding class would quietly stop filtering it while
+    still looking like a valid ReDoS fix.
+    """
+    for remark in (
+        "V2Ray Pool",
+        "v2ray pool",
+        "V2RAY  POOL",
+        "v2ray free pool",
+        "v2raypool",
+        "🚀 V2Ray Pool 🚀",
+    ):
+        assert is_garbage_config(_ad_probe(remark)) is True, remark
+    # Ad markers live at the front, so the scan cap keeps catching them even on
+    # an oversized remark, and a plain display name is still published.
+    assert is_garbage_config(_ad_probe("t.me/adchannel " + "x" * 100_000)) is True
+    assert is_garbage_config(_ad_probe("DE-Frankfurt 01")) is False

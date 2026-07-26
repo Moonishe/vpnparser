@@ -9,6 +9,7 @@ from unittest import mock
 import httpx
 import pytest
 
+import src.sources.manager as manager_module
 from src.sources.list_types import DEFAULT_LIST_TYPE
 from src.sources.manager import SourceManager, SourceResult
 
@@ -83,8 +84,19 @@ class _FakeStream:
         return None
 
 
-def _streaming_client(handler, requested: list[str] | None = None):
-    """Build an httpx.AsyncClient stand-in whose stream() calls *handler*."""
+def _streaming_client(
+    handler,
+    requested: list[str] | None = None,
+    calls: list[dict] | None = None,
+):
+    """Build an httpx.AsyncClient stand-in whose stream() calls *handler*.
+
+    Args:
+        handler: Called with the requested URL; returns a fake response.
+        requested: Collects every requested URL, in order.
+        calls: Collects ``{"url": ..., **stream kwargs}`` for assertions on the
+            headers and extensions the manager attaches.
+    """
 
     class _Client:
         def __init__(self, *args, **kwargs):
@@ -99,23 +111,37 @@ def _streaming_client(handler, requested: list[str] | None = None):
         def stream(self, method, url, **kwargs):
             if requested is not None:
                 requested.append(url)
+            if calls is not None:
+                calls.append({"url": url, **kwargs})
             return _FakeStream(handler, url)
 
     return _Client
 
 
-def _patch_url_guard(monkeypatch, blocked: set[str] | None = None) -> None:
-    """Replace the SSRF guard with a host blocklist so no DNS is needed."""
-    from urllib.parse import urlsplit
+#: Address the fake resolver hands back for every host it approves. The manager
+#: connects to the address it validated, so requests carry this literal.
+PUBLIC_IP = "93.184.216.34"
 
+
+def _patch_url_guard(
+    monkeypatch,
+    blocked: set[str] | None = None,
+    addresses: list[str] | None = None,
+) -> None:
+    """Replace the SSRF resolver with a host blocklist so no DNS is needed.
+
+    Blocked hosts resolve to nothing, which is how ``resolve_global_ips``
+    reports both "does not resolve" and "resolves into private space".
+    """
     blocked_hosts = blocked or set()
+    answers = addresses if addresses is not None else [PUBLIC_IP]
 
-    async def fake_is_safe_public_url(url: str, **kwargs) -> bool:
-        return (urlsplit(url).hostname or "") not in blocked_hosts
+    async def fake_resolve_global_ips(host: str, **kwargs) -> list[str]:
+        return [] if host in blocked_hosts else list(answers)
 
     monkeypatch.setattr(
-        "src.sources.manager.is_safe_public_url",
-        fake_is_safe_public_url,
+        "src.sources.manager.resolve_global_ips",
+        fake_resolve_global_ips,
     )
 
 
@@ -1174,7 +1200,8 @@ class TestFetchDirectUrl:
 
         with pytest.raises(ValueError, match="non-public url"):
             asyncio.run(sm._fetch_direct_url("https://example.com/redirect"))
-        assert requested == ["https://example.com/redirect"]
+        # Only the first hop is requested, and it goes to the validated address.
+        assert requested == [f"https://{PUBLIC_IP}/redirect"]
 
     def test_fetch_direct_url_follows_public_redirect(
         self, tmp_path, monkeypatch
@@ -1199,9 +1226,11 @@ class TestFetchDirectUrl:
 
         result = asyncio.run(sm._fetch_direct_url("https://example.com/start"))
         assert result == "payload"
+        # The relative Location is resolved against the logical URL, and each
+        # hop is then requested on the address that hop was validated on.
         assert requested == [
-            "https://example.com/start",
-            "https://example.com/final.txt",
+            f"https://{PUBLIC_IP}/start",
+            f"https://{PUBLIC_IP}/final.txt",
         ]
 
     def test_fetch_direct_url_redirect_loop_is_bounded(
@@ -1617,8 +1646,8 @@ class TestFetchUrlList:
         assert result.ok is True
         assert result.files == [("good.txt", "vless://ok")]
         assert requested == [
-            "https://example.com/index.txt",
-            "https://example.com/good.txt",
+            f"https://{PUBLIC_IP}/index.txt",
+            f"https://{PUBLIC_IP}/good.txt",
         ]
         assert "Dropped non-public source url" in caplog.text
 
@@ -1790,3 +1819,429 @@ class TestLifecycle:
                 assert sm is not None
 
         asyncio.run(test())
+
+
+# ===================================================================
+# Connection pinning (SSRF / DNS rebinding)
+# ===================================================================
+
+
+def _manager(tmp_path) -> SourceManager:
+    return SourceManager(
+        sources_file=str(tmp_path / "missing.json"),
+        settings_file=str(tmp_path / "missing.yaml"),
+    )
+
+
+class TestConnectionPinning:
+    """The request must go to the address the guard approved, not to the name."""
+
+    def test_request_uses_the_validated_address_with_host_and_sni(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        sm = _manager(tmp_path)
+        calls: list[dict] = []
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="body"), calls=calls),
+        )
+
+        assert asyncio.run(sm._fetch_direct_url("https://example.com/f.txt")) == "body"
+        assert calls[0]["url"] == f"https://{PUBLIC_IP}/f.txt"
+        assert calls[0]["headers"]["Host"] == "example.com"
+        # TLS still negotiates and verifies against the hostname.
+        assert calls[0]["extensions"] == {"sni_hostname": "example.com"}
+
+    def test_rebinding_after_the_check_cannot_move_the_connection(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Regression: the guard judged the name, httpx resolved it again.
+
+        A source URL whose DNS answers public once and ``127.0.0.1`` the next
+        time (TTL 0) used to be validated on the first answer and connected on
+        the second. Only one lookup happens now and its result is what the
+        connection uses, so the later answer has nothing to poison.
+        """
+        sm = _manager(tmp_path)
+        answers = [[PUBLIC_IP], ["127.0.0.1"], ["127.0.0.1"]]
+        lookups: list[str] = []
+
+        async def rebinding_resolver(host: str, **kwargs) -> list[str]:
+            lookups.append(host)
+            return answers.pop(0) if answers else ["127.0.0.1"]
+
+        monkeypatch.setattr(
+            "src.sources.manager.resolve_global_ips",
+            rebinding_resolver,
+        )
+        requested: list[str] = []
+
+        def handler(url):
+            if "127.0.0.1" in url:  # pragma: no cover - must never happen
+                return _FakeResponse(text="internal data")
+            return _FakeResponse(text="public data")
+
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(handler, requested),
+        )
+
+        result = asyncio.run(sm._fetch_direct_url("https://example.com/f.txt"))
+        assert result == "public data"
+        assert requested == [f"https://{PUBLIC_IP}/f.txt"]
+        assert lookups == ["example.com"]
+
+    def test_port_is_preserved_in_url_and_host_header(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        sm = _manager(tmp_path)
+        calls: list[dict] = []
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="ok"), calls=calls),
+        )
+
+        asyncio.run(sm._fetch_direct_url("http://example.com:8080/a?b=1"))
+        assert calls[0]["url"] == f"http://{PUBLIC_IP}:8080/a?b=1"
+        assert calls[0]["headers"]["Host"] == "example.com:8080"
+        # Plain HTTP negotiates no TLS, so there is no SNI to carry.
+        assert calls[0]["extensions"] == {}
+
+    def test_ipv6_answer_is_bracketed(self, tmp_path, monkeypatch) -> None:
+        sm = _manager(tmp_path)
+        calls: list[dict] = []
+        _patch_url_guard(monkeypatch, addresses=["2606:2800:220:1:248:1893:25c8:1946"])
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="ok"), calls=calls),
+        )
+
+        asyncio.run(sm._fetch_direct_url("https://example.com/f.txt"))
+        assert calls[0]["url"] == "https://[2606:2800:220:1:248:1893:25c8:1946]/f.txt"
+
+    def test_ipv6_literal_url_keeps_its_brackets(self, tmp_path, monkeypatch) -> None:
+        sm = _manager(tmp_path)
+        calls: list[dict] = []
+        _patch_url_guard(monkeypatch, addresses=["2001:4860:4860::8888"])
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="ok"), calls=calls),
+        )
+
+        asyncio.run(sm._fetch_direct_url("https://[2001:4860:4860::8888]:8443/f.txt"))
+        assert calls[0]["url"] == "https://[2001:4860:4860::8888]:8443/f.txt"
+        assert calls[0]["headers"]["Host"] == "[2001:4860:4860::8888]:8443"
+
+    def test_credentials_in_the_url_survive_pinning(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """httpx turns URL userinfo into Basic auth — it must not be dropped."""
+        sm = _manager(tmp_path)
+        calls: list[dict] = []
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="ok"), calls=calls),
+        )
+
+        asyncio.run(sm._fetch_direct_url("https://user:pw@example.com/f.txt"))
+        assert calls[0]["url"] == f"https://user:pw@{PUBLIC_IP}/f.txt"
+        assert calls[0]["headers"]["Host"] == "example.com"
+
+    def test_next_address_is_tried_when_the_first_is_unreachable(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Pinning must not lose the connector's walk over the address list.
+
+        A host answering with an AAAA record first is normal; on an IPv4-only
+        runner that address simply refuses and the A record still has to work.
+        """
+        sm = _manager(tmp_path)
+        requested: list[str] = []
+        _patch_url_guard(monkeypatch, addresses=["203.0.113.7", PUBLIC_IP])
+
+        def handler(url):
+            if "203.0.113.7" in url:
+                raise httpx.ConnectError("network unreachable")
+            return _FakeResponse(text="second address served it")
+
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(handler, requested),
+        )
+
+        result = asyncio.run(sm._fetch_direct_url("https://example.com/f.txt"))
+        assert result == "second address served it"
+        assert requested == [
+            "https://203.0.113.7/f.txt",
+            f"https://{PUBLIC_IP}/f.txt",
+        ]
+
+    def test_all_addresses_unreachable_raises_the_last_error(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        sm = _manager(tmp_path)
+        _patch_url_guard(monkeypatch, addresses=["203.0.113.7", PUBLIC_IP])
+
+        def handler(url):
+            raise httpx.ConnectError("network unreachable")
+
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(handler),
+        )
+
+        with pytest.raises(httpx.ConnectError):
+            asyncio.run(sm._fetch_direct_url("https://example.com/f.txt", attempts=1))
+
+    def test_only_the_first_addresses_are_tried(self, tmp_path, monkeypatch) -> None:
+        """A CDN answering with a dozen addresses must not multiply the wait."""
+        sm = _manager(tmp_path)
+        requested: list[str] = []
+        _patch_url_guard(
+            monkeypatch,
+            addresses=[f"203.0.113.{n}" for n in range(1, 11)],
+        )
+
+        def handler(url):
+            raise httpx.ConnectError("network unreachable")
+
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(handler, requested),
+        )
+
+        with pytest.raises(httpx.ConnectError):
+            asyncio.run(sm._fetch_direct_url("https://example.com/f.txt", attempts=1))
+        assert len(requested) == manager_module._MAX_PINNED_ADDRESSES
+
+    def test_unparsable_authority_is_refused_before_connecting(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """An out-of-range port only raises when the port is actually read."""
+        sm = _manager(tmp_path)
+        requested: list[str] = []
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(
+                lambda url: _FakeResponse(text="never"),  # pragma: no cover
+                requested,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="non-public url"):
+            asyncio.run(sm._fetch_direct_url("https://example.com:99999/f.txt"))
+        assert requested == []
+
+    def test_redirect_to_a_non_http_scheme_is_refused(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        sm = _manager(tmp_path)
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(
+                lambda url: _FakeResponse(
+                    status_code=302,
+                    headers={"location": "file:///etc/passwd"},
+                ),
+            ),
+        )
+
+        with pytest.raises(ValueError, match="non-public url"):
+            asyncio.run(sm._fetch_direct_url("https://example.com/redirect"))
+
+
+# ===================================================================
+# Process-wide download gate
+# ===================================================================
+
+
+class TestDownloadGate:
+    def test_inflight_fetches_are_capped(self, tmp_path, monkeypatch) -> None:
+        """Regression: 4 url-list sources x 20 URLs = 80 lookups at once.
+
+        The resolver expects at most RESOLVER_CONCURRENCY lookups in flight;
+        beyond that a lookup waits longer than its own timeout, comes back as
+        unresolved, and the source is dropped as "non-public" although it is
+        perfectly public. The same ceiling bounds how many 12 MB bodies can be
+        buffered at once.
+        """
+        sm = _manager(tmp_path)
+        wanted = manager_module.MAX_INFLIGHT_DOWNLOADS + 30
+        state = {"active": 0, "peak": 0}
+
+        async def counting_resolver(host: str, **kwargs) -> list[str]:
+            state["active"] += 1
+            state["peak"] = max(state["peak"], state["active"])
+            for _ in range(3):
+                await asyncio.sleep(0)
+            state["active"] -= 1
+            return [PUBLIC_IP]
+
+        monkeypatch.setattr(
+            "src.sources.manager.resolve_global_ips",
+            counting_resolver,
+        )
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="ok")),
+        )
+
+        async def run_all():
+            return await asyncio.gather(
+                *[
+                    sm._fetch_direct_url(f"https://example.com/{n}.txt")
+                    for n in range(wanted)
+                ]
+            )
+
+        results = asyncio.run(run_all())
+        assert results == ["ok"] * wanted
+        assert state["peak"] <= manager_module.MAX_INFLIGHT_DOWNLOADS
+        assert state["peak"] > 1
+
+    def test_each_event_loop_gets_its_own_gate(self, tmp_path, monkeypatch) -> None:
+        """A semaphore bound to a finished loop must not leak into the next run."""
+        sm = _manager(tmp_path)
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="ok")),
+        )
+
+        async def run_many():
+            return await asyncio.gather(
+                *[
+                    sm._fetch_direct_url(f"https://example.com/{n}.txt")
+                    for n in range(manager_module.MAX_INFLIGHT_DOWNLOADS + 5)
+                ]
+            )
+
+        assert asyncio.run(run_many())[0] == "ok"
+        assert asyncio.run(run_many())[0] == "ok"
+
+
+# ===================================================================
+# Per-source timeout / attempts
+# ===================================================================
+
+
+class TestPerSourceFetchOptions:
+    """timeout/attempts are documented per source and must reach every fetch."""
+
+    @staticmethod
+    def _record(sm, monkeypatch) -> list[tuple[str, dict]]:
+        calls: list[tuple[str, dict]] = []
+
+        async def fake_direct(url, **kwargs):
+            calls.append((url, kwargs))
+            return "https://example.com/listed.txt" if "index" in url else "vless://ok"
+
+        monkeypatch.setattr(sm, "_fetch_direct_url", fake_direct)
+        return calls
+
+    def test_url_list_index_honours_the_configured_timeout(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Regression: the index ignored ``timeout`` and used 30s x 3 attempts.
+
+        With DOWNLOAD_TIMEOUT_FACTOR that is minutes per source on a hung
+        mirror, for an operator who had capped that source at 10s.
+        """
+        sm = _manager(tmp_path)
+        calls = self._record(sm, monkeypatch)
+
+        result = asyncio.run(
+            sm._fetch_url_list(
+                {
+                    "name": "idx",
+                    "url": "https://example.com/index.txt",
+                    "timeout": 10,
+                    "attempts": 2,
+                },
+                "idx",
+                DEFAULT_LIST_TYPE,
+                None,
+            )
+        )
+        assert result.ok is True
+        assert calls[0] == (
+            "https://example.com/index.txt",
+            {"timeout": 10.0, "attempts": 2},
+        )
+        # The URLs listed inside it keep getting the same settings.
+        assert calls[1][1] == {"timeout": 10.0, "attempts": 2}
+
+    def test_url_list_without_overrides_passes_none(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Unset knobs leave _fetch_direct_url's own defaults in charge."""
+        sm = _manager(tmp_path)
+        calls = self._record(sm, monkeypatch)
+
+        asyncio.run(
+            sm._fetch_url_list(
+                {"name": "idx", "url": "https://example.com/index.txt"},
+                "idx",
+                DEFAULT_LIST_TYPE,
+                None,
+            )
+        )
+        assert calls[0] == ("https://example.com/index.txt", {})
+        assert calls[1][1] == {
+            "timeout": manager_module.DEFAULT_FETCH_TIMEOUT,
+            "attempts": manager_module.DEFAULT_LISTED_URL_ATTEMPTS,
+        }
+
+    def test_url_source_honours_the_configured_timeout(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        sm = _manager(tmp_path)
+        calls = self._record(sm, monkeypatch)
+
+        result = asyncio.run(
+            sm.fetch_source(
+                {
+                    "name": "direct",
+                    "type": "url",
+                    "url": "https://example.com/sub.txt",
+                    "timeout": 7.5,
+                    "attempts": 1,
+                }
+            )
+        )
+        assert result.ok is True
+        assert calls == [
+            ("https://example.com/sub.txt", {"timeout": 7.5, "attempts": 1}),
+        ]
+
+    def test_bad_override_values_fall_back_to_the_defaults(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        sm = _manager(tmp_path)
+        calls = self._record(sm, monkeypatch)
+
+        asyncio.run(
+            sm.fetch_source(
+                {
+                    "name": "direct",
+                    "type": "url",
+                    "url": "https://example.com/sub.txt",
+                    "timeout": "soon",
+                    "attempts": True,
+                }
+            )
+        )
+        assert calls == [
+            (
+                "https://example.com/sub.txt",
+                {
+                    "timeout": manager_module.DEFAULT_FETCH_TIMEOUT,
+                    "attempts": manager_module.DEFAULT_FETCH_ATTEMPTS,
+                },
+            ),
+        ]

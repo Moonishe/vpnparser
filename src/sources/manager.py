@@ -14,7 +14,8 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
+from weakref import WeakKeyDictionary
 
 import httpx
 import yaml
@@ -23,7 +24,7 @@ from src.scheduler.settings import Settings
 from src.sources.github import GitHubClient
 from src.sources.list_types import DEFAULT_LIST_TYPE, infer_source_list_type
 from src.utils.http import read_limited_text
-from src.utils.net import SAFE_URL_SCHEMES, is_safe_public_url
+from src.utils.net import RESOLVER_CONCURRENCY, SAFE_URL_SCHEMES, resolve_global_ips
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,78 @@ MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
 #: forever while staying far below MAX_DOWNLOAD_BYTES. The budget also covers
 #: the whole redirect chain, which is several operations by itself.
 DOWNLOAD_TIMEOUT_FACTOR = 4.0
+
+#: Fallbacks for the per-source ``timeout``/``attempts`` knobs. A url-list index
+#: is fetched once per run and losing it costs the whole source, so it keeps the
+#: retry-heavy default; each URL listed *inside* one is one of hundreds, where a
+#: retry is rarely worth three times the wall clock.
+DEFAULT_FETCH_TIMEOUT = 30.0
+DEFAULT_FETCH_ATTEMPTS = 3
+DEFAULT_LISTED_URL_ATTEMPTS = 1
+
+#: Process-wide ceiling on untrusted downloads in flight. Two invariants pin it:
+#: every fetch keeps one host lookup busy while it validates its target, and
+#: more than :data:`~src.utils.net.RESOLVER_CONCURRENCY` lookups at once queue
+#: past their own resolve timeout — a healthy source then looks unresolvable and
+#: is dropped as non-public; and every fetch may buffer up to
+#: :data:`MAX_DOWNLOAD_BYTES`, so the same ceiling bounds peak body memory. The
+#: per-source ``max_concurrent_urls`` semaphores enforce neither bound: the
+#: shipped config alone runs four url-list sources of 20 at once.
+MAX_INFLIGHT_DOWNLOADS = RESOLVER_CONCURRENCY
+
+#: Addresses tried per hop before the hop is declared unreachable. Pinning the
+#: connection to one validated address (see :class:`_PinnedTarget`) loses the
+#: connector's own walk over the ``getaddrinfo`` list, so a host whose first
+#: answer is unroutable here — an AAAA record on an IPv4-only runner — must
+#: still fall back to the next one.
+_MAX_PINNED_ADDRESSES = 4
+
+#: One gate per event loop: an ``asyncio.Semaphore`` binds to the loop that
+#: first blocks on it, so a single module-level instance would raise "bound to a
+#: different event loop" as soon as a second ``asyncio.run`` contended for it.
+#: Every fetch of one run shares a loop, which is the scope that shares the
+#: resolver pool and the memory budget.
+_download_gates: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    WeakKeyDictionary()
+)
+
+
+def _host_literal(host: str) -> str:
+    """Return *host* in URL form, re-bracketing an IPv6 literal."""
+    return f"[{host}]" if ":" in host else host
+
+
+def _download_gate() -> asyncio.Semaphore:
+    """Return the download gate of the running event loop, creating it once."""
+    loop = asyncio.get_running_loop()
+    gate = _download_gates.get(loop)
+    if gate is None:
+        gate = asyncio.Semaphore(MAX_INFLIGHT_DOWNLOADS)
+        _download_gates[loop] = gate
+    return gate
+
+
+@dataclass(frozen=True)
+class _PinnedTarget:
+    """A URL bound to the addresses its host was actually validated on.
+
+    Validating the *name* and then handing the same name to httpx leaves a
+    check-to-connect window: httpx resolves independently, so a record with
+    TTL 0 can answer the guard with a public address and the connection with
+    ``127.0.0.1`` or ``169.254.169.254`` (DNS rebinding). Connecting to the
+    address the guard approved closes the window.
+
+    Attributes:
+        connect_urls: ``url`` with its host replaced by each approved address.
+        host_header: ``Host`` value carrying the original host and port, so
+            virtual hosting keeps working.
+        extensions: httpx request extensions; ``sni_hostname`` keeps TLS
+            negotiating and verifying against the hostname, not the address.
+    """
+
+    connect_urls: tuple[str, ...]
+    host_header: str
+    extensions: dict[str, str]
 
 
 @dataclass
@@ -224,7 +297,10 @@ class SourceManager:
             default_country = self._source_default_country(source)
 
             if stype == "url" or (stype == "subscription" and url):
-                content = await self._fetch_direct_url(str(url))
+                content = await self._fetch_direct_url(
+                    str(url),
+                    **self._direct_fetch_overrides(source),
+                )
                 if not content:
                     return SourceResult(
                         source_name=name,
@@ -328,8 +404,8 @@ class SourceManager:
     @staticmethod
     async def _fetch_direct_url(
         url: str,
-        timeout: float = 30.0,
-        attempts: int = 3,
+        timeout: float = DEFAULT_FETCH_TIMEOUT,
+        attempts: int = DEFAULT_FETCH_ATTEMPTS,
         retry_delay: float = 2.0,
     ) -> str:
         """Fetch a direct HTTP(S) text source from an untrusted URL.
@@ -368,7 +444,10 @@ class SourceManager:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             for attempt in range(1, max_attempts + 1):
                 try:
-                    async with asyncio.timeout(budget):
+                    # The gate is taken *outside* the budget: queue time is not
+                    # the host's fault, and charging it to the fetch would time
+                    # out healthy sources under load.
+                    async with _download_gate(), asyncio.timeout(budget):
                         return await SourceManager._get_validated(client, url, headers)
                 except (httpx.RequestError, httpx.HTTPStatusError) as exc:
                     last_error = exc
@@ -391,6 +470,123 @@ class SourceManager:
         return ""  # pragma: no cover
 
     @staticmethod
+    async def _pin_public_target(url: str) -> _PinnedTarget:
+        """Validate ``url`` against the SSRF guard and pin it to its addresses.
+
+        Resolution happens exactly once, under the shared download gate, and the
+        connection then goes to what was resolved — see :class:`_PinnedTarget`
+        for why handing httpx the hostname instead is not enough.
+
+        Returns:
+            The target bound to the public addresses of its host.
+
+        Raises:
+            ValueError: If the URL is not http(s), carries no host, or its host
+                does not resolve exclusively to public addresses.
+        """
+        try:
+            parts = urlsplit(url)
+            host = parts.hostname
+            # Reading the port is what validates it; a redirect may well point
+            # at "http://host:99999/".
+            port = f":{parts.port}" if parts.port is not None else ""
+        except ValueError:
+            host = None
+            port = ""
+        if not host or parts.scheme.lower() not in SAFE_URL_SCHEMES:
+            logger.warning("Dropped non-public source url: %s", url)
+            msg = f"refusing to fetch non-public url: {url!r}"
+            raise ValueError(msg)
+
+        addresses = await resolve_global_ips(host)
+        if not addresses:
+            logger.warning("Dropped non-public source url: %s", url)
+            msg = f"refusing to fetch non-public url: {url!r}"
+            raise ValueError(msg)
+
+        userinfo = ""
+        if parts.username or parts.password:
+            userinfo = parts.username or ""
+            if parts.password:
+                userinfo = f"{userinfo}:{parts.password}"
+            userinfo += "@"
+        connect_urls = tuple(
+            urlunsplit(
+                (
+                    parts.scheme,
+                    f"{userinfo}{_host_literal(address)}{port}",
+                    parts.path,
+                    parts.query,
+                    parts.fragment,
+                ),
+            )
+            for address in addresses[:_MAX_PINNED_ADDRESSES]
+        )
+        return _PinnedTarget(
+            connect_urls=connect_urls,
+            host_header=f"{_host_literal(host)}{port}",
+            extensions=(
+                {"sni_hostname": host} if parts.scheme.lower() == "https" else {}
+            ),
+        )
+
+    @staticmethod
+    async def _stream_hop(
+        client: httpx.AsyncClient,
+        pinned: _PinnedTarget,
+        headers: dict[str, str],
+    ) -> tuple[str | None, str]:
+        """GET one hop, falling back over the addresses approved for it.
+
+        Args:
+            client: Client used to issue the request.
+            pinned: Target produced by :meth:`_pin_public_target`.
+            headers: Request headers; ``Host`` is taken from *pinned*.
+
+        Returns:
+            ``(location, body)``. ``location`` is the redirect target when the
+            hop answered with one, and is ``None`` otherwise — then ``body``
+            holds the payload, ``""`` for a 404 or an oversized response.
+
+        Raises:
+            httpx.RequestError: If none of the approved addresses answered.
+        """
+        request_headers = {**headers, "Host": pinned.host_header}
+        last_error: httpx.RequestError | None = None
+        for connect_url in pinned.connect_urls:
+            try:
+                async with client.stream(
+                    "GET",
+                    connect_url,
+                    headers=request_headers,
+                    extensions=pinned.extensions,
+                ) as response:
+                    if response.status_code == 404:
+                        return None, ""
+                    if response.status_code in _REDIRECT_STATUSES:
+                        location = response.headers.get("location")
+                        if location:
+                            return location.strip(), ""
+                    response.raise_for_status()
+                    body = await read_limited_text(
+                        response,
+                        max_bytes=MAX_DOWNLOAD_BYTES,
+                    )
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last_error = exc
+                continue
+            if body is None:
+                logger.warning(
+                    "Discarded oversized response from %s (limit %d bytes).",
+                    connect_url,
+                    MAX_DOWNLOAD_BYTES,
+                )
+                return None, ""
+            return None, body
+        assert last_error is not None  # connect_urls is never empty
+        raise last_error
+
+    @staticmethod
     async def _get_validated(
         client: httpx.AsyncClient,
         url: str,
@@ -407,31 +603,13 @@ class SourceManager:
         """
         target = url
         for _hop in range(_MAX_REDIRECT_HOPS + 1):
-            if not await is_safe_public_url(target):
-                logger.warning("Dropped non-public source url: %s", target)
-                msg = f"refusing to fetch non-public url: {target!r}"
-                raise ValueError(msg)
-            async with client.stream("GET", target, headers=headers) as response:
-                if response.status_code == 404:
-                    return ""
-                location = (
-                    response.headers.get("location")
-                    if response.status_code in _REDIRECT_STATUSES
-                    else None
-                )
-                if location:
-                    target = urljoin(target, location.strip())
-                    continue
-                response.raise_for_status()
-                body = await read_limited_text(response, max_bytes=MAX_DOWNLOAD_BYTES)
-            if body is None:
-                logger.warning(
-                    "Discarded oversized response from %s (limit %d bytes).",
-                    target,
-                    MAX_DOWNLOAD_BYTES,
-                )
-                return ""
-            return body
+            pinned = await SourceManager._pin_public_target(target)
+            location, body = await SourceManager._stream_hop(client, pinned, headers)
+            if location is None:
+                return body
+            # Relative redirects resolve against the *logical* URL, never the
+            # pinned address one.
+            target = urljoin(target, location)
         msg = f"too many redirects while fetching {url!r}"
         raise ValueError(msg)
 
@@ -461,7 +639,14 @@ class SourceManager:
                 default_country=default_country,
             )
 
-        index_content = await self._fetch_direct_url(url)
+        # The index is an untrusted URL like every other one in the source:
+        # ignoring the configured timeout here gave a hung mirror 30s*4 per try
+        # and three tries, minutes of the job budget the operator had already
+        # capped at ``timeout``.
+        index_content = await self._fetch_direct_url(
+            url,
+            **self._direct_fetch_overrides(source),
+        )
         if not index_content:
             return SourceResult(
                 source_name=name,
@@ -514,8 +699,12 @@ class SourceManager:
         concurrency = self._int_source_value(source, "max_concurrent_urls", 10)
         concurrency = max(1, concurrency)
         semaphore = asyncio.Semaphore(concurrency)
-        timeout = self._float_source_value(source, "timeout", 30.0)
-        attempts = self._int_source_value(source, "attempts", 1)
+        timeout = self._fetch_timeout(source)
+        attempts = self._int_source_value(
+            source,
+            "attempts",
+            DEFAULT_LISTED_URL_ATTEMPTS,
+        )
 
         async def fetch_one(target: str) -> tuple[str, str] | None:
             async with semaphore:
@@ -586,6 +775,38 @@ class SourceManager:
         except (TypeError, ValueError):
             return default
         return max(minimum, value)
+
+    @classmethod
+    def _fetch_timeout(cls, source: dict[str, Any]) -> float:
+        """Return the per-request ``timeout`` configured for *source*.
+
+        Applies to every URL the source pulls — a url-list index just as much
+        as the URLs listed in it.
+        """
+        return cls._float_source_value(source, "timeout", DEFAULT_FETCH_TIMEOUT)
+
+    @classmethod
+    def _direct_fetch_overrides(cls, source: dict[str, Any]) -> dict[str, Any]:
+        """Return the ``timeout``/``attempts`` overrides declared by *source*.
+
+        Both knobs are documented per source and used to be read for the URLs
+        *listed inside* a url-list only: the index itself, and every ``url``
+        source, silently kept the built-in 30s/3-attempt defaults, so a mirror
+        capped at ``timeout: 10`` could still hold the job for minutes.
+
+        Only keys the source actually sets are returned, leaving
+        :meth:`_fetch_direct_url` as the single place its own defaults live.
+        """
+        overrides: dict[str, Any] = {}
+        if "timeout" in source:
+            overrides["timeout"] = cls._fetch_timeout(source)
+        if "attempts" in source:
+            overrides["attempts"] = cls._int_source_value(
+                source,
+                "attempts",
+                DEFAULT_FETCH_ATTEMPTS,
+            )
+        return overrides
 
     @staticmethod
     def _float_source_value(source: dict[str, Any], key: str, default: float) -> float:

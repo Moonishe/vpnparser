@@ -25,7 +25,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from src.repo_info import github_branch, github_repo_slug
@@ -42,6 +42,13 @@ _TOKEN_MIN_LEN = 20
 # quotes that whole path — so a token pasted into .env with an embedded newline
 # would end up in the log verbatim.  Refuse it before it reaches urllib.
 _URL_FORBIDDEN_CHARS = frozenset(chr(code) for code in (*range(0x21), 0x7F))
+
+# Characters http.client rejects inside a *header value*.  The LLM key travels
+# in "Authorization: Bearer <key>", and the ValueError raised for a bad value
+# quotes the whole header — key included — straight into the log.
+_HEADER_FORBIDDEN_CHARS = frozenset("\r\n\x00")
+
+_REDACTED = "<redacted>"
 
 # LLM endpoint — OpenAI-compatible. DashScope (Alibaba) qwen-flash is fast and free.
 _LLM_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
@@ -287,14 +294,58 @@ _COUNTRY_INFO = {
 }
 
 
-def _subscription_urls() -> dict[str, str]:
-    """Return raw GitHub URLs for all published subscription outputs."""
-    base = f"https://raw.githubusercontent.com/{_repo_slug()}/{_repo_branch()}/output"
+#: Repo-relative paths used when the run summary does not name the outputs.
+_DEFAULT_OUTPUT_PATHS = {
+    "combined": "output/subscription.txt",
+    "blacklist": "output/subscription-blacklist.txt",
+    "whitelist": "output/subscription-whitelist.txt",
+    "mix": "output/subscription-mix.txt",
+}
+
+
+def _repo_relative_output(summary: dict[str, Any], key: str) -> str | None:
+    """Return the repo path of output *key*, as recorded by the pipeline.
+
+    The publisher commits every output file under the same (relative) path it
+    was written to, so ``run-summary.json`` already knows where the links must
+    point — including after ``publisher.output_file`` or ``split_output_files``
+    were repointed in settings.yaml.
+
+    Args:
+        summary: Parsed run-summary.json (may be empty).
+        key: Output name (``combined``, ``blacklist``, ...).
+
+    Returns:
+        The forward-slash repo path, or ``None`` when the summary does not
+        carry a usable one. Absolute paths and ``..`` segments yield ``None``:
+        they exist outside the repository, so no raw URL can address them.
+    """
+    outputs = summary.get("outputs")
+    item = outputs.get(key) if isinstance(outputs, dict) else None
+    raw = item.get("file") if isinstance(item, dict) else None
+    if not raw or not isinstance(raw, str):
+        return None
+    native = Path(raw)
+    if native.is_absolute() or native.drive:
+        return None
+    path = PurePosixPath(raw.replace("\\", "/"))
+    if path.is_absolute() or ".." in path.parts:
+        return None
+    return str(path)
+
+
+def _subscription_urls(summary: dict[str, Any] | None = None) -> dict[str, str]:
+    """Return raw GitHub URLs for all published subscription outputs.
+
+    Args:
+        summary: Parsed run-summary.json. When it names the files this run
+            wrote, the links follow them; otherwise the default layout is used.
+    """
+    base = f"https://raw.githubusercontent.com/{_repo_slug()}/{_repo_branch()}"
+    summary = summary if isinstance(summary, dict) else {}
     return {
-        "combined": f"{base}/subscription.txt",
-        "blacklist": f"{base}/subscription-blacklist.txt",
-        "whitelist": f"{base}/subscription-whitelist.txt",
-        "mix": f"{base}/subscription-mix.txt",
+        key: f"{base}/{_repo_relative_output(summary, key) or default}"
+        for key, default in _DEFAULT_OUTPUT_PATHS.items()
     }
 
 
@@ -708,8 +759,37 @@ def _save_fact(fact: str) -> None:
         logger.warning("Could not save fact history: %s", exc)
 
 
+def _redact_secret(text: str, secret: str) -> str:
+    """Return *text* with every occurrence of *secret* masked.
+
+    Library errors quote the offending value with ``%r``, so a secret carrying
+    control characters shows up backslash-escaped rather than verbatim; both
+    spellings are replaced.
+
+    Args:
+        text: Message about to be logged.
+        secret: Value that must not reach the log.
+
+    Returns:
+        ``text`` with the secret replaced by ``<redacted>``.
+    """
+    if not secret:
+        return text
+    masked = text.replace(secret, _REDACTED)
+    escaped = secret.encode("unicode_escape").decode("ascii")
+    if escaped != secret:
+        masked = masked.replace(escaped, _REDACTED)
+    return masked
+
+
 def _call_llm(api_key: str, prompt: str) -> str | None:
     """Single LLM API call (DashScope Qwen). Returns text or None on failure."""
+    # A key with CR/LF/NUL makes http.client raise "Invalid header value
+    # b'Bearer <key>'", and the catch-all below would log that message — the
+    # whole secret — at WARNING level.  Same fail-fast rule the bot token gets.
+    if not _HEADER_FORBIDDEN_CHARS.isdisjoint(api_key):
+        logger.warning("LLM_API_KEY contains control characters — call skipped")
+        return None
     try:
         body = json.dumps(
             {
@@ -747,7 +827,9 @@ def _call_llm(api_key: str, prompt: str) -> str | None:
                 return None
             return " ".join(content.split())
     except Exception as exc:
-        logger.warning("LLM API call failed: %s", exc)
+        # urllib/http.client quote the request headers in several of their
+        # errors; the Authorization header is one of them.
+        logger.warning("LLM API call failed: %s", _redact_secret(str(exc), api_key))
         return None
 
 
@@ -949,7 +1031,7 @@ def send_notification(
     # Generate fun fact via Gemini.
     api_key = os.environ.get("LLM_API_KEY", "")
     fact = _generate_fun_fact(api_key)
-    urls = _subscription_urls()
+    urls = _subscription_urls(summary)
 
     validation_section = _format_validation_section(summary)
     subscriptions_section = _format_subscriptions_section(

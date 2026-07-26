@@ -809,6 +809,56 @@ class TestCallLlm:
         )
         assert telegram_module._call_llm("fake-key", "prompt") is None
 
+    # --- the key must never reach the log (regression) -------------------
+
+    def test_key_with_newline_is_rejected_before_the_request(
+        self, monkeypatch, caplog
+    ) -> None:
+        """A CR/LF in LLM_API_KEY used to print the whole key at WARNING.
+
+        http.client rejects the header with ``ValueError("Invalid header value
+        %r" % value)`` — and that value is ``Bearer <key>``, which the catch-all
+        logged verbatim. The bot token is screened for control characters the
+        same way; the LLM key was not.
+        """
+        secret = "sk-SUPERSECRET-abcdef123456\nX-Injected: 1"
+
+        def fake_urlopen(req, timeout=15):  # pragma: no cover - must not run
+            raise AssertionError("request must not be attempted")
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+        caplog.set_level("WARNING")
+        assert telegram_module._call_llm(secret, "prompt") is None
+        assert "SUPERSECRET" not in caplog.text
+        assert "control characters" in caplog.text
+
+    def test_key_is_redacted_from_unexpected_errors(self, monkeypatch, caplog) -> None:
+        """Any error quoting the Authorization header is masked before logging."""
+        secret = "sk-SUPERSECRET-abcdef123456"
+
+        def fake_urlopen(req, timeout=15):
+            raise ValueError(f"Invalid header value b'Bearer {secret}'")
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+        caplog.set_level("WARNING")
+        assert telegram_module._call_llm(secret, "prompt") is None
+        assert "SUPERSECRET" not in caplog.text
+        assert "<redacted>" in caplog.text
+
+
+class TestRedactSecret:
+    """Cover the masking helper used for the LLM key."""
+
+    def test_empty_secret_returns_text_unchanged(self) -> None:
+        clean = "nothing to hide"
+        assert telegram_module._redact_secret(clean, "") == clean
+
+    def test_escaped_spelling_is_masked_too(self) -> None:
+        """``%r`` renders control characters escaped, not verbatim."""
+        secret = "top\nsecret"
+        message = repr(f"Bearer {secret}")
+        assert "top" not in telegram_module._redact_secret(message, secret)
+
 
 # ── _generate_fun_fact ──────────────────────────────────────────────────
 
@@ -1348,6 +1398,69 @@ class TestMain:
         monkeypatch.setattr(telegram_module, "send_notification", lambda **kw: False)
 
         assert telegram_module.main() == 0
+
+
+# ── _subscription_urls ──────────────────────────────────────────────────
+
+
+class TestSubscriptionUrls:
+    """The published links must follow the files the pipeline actually wrote."""
+
+    def _urls(self, monkeypatch, summary):
+        monkeypatch.setenv("GITHUB_OWNER", "acme")
+        monkeypatch.setenv("GITHUB_REPO", "vpn")
+        monkeypatch.setenv("GITHUB_BRANCH", "main")
+        return telegram_module._subscription_urls(summary)
+
+    def test_defaults_without_summary(self, monkeypatch) -> None:
+        urls = self._urls(monkeypatch, None)
+        assert urls["combined"].endswith("/main/output/subscription.txt")
+        assert urls["blacklist"].endswith("/main/output/subscription-blacklist.txt")
+        assert urls["whitelist"].endswith("/main/output/subscription-whitelist.txt")
+        assert urls["mix"].endswith("/main/output/subscription-mix.txt")
+
+    def test_summary_paths_win_over_the_default_layout(self, monkeypatch) -> None:
+        """Regression: renaming outputs in settings.yaml left dead links.
+
+        ``publisher.output_file`` / ``split_output_files`` / ``mix_output_file``
+        were ignored here, so the message linked to output/subscription*.txt
+        whatever the operator had configured — and the pipeline records the real
+        paths in run-summary.json, which this notifier already reads.
+        """
+        summary = {
+            "outputs": {
+                "combined": {"file": "subs/all.txt"},
+                "blacklist": {"file": "subs\\black.txt"},
+                "mix": {"file": "subs/mix100.txt"},
+            }
+        }
+        urls = self._urls(monkeypatch, summary)
+        assert urls["combined"].endswith("/main/subs/all.txt")
+        # Windows separators are normalised for the raw URL.
+        assert urls["blacklist"].endswith("/main/subs/black.txt")
+        assert urls["mix"].endswith("/main/subs/mix100.txt")
+        # Not recorded — keeps the documented default.
+        assert urls["whitelist"].endswith("/main/output/subscription-whitelist.txt")
+
+    @pytest.mark.parametrize(
+        "recorded",
+        [
+            "/etc/passwd",
+            "C:/secrets/out.txt",
+            "../outside.txt",
+            "",
+            123,
+        ],
+    )
+    def test_unusable_recorded_paths_fall_back(self, monkeypatch, recorded) -> None:
+        """Anything that cannot be a repo path keeps the default link."""
+        summary = {"outputs": {"combined": {"file": recorded}}}
+        urls = self._urls(monkeypatch, summary)
+        assert urls["combined"].endswith("/main/output/subscription.txt")
+
+    def test_malformed_summary_is_ignored(self, monkeypatch) -> None:
+        urls = self._urls(monkeypatch, {"outputs": [1, 2, 3]})
+        assert urls["combined"].endswith("/main/output/subscription.txt")
 
 
 # ── _subscription_file_paths ────────────────────────────────────────────

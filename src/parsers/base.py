@@ -395,10 +395,25 @@ _AD_PATTERNS = re.compile(
     r"|купить"
     r"|openproxylist"
     r"|oneclickvpn"
-    r"|v2ray.*pool"
+    # Bounded quantifier, NOT ``v2ray.*pool``: the unbounded form re-scanned the
+    # rest of the remark from every ``v2ray`` occurrence, so a remark that
+    # repeats ``v2ray`` without ever containing ``pool`` cost O(n^2) — 17 s at
+    # 160 KB, ~28 h at the 12 MB source download limit, with GarbageFilter
+    # hanging the whole run before any sampling or dedup could shrink the input.
+    # ``.`` (not ``[^\s]``) so the real ad remarks this targets — "V2Ray Pool",
+    # "v2ray free pool" — keep matching across their spaces.
+    r"|v2ray.{0,64}?pool"
     r"|shadowproxy"
     r"|gozargah",
 )
+
+# Upper bound on how much of a remark :func:`_has_ad_remark` inspects.  A remark
+# is a display name: real ones are a few dozen characters, while the ``#fragment``
+# of a link taken straight from a public source is bounded only by the 12 MB
+# download limit.  Ad markers sit at the front of a remark, so scanning a fixed
+# prefix loses nothing in practice and keeps the filter's cost constant per
+# config no matter what a source ships.
+_MAX_AD_SCAN_CHARS = 512
 
 # Valid UUID format (8-4-4-4-12 hex, hyphens optional). Module-level so it is
 # compiled once, not looked up in re's internal cache on every is_garbage_config()
@@ -436,6 +451,24 @@ def _split_link_userinfo(body: str) -> tuple[str, str]:
     if at == -1:
         return ("", body)
     return (after_scheme[:at], body[: scheme_end + 3] + after_scheme[at + 1 :])
+
+
+def _has_ad_remark(remark: str) -> bool:
+    """Judge a remark as advertising (channel handle, URL, promotional text).
+
+    Only the first :data:`_MAX_AD_SCAN_CHARS` characters are inspected, so the
+    check costs the same for a 30-character display name and for a multi-megabyte
+    ``#fragment`` pulled from a public source.  Shared by both branches of
+    :func:`is_garbage_config` so a link string and the :class:`Config` parsed
+    from it are judged identically.
+
+    Args:
+        remark: Display name, already percent-decoded.
+
+    Returns:
+        ``True`` when the remark carries an advertising marker.
+    """
+    return _AD_PATTERNS.search(remark[:_MAX_AD_SCAN_CHARS]) is not None
 
 
 def _is_garbage_credential(protocol: str, credential: str) -> bool:
@@ -530,7 +563,7 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
             ):
                 return True
             # Filter advertising: @channel, http://, .com, .net, etc.
-            if _AD_PATTERNS.search(cfg.remark):
+            if _has_ad_remark(cfg.remark):
                 return True
         # uuid_or_password: literal placeholders + per-protocol format.  An
         # empty credential is garbage for vless/vmess/tuic (parsers reject
@@ -569,6 +602,6 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
             "SHORT_ID",
         ):
             return True
-        if _AD_PATTERNS.search(decoded_remark):
+        if _has_ad_remark(decoded_remark):
             return True
     return False

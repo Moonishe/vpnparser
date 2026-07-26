@@ -14,7 +14,7 @@ Flags:
     --sources    Path to sources.json (default: config/sources.json).
     --output     Path to the subscription file (default: output/subscription.txt).
     --verbose    Enable DEBUG-level logging (default: INFO).
-    --continuous Keep running in a loop, backing off after a failed run.
+    --continuous Keep running in a loop, backing off after a failed or empty run.
 
 Exit codes:
     0   Pipeline ran (and, when --publish was given, publishing succeeded).
@@ -33,7 +33,7 @@ import logging
 import os
 import sys
 import time
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 from src.env import load_dotenv_if_available
 
@@ -156,7 +156,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--continuous",
         action="store_true",
-        help="Keep running in a loop, backing off after a failed run.",
+        help="Keep running in a loop, backing off after a failed or empty run.",
     )
     parser.add_argument(
         "--notify",
@@ -164,6 +164,53 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Send Telegram notification after run.",
     )
     return parser
+
+
+def _status_summary_file(runner: Any) -> str:
+    """Return the run-summary path this run actually wrote, or ``""``.
+
+    ``publisher.status_output_file`` is optional, and when it is missing the
+    runner writes no summary at all (``PipelineRunner._status_output_file()``
+    returns ``None``). Substituting the literal default path here made the
+    notifier read whatever ``output/run-summary.json`` was left on disk — the
+    counts and the ``status`` field of a *previous* run — and report it as the
+    result of this one.
+
+    Args:
+        runner: The :class:`~src.scheduler.runner.PipelineRunner` that ran.
+
+    Returns:
+        The configured path, or ``""`` when no summary was written.
+    """
+    settings = getattr(runner, "settings", None)
+    publisher = settings.get("publisher") if isinstance(settings, dict) else None
+    raw = publisher.get("status_output_file") if isinstance(publisher, dict) else None
+    return str(raw) if raw else ""
+
+
+def _notify(
+    args: argparse.Namespace,
+    runner: Any,
+    count: int,
+    logger: logging.Logger,
+) -> None:
+    """Send the Telegram notification for a finished run.
+
+    Called for every run, including one that produced nothing: a pipeline that
+    silently zeroed every subscription is exactly the run an operator must hear
+    about, and skipping the message there left the failure invisible in both CI
+    and Telegram.
+    """
+    try:
+        from src.notify import telegram as tg
+
+        tg.send_notification(
+            configs_count=count,
+            subscription_file=args.output,
+            status_file=_status_summary_file(runner),
+        )
+    except Exception as exc:
+        logger.warning("Telegram notification failed: %s", exc)
 
 
 def _run_once(
@@ -203,23 +250,6 @@ def _run_once(
             logger.warning(
                 "Publish was requested but failed — check logs above for details."
             )
-        if args.notify:
-            try:
-                from src.notify import telegram as tg
-
-                status_file = str(
-                    runner.settings.get("publisher", {}).get(
-                        "status_output_file",
-                        "output/run-summary.json",
-                    ),
-                )
-                tg.send_notification(
-                    configs_count=count,
-                    subscription_file=args.output,
-                    status_file=status_file,
-                )
-            except Exception as exc:
-                logger.warning("Telegram notification failed: %s", exc)
     else:
         logger.warning("Pipeline completed but produced 0 configs.")
         if args.publish:
@@ -227,6 +257,8 @@ def _run_once(
                 "Empty-run artifacts were handed to the publisher — see the "
                 "publish log above for the outcome.",
             )
+    if args.notify:
+        _notify(args, runner, count, logger)
     return count, publish_ok
 
 
@@ -266,44 +298,57 @@ def main() -> int:
         logger.exception("Failed to import PipelineRunner")
         return 1
 
-    def single_run() -> int:
+    def single_run() -> tuple[int, bool]:
+        """Run the pipeline once. Returns ``(exit code, produced configs)``."""
         try:
-            _count, publish_ok = _run_once(args, github_token, logger)
+            count, publish_ok = _run_once(args, github_token, logger)
         except KeyboardInterrupt:
             logger.warning("Interrupted by user.")
-            return 130
+            return 130, False
         except Exception as exc:
             logger.error("Pipeline crashed: %s", exc, exc_info=True)
-            return 1
+            return 1, False
         # _run_once returns the config count, but the process exit code must be
         # 0 on success - returning the count makes shells/CI mark runs failed.
         # A requested-but-failed publish is a real failure: the pipeline wrote
         # local files while the published subscription stayed stale.
         if not publish_ok:
-            return EXIT_PUBLISH_FAILED
-        return 0
+            return EXIT_PUBLISH_FAILED, count > 0
+        return 0, count > 0
 
     if not args.continuous:
-        return single_run()
+        return single_run()[0]
 
     # --continuous mode: loop until interrupted.
     logger.info("Continuous mode enabled — looping until interrupted.")
     backoff = _CONTINUOUS_BACKOFF_START
     try:
         while True:
-            exit_code = single_run()
+            exit_code, produced = single_run()
             if exit_code == 130:
                 logger.warning("Exiting continuous loop due to KeyboardInterrupt.")
                 return 130
-            if exit_code == 0:
+            if exit_code == 0 and produced:
                 backoff = _CONTINUOUS_BACKOFF_START
                 logger.info("Run finished (exit=0). Starting next run immediately.")
                 continue
-            logger.warning(
-                "Run finished (exit=%d). Waiting %.0fs before the next run.",
-                exit_code,
-                backoff,
-            )
+            if exit_code == 0:
+                # A run that reaches no source at all (unreadable sources.json,
+                # every mirror down) writes 0 configs and still exits 0.  Without
+                # a backoff here that run restarts in milliseconds and spins the
+                # loop at dozens of full pipelines per second, rewriting every
+                # output file — and, with --publish, hammering the GitHub API
+                # until abuse detection trips.
+                logger.warning(
+                    "Run produced 0 configs. Waiting %.0fs before the next run.",
+                    backoff,
+                )
+            else:
+                logger.warning(
+                    "Run finished (exit=%d). Waiting %.0fs before the next run.",
+                    exit_code,
+                    backoff,
+                )
             time.sleep(backoff)
             backoff = min(backoff * 2, _CONTINUOUS_BACKOFF_MAX)
     except KeyboardInterrupt:

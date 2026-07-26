@@ -209,6 +209,62 @@ def test_main_notify_calls_send_notification(monkeypatch) -> None:
     }
 
 
+def test_main_notify_runs_on_empty_pipeline(monkeypatch) -> None:
+    """A run that produced nothing is exactly the run to be told about.
+
+    The notification used to live inside ``if count > 0``, so a pipeline that
+    zeroed every subscription (unreadable sources.json, every mirror down)
+    stayed silent in Telegram while also exiting 0.
+    """
+    runner = _stub_main(monkeypatch, ["--run", "--notify"], _FakeRunner())
+    runner.run_return = 0
+    captured: dict[str, object] = {}
+
+    def fake_send(*, configs_count, subscription_file, status_file) -> bool:
+        captured["count"] = configs_count
+        return True
+
+    monkeypatch.setattr("src.notify.telegram.send_notification", fake_send)
+    assert main() == 0
+    assert captured == {"count": 0}
+
+
+def test_main_notify_without_status_setting_sends_no_status_file(monkeypatch) -> None:
+    """No ``status_output_file`` means no summary was written by this run.
+
+    Falling back to the literal ``output/run-summary.json`` made the notifier
+    report the counts of whatever previous run had left that file behind.
+    """
+    runner = _stub_main(monkeypatch, ["--run", "--notify"], _FakeRunner())
+    runner.run_return = 4
+    runner.settings = {"publisher": {"output_file": "output/subscription.txt"}}
+    captured: dict[str, object] = {}
+
+    def fake_send(*, configs_count, subscription_file, status_file) -> bool:
+        captured["status"] = status_file
+        return True
+
+    monkeypatch.setattr("src.notify.telegram.send_notification", fake_send)
+    assert main() == 0
+    assert captured["status"] == ""
+
+
+def test_main_notify_survives_settings_without_publisher_section(monkeypatch) -> None:
+    """A settings file with no publisher section must not break notifying."""
+    runner = _stub_main(monkeypatch, ["--run", "--notify"], _FakeRunner())
+    runner.run_return = 4
+    runner.settings = {"publisher": None}
+    captured: dict[str, object] = {}
+
+    def fake_send(*, configs_count, subscription_file, status_file) -> bool:
+        captured["status"] = status_file
+        return True
+
+    monkeypatch.setattr("src.notify.telegram.send_notification", fake_send)
+    assert main() == 0
+    assert captured["status"] == ""
+
+
 def test_main_notify_failure_is_logged_not_fatal(monkeypatch) -> None:
     runner = _stub_main(monkeypatch, ["--run", "--notify"], _FakeRunner())
     runner.run_return = 9
@@ -314,6 +370,34 @@ def test_continuous_backoff_resets_after_success(monkeypatch) -> None:
             RuntimeError("boom"),
             KeyboardInterrupt(),
         ],
+    )
+    assert main() == 130
+    assert slept == [5.0, 10.0, 5.0]
+
+
+def test_continuous_backs_off_after_empty_runs(monkeypatch) -> None:
+    """A run that writes 0 configs must not restart at full speed.
+
+    Regression: a broken/unreachable sources.json makes the pipeline exit 0
+    with nothing written in milliseconds. The loop only backed off on a
+    non-zero exit, so it span at dozens of complete runs per second — every one
+    of them rewriting the whole output set, and with --publish hammering the
+    GitHub API until abuse detection tripped.
+    """
+    calls, slept = _stub_continuous(
+        monkeypatch,
+        [(0, True), (0, True), KeyboardInterrupt()],
+    )
+    assert main() == 130
+    assert calls["n"] == 3
+    assert slept == [5.0, 10.0]
+
+
+def test_continuous_backoff_resets_after_a_productive_run(monkeypatch) -> None:
+    """Configs written again clears the backoff accumulated by empty runs."""
+    _calls, slept = _stub_continuous(
+        monkeypatch,
+        [(0, True), (0, True), (9, True), (0, True), KeyboardInterrupt()],
     )
     assert main() == 130
     assert slept == [5.0, 10.0, 5.0]
