@@ -15,10 +15,12 @@ on:
         default: "false"
         type: boolean
 
-# Cancel a previous run if a new one starts on the same ref.
+# Queue runs on the same ref instead of cancelling them: publishing walks the
+# output files one Contents API commit at a time, so a cancelled run can leave
+# the repo with a half-updated set of subscriptions.
 concurrency:
   group: update-configs-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write # needed to push the updated subscription back to the repo
@@ -97,10 +99,23 @@ jobs:
       - name: Run pipeline
         id: pipeline
         run: |
+          set +e
           if [ "${{ inputs.skip_publish }}" = "true" ]; then
             python -m src.main --run
           else
             python -m src.main --run --publish
+          fi
+          code=$?
+          set -e
+          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+          # Exit 3 (src.main EXIT_PUBLISH_FAILED) means the pipeline ran fine but
+          # publishing to the repo failed. Keep going so the local output still
+          # gets verified, then fail in "Fail on stale publish" *before* the
+          # Telegram step: run-summary.json carries no publish flag, so a
+          # notification sent after a failed publish would advertise counts that
+          # only exist locally while subscribers still get the stale file.
+          if [ "${code}" -ne 0 ] && [ "${code}" -ne 3 ]; then
+            exit "${code}"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -141,6 +156,12 @@ jobs:
             echo "::error::Pipeline produced critically low output ($CONFIGS configs). Aborting publish."
             exit 1
           fi
+
+      - name: Fail on stale publish
+        if: steps.pipeline.outputs.exit_code == '3'
+        run: |
+          echo "::error::Pipeline succeeded but publishing failed — the subscription in the repo is stale. See docs/OPERATIONS.md"
+          exit 1
 
       - name: Telegram notify
         if: env.configs_count != ''

@@ -17,11 +17,11 @@ validator:
     whitelist: ["RU", "DE", "FI", "NL", "FR"]
   whitelist_ru_ratio: 0.8
   whitelist_eu_countries: ["DE", "FI", "NL", "FR"]
-  
+
   # If more configs than this are parsed, randomly sample before filtering.
   # Set to 0 to process ALL configs (country filter is instant — no network).
   max_configs_to_validate: 0
-  
+
   # SOCKS5 proxy for TCP/TLS validation (optional, only when tcp/tls enabled).
   # proxy_url: "socks5://127.0.0.1:1080"
 
@@ -111,10 +111,16 @@ validator:
     validation_concurrency: 50
     probe_host: "api.github.com"
     probe_port: 443
-  
+
   # GeoIP (optional enrichment, disabled by default to avoid rate limits)
   geoip_enabled: false
   geoip_api_url: "http://ip-api.com/json/{ip}"
+  # ip-api.com free tier allows 45 req/min; lookups share one global rate
+  # limiter, so enrichment takes roughly (distinct addresses / rpm) minutes.
+  geoip_requests_per_minute: 40
+  # Hard cap per run — configs beyond it keep country=None instead of making
+  # the parse stage run for hours.
+  geoip_max_lookups: 300
 
 # --- Quality scoring / stability history ---
 quality:

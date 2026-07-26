@@ -10,7 +10,11 @@ bin/*
 *.log
 data/
 .opencode/
+# Every .env variant (.env.local, .env.bak from a rotation, …) holds live
+# tokens; only the checked-in template is tracked.
 .env
+.env.*
+!.env.example
 
 # Tool caches
 .ruff_cache/
@@ -25,8 +29,11 @@ data/
 .coverage
 .coverage.*
 *,cover
-index.html
 coverage/
+
+# Stray scratch page at the repo root only — an unanchored `index.html` would
+# also hide docs/index.html (GitHub Pages).
+/index.html
 
 # IDE / editor
 .idea/
