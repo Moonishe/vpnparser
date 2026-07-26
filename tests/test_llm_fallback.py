@@ -13,6 +13,7 @@ import pytest
 
 from src.parsers.llm_fallback import (
     _MAX_INPUT_CHARS,
+    _PROVIDER_URLS,
     LLMFallbackParser,
     should_use_llm,
 )
@@ -218,6 +219,38 @@ async def test_call_api_handles_missing_choices(monkeypatch) -> None:
     result = await parser._call_api(parser._build_chat_request("s", "u"))
 
     assert result == ""
+
+
+async def test_call_api_rejects_non_string_content(monkeypatch) -> None:
+    """A content-parts list must degrade to '', not escape as a non-str.
+
+    Regression: ``content`` was returned as-is, so a gateway answering with the
+    multimodal ``[{"type": "text", ...}]`` form broke the ``-> str`` contract and
+    made the public methods raise (``'list' object has no attribute
+    'splitlines'``) instead of degrading gracefully.
+    """
+    payload = {
+        "choices": [
+            {"message": {"content": [{"type": "text", "text": "vless://x"}]}},
+        ],
+    }
+    _patch_llm_httpx(monkeypatch, _FakeResp(200, json_data=payload))
+
+    parser = LLMFallbackParser(api_key="test-key")
+    assert await parser._call_api(parser._build_chat_request("s", "u")) == ""
+    # The public methods must survive the same response.
+    assert await parser.extract_links("a" * 150) == []
+    assert await parser.normalize_remark("US-01 | @seller") == "US-01 | @seller"
+    assert await parser.categorize("US-01") == "standard"
+
+
+async def test_call_api_treats_null_content_as_empty(monkeypatch) -> None:
+    """``"content": null`` (seen on refusals/tool calls) yields ''."""
+    payload = {"choices": [{"message": {"content": None}}]}
+    _patch_llm_httpx(monkeypatch, _FakeResp(200, json_data=payload))
+
+    parser = LLMFallbackParser(api_key="test-key")
+    assert await parser._call_api(parser._build_chat_request("s", "u")) == ""
 
 
 async def test_call_api_handles_valueerror_non_json(monkeypatch) -> None:
@@ -469,9 +502,35 @@ def test_parser_init_uses_provider_url_map() -> None:
     assert "openrouter.ai" in parser2.api_base
 
 
-def test_parser_init_falls_back_to_groq_for_unknown_provider() -> None:
-    parser = LLMFallbackParser(provider="unknown", api_key="k")
-    assert "api.groq.com" in parser.api_base
+def test_parser_init_rejects_unknown_provider() -> None:
+    """An unsupported provider must fail loudly, not leak the key to groq.
+
+    Regression: the URL map was queried with a ``groq`` default, so a typo or an
+    unsupported provider in settings.yaml sent ``Authorization: Bearer <key>``
+    to api.groq.com and answered with an opaque 401 for every file.
+    """
+    for provider in ("yandex", "openai", "anthropic", "grok", ""):
+        with pytest.raises(ValueError, match="Unsupported LLM provider"):
+            LLMFallbackParser(provider=provider, api_key="k")
+
+
+def test_parser_init_accepts_every_mapped_provider() -> None:
+    """Every supported provider name still resolves to its own endpoint."""
+    for provider, expected in _PROVIDER_URLS.items():
+        assert LLMFallbackParser(provider=provider, api_key="k").api_base == expected
+        # Provider names are case-insensitive.
+        upper = LLMFallbackParser(provider=provider.upper(), api_key="k")
+        assert upper.api_base == expected
+
+
+def test_parser_init_unknown_provider_allowed_with_explicit_api_base() -> None:
+    """An explicit api_base is a deliberate override — no vendor guessing."""
+    parser = LLMFallbackParser(
+        provider="yandex",
+        api_key="k",
+        api_base="https://llm.api.cloud.yandex.net/v1/chat/completions",
+    )
+    assert parser.api_base == "https://llm.api.cloud.yandex.net/v1/chat/completions"
 
 
 def test_parser_init_custom_api_base_overrides_provider() -> None:

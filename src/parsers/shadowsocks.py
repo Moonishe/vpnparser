@@ -26,16 +26,54 @@ Handles three ss:// formats:
 
 from __future__ import annotations
 
+import base64
+import re
 from typing import ClassVar
 from urllib.parse import unquote
 
 from src.parsers.base import (
+    _B64_NOISE_RE,
     BaseParser,
     Config,
     extract_remark,
-    safe_b64decode,
     split_host_port,
 )
+
+_B64_BODY_RE = re.compile(r"[A-Za-z0-9+/]+")
+
+
+def _strict_b64decode(data: str) -> str:
+    """Decode base64, returning ``""`` unless *data* is valid base64.
+
+    Unlike :func:`src.parsers.base.safe_b64decode`, characters outside the
+    base64 alphabet are a hard failure instead of being silently discarded.
+    This keeps ``ss://`` format detection deterministic: a plain-format
+    userinfo such as ``aes-256-gcm:pa:ss`` must fail here so the parser falls
+    through to the plain-format branch, rather than accepting the garbage
+    bytes that lenient decoding happens to produce.
+
+    Args:
+        data: Candidate base64 text (standard or URL-safe alphabet, padding
+            optional, whitespace ignored).
+
+    Returns:
+        The decoded utf-8 text, or ``""`` if *data* is not valid base64.
+    """
+    cleaned = _B64_NOISE_RE.sub("", data).replace("-", "+").replace("_", "/")
+    body = cleaned.rstrip("=")
+    if not _B64_BODY_RE.fullmatch(body):
+        return ""
+    padding = -len(body) % 4
+    # A length of 4n+1 encodes no whole byte group and can never be valid.
+    if padding == 3:
+        return ""
+    # No try/except here: the two guards above leave nothing for b64decode to
+    # reject (the body is pure alphabet and never 4n+1 long), and
+    # ``errors="replace"`` makes the decode total.
+    return base64.b64decode(body + "=" * padding, validate=True).decode(
+        "utf-8",
+        errors="replace",
+    )
 
 
 class ShadowsocksParser(BaseParser):
@@ -73,17 +111,17 @@ class ShadowsocksParser(BaseParser):
             # 3. Try SIP002: BASE64(method:password)@host:port
             #    unquote first — some sources percent-encode base64 padding
             #    ("=" -> "%3D") which would otherwise be rejected by the
-            #    validate=True check inside safe_b64decode.
+            #    strict alphabet check in _strict_b64decode.
             if "@" in main:
                 left, right = main.rsplit("@", 1)
-                decoded = safe_b64decode(unquote(left))
+                decoded = _strict_b64decode(unquote(left))
                 if decoded and ":" in decoded:
                     method, password = decoded.split(":", 1)
                     host_port = right
 
             # 4. Try legacy: BASE64(method:password@host:port)
             if method is None:
-                decoded = safe_b64decode(unquote(main))
+                decoded = _strict_b64decode(unquote(main))
                 if decoded and "@" in decoded:
                     creds, hp = decoded.rsplit("@", 1)
                     if ":" in creds:

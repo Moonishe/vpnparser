@@ -10,10 +10,14 @@ Query parameters:
     alpn      — TLS ALPN
     obfs      — obfuscation type (salamander)
     obfs-password — obfuscation password
+
+Hysteria2 also supports *port hopping*: the port component may be a range or a
+comma-separated list (``host:443-500``, ``host:443,8443``).
 """
 
 from __future__ import annotations
 
+import re
 from typing import ClassVar
 from urllib.parse import unquote
 
@@ -24,6 +28,33 @@ from src.parsers.base import (
     parse_qs_single,
     split_host_port,
 )
+
+# Port-hopping spec: at least two ports joined by "-" (range) or "," (list).
+# ASCII digits only — ``\d`` would also match e.g. Arabic-Indic numerals, which
+# no client accepts.
+_PORT_HOPPING_RE = re.compile(r"[0-9]{1,5}(?:[-,][0-9]{1,5})+")
+
+
+def _collapse_port_hopping(hostport: str) -> str:
+    """Reduce a hysteria2 port-hopping ``host:port`` to its first port.
+
+    Port hopping (``host:443-500``, ``host:443,8443``) is standard hysteria2 and
+    appears in public subscriptions, but :func:`split_host_port` needs a single
+    integer.  Clients connect to the first port of the spec, so that is what the
+    :class:`Config` gets; ``raw_link`` keeps the full spec for the output files.
+
+    Args:
+        hostport: ``host:port`` component with the path/query already stripped.
+
+    Returns:
+        *hostport* with a port-hopping spec replaced by its first port, or
+        *hostport* unchanged when the port is a plain number (or absent).
+    """
+    host_part, sep, port_part = hostport.rpartition(":")
+    if not sep or not _PORT_HOPPING_RE.fullmatch(port_part):
+        return hostport
+    first_port = port_part.replace(",", "-").split("-", 1)[0]
+    return f"{host_part}:{first_port}"
 
 
 class Hysteria2Parser(BaseParser):
@@ -88,8 +119,9 @@ class Hysteria2Parser(BaseParser):
             else:
                 password = ""
 
-            # Reject empty / whitespace-only passwords.
-            if not password or not password.strip():
+            # Reject empty / whitespace-only passwords (``password`` is already
+            # stripped above, so the emptiness check covers both).
+            if not password:
                 return None
 
             # Strip path component (e.g. trailing "/" or "/path").
@@ -97,7 +129,7 @@ class Hysteria2Parser(BaseParser):
                 hostport = hostport.split("/", 1)[0]
 
             # Split host:port (handles bracketed IPv6, rejects bare IPv6).
-            parsed_hp = split_host_port(hostport)
+            parsed_hp = split_host_port(_collapse_port_hopping(hostport))
             if parsed_hp is None:
                 return None
             host, port = parsed_hp
