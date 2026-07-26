@@ -15,6 +15,69 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_COUNTER_FIELDS = ("attempts", "successes", "consecutive_failures")
+
+
+def _as_count(value: Any) -> int | None:
+    """Return *value* as a non-negative int, or None when it is not one."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    count = int(value)
+    return count if count >= 0 else None
+
+
+def _sanitize_entry(raw: Any) -> dict[str, Any] | None:
+    """Return a well-typed history entry, or None when *raw* is unusable.
+
+    The history file is rewritten on every run and read back on the next one,
+    so a truncated or hand-edited file must not reach :meth:`record` or
+    :meth:`rank` — an ``int`` where a dict is expected used to raise deep inside
+    the proxy pool, where the error is swallowed and the pool silently empties.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    entry: dict[str, Any] = {}
+    for field in _COUNTER_FIELDS:
+        count = _as_count(raw.get(field, 0))
+        if count is None:
+            return None
+        entry[field] = count
+
+    latencies = raw.get("latency_ms", [])
+    if not isinstance(latencies, list):
+        return None
+    entry["latency_ms"] = [
+        float(value)
+        for value in latencies
+        if not isinstance(value, bool) and isinstance(value, int | float) and value > 0
+    ]
+
+    last_seen = raw.get("last_seen", 0.0)
+    if isinstance(last_seen, bool) or not isinstance(last_seen, int | float):
+        return None
+    entry["last_seen"] = float(last_seen)
+    return entry
+
+
+def _sanitize_records(data: dict[Any, Any]) -> dict[str, dict[str, Any]]:
+    """Keep only well-formed ``proxy_url -> entry`` pairs, warning about drops."""
+    records: dict[str, dict[str, Any]] = {}
+    dropped: list[str] = []
+    for key, raw in data.items():
+        entry = _sanitize_entry(raw) if isinstance(key, str) and key.strip() else None
+        if entry is None:
+            dropped.append(str(key))
+            continue
+        records[key] = entry
+    if dropped:
+        logger.warning(
+            "Dropped %d malformed proxy health record(s): %s",
+            len(dropped),
+            ", ".join(repr(key) for key in dropped[:5]),
+        )
+    return records
+
 
 class ProxyHealthHistory:
     """In-memory proxy health history with JSON persistence."""
@@ -48,7 +111,7 @@ class ProxyHealthHistory:
                 data = json.load(fh)
             if not isinstance(data, dict):
                 return cls(**kwargs)
-            return cls(data, **kwargs)
+            return cls(_sanitize_records(data), **kwargs)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning(
                 "Failed to load proxy health history from %s: %s",

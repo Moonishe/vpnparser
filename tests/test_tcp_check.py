@@ -9,11 +9,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.parsers.base import Config
+from src.validators import address_guard
 from src.validators.tcp_check import (
     _open_connection_direct,
     tcp_check,
     validate_configs_tcp,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve every hostname to a public IP so no test touches real DNS."""
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str]:
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+
 
 # ===========================================================================
 # _open_connection_direct
@@ -475,6 +487,91 @@ class TestValidateConfigsTcp:
             result = await validate_configs_tcp(configs, max_alive=1, concurrency=1)
         assert len(result) == 1
         assert result[0].address == "fast.example"
+
+    @pytest.mark.asyncio
+    async def test_private_literal_never_reaches_open_connection(self) -> None:
+        """SSRF guard: internal literals are dropped before any connect."""
+        configs = [
+            Config("vless", "10.0.0.5", 22, "uuid"),
+            Config("vless", "127.0.0.1", 5432, "uuid"),
+            Config("vless", "169.254.169.254", 80, "uuid"),
+            Config("vless", "[::1]", 443, "uuid"),
+        ]
+
+        with patch(
+            "src.validators.tcp_check.asyncio.open_connection",
+            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        ) as mock_open:
+            result = await validate_configs_tcp(configs)
+        assert result == []
+        mock_open.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_public_literal_reaches_open_connection(self) -> None:
+        """A public literal is checked normally."""
+        cfg = Config("vless", "93.184.216.34", 443, "uuid")
+        mock_writer = MagicMock()
+        mock_writer.wait_closed = AsyncMock()
+
+        with patch(
+            "src.validators.tcp_check.asyncio.open_connection",
+            new=AsyncMock(return_value=(MagicMock(), mock_writer)),
+        ) as mock_open:
+            result = await validate_configs_tcp([cfg])
+        assert result == [cfg]
+        mock_open.assert_called_once_with("93.184.216.34", 443)
+
+    @pytest.mark.asyncio
+    async def test_hostname_resolving_to_private_is_dropped(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A hostname pointing into internal space is dropped, without connect."""
+
+        async def _resolve(host: str, *, timeout: float = 5.0) -> list[str]:
+            return ["10.0.0.1"]  # the name resolves, but only into RFC 1918
+
+        monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+        cfg = Config("vless", "internal.example", 443, "uuid")
+
+        with patch(
+            "src.validators.tcp_check.asyncio.open_connection",
+            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        ) as mock_open:
+            result = await validate_configs_tcp([cfg])
+        assert result == []
+        mock_open.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_hostname_is_kept(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An offline resolver must not empty the batch (see address_guard)."""
+
+        async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+            return None  # resolver down / NXDOMAIN
+
+        monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+        cfg = Config("vless", "offline.example", 443, "uuid")
+
+        with patch(
+            "src.validators.tcp_check.tcp_check",
+            new=AsyncMock(return_value=(True, 5.0)),
+        ):
+            result = await validate_configs_tcp([cfg])
+        assert result == [cfg]
+
+    @pytest.mark.asyncio
+    async def test_tcp_check_refuses_private_literal_without_dns(self) -> None:
+        """The low-level check is a second line of defence."""
+        with patch(
+            "src.validators.tcp_check._open_connection_direct",
+            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        ) as mock_open:
+            is_alive, latency = await tcp_check("192.168.1.1", 8080)
+        assert (is_alive, latency) == (False, None)
+        mock_open.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_cancel_pending_tasks_on_early_termination(

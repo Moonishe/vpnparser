@@ -311,6 +311,67 @@ def test_load_success_path() -> None:
         assert hist.records["socks5://1.2.3.4:1080"]["successes"] == 2
 
 
+def test_load_drops_non_dict_entry_values(caplog) -> None:
+    """A corrupted entry must not reach record()/rank() as-is."""
+    caplog.set_level("WARNING")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        path.write_text(json.dumps({"socks5://1.2.3.4:1080": 5}), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+    assert hist.records == {}
+    assert "malformed proxy health record" in caplog.text
+    # The dropped entry must not break the normal API afterwards.
+    hist.record("socks5://1.2.3.4:1080", True, latency_ms=10)
+    assert hist.records["socks5://1.2.3.4:1080"]["attempts"] == 1
+    assert hist.rank(["socks5://1.2.3.4:1080"]) == ["socks5://1.2.3.4:1080"]
+
+
+def test_load_drops_entry_with_wrong_field_types() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        data = {
+            "socks5://bad-counter:1080": {"attempts": "3", "successes": 1},
+            "socks5://bad-latency:1080": {"attempts": 1, "latency_ms": "120"},
+            "socks5://bad-seen:1080": {"attempts": 1, "last_seen": "yesterday"},
+            "socks5://ok:1080": {
+                "attempts": 2,
+                "successes": 1,
+                "consecutive_failures": 0,
+                "latency_ms": [100, "junk", -5, 200],
+                "last_seen": 1000,
+            },
+        }
+        path.write_text(json.dumps(data), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+    assert list(hist.records) == ["socks5://ok:1080"]
+    entry = hist.records["socks5://ok:1080"]
+    assert entry["latency_ms"] == [100.0, 200.0]
+    assert entry["last_seen"] == 1000.0
+    assert hist._avg_latency("socks5://ok:1080") == 150.0
+
+
+def test_load_recovers_from_corrupted_latency_list() -> None:
+    """record() used to raise TypeError on a string latency list."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        data = {"socks5://1.2.3.4:1080": {"attempts": 1, "latency_ms": "500"}}
+        path.write_text(json.dumps(data), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+    hist.record("socks5://1.2.3.4:1080", False)
+    assert hist.records["socks5://1.2.3.4:1080"]["consecutive_failures"] == 1
+    assert hist.is_banned("socks5://1.2.3.4:1080") is False
+
+
+def test_load_drops_non_string_and_empty_keys() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        # JSON object keys are always strings, so an empty key is the only
+        # non-usable variant a real file can hold.
+        path.write_text(json.dumps({"   ": {"attempts": 1}}), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+    assert hist.records == {}
+
+
 def test_load_on_directory_path() -> None:
     """load() on a directory raises OSError which is caught."""
     with tempfile.TemporaryDirectory() as tmpdir:

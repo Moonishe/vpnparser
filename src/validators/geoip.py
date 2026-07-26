@@ -1,49 +1,81 @@
 """GeoIP enrichment: country lookup for proxy servers.
 
-Uses the free ip-api.com JSON endpoint to resolve each server's address
-to a 2-letter country code. The free tier allows 45 requests/minute, so
-we bound concurrency with a semaphore and tolerate rate-limit responses
-by returning None rather than raising.
+Uses the free ip-api.com JSON endpoint to resolve each server's address to a
+2-letter country code. The free tier allows 45 requests/minute, which is a
+*global* budget: a semaphore alone does not enforce it, so all lookups pass
+through one :class:`_RateLimiter` and every address is queried at most once.
+Rate-limit responses are tolerated by returning None rather than raising.
 """
 
 from __future__ import annotations
 
 import asyncio
-import ipaddress
-import socket
+from collections.abc import Awaitable, Callable
 
 import httpx
 
 from src.parsers.base import Config
+from src.utils.net import is_private_address, resolve_global_ips
 
-# ip-api.com free tier: 45 req/min. Use 40 to stay safely under the limit.
-_DEFAULT_CONCURRENCY = 40
+# In-flight lookups. The real throughput bound is _DEFAULT_REQUESTS_PER_MINUTE;
+# this only caps how many slow responses may overlap.
+_DEFAULT_CONCURRENCY = 8
+# ip-api.com free tier allows 45 req/min. 40 leaves headroom for clock skew and
+# for whatever else on the runner's IP talks to the same endpoint.
+_DEFAULT_REQUESTS_PER_MINUTE = 40.0
 _DEFAULT_API_URL = "http://ip-api.com/json/{ip}"
+
+#: Injectable sleep, so tests can drive the limiter without real waiting.
+SleepFunc = Callable[[float], Awaitable[None]]
 
 
 def _is_private_ip(ip: str) -> bool:
-    """Check if an IP address is private, loopback, link-local, or reserved.
+    """Return ``True`` if *ip* is non-public or unparseable (fail-closed).
 
-    Protects against SSRF: malicious proxy configs could point to internal
-    services (e.g. AWS metadata endpoint 169.254.169.254, localhost, RFC 1918
-    private ranges).  Such IPs must never be sent to external GeoIP APIs or
-    used for validation connections.
-
-    Returns ``True`` if the IP is non-public or unparseable (fail-closed).
+    Thin alias for :func:`src.utils.net.is_private_address`, kept because the
+    SSRF rule ("never send an internal address to an external GeoIP API") is
+    part of this module's contract.
     """
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        # If we cannot parse it, treat it as unsafe (fail-closed).
-        return True
-    return (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_reserved
-        or addr.is_multicast
-        or addr.is_unspecified
-    )
+    return is_private_address(ip)
+
+
+class _RateLimiter:
+    """Serialize calls so the global rate stays under a per-minute cap.
+
+    A semaphore bounds parallelism, not throughput: N slots with a sleep inside
+    each slot still allow N requests per delay. This limiter instead hands out
+    one slot per ``60 / requests_per_minute`` seconds, whatever the concurrency.
+    """
+
+    def __init__(
+        self,
+        requests_per_minute: float = _DEFAULT_REQUESTS_PER_MINUTE,
+        *,
+        sleep: SleepFunc | None = None,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
+        self.interval = 60.0 / max(1.0, float(requests_per_minute))
+        self._sleep: SleepFunc = sleep or asyncio.sleep
+        self._clock = clock
+        self._lock = asyncio.Lock()
+        self._next_at: float | None = None
+
+    def _now(self) -> float:
+        return self._clock() if self._clock else asyncio.get_running_loop().time()
+
+    async def acquire(self) -> None:
+        """Block until the next request slot is due, then claim it."""
+        async with self._lock:
+            now = self._now()
+            if self._next_at is None:
+                self._next_at = now
+            wait = self._next_at - now
+            if wait > 0:
+                await self._sleep(wait)
+                # Advance on the schedule, not on the clock: an injected no-op
+                # sleep must not collapse the whole queue into one instant.
+                now = self._next_at
+            self._next_at = now + self.interval
 
 
 async def lookup_country(
@@ -87,69 +119,69 @@ async def lookup_country(
 
 
 async def _resolve_to_ip(host: str) -> str | None:
-    """Resolve a hostname to a single IPv4 address.
+    """Resolve a host to a single globally routable IP address.
 
-    Returns the first A-record result, or None on failure. If `host` is
-    already an IP literal, it is returned unchanged.
+    Handles IPv4 and IPv6 alike (a host with AAAA records only used to end up
+    without a country) and drops private/reserved answers. Returns None when
+    nothing public is left, including for a private IP literal.
     """
-    # Fast path: already an IP literal (no DNS needed).
-    try:
-        socket.inet_aton(host)
-        # SSRF protection: reject private/reserved IP literals.
-        if _is_private_ip(host):
-            return None
-        return host
-    except OSError:
-        pass
-
-    loop = asyncio.get_running_loop()
-    try:
-        # getaddrinfo returns a list of (family, type, proto, canonname, sockaddr)
-        infos = await loop.getaddrinfo(host, None)
-    except (socket.gaierror, OSError, Exception):
-        return None
-
-    for info in infos:
-        if info[0] != socket.AF_INET:
-            continue
-        sockaddr = info[4]
-        if not sockaddr:
-            continue
-        # sockaddr for IPv4 is (host, port); host is always a str IP literal.
-        host_ip = sockaddr[0]
-        if isinstance(host_ip, str):
-            # SSRF protection: skip private/resolved internal IPs.
-            if _is_private_ip(host_ip):
-                continue
-            return host_ip
-    return None
+    public = await resolve_global_ips(host)
+    return public[0] if public else None
 
 
 async def enrich_configs_geoip(
     configs: list[Config],
     api_url: str = _DEFAULT_API_URL,
     concurrency: int = _DEFAULT_CONCURRENCY,
+    *,
+    requests_per_minute: float = _DEFAULT_REQUESTS_PER_MINUTE,
+    sleep: SleepFunc | None = None,
 ) -> list[Config]:
     """Set the country field on all configs.
 
-    Resolves each config's address to an IP (if it isn't already one),
-    then looks up the country code. Configs whose address can't be
-    resolved or whose lookup fails keep country=None.
+    Resolves each config's address to an IP (if it isn't already one), then
+    looks up the country code. Each distinct IP is queried once and all lookups
+    share one global rate limiter, so the free ip-api.com quota is respected
+    even with hundreds of configs. Configs whose address can't be resolved or
+    whose lookup fails keep country=None.
+
+    Args:
+        configs: Configs to enrich, mutated in place.
+        api_url: Lookup endpoint template containing ``{ip}``.
+        concurrency: Max overlapping HTTP lookups.
+        requests_per_minute: Global lookup budget shared by all configs.
+        sleep: Await-able delay used by the rate limiter; defaults to
+            :func:`asyncio.sleep` and exists so tests can run without waiting.
 
     Returns the same list (mutated in place) for convenience.
     """
-    semaphore = asyncio.Semaphore(max(1, int(concurrency)))
-    # ip-api.com free tier: 45 req/min. Rate-limit each request to stay under.
-    rate_limit_delay = 60.0 / 45  # ~1.33s between requests
+    if not configs:
+        return configs
 
-    async def _enrich_one(cfg: Config) -> None:
+    semaphore = asyncio.Semaphore(max(1, int(concurrency)))
+    limiter = _RateLimiter(requests_per_minute, sleep=sleep)
+    by_ip: dict[str, list[Config]] = {}
+    group_lock = asyncio.Lock()
+
+    async def _resolve_one(cfg: Config) -> None:
         async with semaphore:
             ip = await _resolve_to_ip(cfg.address)
-            if ip is None:
-                cfg.country = None
-                return
-            cfg.country = await lookup_country(ip, api_url=api_url)
-            await asyncio.sleep(rate_limit_delay)
+        cfg.country = None
+        if ip is None:
+            return
+        async with group_lock:
+            by_ip.setdefault(ip, []).append(cfg)
 
-    await asyncio.gather(*(_enrich_one(c) for c in configs))
+    await asyncio.gather(*(_resolve_one(c) for c in configs))
+
+    async def _lookup_one(ip: str, targets: list[Config]) -> None:
+        await limiter.acquire()
+        async with semaphore:
+            country = await lookup_country(ip, api_url=api_url)
+        for cfg in targets:
+            cfg.country = country
+
+    await asyncio.gather(
+        *(_lookup_one(ip, targets) for ip, targets in by_ip.items()),
+    )
     return configs

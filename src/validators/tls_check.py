@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.parsers.base import Config
+from src.validators.address_guard import filter_public_configs, is_blocked_literal
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,10 @@ async def tls_check(
 
     Returns True if the handshake completes successfully, False on any error.
     """
+    if is_blocked_literal(host):
+        logger.warning("Refusing TLS check of non-public address %s:%s.", host, port)
+        return False
+
     server_hostname = sni or host
     try:
         ssl_context = ssl.create_default_context()
@@ -207,6 +212,7 @@ async def validate_configs_tls(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     proxy_attempts_per_config: int = 1,
+    check_hostnames: bool = True,
 ) -> list[Config]:
     """Filter configs by TLS handshake.
 
@@ -223,7 +229,17 @@ async def validate_configs_tls(
             over ``proxy_url``.
         proxy_attempts_per_config: Number of different proxies to try per
             config before marking it dead. ``0`` means try the whole pool.
+        check_hostnames: Resolve hostnames to reject configs pointing at
+            internal addresses. IP literals are rejected either way.
     """
+    configs = await filter_public_configs(
+        configs,
+        stage="TLS check",
+        check_hostnames=check_hostnames,
+    )
+    if not configs:
+        return []
+
     proxy_choices = [p for p in (proxy_urls or []) if p]
     if not proxy_choices and proxy_url:
         proxy_choices = [proxy_url]

@@ -7,6 +7,7 @@ from __future__ import annotations
 import socket
 
 import httpx
+import pytest
 
 from src.parsers.base import Config
 from src.validators import geoip
@@ -137,6 +138,15 @@ def _fake_getaddrinfo(host, *_args, **_kwargs):
         "ipv6.example": [
             (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:db8::1", 0, 0, 0))
         ],
+        "ipv6-public.example": [
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("2606:4700:4700::1111", 0, 0, 0),
+            )
+        ],
     }
     if host in table:
         return table[host]
@@ -164,9 +174,24 @@ async def test_resolve_to_ip_hostname_resolves_to_private_returns_none(
     assert await geoip._resolve_to_ip("private.example") is None
 
 
-async def test_resolve_to_ip_hostname_no_ipv4_records(monkeypatch) -> None:
+async def test_resolve_to_ip_documentation_ipv6_rejected(monkeypatch) -> None:
+    # 2001:db8::/32 is the documentation range — non-public, so no country.
     monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
     assert await geoip._resolve_to_ip("ipv6.example") is None
+
+
+async def test_resolve_to_ip_public_ipv6_is_used(monkeypatch) -> None:
+    """A host with AAAA records only must still get a country lookup."""
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+    assert await geoip._resolve_to_ip("ipv6-public.example") == "2606:4700:4700::1111"
+
+
+async def test_resolve_to_ip_ipv6_literal_is_used() -> None:
+    assert await geoip._resolve_to_ip("2606:4700:4700::1111") == "2606:4700:4700::1111"
+
+
+async def test_resolve_to_ip_private_ipv6_literal_rejected() -> None:
+    assert await geoip._resolve_to_ip("::1") is None
 
 
 async def test_resolve_to_ip_hostname_gaierror(monkeypatch) -> None:
@@ -232,3 +257,84 @@ async def test_enrich_configs_geoip_concurrency_floor(monkeypatch) -> None:
     result = await geoip.enrich_configs_geoip([cfg], concurrency=0)
     assert result == [cfg]
     assert cfg.country is None
+
+
+# --- global rate limiting --------------------------------------------------
+
+
+async def test_rate_limiter_spaces_requests_by_interval() -> None:
+    waits: list[float] = []
+    clock = {"now": 100.0}
+
+    async def fake_sleep(delay: float) -> None:
+        waits.append(delay)
+        clock["now"] += delay
+
+    limiter = geoip._RateLimiter(  # 1 request/second
+        60.0,
+        sleep=fake_sleep,
+        clock=lambda: clock["now"],
+    )
+    for _ in range(4):
+        await limiter.acquire()
+
+    # First slot is free; every later slot waits one full interval.
+    assert waits == [pytest.approx(1.0), pytest.approx(1.0), pytest.approx(1.0)]
+    assert clock["now"] == pytest.approx(103.0)
+
+
+async def test_enrich_configs_geoip_rate_limits_all_lookups(monkeypatch) -> None:
+    """The limiter must bound the whole batch, not each semaphore slot."""
+    configs = [Config("vless", f"8.8.8.{i}", 443, "u") for i in range(1, 6)]
+    waits: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        waits.append(delay)
+
+    async def fake_resolve(host):
+        return host
+
+    async def fake_lookup(ip, **_kwargs):
+        return "US"
+
+    monkeypatch.setattr(geoip, "_resolve_to_ip", fake_resolve)
+    monkeypatch.setattr(geoip, "lookup_country", fake_lookup)
+
+    result = await geoip.enrich_configs_geoip(
+        configs,
+        concurrency=40,
+        requests_per_minute=45.0,
+        sleep=fake_sleep,
+    )
+
+    assert all(cfg.country == "US" for cfg in result)
+    # 5 unique IPs -> 4 enforced gaps, even with concurrency=40. The old code
+    # slept inside each of the 40 semaphore slots, so nothing was serialized.
+    assert len(waits) == 4
+    assert sum(waits) >= 4 * (60.0 / 45.0)
+
+
+async def test_enrich_configs_geoip_queries_each_ip_once(monkeypatch) -> None:
+    """Configs sharing an address must not spend the quota twice."""
+    configs = [Config("vless", "same.example", 443, "u") for _ in range(3)]
+    looked_up: list[str] = []
+    waits: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        waits.append(delay)
+
+    async def fake_resolve(host):
+        return "93.184.216.34"
+
+    async def fake_lookup(ip, **_kwargs):
+        looked_up.append(ip)
+        return "DE"
+
+    monkeypatch.setattr(geoip, "_resolve_to_ip", fake_resolve)
+    monkeypatch.setattr(geoip, "lookup_country", fake_lookup)
+
+    await geoip.enrich_configs_geoip(configs, sleep=fake_sleep)
+
+    assert looked_up == ["93.184.216.34"]
+    assert waits == []
+    assert [cfg.country for cfg in configs] == ["DE", "DE", "DE"]

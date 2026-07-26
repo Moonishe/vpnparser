@@ -164,6 +164,51 @@ def test_filter_by_country_invalid_code_warns(caplog) -> None:
     assert "allowed_countries contains code(s) not supported" in caplog.text
 
 
+# ---------------------------------------------------------------------------
+# Two-letter city/state abbreviations must not match hostnames or prose
+# ---------------------------------------------------------------------------
+
+
+def test_ca_domain_is_not_california() -> None:
+    """'.ca' in a hostname used to be read as California -> US."""
+    assert detect_country("", "vpn.example.ca") is None
+    assert detect_country("Server", None, "vpn.example.ca") is None
+
+
+def test_la_domain_is_not_los_angeles() -> None:
+    assert detect_country("", "proxy.host.la") is None
+
+
+def test_two_letter_city_inside_phrase_is_ignored() -> None:
+    assert detect_country("Casa de la Montaña") is None
+    assert detect_country("Kl node") is None
+
+
+def test_canadian_config_is_not_reclassified_as_us() -> None:
+    """allowed=['CA'] must keep a Canadian server."""
+    cfg = Config(
+        protocol="vless",
+        address="vpn.example.ca",
+        port=443,
+        uuid_or_password="u",
+        remark="CA-01",
+    )
+    assert filter_by_country([cfg], ["CA"]) == [cfg]
+    assert cfg.country == "CA"
+
+
+def test_two_letter_city_still_detected_with_delimiter() -> None:
+    """Structural context keeps the useful cases working."""
+    assert detect_country("LA-01") == "US"
+    assert detect_country("[TX]") == "US"
+    assert detect_country("KL01 node") == "MY"
+
+
+def test_long_city_names_still_match_anywhere() -> None:
+    assert detect_country("los angeles node") == "US"
+    assert detect_country("", "frankfurt.example.net") == "DE"
+
+
 def test_filter_by_country_detects_country_when_none() -> None:
     """Line 491: detect_country called when cfg.country is None."""
     cfg = Config(

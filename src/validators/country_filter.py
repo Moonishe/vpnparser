@@ -365,17 +365,36 @@ _HOST_AMBIGUOUS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Two-letter city/state abbreviations ("la", "ca", "tx", "nj", ...) are far too
+# short for a case-insensitive \b-search over remark+address+sni+host: they hit
+# hostname labels ("vpn.example.ca" -> California, "proxy.host.la" -> US) and
+# ordinary words ("Casa de la Montaña" -> US).  They are therefore matched
+# separately — uppercase, remark-only, and only with a structural delimiter
+# after — exactly the rule _AMBIGUOUS_CODE_RE uses for ambiguous country codes.
+_SHORT_CITY_KEYS = tuple(sorted(key for key in _CITY_TO_CODE if len(key) <= 2))
+_LONG_CITY_KEYS = tuple(
+    sorted((key for key in _CITY_TO_CODE if len(key) > 2), key=len, reverse=True),
+)
+
 # Precompiled word-boundary regexes for city and country-name matching.
 # Sorting alternatives by length (descending) ensures longer names are
 # preferred when multiple could match at the same position (e.g.
-# "los angeles" before "la").  The ``\b`` anchors prevent substring false
-# positives like "la" in "flash", "us" in "trust", "paris" in "parisian",
-# or "rome" in "romero".
+# "los angeles" before "hong kong").  The ``\b`` anchors prevent substring
+# false positives like "us" in "trust", "paris" in "parisian", or "rome" in
+# "romero".
 _CITY_PATTERN = re.compile(
-    r"\b("
-    + "|".join(re.escape(city) for city in sorted(_CITY_TO_CODE, key=len, reverse=True))
-    + r")\b",
+    r"\b(" + "|".join(re.escape(city) for city in _LONG_CITY_KEYS) + r")\b",
     re.IGNORECASE,
+)
+
+# Case-SENSITIVE and delimiter-anchored: matches "LA-01", "[TX]", "NJ01" and
+# rejects ".ca", "de la", "kl.example.com".  Keys that are also supported
+# country codes (CA) are unreachable here on purpose — detect_country() runs
+# the country-code step first, so "CA-01" stays Canada.
+_SHORT_CITY_RE = re.compile(
+    r"(?:^|[^A-Za-z])("
+    + "|".join(key.upper() for key in _SHORT_CITY_KEYS)
+    + r")(?=[-\d\]/|)])",
 )
 
 _NAME_PATTERN = re.compile(
@@ -391,10 +410,11 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
 
     Tries in order:
     1. Flag emoji (🇩🇪 → DE)
-    2. City names (frankfurt, amsterdam, tokyo...)
+    2. City names of 3+ characters (frankfurt, amsterdam, tokyo...)
     3. Full country names (germany, usa, russia...)
     4. Standalone 2-letter code (DE, US-01, [FI])
-    5. Hostname country prefix (de01.vpn.com, us-east.server.net)
+    5. Two-letter city/state abbreviation in the remark (LA-01, [TX])
+    6. Hostname country prefix (de01.vpn.com, us-east.server.net)
 
     All non-empty text fields (remark + extra_fields) are combined into a
     single string so each regex runs **once** instead of once per field.
@@ -422,7 +442,7 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
         if emoji in combined:
             return code
 
-    # 2. City names — single regex search on combined text.
+    # 2. City names (3+ chars) — single regex search on combined text.
     m = _CITY_PATTERN.search(combined)
     if m:
         return _CITY_TO_CODE[m.group(1).lower()]
@@ -441,7 +461,15 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
         if m:
             return m.group(1).upper()
 
-    # 5. Hostname country prefix — check address/sni/host.
+    # 5. Two-letter city/state abbreviations — remark only, uppercase, and
+    #    delimiter-anchored.  Runs after the country codes so "CA-01" is read
+    #    as Canada rather than California.
+    if remark:
+        m = _SHORT_CITY_RE.search(remark)
+        if m:
+            return _CITY_TO_CODE[m.group(1).lower()]
+
+    # 6. Hostname country prefix — check address/sni/host.
     #    Ambiguous codes require a digit after (not hyphen) so that reverse
     #    DNS like "in-addr.arpa" or "my-server.example.com" don't match.
     for field in extra_fields:

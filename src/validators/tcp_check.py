@@ -16,11 +16,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import socket
 import time
 from typing import Any
 
 from src.parsers.base import Config
+from src.validators.address_guard import filter_public_configs, is_blocked_literal
+
+logger = logging.getLogger(__name__)
 
 
 async def _open_connection_direct(host: str, port: int) -> tuple[Any, Any]:
@@ -64,6 +68,10 @@ async def tcp_check(
 
     Returns (is_alive, latency_ms).
     """
+    if is_blocked_literal(host):
+        logger.warning("Refusing TCP check of non-public address %s:%s.", host, port)
+        return (False, None)
+
     start = time.monotonic()
     try:
         if proxy_url:
@@ -98,6 +106,7 @@ async def validate_configs_tcp(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     proxy_attempts_per_config: int = 1,
+    check_hostnames: bool = True,
 ) -> list[Config]:
     """Check configs via TCP with optional early termination and SOCKS5 proxy.
 
@@ -113,9 +122,19 @@ async def validate_configs_tcp(
             over ``proxy_url``.
         proxy_attempts_per_config: Number of different proxies to try per
             config before marking it dead. ``0`` means try the whole pool.
+        check_hostnames: Resolve hostnames to reject configs pointing at
+            internal addresses. IP literals are rejected either way.
 
     Returns alive configs sorted by latency_ms ascending.
     """
+    if not configs:
+        return []
+
+    configs = await filter_public_configs(
+        configs,
+        stage="TCP check",
+        check_hostnames=check_hostnames,
+    )
     if not configs:
         return []
 
