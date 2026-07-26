@@ -18,11 +18,12 @@ hostname that cannot be resolved is reported as unsafe.
 from __future__ import annotations
 
 import asyncio
-import functools
 import ipaddress
 import logging
 import socket
-from concurrent.futures import ThreadPoolExecutor
+import threading
+from concurrent.futures import Future
+from typing import Any
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
@@ -39,30 +40,96 @@ _NAT64_WELL_KNOWN = ipaddress.IPv6Network("64:ff9b::/96")
 #: still calls it global.
 _EXTRA_NON_PUBLIC = (ipaddress.IPv6Network("fec0::/10"),)
 
-#: Width of the resolver thread pool — and therefore the maximum number of
-#: lookups a caller may keep in flight, see :func:`_resolver_pool`.
+#: How many lookups a caller is expected to keep in flight at once.
 RESOLVER_CONCURRENCY = 50
+
+#: Hard cap on lookup threads alive at once, including the ones a caller has
+#: already given up on. Reaching it means DNS is black-holed rather than slow;
+#: further lookups then wait for a thread instead of being submitted.
+_MAX_LOOKUP_THREADS = 4 * RESOLVER_CONCURRENCY
+
+#: How often a lookup re-checks for a free thread once the cap is reached.
+_LOOKUP_SLOT_POLL_SECONDS = 0.05
 
 _IpAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
 
-@functools.cache
-def _resolver_pool() -> ThreadPoolExecutor:
-    """Return the thread pool dedicated to blocking ``getaddrinfo`` calls.
+class _LookupSlots:
+    """Process-wide count of threads currently inside ``getaddrinfo``.
 
-    asyncio's default executor is ``min(32, cpu + 4)`` threads wide — six on a
-    two-core CI runner — and is shared with every other thread offload in the
-    process, so a lookup submitted to it can sit in the queue for longer than
-    the resolve timeout. :func:`asyncio.wait_for` cannot tell queue time from
-    DNS time: it would report a healthy resolver as timed out, and the SSRF
-    guard reads a timeout as "unresolved" and lets the address through. A
-    dedicated pool exactly :data:`RESOLVER_CONCURRENCY` wide keeps the timeout
-    about DNS alone.
+    A slot is held for as long as the *thread* is busy, not for as long as the
+    awaiting coroutine is: a lookup nobody waits for any more still occupies an
+    OS thread until the resolver gives up on it.
     """
-    return ThreadPoolExecutor(
-        max_workers=RESOLVER_CONCURRENCY,
-        thread_name_prefix="net-resolve",
-    )
+
+    def __init__(self, capacity: int) -> None:
+        self._capacity = capacity
+        self._lock = threading.Lock()
+        self._active = 0
+
+    def acquire(self) -> bool:
+        """Claim a slot; ``False`` when every thread is already taken."""
+        with self._lock:
+            if self._active >= self._capacity:
+                return False
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        """Give a slot back once its thread has left ``getaddrinfo``."""
+        with self._lock:
+            self._active = max(0, self._active - 1)
+
+    @property
+    def active(self) -> int:
+        with self._lock:
+            return self._active
+
+
+_lookup_slots = _LookupSlots(_MAX_LOOKUP_THREADS)
+
+
+def active_lookup_count() -> int:
+    """Return how many lookup threads are still inside ``getaddrinfo``."""
+    return _lookup_slots.active
+
+
+def _start_lookup(host: str) -> Future[list[Any]]:
+    """Run one blocking ``getaddrinfo`` on a thread of its own.
+
+    A shared pool cannot be used here. ``getaddrinfo`` is not interruptible, so
+    a lookup the caller timed out on keeps its worker until the resolver's own
+    timeout expires (10-30s against a black-holed nameserver). With a pool, the
+    next lookups queue behind those workers, time out *without ever asking
+    DNS*, and are then read as "unresolved" — which the SSRF guard lets through
+    (see :func:`src.validators.address_guard.classify_host`). One thread per
+    lookup keeps :func:`asyncio.wait_for` timing DNS alone, and the thread is a
+    daemon so a stuck lookup can never delay interpreter exit either.
+    """
+    future: Future[list[Any]] = Future()
+
+    def _run() -> None:
+        try:
+            if not future.set_running_or_notify_cancel():
+                return
+            try:
+                infos = socket.getaddrinfo(host, None, 0, socket.SOCK_STREAM, 0, 0)
+            except Exception as exc:
+                # Whatever the resolver raised belongs to the awaiter, which
+                # knows that OSError/UnicodeError mean "did not resolve".
+                future.set_exception(exc)
+            else:
+                future.set_result(infos)
+        finally:
+            _lookup_slots.release()
+
+    thread = threading.Thread(target=_run, name="net-resolve", daemon=True)
+    try:
+        thread.start()
+    except RuntimeError:
+        _lookup_slots.release()
+        raise
+    return future
 
 
 def _nat64_embedded(addr: _IpAddress) -> _IpAddress:
@@ -127,7 +194,10 @@ async def resolve_host_addresses(
 
     Args:
         host: Hostname to look up; IP literals are the caller's business.
-        timeout: Lookup timeout in seconds.
+        timeout: Lookup timeout in seconds. It covers the lookup itself; when
+            every lookup thread is stuck (see :data:`_MAX_LOOKUP_THREADS`) the
+            call waits for one to free up first, because reporting a lookup
+            that never ran as a failed one is what opens the SSRF guard.
 
     Returns:
         The distinct addresses ``getaddrinfo`` returned, or ``None`` when the
@@ -136,19 +206,15 @@ async def resolve_host_addresses(
         distinguishable — see
         :func:`src.validators.address_guard.classify_host`.
     """
-    loop = asyncio.get_running_loop()
+    # Polled rather than event-driven on purpose: the slot is freed by a plain
+    # thread, which cannot set an asyncio.Event safely, and the counter is
+    # process-wide while an Event belongs to one event loop (``--continuous``
+    # runs several). Waiting only happens once DNS is black-holed.
+    while not _lookup_slots.acquire():  # noqa: ASYNC110
+        await asyncio.sleep(_LOOKUP_SLOT_POLL_SECONDS)
     try:
         infos = await asyncio.wait_for(
-            loop.run_in_executor(
-                _resolver_pool(),
-                socket.getaddrinfo,
-                host,
-                None,
-                0,
-                socket.SOCK_STREAM,
-                0,
-                0,
-            ),
+            asyncio.wrap_future(_start_lookup(host)),
             timeout=timeout,
         )
     except (OSError, TimeoutError, UnicodeError):
@@ -206,13 +272,50 @@ async def resolve_global_ips(host: str, *, timeout: float = 5.0) -> list[str]:
     return public
 
 
-async def is_public_host(host: str, *, timeout: float = 5.0) -> bool:
+async def is_public_host(
+    host: str,
+    *,
+    timeout: float = 5.0,
+    attempts: int = 2,
+    retry_delay: float = 0.25,
+) -> bool:
     """Return ``True`` only if *host* resolves exclusively to public addresses.
 
     Fail-closed: unresolvable hosts, timeouts, and hosts with any private,
     loopback, link-local or reserved answer all return ``False``.
+
+    A *failed* lookup is retried, a successful one never is. The verdict is
+    final for the whole run — the source manager drops the URL and does not
+    retry a ``ValueError`` — so one slow answer used to cost an entire upstream
+    index. Retrying cannot loosen the guard: a name that resolves into private
+    space answers on the first try and is rejected without a second lookup.
+
+    Args:
+        host: Hostname or IP literal taken from an untrusted index.
+        timeout: Per-lookup resolution timeout in seconds.
+        attempts: How many times a failed lookup is repeated.
+        retry_delay: Pause between two lookups of the same host, in seconds.
     """
-    return bool(await resolve_global_ips(host, timeout=timeout))
+    bare = _strip_brackets(host)
+    if not bare:
+        return False
+
+    try:
+        ipaddress.ip_address(bare)
+    except ValueError:
+        pass
+    else:
+        return not is_private_address(bare)
+
+    for attempt in range(max(1, attempts)):
+        answers = await resolve_host_addresses(bare, timeout=timeout)
+        if answers is not None:
+            return bool(answers) and not any(
+                is_private_address(answer) for answer in answers
+            )
+        if attempt + 1 < max(1, attempts):
+            await asyncio.sleep(max(0.0, retry_delay))
+    return False
 
 
 async def is_safe_public_url(url: str, *, timeout: float = 5.0) -> bool:

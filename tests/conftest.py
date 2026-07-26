@@ -65,6 +65,18 @@ def _isolated_project_root(
 
 
 @pytest.fixture(autouse=True)
+def _clear_address_verdict_cache() -> Iterator[None]:
+    """Keep the SSRF guard's host verdicts from leaking between tests."""
+    from src.validators import address_guard
+
+    address_guard.clear_verdict_cache()
+    try:
+        yield
+    finally:
+        address_guard.clear_verdict_cache()
+
+
+@pytest.fixture(autouse=True)
 def _restore_environ() -> Iterator[None]:
     """Undo any ``os.environ`` mutation a test performs without monkeypatch."""
     snapshot = dict(os.environ)

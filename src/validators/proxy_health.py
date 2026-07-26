@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 _COUNTER_FIELDS = ("attempts", "successes", "consecutive_failures")
 
+#: How long a proxy nobody probed successfully or unsuccessfully is remembered.
+#: The file is rewritten (and committed) on every run, so without an upper
+#: bound it keeps every proxy the upstream lists ever rotated through.
+_DEFAULT_RETENTION_SECONDS = 86400.0
+
 
 def _as_count(value: Any) -> int | None:
     """Return *value* as a non-negative int, or None when it is not one."""
@@ -121,6 +126,15 @@ class ProxyHealthHistory:
             return cls(**kwargs)
 
     def save(self, path: str | Path) -> None:
+        """Write the history to *path*, forgetting proxies nobody saw lately.
+
+        Pruning belongs here because this is the only moment the whole history
+        is touched: the file is rewritten and published on every run, and
+        nothing else ever dropped an entry, so it grew monotonically with every
+        proxy the free lists rotated through. Everything probed during this run
+        has a fresh ``last_seen`` and survives.
+        """
+        self.prune()
         from src.utils.paths import resolve_safe_output_path
 
         try:
@@ -229,13 +243,19 @@ class ProxyHealthHistory:
         result.sort(key=lambda p: self._score(p), reverse=True)
         return result
 
-    def prune(self, max_age_seconds: float = 86400.0) -> None:
-        now = time.time()
-        cutoff = now - max_age_seconds
+    def prune(self, max_age_seconds: float = _DEFAULT_RETENTION_SECONDS) -> None:
+        """Drop every record older than *max_age_seconds*.
+
+        Age alone decides. Single-attempt records used to be exempt, which kept
+        exactly the entries with the least information (a proxy seen once and
+        never again) forever — 623 of the 1423 records in the shipped history
+        file — so the history never actually stopped growing.
+        """
+        cutoff = time.time() - max_age_seconds
         self.records = {
             key: value
             for key, value in self.records.items()
-            if value.get("last_seen", 0) > cutoff or value.get("attempts", 0) < 2
+            if float(value.get("last_seen", 0.0)) > cutoff
         }
 
     def to_dict(self) -> dict[str, dict[str, Any]]:

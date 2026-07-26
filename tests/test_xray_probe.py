@@ -573,6 +573,73 @@ def test_free_local_port_skips_already_reserved(monkeypatch) -> None:
     assert first not in xray_probe._reserved_ports
 
 
+def test_free_local_port_refuses_a_port_it_could_not_reserve(monkeypatch) -> None:
+    """Exhausted attempts must fail, not hand out a running probe's port.
+
+    Returning the colliding number left it unreserved, and the caller's
+    ``finally: _release_local_port(...)`` then dropped the *other* probe's
+    reservation — after which a third probe could legally take the same port
+    and both Xray instances would fight over one SOCKS listener.
+    """
+    monkeypatch.setattr(xray_probe, "_reserved_ports", set())
+
+    class _Sock:
+        def bind(self, _addr: object) -> None:
+            return None
+
+        def getsockname(self) -> tuple[str, int]:
+            return ("127.0.0.1", 51000)
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(socket, "socket", lambda *a, **kw: _Sock())
+    reserved = _free_local_port()
+    with pytest.raises(OSError, match="no unreserved loopback port"):
+        _free_local_port(attempts=3)
+    assert xray_probe._reserved_ports == {reserved}
+
+
+def test_free_local_port_propagates_a_failing_bind(monkeypatch) -> None:
+    """A failed bind must not turn into port 0, which Xray cannot listen on."""
+    monkeypatch.setattr(xray_probe, "_reserved_ports", set())
+
+    class _Sock:
+        def bind(self, _addr: object) -> None:
+            raise OSError(10013, "permission denied")
+
+        def getsockname(self) -> tuple[str, int]:  # pragma: no cover - unreachable
+            return ("127.0.0.1", 0)
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(socket, "socket", lambda *a, **kw: _Sock())
+    with pytest.raises(OSError, match="permission denied"):
+        _free_local_port()
+    assert xray_probe._reserved_ports == set()
+
+
+@pytest.mark.asyncio
+async def test_probe_check_fails_when_no_port_can_be_reserved(
+    monkeypatch,
+    caplog,
+) -> None:
+    caplog.set_level(logging.WARNING)
+
+    def _no_port(**_kwargs: object) -> int:
+        msg = "no unreserved loopback port after 20 attempt(s)"
+        raise OSError(msg)
+
+    monkeypatch.setattr(xray_probe, "_reserved_ports", {51000})
+    monkeypatch.setattr(xray_probe, "_free_local_port", _no_port)
+    cfg = _make_cfg(address="93.184.216.34", port=443)
+    assert await xray_probe_check(cfg, xray_path="/usr/bin/xray") is False
+    # The reservation of the probe that owns 51000 must survive.
+    assert xray_probe._reserved_ports == {51000}
+    assert "Cannot reserve a local SOCKS port" in caplog.text
+
+
 # ===================== _wait_for_port ======================
 
 
@@ -1041,6 +1108,62 @@ async def test_probe_check_success(cfg_vless: Config) -> None:
 
 
 @pytest.mark.asyncio
+async def test_probe_check_survives_a_failing_temp_dir_cleanup(
+    cfg_vless: Config,
+    monkeypatch,
+) -> None:
+    """A cleanup race must not turn a working config into a dead one.
+
+    On Windows the killed Xray still holds the directory for a moment, so
+    ``TemporaryDirectory.__exit__`` raised ERROR_DIR_NOT_EMPTY out of
+    ``xray_probe_check`` — before ``cfg.is_alive`` was set, and after
+    ``xray_was_checked`` was, so a config that had just passed its probe was
+    recorded as a failure in the health history.
+    """
+    real_temporary_directory = tempfile.TemporaryDirectory
+
+    class _RacingTempDir:
+        def __init__(self, **kwargs: object) -> None:
+            self._ignore = bool(kwargs.pop("ignore_cleanup_errors", False))
+            self._inner = real_temporary_directory(**kwargs)  # type: ignore[arg-type]
+
+        def __enter__(self) -> str:
+            return self._inner.__enter__()
+
+        def __exit__(self, *exc_info: object) -> bool:
+            self._inner.cleanup()
+            if not self._ignore:
+                raise OSError(145, "The directory is not empty")
+            return False
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", _RacingTempDir)
+    with (
+        patch("src.validators.xray_probe._free_local_port", return_value=12345),
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_sub,
+        patch(
+            "src.validators.xray_probe._wait_for_port", new_callable=AsyncMock
+        ) as mock_wait,
+        patch(
+            "src.validators.xray_probe._https_probe_response",
+            new_callable=AsyncMock,
+        ) as mock_probe,
+    ):
+        mock_sub.return_value = _fake_xray_proc()
+        mock_wait.return_value = True
+        mock_probe.return_value = (204, "")
+        assert (
+            await xray_probe_check(
+                cfg_vless,
+                xray_path="/usr/bin/xray",
+                timeout=5.0,
+                startup_timeout=2.0,
+            )
+            is True
+        )
+    assert xray_probe._reserved_ports == set()
+
+
+@pytest.mark.asyncio
 async def test_probe_check_config_none(cfg_vless: Config) -> None:
     with patch("src.validators.xray_probe.build_xray_config", return_value=None):
         assert (
@@ -1443,6 +1566,99 @@ async def test_validate_done_event_stops_early() -> None:
 
 
 @pytest.mark.asyncio
+async def test_validate_max_alive_cancels_in_flight_probes() -> None:
+    """Reaching max_alive must stop the stage, not wait for the slowest probe.
+
+    Without cancelling the pending tasks the stage waited out one hung probe
+    (up to attempts * (startup + probes) seconds per list) and the probes still
+    in flight appended their results, so ``xray_alive`` could exceed
+    ``xray_max_alive`` in run-summary.json.
+    """
+    cfgs = [_make_cfg(address=f"93.184.216.{i}", port=443) for i in range(1, 21)]
+    slow_used = False
+
+    async def _probe(_cfg: Config, **_kwargs: object) -> bool:
+        nonlocal slow_used
+        if not slow_used:
+            slow_used = True
+            await asyncio.sleep(30.0)
+        else:
+            await asyncio.sleep(0)
+        return True
+
+    with patch("src.validators.xray_probe.xray_probe_check", new=_probe):
+        started = asyncio.get_running_loop().time()
+        result = await validate_configs_xray(
+            cfgs,
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            concurrency=5,
+            max_alive=3,
+        )
+    assert len(result) == 3
+    assert asyncio.get_running_loop().time() - started < 10.0
+    # A probe the early stop cancelled reached no verdict, so it must not be
+    # reported to the health history as an attempted-and-failed check: every
+    # probe here succeeds, so "checked but not alive" can only be a phantom.
+    phantom_failures = [c for c in cfgs if c.xray_was_checked and not c.is_alive]
+    assert phantom_failures == []
+
+
+@pytest.mark.asyncio
+async def test_validate_stops_between_attempts_without_recording_a_failure() -> None:
+    """A config the early stop interrupts must not be recorded as checked.
+
+    Its attempt loop is abandoned halfway, so it has no verdict — reporting it
+    as an attempted probe would feed the health history a failure it never
+    earned and push the config towards a ban.
+    """
+    slow, fast = (_make_cfg(address=f"93.184.216.{i}", port=443) for i in (1, 2))
+
+    async def _probe(cfg: Config, **_kwargs: object) -> bool:
+        # The slow config needs two loop turns per attempt, the fast one needs
+        # one, so the fast config reaches max_alive while the slow config sits
+        # between two attempts.
+        await asyncio.sleep(0)
+        if cfg is slow:
+            await asyncio.sleep(0)
+        return True
+
+    with patch("src.validators.xray_probe.xray_probe_check", new=_probe):
+        result = await validate_configs_xray(
+            [slow, fast],
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            concurrency=2,
+            attempts_per_config=4,
+            min_attempt_successes=4,
+            max_alive=1,
+        )
+
+    assert result == [fast]
+    assert fast.xray_was_checked is True
+    assert slow.xray_was_checked is False
+    assert slow.is_alive is False
+
+
+@pytest.mark.asyncio
+async def test_validate_max_alive_never_reached_cleans_up_its_watcher() -> None:
+    """All probes may finish before max_alive; the watcher must not leak."""
+    cfgs = [_make_cfg(address=f"93.184.216.{i}", port=443) for i in range(1, 3)]
+    with patch(
+        "src.validators.xray_probe.xray_probe_check", new_callable=AsyncMock
+    ) as m:
+        m.return_value = True
+        result = await validate_configs_xray(
+            cfgs,
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            max_alive=10,
+        )
+    assert len(result) == 2
+    assert all(task.done() for task in asyncio.all_tasks() - {asyncio.current_task()})
+
+
+@pytest.mark.asyncio
 async def test_validate_done_event_inside_semaphore() -> None:
     """When done_event fires while waiting on semaphore with concurrency=1 (line 618)."""
     cfgs = [_make_cfg(address=f"93.184.216.{i}", port=443) for i in range(1, 3)]
@@ -1681,6 +1897,107 @@ def test_probe_response_completeness_needs_a_usable_content_length() -> None:
     assert complete(b"HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\nx") is False
     assert complete(b"HTTP/1.1 200 OK\r\n\r\nx") is False
     assert complete(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx") is True
+
+
+def test_probe_response_completeness_understands_chunked_bodies() -> None:
+    """A chunked body ends at its terminating chunk, not at the timeout."""
+    complete = xray_probe._probe_response_is_complete
+    head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+    assert complete(head + b"7\r\n1.2.3.4\r\n") is False
+    assert complete(head + b"7\r\n1.2.3.4\r\n0\r\n\r\n") is True
+
+
+def test_probe_response_unframed_only_when_nothing_bounds_the_body() -> None:
+    unframed = xray_probe._probe_response_is_unframed
+    assert unframed(b"HTTP/1.1 200 OK\r\n") is False  # headers still incomplete
+    assert unframed(b"HTTP/1.1 204 No Content\r\n\r\n") is False  # bodiless
+    assert unframed(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx") is False
+    assert (
+        unframed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")
+        is False
+    )
+    assert unframed(b"HTTP/1.1 200 OK\r\n\r\n1.2.3.4") is True
+
+
+@pytest.mark.asyncio
+async def test_https_probe_does_not_burn_the_timeout_on_an_unframed_body(
+    monkeypatch,
+) -> None:
+    """A body with neither length nor chunking may only cost the idle window.
+
+    Such a response ends at EOF, which a server ignoring ``Connection: close``
+    never sends — one such probe URL used to multiply the stage time by the
+    full probe timeout for every config.
+    """
+    monkeypatch.setattr(xray_probe, "_UNFRAMED_BODY_IDLE_SECONDS", 0.05)
+    reads = iter([b"HTTP/1.1 200 OK\r\n\r\n1.2.3.4"])
+
+    class _Reader:
+        async def read(self, _size: int) -> bytes:
+            try:
+                return next(reads)
+            except StopIteration:
+                await asyncio.sleep(30.0)
+                return b""
+
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.wait_closed = AsyncMock()
+
+    async def _open(host=None, port=None, ssl=None, server_hostname=None):
+        return _Reader(), writer
+
+    monkeypatch.setattr(asyncio, "open_connection", _open)
+    started = asyncio.get_running_loop().time()
+    code, body = await _https_probe_response(
+        probe_url="https://api.ipify.org",
+        timeout=30.0,
+    )
+    assert (code, body) == (200, "1.2.3.4")
+    assert asyncio.get_running_loop().time() - started < 5.0
+
+
+@pytest.mark.asyncio
+async def test_https_probe_stops_at_the_last_chunk(monkeypatch) -> None:
+    reader = _reader_returning_once(
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        b"7\r\n1.2.3.4\r\n0\r\n\r\n",
+    )
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.wait_closed = AsyncMock()
+
+    async def _open(host=None, port=None, ssl=None, server_hostname=None):
+        return reader, writer
+
+    monkeypatch.setattr(asyncio, "open_connection", _open)
+    code, _body = await _https_probe_response(
+        probe_url="https://api.ipify.org",
+        timeout=5.0,
+    )
+    assert code == 200
+    assert reader.read.await_count == 1
+
+
+def test_probe_ssl_context_is_reused(monkeypatch) -> None:
+    """Rebuilding the verifying context blocks the loop for ~15ms each time."""
+    builds = 0
+    real_create = ssl.create_default_context
+
+    def _counting_create(*args: object, **kwargs: object) -> ssl.SSLContext:
+        nonlocal builds
+        builds += 1
+        return real_create(*args, **kwargs)
+
+    xray_probe._probe_ssl_context.cache_clear()
+    monkeypatch.setattr(ssl, "create_default_context", _counting_create)
+    try:
+        first = xray_probe._probe_ssl_context(True)
+        second = xray_probe._probe_ssl_context(True)
+    finally:
+        xray_probe._probe_ssl_context.cache_clear()
+    assert first is second
+    assert builds == 1
 
 
 @pytest.mark.asyncio

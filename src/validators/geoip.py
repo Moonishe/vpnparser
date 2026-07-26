@@ -10,12 +10,15 @@ Rate-limit responses are tolerated by returning None rather than raising.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 
 import httpx
 
 from src.parsers.base import Config
 from src.utils.net import is_private_address, resolve_global_ips
+
+logger = logging.getLogger(__name__)
 
 # In-flight lookups. The real throughput bound is _DEFAULT_REQUESTS_PER_MINUTE;
 # this only caps how many slow responses may overlap.
@@ -129,6 +132,26 @@ async def _resolve_to_ip(host: str) -> str | None:
     return public[0] if public else None
 
 
+def _warn_about_failures(results: list[object], action: str) -> None:
+    """Report the failures ``gather(return_exceptions=True)`` collected.
+
+    One unusable address must cost one config, not the batch: an escaping
+    exception aborts the whole enrichment (up to a few hundred configs lose
+    their country) and leaves the sibling tasks running as orphans.
+    """
+    failures = [result for result in results if isinstance(result, BaseException)]
+    if not failures:
+        return
+    logger.warning(
+        "GeoIP %s failed for %d/%d config(s); first error: %s: %s",
+        action,
+        len(failures),
+        len(results),
+        type(failures[0]).__name__,
+        failures[0],
+    )
+
+
 async def enrich_configs_geoip(
     configs: list[Config],
     api_url: str = _DEFAULT_API_URL,
@@ -172,7 +195,11 @@ async def enrich_configs_geoip(
         async with group_lock:
             by_ip.setdefault(ip, []).append(cfg)
 
-    await asyncio.gather(*(_resolve_one(c) for c in configs))
+    resolved = await asyncio.gather(
+        *(_resolve_one(c) for c in configs),
+        return_exceptions=True,
+    )
+    _warn_about_failures(list(resolved), "address resolution")
 
     async def _lookup_one(ip: str, targets: list[Config]) -> None:
         await limiter.acquire()
@@ -181,7 +208,9 @@ async def enrich_configs_geoip(
         for cfg in targets:
             cfg.country = country
 
-    await asyncio.gather(
+    looked_up = await asyncio.gather(
         *(_lookup_one(ip, targets) for ip, targets in by_ip.items()),
+        return_exceptions=True,
     )
+    _warn_about_failures(list(looked_up), "country lookup")
     return configs

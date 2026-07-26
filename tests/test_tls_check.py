@@ -11,6 +11,7 @@ import pytest
 
 from src.parsers.base import Config
 from src.validators import address_guard
+from src.validators import tls_check as tls_check_module
 from src.validators.tls_check import (
     _alpn_protocols,
     _clean_server_name,
@@ -273,6 +274,44 @@ class TestTlsServerNames:
         )
         names = _tls_server_names(cfg)
         assert names == ["sni.com", "host.com"]
+
+    def test_sni_list_from_a_link_is_capped(self) -> None:
+        """One link must not be able to demand hundreds of handshakes.
+
+        ``sni`` is attacker-controlled and comma-separated, and the stage tries
+        every name (times every proxy attempt) inside a single semaphore slot
+        with no early stop, so an unbounded list stalls the whole TLS stage.
+        """
+        cfg = Config(
+            "vless",
+            "1.2.3.4",
+            443,
+            "uuid",
+            sni=",".join(f"h{i}.example.com" for i in range(200)),
+        )
+        names = _tls_server_names(cfg)
+        assert names == [f"h{i}.example.com" for i in range(4)]
+
+    @pytest.mark.asyncio
+    async def test_check_one_tries_at_most_the_capped_names(self, monkeypatch) -> None:
+        calls: list[str | None] = []
+
+        async def _fake_tls_check(_host, _port, sni=None, **_kwargs) -> bool:
+            calls.append(sni)
+            return False
+
+        monkeypatch.setattr(tls_check_module, "tls_check", _fake_tls_check)
+        cfg = Config(
+            "vless",
+            "server.example.com",
+            443,
+            "uuid",
+            security="tls",
+            sni=",".join(f"h{i}.example.com" for i in range(50)),
+        )
+        result = await validate_configs_tls([cfg], check_hostnames=False)
+        assert result == []
+        assert len(calls) == 4
 
 
 # ===========================================================================

@@ -338,3 +338,63 @@ async def test_enrich_configs_geoip_queries_each_ip_once(monkeypatch) -> None:
     assert looked_up == ["93.184.216.34"]
     assert waits == []
     assert [cfg.country for cfg in configs] == ["DE", "DE", "DE"]
+
+
+async def test_enrich_configs_geoip_survives_a_failing_resolve(
+    monkeypatch,
+    caplog,
+) -> None:
+    """One unusable address must cost one config, not the whole batch.
+
+    ``gather`` without ``return_exceptions`` re-raised the first error out of
+    the stage ("GeoIP enrichment failed"), left every other config without a
+    country and abandoned the sibling tasks as orphans.
+    """
+    caplog.set_level("WARNING")
+    broken = Config("vless", "broken.example", 443, "u")
+    good = Config("vless", "good.example", 443, "u")
+
+    async def fake_resolve(host):
+        if host == "broken.example":
+            raise AttributeError("'NoneType' object has no attribute 'strip'")
+        return "93.184.216.34"
+
+    async def fake_lookup(ip, **_kwargs):
+        return "DE"
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(geoip, "_resolve_to_ip", fake_resolve)
+    monkeypatch.setattr(geoip, "lookup_country", fake_lookup)
+
+    await geoip.enrich_configs_geoip([broken, good], sleep=fake_sleep)
+
+    assert good.country == "DE"
+    assert broken.country is None
+    assert "GeoIP address resolution failed for 1/2" in caplog.text
+
+
+async def test_enrich_configs_geoip_survives_a_failing_lookup(
+    monkeypatch,
+    caplog,
+) -> None:
+    caplog.set_level("WARNING")
+    configs = [Config("vless", "a.example", 443, "u")]
+
+    async def fake_resolve(host):
+        return "93.184.216.34"
+
+    async def fake_lookup(ip, **_kwargs):
+        raise RuntimeError("event loop is closed")
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(geoip, "_resolve_to_ip", fake_resolve)
+    monkeypatch.setattr(geoip, "lookup_country", fake_lookup)
+
+    await geoip.enrich_configs_geoip(configs, sleep=fake_sleep)
+
+    assert configs[0].country is None
+    assert "GeoIP country lookup failed for 1/1" in caplog.text

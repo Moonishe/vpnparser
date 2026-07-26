@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import time
 from typing import TYPE_CHECKING, Literal
 
 from src.utils.net import (
@@ -42,11 +43,45 @@ logger = logging.getLogger(__name__)
 #: Verdict returned by :func:`classify_host`.
 HostVerdict = Literal["public", "blocked", "unresolved"]
 
-#: Parallel hostname lookups. Must never exceed the width of the resolver
-#: thread pool: a lookup queued behind a busy worker spends the resolve timeout
-#: waiting for a thread, times out without ever asking DNS, and is then let
-#: through as "unresolved".
+#: Parallel hostname lookups. Kept at the resolver's own advertised width: a
+#: timed-out lookup keeps its thread until the OS resolver gives up, and this
+#: bound is what stops those threads from piling up faster than they retire.
 _RESOLVE_CONCURRENCY = RESOLVER_CONCURRENCY
+
+#: How long a decided verdict may be reused. One run puts the same hosts through
+#: the guard three times (TCP, TLS, Xray stages), so without reuse every run
+#: pays for three full resolutions of the same list — and resolver starvation is
+#: exactly what turned this guard fail-open twice before. Kept short so a
+#: rebinding host cannot ride a stale "public" verdict for long.
+_VERDICT_TTL_SECONDS = 300.0
+
+#: host -> (expiry timestamp, verdict). Only decided verdicts are stored;
+#: ``unresolved`` must be retried, since it is the permissive answer.
+_verdict_cache: dict[str, tuple[float, HostVerdict]] = {}
+
+
+def clear_verdict_cache() -> None:
+    """Forget every cached host verdict (used by tests and between runs)."""
+    _verdict_cache.clear()
+
+
+def _cached_verdict(host: str, *, now: float) -> HostVerdict | None:
+    """Return a still-valid cached verdict for *host*, if there is one."""
+    entry = _verdict_cache.get(host)
+    if entry is None:
+        return None
+    expires_at, verdict = entry
+    if expires_at <= now:
+        del _verdict_cache[host]
+        return None
+    return verdict
+
+
+def _store_verdict(host: str, verdict: HostVerdict, *, now: float) -> None:
+    """Remember a decided verdict; ``unresolved`` is never cached."""
+    if verdict == "unresolved":
+        return
+    _verdict_cache[host] = (now + _VERDICT_TTL_SECONDS, verdict)
 
 
 def _bare_host(address: str | None) -> str:
@@ -145,10 +180,16 @@ async def filter_public_configs(
     hosts = list(dict.fromkeys(_bare_host(cfg.address) for cfg in configs))
     if check_hostnames:
         semaphore = asyncio.Semaphore(_RESOLVE_CONCURRENCY)
+        now = time.monotonic()
 
         async def _classify(host: str) -> HostVerdict:
+            cached = _cached_verdict(host, now=now)
+            if cached is not None:
+                return cached
             async with semaphore:
-                return await classify_host(host, timeout=resolve_timeout)
+                verdict = await classify_host(host, timeout=resolve_timeout)
+            _store_verdict(host, verdict, now=now)
+            return verdict
 
         classified = await asyncio.gather(
             *[_classify(host) for host in hosts],

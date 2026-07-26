@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import hashlib
 import ipaddress
 import json
@@ -43,6 +44,10 @@ _DEFAULT_ACCEPTED_STATUS_CODES = set(range(200, 400))
 _MAX_PROBE_RESPONSE_BYTES = 64 * 1024
 #: Statuses defined to carry no body, so the response ends with its headers.
 _BODILESS_STATUS_CODES = frozenset({204, 304})
+#: Terminator of a chunked body.
+_LAST_CHUNK = b"0\r\n\r\n"
+#: How long a body no header framed may still keep the probe waiting.
+_UNFRAMED_BODY_IDLE_SECONDS = 2.0
 
 
 def _is_rooted_path(candidate: str) -> bool:
@@ -343,8 +348,14 @@ def _free_local_port(*, attempts: int = 20) -> int:
     hand the same port to a second concurrent probe. Numbers handed out in this
     process are tracked until :func:`_release_local_port`, which removes the
     in-process half of that race.
+
+    Raises:
+        OSError: When no *unreserved* port could be bound, or when binding
+            itself failed. Returning an unreserved number instead would hand
+            out a port another probe is still using — and the caller's
+            ``_release_local_port`` would then drop that probe's reservation,
+            leaving a third probe free to collide with it.
     """
-    port = 0
     for _ in range(max(1, attempts)):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -355,7 +366,8 @@ def _free_local_port(*, attempts: int = 20) -> int:
         if port not in _reserved_ports:
             _reserved_ports.add(port)
             return port
-    return port
+    msg = f"no unreserved loopback port after {max(1, attempts)} attempt(s)"
+    raise OSError(msg)
 
 
 def _release_local_port(port: int) -> None:
@@ -422,6 +434,15 @@ def _content_length(header: bytes) -> int | None:
     return None
 
 
+def _is_chunked_transfer(header: bytes) -> bool:
+    """Return ``True`` when the response header block announces chunking."""
+    for line in header.split(b"\r\n")[1:]:
+        name, separator, value = line.partition(b":")
+        if separator and name.strip().lower() == b"transfer-encoding":
+            return b"chunked" in value.lower()
+    return False
+
+
 def _probe_response_is_complete(chunk: bytes) -> bool:
     """Return ``True`` when *chunk* already holds the whole probe response.
 
@@ -435,8 +456,25 @@ def _probe_response_is_complete(chunk: bytes) -> bool:
         return False
     if _http_status_code(header) in _BODILESS_STATUS_CODES:
         return True
+    if _is_chunked_transfer(header):
+        return body.endswith(_LAST_CHUNK)
     length = _content_length(header)
     return length is not None and len(body) >= length
+
+
+def _probe_response_is_unframed(chunk: bytes) -> bool:
+    """Return ``True`` when the headers are in but nothing bounds the body.
+
+    Neither ``Content-Length`` nor chunking means the body ends at EOF — which
+    a server ignoring ``Connection: close`` never sends. Such a response is
+    otherwise complete on arrival, so it must not cost the whole probe timeout.
+    """
+    header, separator, _body = chunk.partition(b"\r\n\r\n")
+    if not separator:
+        return False
+    if _http_status_code(header) in _BODILESS_STATUS_CODES:
+        return False
+    return not _is_chunked_transfer(header) and _content_length(header) is None
 
 
 def _extract_probe_ip(body: str) -> str | None:
@@ -461,6 +499,7 @@ def _extract_probe_ip(body: str) -> str | None:
     return None
 
 
+@functools.cache
 def _probe_ssl_context(verify_tls: bool) -> ssl.SSLContext:
     """Build the TLS context used for probe requests.
 
@@ -469,6 +508,12 @@ def _probe_ssl_context(verify_tls: bool) -> ssl.SSLContext:
     certificate fails and it can neither fake a 204 nor fake the outbound IP
     seen by the identity probe. Verification is only skipped when the caller
     opts out via ``verify_probe_tls=False``, which is not the default.
+
+    Cached because ``ssl.create_default_context()`` re-reads the system trust
+    store — ~15ms of *blocking* work on Windows — and this runs once per probe
+    URL per attempt, inside the event loop shared by every concurrent probe.
+    An ``SSLContext`` is reusable and thread-safe as long as nobody mutates it,
+    which nothing here does.
     """
     if verify_tls:
         return ssl.create_default_context()
@@ -582,6 +627,11 @@ async def _https_probe_response(
             remaining = deadline - loop.time()
             if remaining <= 0:
                 break
+            if _probe_response_is_unframed(bytes(buffer)):
+                # Wait for the missing EOF only briefly: an unframed response is
+                # already usable, and a server that keeps the socket open would
+                # otherwise cost the full timeout on every probe of every config.
+                remaining = min(remaining, _UNFRAMED_BODY_IDLE_SECONDS)
             try:
                 piece = await asyncio.wait_for(reader.read(4096), timeout=remaining)
             except TimeoutError:
@@ -681,7 +731,12 @@ async def xray_probe_check(
         )
         return False
 
-    socks_port = _free_local_port()
+    try:
+        socks_port = _free_local_port()
+    except OSError as exc:
+        logger.warning("Cannot reserve a local SOCKS port for the Xray probe: %s", exc)
+        return False
+
     # Everything below runs under one finally: a reserved port number that is
     # never released is burnt for the lifetime of the process, and preparing the
     # config can fail for reasons of its own (full disk, locked temp file).
@@ -697,7 +752,16 @@ async def xray_probe_check(
             str(ip).strip() for ip in (reject_outbound_ips or set()) if str(ip).strip()
         }
 
-        with tempfile.TemporaryDirectory(prefix="vpnparser-xray-") as tmpdir:
+        # ignore_cleanup_errors: Xray (Go) keeps config.json open with
+        # FILE_SHARE_DELETE, so on Windows the file is unlinked but the
+        # directory still holds a handle for a moment after the process is
+        # killed. The resulting OSError escaped xray_probe_check, aborted the
+        # attempt loop before ``cfg.is_alive`` was set, and recorded a working
+        # config as a probe failure in the health history.
+        with tempfile.TemporaryDirectory(
+            prefix="vpnparser-xray-",
+            ignore_cleanup_errors=True,
+        ) as tmpdir:
             config_path = Path(tmpdir) / "config.json"
             config_path.write_text(json.dumps(xray_config), encoding="utf-8")
             try:
@@ -867,6 +931,13 @@ async def validate_configs_xray(
             attempt_failures = 0
             successful_latencies: list[float] = []
             for _attempt in range(attempts):
+                if done_event.is_set():
+                    # Enough configs are alive already. Stopping between two
+                    # attempts saves a full Xray startup per remaining attempt;
+                    # the config goes back to "not checked" so the health
+                    # history records no verdict it never earned.
+                    cfg.xray_was_checked = False
+                    return
                 started = time.monotonic()
                 ok = await xray_probe_check(
                     cfg,
@@ -935,9 +1006,34 @@ async def validate_configs_xray(
                     done_event.set()
 
     tasks = [asyncio.create_task(_check_one(cfg)) for cfg in configs]
+
+    if max_alive > 0:
+        # Same early stop as the TCP stage: without cancelling the in-flight
+        # probes the stage still waits for the slowest one — up to
+        # attempts * (startup + probes) seconds — after its goal is reached.
+        pending_tasks = set(tasks)
+        done_task = asyncio.create_task(done_event.wait())
+        while pending_tasks and not done_event.is_set():
+            done, _pending = await asyncio.wait(
+                [*pending_tasks, done_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            pending_tasks -= done
+
+        if done_event.is_set():
+            for task in pending_tasks:
+                task.cancel()
+        if not done_task.done():
+            done_task.cancel()
+            await asyncio.gather(done_task, return_exceptions=True)
+
     results = await asyncio.gather(*tasks, return_exceptions=True)
     for cfg, result in zip(configs, results, strict=False):
         if isinstance(result, asyncio.CancelledError):
+            # A cancelled probe reached no verdict, so it must not leave the
+            # config marked as attempted: the health history would count the
+            # early stop as a failed probe and move the config towards a ban.
+            cfg.xray_was_checked = False
             continue
         if isinstance(result, BaseException):
             # Without this the real reason (missing binary, permission error)
@@ -949,4 +1045,11 @@ async def validate_configs_xray(
                 type(result).__name__,
                 result,
             )
+    if max_alive > 0 and len(alive) > max_alive:
+        # Probes already under way when the limit was reached still append
+        # their result, so the stage could return more configs than it was
+        # asked for and report xray_alive > xray_max_alive in run-summary.json.
+        # ``is_alive`` stays truthful — the health history reads it, and these
+        # configs did pass their probe, they are simply surplus.
+        del alive[max_alive:]
     return alive

@@ -8,7 +8,9 @@ test performs a real lookup. The few tests that exercise
 
 from __future__ import annotations
 
+import asyncio
 import socket
+import threading
 
 import pytest
 
@@ -215,10 +217,168 @@ async def test_filter_survives_a_failing_classification(monkeypatch, caplog) -> 
     assert "treating it as unresolved" in caplog.text
 
 
-async def test_resolver_pool_is_never_narrower_than_the_guard_semaphore() -> None:
-    """wait_for must time DNS, not time spent queued for a worker thread."""
-    pool = net._resolver_pool()
-    assert pool._max_workers >= address_guard._RESOLVE_CONCURRENCY
+async def _drain_lookup_threads(timeout: float = 5.0) -> None:
+    """Wait until the lookup threads a test unblocked have really finished."""
+    for _ in range(int(timeout / 0.01)):
+        if not net.active_lookup_count():
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_stuck_lookups_never_hide_a_private_host(monkeypatch) -> None:
+    """A lookup must always reach DNS, however many earlier ones hang.
+
+    ``getaddrinfo`` cannot be cancelled, so a timed-out lookup keeps its thread.
+    With a fixed-width pool the lookups behind it timed out *in the queue*,
+    which the guard reads as "unresolved" and lets through — the SSRF guard
+    silently stopped guarding under exactly the batch sizes it exists for.
+    """
+    release = threading.Event()
+
+    def _fake_getaddrinfo(host: str, *_args: object, **_kwargs: object) -> list[object]:
+        if host.startswith("stuck"):
+            release.wait(30.0)
+            raise socket.gaierror("blackholed")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+    configs = [
+        *[_cfg(f"stuck{i}.example") for i in range(address_guard._RESOLVE_CONCURRENCY)],
+        _cfg("internal.example", 22),
+    ]
+    try:
+        kept = await filter_public_configs(
+            configs,
+            stage="TCP check",
+            resolve_timeout=0.05,
+        )
+        assert [c.address for c in kept] == [
+            cfg.address for cfg in configs if cfg.address != "internal.example"
+        ]
+    finally:
+        release.set()
+        await _drain_lookup_threads()
+
+
+async def test_lookup_waits_for_a_thread_instead_of_inventing_a_verdict(
+    monkeypatch,
+) -> None:
+    """With every thread stuck, a lookup waits — it never reports a failure.
+
+    "Did not resolve" lets the address through, so a lookup that never ran must
+    not be reported as one that ran and failed.
+    """
+    monkeypatch.setattr(net, "_lookup_slots", net._LookupSlots(1))
+    release = threading.Event()
+
+    def _fake_getaddrinfo(host: str, *_args: object, **_kwargs: object) -> list[object]:
+        if host == "stuck.example":
+            release.wait(30.0)
+            raise socket.gaierror("blackholed")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+    try:
+        assert await net.resolve_host_addresses("stuck.example", timeout=0.05) is None
+        assert net.active_lookup_count() == 1
+        pending = asyncio.ensure_future(
+            net.resolve_host_addresses("good.example", timeout=5.0),
+        )
+        await asyncio.sleep(0.2)
+        assert not pending.done()
+        release.set()
+        assert await pending == ["93.184.216.34"]
+    finally:
+        release.set()
+        await _drain_lookup_threads()
+
+
+def test_a_cancelled_lookup_never_reaches_the_resolver(monkeypatch) -> None:
+    """A lookup cancelled before its thread ran must free its slot anyway."""
+
+    def _boom(*_args: object, **_kwargs: object) -> list[object]:
+        raise AssertionError("a cancelled lookup must not query DNS")
+
+    threads: list[object] = []
+
+    class _LazyThread:
+        def __init__(self, *, target: object, **_kwargs: object) -> None:
+            self._target = target
+            threads.append(self)
+
+        def start(self) -> None:
+            return None
+
+        def run_now(self) -> None:
+            self._target()
+
+    monkeypatch.setattr(socket, "getaddrinfo", _boom)
+    monkeypatch.setattr(threading, "Thread", _LazyThread)
+    slots = net._LookupSlots(1)
+    monkeypatch.setattr(net, "_lookup_slots", slots)
+
+    assert slots.acquire() is True
+    future = net._start_lookup("nobody.example")
+    assert future.cancel() is True
+    threads[0].run_now()  # type: ignore[attr-defined]
+    assert net.active_lookup_count() == 0
+
+
+def test_a_lookup_that_cannot_start_a_thread_frees_its_slot(monkeypatch) -> None:
+    """Thread exhaustion must not leak the slot and wedge every later lookup."""
+
+    class _RefusingThread:
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def start(self) -> None:
+            msg = "can't start new thread"
+            raise RuntimeError(msg)
+
+    monkeypatch.setattr(threading, "Thread", _RefusingThread)
+    slots = net._LookupSlots(1)
+    monkeypatch.setattr(net, "_lookup_slots", slots)
+
+    assert slots.acquire() is True
+    with pytest.raises(RuntimeError, match="can't start new thread"):
+        net._start_lookup("nobody.example")
+    assert net.active_lookup_count() == 0
+
+
+def test_lookup_slots_refuse_more_than_their_capacity() -> None:
+    slots = net._LookupSlots(1)
+    assert slots.acquire() is True
+    assert slots.acquire() is False
+    slots.release()
+    slots.release()  # never goes negative
+    assert slots.active == 0
+
+
+async def test_lookup_threads_are_daemons(monkeypatch) -> None:
+    """A hung lookup must not keep the interpreter alive at exit.
+
+    The pool this replaced was joined by ``concurrent.futures`` at exit, so a
+    single black-holed lookup delayed process shutdown by its full OS timeout —
+    and in ``--continuous`` mode the leaked threads piled up run after run.
+    """
+    running = threading.Event()
+    release = threading.Event()
+
+    def _fake_getaddrinfo(*_args: object, **_kwargs: object) -> list[object]:
+        running.set()
+        release.wait(30.0)
+        raise socket.gaierror("blackholed")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+    try:
+        assert await net.resolve_host_addresses("stuck.example", timeout=0.05) is None
+        assert running.wait(5.0)
+        lookup_threads = [t for t in threading.enumerate() if t.name == "net-resolve"]
+        assert lookup_threads
+        assert all(thread.daemon for thread in lookup_threads)
+    finally:
+        release.set()
+        await _drain_lookup_threads()
 
 
 async def test_filter_without_hostname_check_makes_no_dns_query(
@@ -316,6 +476,53 @@ async def test_is_public_host_accepts_a_public_literal() -> None:
     assert await net.is_public_host("10.0.0.1") is False
 
 
+async def test_is_public_host_retries_a_failed_lookup(monkeypatch) -> None:
+    """One slow answer must not cost an upstream index for the whole run.
+
+    The source manager turns a ``False`` here into a ``ValueError`` it never
+    retries, so a transient resolver hiccup used to drop a perfectly public
+    URL (jsdelivr, raw.githubusercontent.com) until the next run.
+    """
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        calls.append(host)
+        return None if len(calls) == 1 else ["93.184.216.34"]
+
+    monkeypatch.setattr(net, "resolve_host_addresses", _resolve)
+    assert await net.is_public_host("cdn.example", retry_delay=0.0) is True
+    assert calls == ["cdn.example", "cdn.example"]
+
+
+async def test_is_public_host_gives_up_after_its_attempts(monkeypatch) -> None:
+    """Retrying is a hedge against a hiccup, not a way around a dead name."""
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        calls.append(host)
+        return None
+
+    monkeypatch.setattr(net, "resolve_host_addresses", _resolve)
+    assert await net.is_public_host("nowhere.example", retry_delay=0.0) is False
+    assert calls == ["nowhere.example", "nowhere.example"]
+    assert await net.is_public_host("   ") is False
+
+
+async def test_is_public_host_does_not_retry_a_resolved_private_host(
+    monkeypatch,
+) -> None:
+    """A name answering with an internal address is rejected on the spot."""
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        calls.append(host)
+        return ["10.0.0.5"]
+
+    monkeypatch.setattr(net, "resolve_host_addresses", _resolve)
+    assert await net.is_public_host("internal.example", retry_delay=0.0) is False
+    assert calls == ["internal.example"]
+
+
 @pytest.mark.parametrize(
     ("url", "expected"),
     [
@@ -328,3 +535,66 @@ async def test_is_public_host_accepts_a_public_literal() -> None:
 )
 async def test_is_safe_public_url(url: str, expected: bool) -> None:
     assert await net.is_safe_public_url(url) is expected
+
+
+# --- verdict cache ---------------------------------------------------------
+
+
+async def test_filter_reuses_a_decided_verdict_across_stages(monkeypatch) -> None:
+    """One run guards the same hosts three times; DNS must be asked once.
+
+    Resolver starvation is what turned this guard fail-open twice, so paying
+    for three full resolutions of the same list is a risk, not just a cost.
+    """
+    lookups: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        lookups.append(host)
+        return ["93.184.216.34"] if host == "good.example" else ["10.0.0.5"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+    configs = [_cfg("good.example"), _cfg("internal.example")]
+
+    for stage in ("tcp", "tls", "xray"):
+        kept = await filter_public_configs(list(configs), stage=stage)
+        assert [c.address for c in kept] == ["good.example"]
+
+    assert lookups == ["good.example", "internal.example"]
+
+
+async def test_unresolved_verdict_is_not_cached(monkeypatch) -> None:
+    """``unresolved`` is the permissive answer, so it must be retried."""
+    lookups: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        lookups.append(host)
+        return None
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+
+    for _ in range(3):
+        await filter_public_configs([_cfg("nowhere.example")], stage="tcp")
+
+    assert lookups == ["nowhere.example"] * 3
+
+
+async def test_expired_verdict_is_resolved_again(monkeypatch) -> None:
+    """A stale verdict must not keep a rebinding host allowed forever."""
+    lookups: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        lookups.append(host)
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+
+    await filter_public_configs([_cfg("good.example")], stage="tcp")
+    # Age the stored verdict instead of moving the clock: time.monotonic is
+    # shared with the event loop, so patching it breaks the awaits below.
+    address_guard._verdict_cache["good.example"] = (
+        address_guard.time.monotonic() - 1.0,
+        "public",
+    )
+    await filter_public_configs([_cfg("good.example")], stage="tls")
+
+    assert lookups == ["good.example", "good.example"]

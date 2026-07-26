@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 
 _TLS_SECURITY_VALUES = {"tls", "reality"}
 _EMPTY_SERVER_NAMES = {"", "none", "null", "false", "0", "-"}
+#: Cap on the SNI candidates one config may cost. ``sni``/``host`` come from an
+#: untrusted subscription link and take a comma-separated list, so a single
+#: config could otherwise demand hundreds of handshakes — each up to the full
+#: TLS timeout, all inside one slot of the stage semaphore. Real links carry a
+#: handful of names; the rest is either a typo or a deliberate stall.
+_MAX_SERVER_NAME_CANDIDATES = 4
 
 
 async def _open_connection_direct(
@@ -113,7 +119,11 @@ def _split_server_names(value: str | None) -> list[str]:
 
 
 def _tls_server_names(cfg: Config) -> list[str | None]:
-    """Return SNI candidates matching how clients commonly interpret links."""
+    """Return SNI candidates matching how clients commonly interpret links.
+
+    At most :data:`_MAX_SERVER_NAME_CANDIDATES` names are returned, in the order
+    the link listed them.
+    """
     names: list[str | None] = []
     seen: set[str | None] = set()
 
@@ -131,7 +141,7 @@ def _tls_server_names(cfg: Config) -> list[str | None]:
         add(name)
 
     if explicit_names:
-        return names
+        return names[:_MAX_SERVER_NAME_CANDIDATES]
 
     address = _clean_server_name(cfg.address)
     if address and not _is_ip_address(address):

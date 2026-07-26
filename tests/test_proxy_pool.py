@@ -505,3 +505,83 @@ async def test_fetch_proxy_candidates_duplicate_in_second_source() -> None:
             max_candidates=10,
         )
         assert result == ["socks5://1.2.3.4:1080"]
+
+
+@pytest.mark.asyncio
+async def test_load_proxy_pool_skips_banned_candidates_before_probing() -> None:
+    """Banned proxies must never reach the self-check.
+
+    Ranking after validation cannot drop them: a proxy only reaches the ranked
+    list by passing the check, and passing resets ``consecutive_failures``. So
+    every dead proxy was re-probed at full cost, run after run, while the
+    settings promise "banned/dead proxies are skipped on the next run".
+    """
+    history = ProxyHealthHistory(ban_after_consecutive_failures=3)
+    for _ in range(3):
+        history.record("socks5://1.2.3.4:1080", False)
+    history.record("socks5://5.6.7.8:1080", True, latency_ms=50)
+    probed: list[list[str]] = []
+
+    async def _fake_validate(proxies: list[str], **_kwargs: object) -> list[str]:
+        probed.append(list(proxies))
+        return list(proxies)
+
+    with (
+        patch(
+            "src.validators.proxy_pool.fetch_proxy_candidates",
+            new_callable=AsyncMock,
+        ) as mock_fetch,
+        patch(
+            "src.validators.proxy_pool.validate_proxy_candidates",
+            new=_fake_validate,
+        ),
+    ):
+        mock_fetch.return_value = [
+            "socks5://1.2.3.4:1080",
+            "socks5://5.6.7.8:1080",
+        ]
+        result = await load_proxy_pool(
+            sources=["https://example.com/list.txt"],
+            validate=True,
+            history=history,
+        )
+
+    assert probed == [["socks5://5.6.7.8:1080"]]
+    assert result == ["socks5://5.6.7.8:1080"]
+
+
+@pytest.mark.asyncio
+async def test_load_proxy_pool_keeps_candidates_when_all_are_banned(caplog) -> None:
+    """A history that bans everything must not leave the run without a pool."""
+    caplog.set_level("WARNING")
+    history = ProxyHealthHistory(ban_after_consecutive_failures=1)
+    history.record("socks5://1.2.3.4:1080", False)
+    probed: list[list[str]] = []
+
+    async def _fake_validate(proxies: list[str], **_kwargs: object) -> list[str]:
+        probed.append(list(proxies))
+        # What the real self-check does for a proxy that answers.
+        for proxy in proxies:
+            history.record(proxy, True, latency_ms=50)
+        return list(proxies)
+
+    with (
+        patch(
+            "src.validators.proxy_pool.fetch_proxy_candidates",
+            new_callable=AsyncMock,
+        ) as mock_fetch,
+        patch(
+            "src.validators.proxy_pool.validate_proxy_candidates",
+            new=_fake_validate,
+        ),
+    ):
+        mock_fetch.return_value = ["socks5://1.2.3.4:1080"]
+        result = await load_proxy_pool(
+            sources=["https://example.com/list.txt"],
+            validate=True,
+            history=history,
+        )
+
+    assert probed == [["socks5://1.2.3.4:1080"]]
+    assert result == ["socks5://1.2.3.4:1080"]
+    assert "rejects all 1 candidate(s)" in caplog.text

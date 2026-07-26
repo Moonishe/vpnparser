@@ -204,6 +204,29 @@ def test_two_letter_city_still_detected_with_delimiter() -> None:
     assert detect_country("KL01 node") == "MY"
 
 
+def test_two_letter_city_is_detected_in_lowercase_remarks() -> None:
+    """Remarks are as often lowercase as uppercase.
+
+    Requiring UPPERCASE dropped ordinary remarks such as "server-la-01"
+    entirely, and a config without a country is discarded outright once
+    ``allowed_countries_by_list`` is set — which it is in the shipped config.
+    """
+    assert detect_country("server-la-01") == "US"
+    assert detect_country("node-fl") == "US"
+    assert detect_country("|va|") == "US"
+    assert detect_country("la") == "US"
+    # ...while the structural frame still keeps prose and hostnames out.
+    assert detect_country("Casa de la Montana") is None
+    assert detect_country("Kl node") is None
+    assert detect_country("", "kl.example.com") is None
+
+
+def test_lowercase_country_code_never_flips_canada_to_california() -> None:
+    """A country code wins over a city; the verdict must not depend on case."""
+    assert detect_country("CA-01") == "CA"
+    assert detect_country("ca-01") is None
+
+
 def test_long_city_names_still_match_anywhere() -> None:
     assert detect_country("los angeles node") == "US"
     assert detect_country("", "frankfurt.example.net") == "DE"

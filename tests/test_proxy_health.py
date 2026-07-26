@@ -226,13 +226,34 @@ def test_prune_removes_old_records() -> None:
     assert "socks5://new:1080" in hist.records
 
 
-def test_prune_keeps_few_attempts_regardless_of_age() -> None:
-    """Records with fewer than 2 attempts are kept regardless of age."""
+def test_prune_removes_stale_single_attempt_records() -> None:
+    """Age alone decides — a proxy seen once and never again is not special.
+
+    Exempting single-attempt records kept the least informative entries
+    forever, which is most of the file: free proxy lists rotate, so nearly
+    every run adds a batch of addresses that are never seen again.
+    """
     hist = ProxyHealthHistory()
     hist.record("socks5://few:1080", True)
     hist.records["socks5://few:1080"]["last_seen"] = 0.0
     hist.prune(max_age_seconds=1.0)
-    assert "socks5://few:1080" in hist.records
+    assert "socks5://few:1080" not in hist.records
+
+
+def test_save_prunes_stale_records(tmp_path, monkeypatch) -> None:
+    """Nothing else ever drops an entry, so the published file only grew."""
+    monkeypatch.chdir(tmp_path)
+    hist = ProxyHealthHistory()
+    hist.record("socks5://gone:1080", False)
+    hist.records["socks5://gone:1080"]["last_seen"] = 1.0
+    hist.record("socks5://live:1080", True, latency_ms=12.0)
+
+    target = tmp_path / "output" / "proxy-health-history.json"
+    hist.save(target)
+
+    saved = json.loads(target.read_text(encoding="utf-8"))
+    assert list(saved) == ["socks5://live:1080"]
+    assert "socks5://gone:1080" not in hist.records
 
 
 def test_prune_empty_history() -> None:

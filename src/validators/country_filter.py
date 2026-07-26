@@ -365,13 +365,21 @@ _HOST_AMBIGUOUS_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Two-letter city/state abbreviations ("la", "ca", "tx", "nj", ...) are far too
+# Two-letter city/state abbreviations ("la", "tx", "nj", ...) are far too
 # short for a case-insensitive \b-search over remark+address+sni+host: they hit
 # hostname labels ("vpn.example.ca" -> California, "proxy.host.la" -> US) and
 # ordinary words ("Casa de la Montaña" -> US).  They are therefore matched
-# separately — uppercase, remark-only, and only with a structural delimiter
-# after — exactly the rule _AMBIGUOUS_CODE_RE uses for ambiguous country codes.
-_SHORT_CITY_KEYS = tuple(sorted(key for key in _CITY_TO_CODE if len(key) <= 2))
+# separately: remark-only, and framed by structural delimiters on both sides.
+# Keys that are also supported country codes ("ca" -> Canada) are excluded
+# outright, so a remark like "CA-01" cannot flip between Canada and California
+# depending on its case.
+_SHORT_CITY_KEYS = tuple(
+    sorted(
+        key
+        for key in _CITY_TO_CODE
+        if len(key) <= 2 and key.upper() not in _SUPPORTED_CODES
+    ),
+)
 _LONG_CITY_KEYS = tuple(
     sorted((key for key in _CITY_TO_CODE if len(key) > 2), key=len, reverse=True),
 )
@@ -387,14 +395,16 @@ _CITY_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Case-SENSITIVE and delimiter-anchored: matches "LA-01", "[TX]", "NJ01" and
-# rejects ".ca", "de la", "kl.example.com".  Keys that are also supported
-# country codes (CA) are unreachable here on purpose — detect_country() runs
-# the country-code step first, so "CA-01" stays Canada.
+# Delimiter-anchored on BOTH sides, case-insensitive: matches "LA-01", "[tx]",
+# "server-la-01", "NJ01" and rejects ".ca", "de la", "kl.example.com", "Kl
+# node".  Case matters far less than structure here — lowercase remarks like
+# "server-la-01" are as common as uppercase ones, while a plain-prose "la"
+# never carries a hyphen or bracket around it.
 _SHORT_CITY_RE = re.compile(
-    r"(?:^|[^A-Za-z])("
-    + "|".join(key.upper() for key in _SHORT_CITY_KEYS)
-    + r")(?=[-\d\]/|)])",
+    r"(?:^|[-|\[(/])("
+    + "|".join(re.escape(key) for key in _SHORT_CITY_KEYS)
+    + r")(?=[-\d\]/|)]|$)",
+    re.IGNORECASE,
 )
 
 _NAME_PATTERN = re.compile(
