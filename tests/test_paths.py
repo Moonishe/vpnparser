@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -38,34 +39,51 @@ def test_resolve_safe_output_path_rejects_dotdot(tmp_path):
         resolve_safe_output_path("../other", base_dir=base)
 
 
-def test_resolve_safe_output_path_relative_escapes_base(tmp_path):
-    """Line 89: relative path resolves outside base_dir via junction/symlink.
+def _link_dir(link: Path, target: Path) -> None:
+    """Create a directory link at *link* pointing at *target*.
 
-    A relative path without ``..`` can still escape *base_dir* when the path
-    traverses a directory junction or symlink that points outside *base_dir*.
-    We use ``mklink /J`` (directory junction) on Windows.
+    POSIX gets a symlink; Windows gets a directory junction, which — unlike a
+    symlink — needs no elevated privileges. Skips the test when neither works.
     """
+    if os.name != "nt":
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError as exc:  # pragma: no cover - depends on the sandbox
+            pytest.skip(f"cannot create symlink: {exc}")
+        return
+
     import subprocess
 
+    try:
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            check=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ) as exc:  # pragma: no cover - depends on the sandbox
+        pytest.skip(f"cannot create directory junction: {exc}")
+
+
+def test_resolve_safe_output_path_relative_escapes_base(tmp_path):
+    """A relative path that escapes base_dir through a link is rejected.
+
+    A relative path without ``..`` can still escape *base_dir* when it
+    traverses a symlink (POSIX) or a directory junction (Windows) pointing
+    outside *base_dir*. Both platforms are covered so this security branch is
+    not silently skipped in CI.
+    """
     base = tmp_path / "base"
     base.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.txt").write_text("data", encoding="utf-8")
 
-    link = base / "escape"
-    try:
-        subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
-            check=True,
-            capture_output=True,
-            timeout=10,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pytest.skip(
-            "Cannot create directory junction (insufficient permissions "
-            "or unsupported platform)"
-        )
+    _link_dir(base / "escape", outside)
 
     with pytest.raises(ValueError, match="path escapes base directory"):
         resolve_safe_output_path("escape/secret.txt", base_dir=base)
@@ -115,6 +133,37 @@ def test_resolve_safe_output_path_absolute_inside(tmp_path):
     assert result == target.resolve()
 
 
+def test_resolve_safe_output_path_strict_rejects_absolute_outside(tmp_path):
+    """strict=True turns the warned-about escape into a hard error."""
+    base = tmp_path / "base"
+    base.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / "file.txt"
+    target.write_text("data", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="path escapes base directory"):
+        resolve_safe_output_path(target, base_dir=base, strict=True)
+
+
+def test_resolve_safe_output_path_strict_allows_absolute_inside(tmp_path):
+    """strict=True still accepts an absolute path inside base_dir."""
+    target = tmp_path / "inside.txt"
+    target.write_text("data", encoding="utf-8")
+    result = resolve_safe_output_path(target, base_dir=tmp_path, strict=True)
+    assert result == target.resolve()
+
+
+def test_resolve_safe_output_path_default_allows_absolute_outside(tmp_path):
+    """The default (strict=False) behaviour is unchanged — dozens of tests rely
+    on passing absolute tmp_path locations."""
+    base = tmp_path / "base"
+    base.mkdir()
+    target = tmp_path / "outside.txt"
+    target.write_text("data", encoding="utf-8")
+    assert resolve_safe_output_path(target, base_dir=base) == target.resolve()
+
+
 # ---------------------------------------------------------------------------
 # validate_safe_output_path
 # ---------------------------------------------------------------------------
@@ -134,6 +183,17 @@ def test_validate_safe_output_path_false(tmp_path, caplog):
     base.mkdir()
     assert validate_safe_output_path("../escape", base_dir=base) is False
     assert "Rejected unsafe path" in caplog.text
+
+
+def test_validate_safe_output_path_strict_absolute_outside(tmp_path):
+    """The absolute escape is safe by default and unsafe under strict=True."""
+    base = tmp_path / "base"
+    base.mkdir()
+    target = tmp_path / "outside.txt"
+    target.write_text("data", encoding="utf-8")
+
+    assert validate_safe_output_path(target, base_dir=base) is True
+    assert validate_safe_output_path(target, base_dir=base, strict=True) is False
 
 
 # ---------------------------------------------------------------------------
@@ -172,3 +232,33 @@ def test_safe_open_escape_raises(tmp_path):
     base.mkdir()
     with pytest.raises(ValueError):
         safe_open("../escape.txt", mode="w", base_dir=base)
+
+
+def test_safe_open_forwards_strict(tmp_path):
+    """strict=True must be reachable through safe_open, not only the resolvers.
+
+    safe_open builds its path with resolve_safe_output_path too, so without the
+    passthrough the strict mode was simply unavailable to callers that open
+    files through this helper.
+    """
+    base = tmp_path / "base"
+    base.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("data", encoding="utf-8")
+
+    # Default: an absolute path outside base_dir is allowed (with a warning).
+    fh = safe_open(outside, mode="r", base_dir=base)
+    assert fh.read() == "data"
+    fh.close()
+
+    with pytest.raises(ValueError, match="path escapes base directory"):
+        safe_open(outside, mode="r", base_dir=base, strict=True)
+
+
+def test_safe_open_strict_passes_kwargs_through(tmp_path):
+    """The keyword-only strict flag does not shadow open() kwargs."""
+    target = tmp_path / "encoded.txt"
+    fh = safe_open(target, mode="w", base_dir=tmp_path, strict=True, encoding="utf-8")
+    fh.write("привет")
+    fh.close()
+    assert target.read_text(encoding="utf-8") == "привет"

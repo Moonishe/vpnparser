@@ -109,6 +109,31 @@ def test_deduplicate_real_not_replaced_by_none() -> None:
     assert result[0].uuid_or_password == "id-real"
 
 
+def test_deduplicate_key_includes_protocol() -> None:
+    """Same address:port over two protocols are independent configs.
+
+    Pins the documented contract: dedup_key is (protocol, address, port), not
+    (address, port).
+    """
+    vless = make_config(address="host.com", port=443, protocol="vless")
+    trojan = make_config(address="host.com", port=443, protocol="trojan")
+    result = deduplicate([vless, trojan])
+    assert [cfg.protocol for cfg in result] == ["vless", "trojan"]
+
+
+def test_deduplicate_collapses_different_credentials() -> None:
+    """Credentials are not part of the key — the better latency wins.
+
+    Documented consequence: two accounts on one server:port collapse into a
+    single config.
+    """
+    first = make_config(address="host.com", uuid="id-first", latency_ms=80.0)
+    second = make_config(address="host.com", uuid="id-second", latency_ms=20.0)
+    result = deduplicate([first, second])
+    assert len(result) == 1
+    assert result[0].uuid_or_password == "id-second"
+
+
 def test_deduplicate_preserves_order() -> None:
     """First occurrence of each unique key determines order."""
     a = make_config(address="a.com", uuid="id-a", latency_ms=10.0)

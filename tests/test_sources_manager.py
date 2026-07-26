@@ -18,7 +18,7 @@ from src.sources.manager import SourceManager, SourceResult
 
 
 class _FakeResponse:
-    """Simulates an httpx.Response."""
+    """Simulates an httpx.Response, including the streaming interface."""
 
     def __init__(
         self,
@@ -26,10 +26,19 @@ class _FakeResponse:
         *,
         text: str = "",
         headers: dict[str, str] | None = None,
+        chunks: list[bytes] | None = None,
     ):
         self.status_code = status_code
         self.text = text
         self.headers = headers or {}
+        self.encoding = "utf-8"
+        self._chunks = chunks
+
+    async def aiter_bytes(self):
+        for chunk in (
+            self._chunks if self._chunks is not None else [self.text.encode("utf-8")]
+        ):
+            yield chunk
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -41,6 +50,73 @@ class _FakeResponse:
 
     def json(self):
         return {}
+
+
+class _NeverEndingResponse(_FakeResponse):
+    """A 200 whose body never completes — the slow-drip / slowloris source.
+
+    Every individual read succeeds, so a per-operation timeout never fires;
+    only a wall-clock budget around the whole transfer can stop it.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(200, text="")
+
+    async def aiter_bytes(self):
+        yield b"x"
+        await asyncio.Event().wait()  # never set: the drip never ends
+
+
+class _FakeStream:
+    """Async context manager returned by a fake ``client.stream(...)``."""
+
+    def __init__(self, handler, url: str):
+        self._handler = handler
+        self._url = url
+
+    async def __aenter__(self) -> _FakeResponse:
+        # The handler may raise to simulate a transport error, exactly like
+        # httpx does when the request is sent inside the context manager.
+        return self._handler(self._url)
+
+    async def __aexit__(self, *args) -> None:
+        return None
+
+
+def _streaming_client(handler, requested: list[str] | None = None):
+    """Build an httpx.AsyncClient stand-in whose stream() calls *handler*."""
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def stream(self, method, url, **kwargs):
+            if requested is not None:
+                requested.append(url)
+            return _FakeStream(handler, url)
+
+    return _Client
+
+
+def _patch_url_guard(monkeypatch, blocked: set[str] | None = None) -> None:
+    """Replace the SSRF guard with a host blocklist so no DNS is needed."""
+    from urllib.parse import urlsplit
+
+    blocked_hosts = blocked or set()
+
+    async def fake_is_safe_public_url(url: str, **kwargs) -> bool:
+        return (urlsplit(url).hostname or "") not in blocked_hosts
+
+    monkeypatch.setattr(
+        "src.sources.manager.is_safe_public_url",
+        fake_is_safe_public_url,
+    )
 
 
 # ===================================================================
@@ -219,6 +295,51 @@ class TestConfigLoading:
         assert len(enabled) == 2
         assert enabled[0]["name"] == "enabled1"
         assert enabled[1]["name"] == "enabled2"
+
+    def test_enabled_sources_parses_negative_strings(self, tmp_path) -> None:
+        """Hand-written "false"/"no"/"0"/"off" disable a source.
+
+        Plain bool() would enable all of them — every non-empty string is
+        truthy.
+        """
+        sources_file = tmp_path / "sources.json"
+        sources_file.write_text(
+            json.dumps(
+                {
+                    "sources": [
+                        {"name": "off_false", "enabled": "false"},
+                        {"name": "off_no", "enabled": "No"},
+                        {"name": "off_zero", "enabled": "0"},
+                        {"name": "off_off", "enabled": "off"},
+                        {"name": "on_yes", "enabled": "yes"},
+                        {"name": "on_one", "enabled": 1},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        sm = SourceManager(
+            sources_file=str(sources_file),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        assert [s["name"] for s in sm.enabled_sources()] == ["on_yes", "on_one"]
+
+    def test_empty_github_api_base_falls_back(self, tmp_path) -> None:
+        """A present-but-null github_api_base must not reach GitHubClient.
+
+        YAML parses a bare ``github_api_base:`` as None, and
+        ``None.rstrip("/")`` inside GitHubClient would kill the pipeline at
+        startup.
+        """
+        settings_file = tmp_path / "settings.yaml"
+        settings_file.write_text("sources:\n  github_api_base:\n", encoding="utf-8")
+
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(settings_file),
+        )
+        assert sm._github.api_base == "https://api.github.com"
 
 
 # ===================================================================
@@ -894,21 +1015,11 @@ class TestFetchDirectUrl:
             sources_file=str(tmp_path / "missing.json"),
             settings_file=str(tmp_path / "missing.yaml"),
         )
-
-        class FakeHttpxClient:
-            def __init__(self, *args, **kwargs):
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def get(self, url, **kwargs):
-                return _FakeResponse(text="hello world")
-
-        monkeypatch.setattr("src.sources.manager.httpx.AsyncClient", FakeHttpxClient)
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="hello world")),
+        )
 
         result = asyncio.run(sm._fetch_direct_url("https://example.com/f.txt"))
         assert result == "hello world"
@@ -918,21 +1029,11 @@ class TestFetchDirectUrl:
             sources_file=str(tmp_path / "missing.json"),
             settings_file=str(tmp_path / "missing.yaml"),
         )
-
-        class Fake404Client:
-            def __init__(self, *args, **kwargs):
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def get(self, url, **kwargs):
-                return _FakeResponse(status_code=404)
-
-        monkeypatch.setattr("src.sources.manager.httpx.AsyncClient", Fake404Client)
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(status_code=404)),
+        )
 
         result = asyncio.run(sm._fetch_direct_url("https://example.com/missing.txt"))
         assert result == ""
@@ -952,23 +1053,17 @@ class TestFetchDirectUrl:
         )
         attempt = {"count": 0}
 
-        class RetryClient:
-            def __init__(self, *args, **kwargs):
-                pass
+        def flaky(url):
+            attempt["count"] += 1
+            if attempt["count"] == 1:
+                raise httpx.ConnectError("transient")
+            return _FakeResponse(text="final")
 
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def get(self, url, **kwargs):
-                attempt["count"] += 1
-                if attempt["count"] == 1:
-                    raise httpx.ConnectError("transient")
-                return _FakeResponse(text="final")
-
-        monkeypatch.setattr("src.sources.manager.httpx.AsyncClient", RetryClient)
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(flaky),
+        )
 
         async def fake_sleep(_secs):
             pass
@@ -985,20 +1080,14 @@ class TestFetchDirectUrl:
             settings_file=str(tmp_path / "missing.yaml"),
         )
 
-        class FailClient:
-            def __init__(self, *args, **kwargs):
-                pass
+        def always_fail(url):
+            raise httpx.ConnectError("always fails")
 
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def get(self, url, **kwargs):
-                raise httpx.ConnectError("always fails")
-
-        monkeypatch.setattr("src.sources.manager.httpx.AsyncClient", FailClient)
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(always_fail),
+        )
 
         async def fake_sleep(_secs):
             pass
@@ -1015,25 +1104,17 @@ class TestFetchDirectUrl:
         )
         attempt = {"count": 0}
 
-        class ErrorClient:
-            def __init__(self, *args, **kwargs):
-                pass
+        def flaky(url):
+            attempt["count"] += 1
+            if attempt["count"] < 3:
+                return _FakeResponse(status_code=500)
+            return _FakeResponse(text="ok")
 
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def get(self, url, **kwargs):
-                attempt["count"] += 1
-                if attempt["count"] < 3:
-                    resp = _FakeResponse(status_code=500)
-                    resp.raise_for_status()
-                    return resp
-                return _FakeResponse(text="ok")
-
-        monkeypatch.setattr("src.sources.manager.httpx.AsyncClient", ErrorClient)
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(flaky),
+        )
 
         async def fake_sleep(_secs):
             pass
@@ -1043,6 +1124,210 @@ class TestFetchDirectUrl:
         result = asyncio.run(sm._fetch_direct_url("https://example.com/f.txt"))
         assert result == "ok"
         assert attempt["count"] == 3
+
+    # --- SSRF guard (regression) ----------------------------------------
+
+    def test_fetch_direct_url_rejects_private_host(
+        self, tmp_path, monkeypatch, caplog
+    ) -> None:
+        """A URL resolving to a private address is never requested."""
+        caplog.set_level("WARNING")
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        requested: list[str] = []
+        _patch_url_guard(monkeypatch, blocked={"127.0.0.1"})
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="secret"), requested),
+        )
+
+        with pytest.raises(ValueError, match="non-public url"):
+            asyncio.run(sm._fetch_direct_url("http://127.0.0.1:9200/_cat/indices"))
+        assert requested == []
+        assert "Dropped non-public source url" in caplog.text
+
+    def test_fetch_direct_url_redirect_to_loopback_not_followed(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A public URL redirecting to 127.0.0.1 must not reach the loopback."""
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        requested: list[str] = []
+
+        def redirector(url):
+            if "127.0.0.1" in url:  # pragma: no cover - must never happen
+                return _FakeResponse(text="internal data")
+            return _FakeResponse(
+                status_code=302,
+                headers={"location": "http://127.0.0.1:9200/_cat/indices"},
+            )
+
+        _patch_url_guard(monkeypatch, blocked={"127.0.0.1"})
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(redirector, requested),
+        )
+
+        with pytest.raises(ValueError, match="non-public url"):
+            asyncio.run(sm._fetch_direct_url("https://example.com/redirect"))
+        assert requested == ["https://example.com/redirect"]
+
+    def test_fetch_direct_url_follows_public_redirect(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A redirect to another public host is followed and validated."""
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        requested: list[str] = []
+
+        def redirector(url):
+            if url.endswith("/final.txt"):
+                return _FakeResponse(text="payload")
+            return _FakeResponse(status_code=301, headers={"location": "/final.txt"})
+
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(redirector, requested),
+        )
+
+        result = asyncio.run(sm._fetch_direct_url("https://example.com/start"))
+        assert result == "payload"
+        assert requested == [
+            "https://example.com/start",
+            "https://example.com/final.txt",
+        ]
+
+    def test_fetch_direct_url_redirect_loop_is_bounded(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """An endless redirect chain raises instead of looping forever."""
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        requested: list[str] = []
+        counter = {"n": 0}
+
+        def redirector(url):
+            counter["n"] += 1
+            return _FakeResponse(
+                status_code=302,
+                headers={"location": f"/hop{counter['n']}"},
+            )
+
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(redirector, requested),
+        )
+
+        with pytest.raises(ValueError, match="too many redirects"):
+            asyncio.run(sm._fetch_direct_url("https://example.com/start"))
+        assert len(requested) == 6
+
+    # --- response size cap (regression) ---------------------------------
+
+    def test_fetch_direct_url_oversized_body_discarded(
+        self, tmp_path, monkeypatch, caplog
+    ) -> None:
+        """A body past MAX_DOWNLOAD_BYTES is dropped instead of buffered."""
+        caplog.set_level("WARNING")
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        monkeypatch.setattr("src.sources.manager.MAX_DOWNLOAD_BYTES", 8)
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(
+                lambda url: _FakeResponse(chunks=[b"12345", b"67890", b"more"]),
+            ),
+        )
+
+        result = asyncio.run(sm._fetch_direct_url("https://example.com/huge.txt"))
+        assert result == ""
+        assert "oversized response" in caplog.text
+
+    # --- total download time cap (regression) ---------------------------
+
+    def test_fetch_direct_url_bounds_total_transfer_time(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A slow-drip source cannot hold the fetch open indefinitely.
+
+        ``timeout`` is a *per-operation* limit — httpx restarts the read timer
+        on every chunk — so a host trickling bytes stayed under both the
+        timeout and MAX_DOWNLOAD_BYTES while parking the fetch stage forever.
+        """
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _NeverEndingResponse()),
+        )
+
+        async def scenario() -> str:
+            # The outer bound only keeps a regression from hanging the suite;
+            # it is 25x the inner budget (0.05s * DOWNLOAD_TIMEOUT_FACTOR).
+            return await asyncio.wait_for(
+                sm._fetch_direct_url(
+                    "https://example.com/drip.txt",
+                    timeout=0.05,
+                    attempts=1,
+                ),
+                timeout=5.0,
+            )
+
+        with pytest.raises(TimeoutError, match="exceeded its 0.2s budget"):
+            asyncio.run(scenario())
+
+    def test_fetch_direct_url_retries_after_wall_clock_timeout(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A timed-out attempt is retried like any other transport failure."""
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        attempt = {"count": 0}
+
+        def flaky(url):
+            attempt["count"] += 1
+            if attempt["count"] == 1:
+                return _NeverEndingResponse()
+            return _FakeResponse(text="final")
+
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(flaky),
+        )
+
+        async def fake_sleep(_secs):
+            pass
+
+        monkeypatch.setattr("src.sources.manager.asyncio.sleep", fake_sleep)
+
+        result = asyncio.run(
+            sm._fetch_direct_url(
+                "https://example.com/drip.txt",
+                timeout=0.05,
+                attempts=2,
+            ),
+        )
+        assert result == "final"
+        assert attempt["count"] == 2
 
     def test_filename_from_url(self) -> None:
         sm = SourceManager(
@@ -1190,17 +1475,25 @@ class TestFetchUrlList:
         assert "none returned content" in result.error
 
     def test_date_token_replacement(self, tmp_path, monkeypatch) -> None:
-        from datetime import datetime
+        """Date tokens use a frozen clock — comparing against a second
+        datetime.now() flakes across a month/year boundary."""
+        import datetime as datetime_module
 
         sm = SourceManager(
             sources_file=str(tmp_path / "missing.json"),
             settings_file=str(tmp_path / "missing.yaml"),
         )
 
-        now = datetime.now()
-        expected_url = (
-            f"https://example.com/{now.strftime('%Y')}/{now.strftime('%m')}/data.txt"
-        )
+        class _FrozenDatetime(datetime_module.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2024, 3, 7, 12, 0, 0, tzinfo=tz)
+
+        # _fetch_url_list does `from datetime import datetime` at call time, so
+        # patching the attribute on the module is what it picks up.
+        monkeypatch.setattr(datetime_module, "datetime", _FrozenDatetime)
+
+        expected_url = "https://example.com/2024/03/data.txt"
 
         captured = []
 
@@ -1285,6 +1578,49 @@ class TestFetchUrlList:
         )
         # Should have deduplicated to 1 file
         assert len(result.files) == 1
+
+    def test_url_list_drops_private_urls(self, tmp_path, monkeypatch, caplog) -> None:
+        """A loopback URL listed in an untrusted index is never requested."""
+        caplog.set_level("WARNING")
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        index = "\n".join(
+            [
+                "http://127.0.0.1:9200/_cat/indices",
+                "http://169.254.169.254/latest/meta-data/",
+                "https://example.com/good.txt",
+            ]
+        )
+        requested: list[str] = []
+
+        def handler(url):
+            if url.endswith("index.txt"):
+                return _FakeResponse(text=index)
+            return _FakeResponse(text="vless://ok")
+
+        _patch_url_guard(monkeypatch, blocked={"127.0.0.1", "169.254.169.254"})
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(handler, requested),
+        )
+
+        result = asyncio.run(
+            sm._fetch_url_list(
+                {"name": "index", "url": "https://example.com/index.txt"},
+                "index",
+                DEFAULT_LIST_TYPE,
+                None,
+            )
+        )
+        assert result.ok is True
+        assert result.files == [("good.txt", "vless://ok")]
+        assert requested == [
+            "https://example.com/index.txt",
+            "https://example.com/good.txt",
+        ]
+        assert "Dropped non-public source url" in caplog.text
 
 
 # ===================================================================

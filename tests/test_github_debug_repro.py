@@ -21,6 +21,22 @@ from src.sources.github import GitHubClient
 # current level fail (empty content), budget is consumed for nothing and the
 # global "files fetched" cap is miscounted.
 # ---------------------------------------------------------------------------
+class _StreamBody:
+    """Streamed-body support for a fake response: exposes text as aiter_bytes.
+
+    Raw downloads go through ``client.stream()`` so an oversized body is dropped
+    mid-flight; a fake that only carries ``.text`` cannot stand in for that.
+    """
+
+    text = ""
+    encoding = "utf-8"
+
+    async def aiter_bytes(self, chunk_size: int = 4):
+        payload = str(self.text).encode(self.encoding)
+        for start in range(0, len(payload), chunk_size):
+            yield payload[start : start + chunk_size]
+
+
 def test_budget_counts_attempts_not_successes() -> None:
     client = GitHubClient()
 
@@ -119,7 +135,7 @@ def test_secondary_rate_limit_via_retry_after(monkeypatch) -> None:
     client = GitHubClient()
     attempts = {"n": 0}
 
-    class FakeResponse:
+    class FakeResponse(_StreamBody):
         def __init__(self, status: int, headers: dict):
             self.status_code = status
             self.headers = headers
@@ -216,7 +232,7 @@ def test_request_is_bounded_by_semaphore(monkeypatch) -> None:
     client = GitHubClient(max_concurrent_api=1)
     in_flight = {"n": 0, "max": 0}
 
-    class FakeResponse:
+    class FakeResponse(_StreamBody):
         status_code = 200
 
         def raise_for_status(self):
@@ -260,7 +276,7 @@ def test_raw_url_never_carries_token(monkeypatch) -> None:
     client = GitHubClient(token="ghp_secret")
     captured: dict = {}
 
-    class FakeResponse:
+    class FakeResponse(_StreamBody):
         status_code = 200
         text = "raw"
 
@@ -280,6 +296,19 @@ def test_raw_url_never_carries_token(monkeypatch) -> None:
         async def get(self, url, headers=None):
             captured["get_headers"] = headers
             return FakeResponse()
+
+        def stream(self, method, url, **kwargs):
+            """Delegate to get() so each fake keeps its own behaviour."""
+            client = self
+
+            class _Ctx:
+                async def __aenter__(self):
+                    return await client.get(url, **kwargs)
+
+                async def __aexit__(self, *args):
+                    return None
+
+            return _Ctx()
 
     monkeypatch.setattr("src.sources.github.httpx.AsyncClient", FakeRawClient)
 

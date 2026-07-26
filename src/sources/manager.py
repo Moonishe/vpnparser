@@ -14,15 +14,37 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import yaml
 
+from src.scheduler.settings import Settings
 from src.sources.github import GitHubClient
 from src.sources.list_types import DEFAULT_LIST_TYPE, infer_source_list_type
+from src.utils.http import read_limited_text
+from src.utils.net import SAFE_URL_SCHEMES, is_safe_public_url
 
 logger = logging.getLogger(__name__)
+
+#: Statuses httpx treats as redirects. Followed manually so every hop can be
+#: re-validated against the SSRF guard.
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+#: Maximum number of redirects followed for one untrusted URL.
+_MAX_REDIRECT_HOPS = 5
+
+#: Hard cap on the body accepted from one untrusted URL. The listed URLs are
+#: written by a third party, so an endless or multi-gigabyte stream must not be
+#: buffered into memory — the httpx timeout bounds idle time, not volume.
+MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
+
+#: Wall-clock budget for one attempt at one untrusted URL, as a multiple of the
+#: per-operation ``timeout``. httpx restarts its read timer on every chunk, so a
+#: host dripping one byte just before each read timeout keeps the stream open
+#: forever while staying far below MAX_DOWNLOAD_BYTES. The budget also covers
+#: the whole redirect chain, which is several operations by itself.
+DOWNLOAD_TIMEOUT_FACTOR = 4.0
 
 
 @dataclass
@@ -73,9 +95,11 @@ class SourceManager:
         self._semaphore = asyncio.Semaphore(max(1, max_concurrent))
 
         # GitHub client (lazily used inside fetch_source; lifecycle owned here)
-        api_base = self._settings_sources().get(
-            "github_api_base",
-            "https://api.github.com",
+        # `or` (not the get() default): a present-but-empty key — YAML parses
+        # bare "github_api_base:" as None — must not reach GitHubClient, whose
+        # api_base.rstrip("/") would crash the whole pipeline at startup.
+        api_base = (
+            self._settings_sources().get("github_api_base") or "https://api.github.com"
         )
         self._github = GitHubClient(token=github_token, api_base=api_base)
 
@@ -118,10 +142,16 @@ class SourceManager:
     def enabled_sources(self) -> list[dict[str, Any]]:
         """Return only sources that are enabled.
 
-        Accepts any truthy value (true, "true", 1) so hand-edited JSON/YAML
-        sources are not silently disabled by minor formatting differences.
+        Hand-written string values are parsed rather than tested for
+        truthiness: ``"true"``/``"yes"``/``"1"``/``"on"`` enable a source and
+        ``"false"``/``"no"``/``"0"``/``"off"`` disable it. Plain ``bool(...)``
+        would enable ``"false"`` — every non-empty string is truthy.
         """
-        return [s for s in self.sources if bool(s.get("enabled", False))]
+        return [
+            s
+            for s in self.sources
+            if Settings.as_bool(s.get("enabled", False), default=False)
+        ]
 
     async def fetch_all(self) -> list[SourceResult]:
         """Fetch from all enabled sources concurrently.
@@ -302,41 +332,108 @@ class SourceManager:
         attempts: int = 3,
         retry_delay: float = 2.0,
     ) -> str:
-        """Fetch a direct HTTPS text source."""
+        """Fetch a direct HTTP(S) text source from an untrusted URL.
+
+        These URLs come from third-party indexes (``url-list`` sources), so the
+        fetch is guarded three ways: the host must resolve to public addresses
+        only (SSRF guard), the streamed body is discarded past
+        ``MAX_DOWNLOAD_BYTES``, and every attempt runs under a wall-clock budget
+        of ``timeout * DOWNLOAD_TIMEOUT_FACTOR`` seconds.
+
+        Returns:
+            The response body, ``""`` on 404 or on an oversized body.
+
+        Raises:
+            ValueError: If the URL is not absolute http(s), points at a
+                non-public host, or redirects more than
+                ``_MAX_REDIRECT_HOPS`` times.
+            httpx.HTTPError: If every attempt failed.
+            TimeoutError: If the last attempt outlived its wall-clock budget.
+        """
         parsed = urlparse((url or "").strip())
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        if parsed.scheme not in SAFE_URL_SCHEMES or not parsed.netloc:
             msg = f"source url must be absolute HTTP/HTTPS: {url!r}"
             raise ValueError(msg)
 
         max_attempts = max(1, attempts)
         last_error: Exception | None = None
+        budget = timeout * DOWNLOAD_TIMEOUT_FACTOR
         headers = {
             "User-Agent": "vpn-config-parser/1.0",
             "Accept": "text/plain,*/*",
         }
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        # follow_redirects=False: httpx would follow a hop to 127.0.0.1 or to
+        # the cloud metadata endpoint without re-checking it, so redirects are
+        # walked manually with a fresh SSRF check per hop.
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             for attempt in range(1, max_attempts + 1):
                 try:
-                    response = await client.get(url, headers=headers)
-                    if response.status_code == 404:
-                        return ""
-                    response.raise_for_status()
-                    return response.text
+                    async with asyncio.timeout(budget):
+                        return await SourceManager._get_validated(client, url, headers)
                 except (httpx.RequestError, httpx.HTTPStatusError) as exc:
                     last_error = exc
-                    if attempt >= max_attempts:
-                        break
-                    logger.warning(
-                        "Direct source fetch failed for %s (attempt %d/%d): %s",
-                        url,
-                        attempt,
-                        max_attempts,
-                        exc,
+                except TimeoutError:
+                    last_error = TimeoutError(
+                        f"fetch of {url!r} exceeded its {budget:.1f}s budget",
                     )
-                    await asyncio.sleep(max(0.0, retry_delay))
+                if attempt >= max_attempts:
+                    break
+                logger.warning(
+                    "Direct source fetch failed for %s (attempt %d/%d): %s",
+                    url,
+                    attempt,
+                    max_attempts,
+                    last_error,
+                )
+                await asyncio.sleep(max(0.0, retry_delay))
         if last_error is not None:
             raise last_error
         return ""  # pragma: no cover
+
+    @staticmethod
+    async def _get_validated(
+        client: httpx.AsyncClient,
+        url: str,
+        headers: dict[str, str],
+    ) -> str:
+        """GET ``url``, re-validating every redirect hop against the SSRF guard.
+
+        Returns:
+            The response body, or ``""`` on 404 or an oversized body.
+
+        Raises:
+            ValueError: If a hop is not a public http(s) URL, or the redirect
+                chain is longer than ``_MAX_REDIRECT_HOPS``.
+        """
+        target = url
+        for _hop in range(_MAX_REDIRECT_HOPS + 1):
+            if not await is_safe_public_url(target):
+                logger.warning("Dropped non-public source url: %s", target)
+                msg = f"refusing to fetch non-public url: {target!r}"
+                raise ValueError(msg)
+            async with client.stream("GET", target, headers=headers) as response:
+                if response.status_code == 404:
+                    return ""
+                location = (
+                    response.headers.get("location")
+                    if response.status_code in _REDIRECT_STATUSES
+                    else None
+                )
+                if location:
+                    target = urljoin(target, location.strip())
+                    continue
+                response.raise_for_status()
+                body = await read_limited_text(response, max_bytes=MAX_DOWNLOAD_BYTES)
+            if body is None:
+                logger.warning(
+                    "Discarded oversized response from %s (limit %d bytes).",
+                    target,
+                    MAX_DOWNLOAD_BYTES,
+                )
+                return ""
+            return body
+        msg = f"too many redirects while fetching {url!r}"
+        raise ValueError(msg)
 
     @staticmethod
     def _filename_from_url(url: str) -> str:

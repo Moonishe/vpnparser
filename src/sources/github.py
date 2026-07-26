@@ -16,6 +16,8 @@ from urllib.parse import quote, urlparse
 
 import httpx
 
+from src.utils.http import read_limited_text
+
 logger = logging.getLogger(__name__)
 
 # Seconds to wait when primary rate limit is exhausted (fallback, normally
@@ -23,6 +25,31 @@ logger = logging.getLogger(__name__)
 _DEFAULT_RATELIMIT_WAIT = 60.0
 _TRUSTED_RAW_HOSTS = {"raw.githubusercontent.com"}
 _RAW_FETCH_ATTEMPTS = 3
+
+#: Statuses worth retrying on a raw download: the raw host throttles bursts
+#: with 429, and 5xx are transient by definition.
+_RETRIABLE_RAW_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+#: Upper bound on a honoured ``Retry-After``, so a hostile header cannot park
+#: the pipeline for hours.
+_MAX_RETRY_AFTER = 30.0
+
+#: Hard cap on a single raw file. ``max_files``/``max_concurrent_urls`` multiply
+#: whatever one download costs, so an oversized blob must not travel further
+#: into the parsers (the httpx timeout bounds idle time, not volume). Enforced
+#: while streaming, so an oversized body is never fully buffered.
+MAX_RAW_FILE_BYTES = 12 * 1024 * 1024
+
+
+def _retry_after_delay(header_value: str | None, fallback: float) -> float:
+    """Return the delay to wait before a retry, honouring ``Retry-After``."""
+    if not header_value:
+        return fallback
+    try:
+        seconds = float(header_value)
+    except (TypeError, ValueError):
+        return fallback
+    return min(max(0.0, seconds), _MAX_RETRY_AFTER)
 
 
 def _clean_repo_path(path: str) -> str:
@@ -268,15 +295,28 @@ class GitHubClient:
     async def fetch_raw_file(self, download_url: str) -> str:
         """Fetch raw file content from a ``download_url``.
 
-        Returns empty string on 404.
+        Network errors *and* transient statuses (429 — the raw host throttles
+        bursts — plus 5xx) are retried up to ``_RAW_FETCH_ATTEMPTS`` times,
+        honouring ``Retry-After``. The body is streamed and dropped as soon as it
+        passes ``MAX_RAW_FILE_BYTES``, so an oversized file is never buffered
+        whole nor handed to the parsers.
+
+        Returns:
+            The file content, or an empty string on 404, on an untrusted URL,
+            on an oversized body, or when every attempt hit a network error.
+
+        Raises:
+            httpx.HTTPStatusError: for non-retriable statuses, and for
+                retriable ones that were still failing on the last attempt.
         """
         parsed = urlparse(download_url)
         if parsed.scheme != "https" or parsed.netloc.lower() not in _TRUSTED_RAW_HOSTS:
             logger.warning("Rejected untrusted raw download URL: %s", download_url)
             return ""
 
-        response: httpx.Response | None = None
         for attempt in range(1, _RAW_FETCH_ATTEMPTS + 1):
+            backoff = 0.5 * attempt
+            retry_delay: float | None = None
             try:
                 # Bound concurrent raw downloads too — raw hosts also
                 # rate-limit, and a burst of parallel fetches can trigger it.
@@ -286,15 +326,41 @@ class GitHubClient:
                         follow_redirects=True,
                     ) as client,
                     self._api_semaphore,
-                ):
-                    response = await client.get(
+                    client.stream(
+                        "GET",
                         download_url,
                         headers=self._raw_headers(),
+                    ) as response,
+                ):
+                    if response.status_code == 404:
+                        logger.debug("404 fetching raw file %s", download_url)
+                        return ""
+                    if response.status_code in _RETRIABLE_RAW_STATUSES:
+                        retry_delay = _retry_after_delay(
+                            response.headers.get("Retry-After"),
+                            backoff,
+                        )
+                    response.raise_for_status()
+                    body = await read_limited_text(
+                        response,
+                        max_bytes=MAX_RAW_FILE_BYTES,
                     )
-                break
+            except httpx.HTTPStatusError as exc:
+                if retry_delay is None or attempt >= _RAW_FETCH_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Raw fetch of %s got HTTP %d (attempt %d/%d) — retry in %.1fs",
+                    download_url,
+                    exc.response.status_code,
+                    attempt,
+                    _RAW_FETCH_ATTEMPTS,
+                    retry_delay,
+                )
+                await asyncio.sleep(retry_delay)
+                continue
             except httpx.RequestError as exc:
                 if attempt < _RAW_FETCH_ATTEMPTS:
-                    await asyncio.sleep(0.5 * attempt)
+                    await asyncio.sleep(backoff)
                     continue
                 logger.warning(
                     "Failed to fetch raw file %s after %d attempts: %s: %s",
@@ -304,18 +370,16 @@ class GitHubClient:
                     exc,
                 )
                 return ""
-        # The loop above either breaks (response set) or returns "" on exhaustion.
-        if response is None:
-            logger.warning(
-                "fetch_raw_file: no response after retries for %s",
-                download_url,
-            )
-            return ""
-        if response.status_code == 404:
-            logger.debug("404 fetching raw file %s", download_url)
-            return ""
-        response.raise_for_status()
-        return response.text
+            if body is None:
+                logger.warning(
+                    "Raw file %s exceeded the %d byte limit — discarded.",
+                    download_url,
+                    MAX_RAW_FILE_BYTES,
+                )
+                return ""
+            return body
+        # Only reachable when _RAW_FETCH_ATTEMPTS is not positive.
+        return ""
 
     async def fetch_file(
         self,

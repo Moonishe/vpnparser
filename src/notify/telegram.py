@@ -22,6 +22,7 @@ import logging
 import os
 import socket
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -36,6 +37,12 @@ logger = logging.getLogger(__name__)
 # e.g. "123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 _TOKEN_MIN_LEN = 20
 
+# Characters http.client rejects inside a URL path (C0 controls, space, DEL).
+# The token is interpolated into the sendMessage URL, and the rejection message
+# quotes that whole path — so a token pasted into .env with an embedded newline
+# would end up in the log verbatim.  Refuse it before it reaches urllib.
+_URL_FORBIDDEN_CHARS = frozenset(chr(code) for code in (*range(0x21), 0x7F))
+
 # LLM endpoint — OpenAI-compatible. DashScope (Alibaba) qwen-flash is fast and free.
 _LLM_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 _LLM_MODEL = "qwen-plus"
@@ -44,43 +51,99 @@ _LLM_MODEL = "qwen-plus"
 _SELF_CLOSING_TAGS = {"br", "hr"}
 _PAIRED_TAGS = ("b", "i", "u", "s", "a", "code", "pre", "blockquote")
 
+# Telegram sendMessage rejects text longer than this with a 400.
+_TELEGRAM_MAX_TEXT = 4096
 
-def _truncate_html_safe(text: str, limit: int) -> str:
-    """Truncate Telegram HTML text to at most limit characters.
+# Longest entity html.escape() can emit ("&quot;" / "&#x27;") plus slack.
+_MAX_ENTITY_LEN = 8
 
-    Cuts at a safe offset (never inside a <tag>), appends an ellipsis, and
-    closes any tags left open by the cut. Prevents a 400 from Telegram when
-    parse_mode="HTML" receives a half-open tag.
+_ELLIPSIS = "..."
+
+# One retry is enough for the flood limit: two runs colliding (a manual
+# workflow_dispatch on top of the hourly schedule) is the realistic case, and
+# without it the "subscription updated" message is simply lost.
+_SEND_ATTEMPTS = 2
+
+# Used when a 429 body carries no usable ``retry_after``.
+_DEFAULT_FLOOD_WAIT = 3.0
+
+# Upper bound on an honoured ``retry_after`` — a bogus value must not park the
+# pipeline for hours.
+_MAX_FLOOD_WAIT = 30.0
+
+
+def _flood_wait_seconds(body: str) -> float:
+    """Return the delay to honour before retrying a flood-limited send.
+
+    Telegram answers a flood limit with HTTP 429 and
+    ``{"parameters": {"retry_after": N}}``.
+
+    Args:
+        body: Decoded response body of the 429 answer.
+
+    Returns:
+        Seconds to wait, clamped to ``_MAX_FLOOD_WAIT``.
     """
-    if len(text) <= limit:
-        return text
-    cut = limit
-    # Avoid cutting inside an HTML entity (&...;) — back up to '&'.
-    if "&" in text[max(0, limit - 7) : limit + 1]:
-        last_amp = text.rfind("&", 0, limit)
-        semi = text.find(";", last_amp, limit + 1)
-        if semi == -1:
-            cut = last_amp
-    # Avoid cutting between '<' and '>' (inside a tag).
-    last_open = text.rfind("<", 0, cut)
-    if last_open != -1 and text.find(">", last_open, cut) == -1:
+    try:
+        parameters = json.loads(body).get("parameters")
+        raw = parameters.get("retry_after")
+    except (AttributeError, TypeError, ValueError):
+        return _DEFAULT_FLOOD_WAIT
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_FLOOD_WAIT
+    return min(max(seconds, 0.0), _MAX_FLOOD_WAIT)
+
+
+def _safe_cut_offset(text: str, limit: int) -> int:
+    """Return an offset ``<= limit`` at which ``text`` can be split safely.
+
+    ``text[:offset]`` never ends inside an HTML tag or a half-written
+    ``&entity;`` — both would make Telegram reject the message with
+    "can't parse entities".
+    """
+    cut = min(limit, len(text))
+    # Avoid cutting inside an HTML entity (&...;) — back up to '&'.  The ';'
+    # must land *inside* text[:cut], so the search bound is exclusive: a ';'
+    # at index cut is not part of the slice.
+    last_amp = text.rfind("&", max(0, cut - _MAX_ENTITY_LEN), cut)
+    if last_amp != -1 and text.find(";", last_amp, cut) == -1:
+        cut = last_amp
+    # Avoid cutting between '<' and '>' (inside a tag).  Backing up once is not
+    # enough: with runs like "a<<b" the new boundary lands right after another
+    # '<', so the prefix would again end on an unclosed tag opener.  ``cut``
+    # strictly decreases every round, so the loop always terminates.
+    while True:
+        last_open = text.rfind("<", 0, cut)
+        if last_open == -1 or text.find(">", last_open, cut) != -1:
+            break
         cut = last_open
-    truncated = text[:cut].rstrip()
+    return max(0, cut)
+
+
+def _open_tags(text: str) -> list[str]:
+    """Return the paired tags left open in ``text``, outermost first."""
     open_stack: list[str] = []
     pos = 0
-    while pos < len(truncated):
-        lt = truncated.find("<", pos)
+    while pos < len(text):
+        lt = text.find("<", pos)
         if lt == -1:
             break
-        gt = truncated.find(">", lt)
+        gt = text.find(">", lt)
         if gt == -1:
             break
-        tag_text = truncated[lt + 1 : gt].strip()
+        tag_text = text[lt + 1 : gt].strip()
         pos = gt + 1
         if not tag_text:
             continue
         if tag_text.startswith("/"):
-            name = tag_text[1:].split()[0].lower()
+            # A nameless closing tag ("</>", "</ >") has nothing to pop, and
+            # split() on the empty remainder yields no element to index.
+            closing = tag_text[1:].split()
+            if not closing:
+                continue
+            name = closing[0].lower()
             for i in range(len(open_stack) - 1, -1, -1):
                 if open_stack[i] == name:
                     open_stack.pop(i)
@@ -90,10 +153,31 @@ def _truncate_html_safe(text: str, limit: int) -> str:
         if name in _SELF_CLOSING_TAGS or name not in _PAIRED_TAGS:
             continue
         open_stack.append(name)
-    truncated = truncated + "..."
-    for name in reversed(open_stack):
-        truncated += f"</{name}>"
-    return truncated
+    return open_stack
+
+
+def _truncate_html_safe(text: str, limit: int) -> str:
+    """Truncate Telegram HTML text so the *result* is at most limit characters.
+
+    Cuts at a safe offset (never inside a <tag> or an entity), appends an
+    ellipsis, and closes any tags left open by the cut. The ellipsis and the
+    closing tags count against ``limit`` — a "</blockquote>" tail adds 13
+    characters, and without reserving room for it the message would come back
+    from Telegram as 400 "message is too long".
+    """
+    if len(text) <= limit:
+        return text
+    cut = limit
+    while cut > 0:
+        prefix = text[: _safe_cut_offset(text, cut)].rstrip()
+        closing = "".join(f"</{name}>" for name in reversed(_open_tags(prefix)))
+        result = f"{prefix}{_ELLIPSIS}{closing}"
+        if len(result) <= limit:
+            return result
+        # Shrink by exactly the overflow: the next attempt keeps as much text
+        # as the reserved ellipsis/closing tags allow.
+        cut -= max(1, len(result) - limit)
+    return ""
 
 
 def _repo_slug() -> str:
@@ -269,6 +353,48 @@ def _format_country_counts(countries: dict[str, Any], *, max_items: int = 6) -> 
     if remaining > 0:
         parts.append(f"+{remaining} стран")
     return ", ".join(parts)
+
+
+def _format_country_codes(countries: str, *, max_items: int = 9) -> str:
+    """Format a caller-supplied country-code list for Telegram.
+
+    Args:
+        countries: Whitespace- or comma-separated ISO codes ("DE FI NL").
+        max_items: How many countries are rendered before "+N стран".
+
+    Returns:
+        A compact ``flag name, flag name`` line, or ``""`` when nothing parsed.
+    """
+    codes: list[str] = []
+    for chunk in (countries or "").replace(",", " ").split():
+        code = chunk.strip().upper()
+        if code and code not in codes:
+            codes.append(code)
+    if not codes:
+        return ""
+    shown = codes[:max_items]
+    text = ", ".join(_country_name(code) for code in shown)
+    remaining = len(codes) - len(shown)
+    if remaining > 0:
+        text += f", +{remaining} стран"
+    return text
+
+
+def _fallback_subscription_line(configs_count: int, countries: str) -> str:
+    """Render the caller-supplied totals when no per-output data was found.
+
+    ``send_notification`` receives the count the pipeline reported (the
+    ``--configs`` CLI flag is required for exactly this case), so a missing
+    run-summary.json plus unreadable output files must not leave the operator
+    with a notification that contains no numbers at all.
+    """
+    if configs_count <= 0:
+        return "  данных по файлам нет"
+    country_text = _format_country_codes(countries)
+    # The country list is the caller's allow-list, not a measurement — label it
+    # so it never reads like the per-country counts of the lines above.
+    suffix = f" — ожидались {country_text}" if country_text else ""
+    return f"  {_b(_SUBSCRIPTION_LABELS['combined'])}: {configs_count}{suffix}"
 
 
 def _format_validation_section(summary: dict[str, Any]) -> str:
@@ -447,7 +573,19 @@ def _format_validation_section(summary: dict[str, Any]) -> str:
 def _format_subscriptions_section(
     summary: dict[str, Any],
     subscription_file: str,
+    *,
+    fallback_count: int = 0,
+    fallback_countries: str = "",
 ) -> str:
+    """Render the per-output subscription lines.
+
+    Args:
+        summary: Parsed run-summary.json (may be empty).
+        subscription_file: Combined output path, used to locate sibling files.
+        fallback_count: Config count reported by the caller, used only when
+            neither the summary nor the local files yielded any number.
+        fallback_countries: Country codes reported by the caller, same fallback.
+    """
     outputs = summary.get("outputs")
     lines = [f"{_b('📍 Подписки и страны')}:"]
 
@@ -487,7 +625,7 @@ def _format_subscriptions_section(
         )
 
     if len(lines) == 1:
-        lines.append("  данных по файлам нет")
+        lines.append(_fallback_subscription_line(fallback_count, fallback_countries))
     return "\n".join(lines)
 
 
@@ -687,6 +825,9 @@ def _generate_fun_fact(api_key: str) -> str:
 def _send_telegram(token: str, chat_id: str, text: str) -> bool:
     """Send a message to Telegram via Bot API.
 
+    A flood limit (HTTP 429) is retried once after the ``retry_after`` delay
+    Telegram sends with it; every other failure gives up immediately.
+
     Returns True on success, False on failure.
     """
     # Fail fast on empty credentials — otherwise we make a guaranteed-to-fail
@@ -703,9 +844,10 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
 
     # Telegram sendMessage rejects text longer than 4096 chars with a 400.
     # Truncate defensively; avoid cutting inside an HTML tag which would break
-    # parse_mode="HTML" and produce a 400.
-    if len(text) > 4096:
-        text = _truncate_html_safe(text, 4093)
+    # parse_mode="HTML" and produce a 400.  The ellipsis and the closing tags
+    # are counted inside the limit, so the result always fits.
+    if len(text) > _TELEGRAM_MAX_TEXT:
+        text = _truncate_html_safe(text, _TELEGRAM_MAX_TEXT)
         logger.warning("Telegram message truncated to 4096 chars")
 
     # Validate token format — fail fast instead of a 10s network timeout.
@@ -714,50 +856,65 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
         ":" not in token
         or len(token) < _TOKEN_MIN_LEN
         or not token.split(":", 1)[0].isdigit()
+        or not _URL_FORBIDDEN_CHARS.isdisjoint(token)
     ):
         logger.warning("Telegram token has invalid format — expected '<digits>:<hash>'")
         return False
 
-    try:
-        data = json.dumps(
-            {
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-            },
-        ).encode("utf-8")
+    data = json.dumps(
+        {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+        },
+    ).encode("utf-8")
 
-        req = urllib.request.Request(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data=data,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "vpnparser/1.0",
-            },
-            method="POST",
-        )
-
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-            ok = result.get("ok", False)
-            return bool(ok) if ok is not None else False
-    except urllib.error.HTTPError as exc:
-        # HTTPError is file-like — read Telegram's error description.
+    for attempt in range(1, _SEND_ATTEMPTS + 1):
         try:
-            body = exc.read().decode("utf-8", errors="replace")[:200]
-        except Exception:
-            body = ""
-        logger.warning("Telegram API returned HTTP %d: %s", exc.code, body)
-        return False
-    except urllib.error.URLError as exc:
-        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
-            logger.warning("Telegram send timed out after 10s — API unreachable")
-        else:
-            logger.warning("Telegram send network error: %s", exc.reason)
-        return False
-    except Exception as exc:
-        logger.warning("Telegram send failed unexpectedly: %s", exc)
-        return False
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                data=data,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "vpnparser/1.0",
+                },
+                method="POST",
+            )
+
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                ok = result.get("ok", False)
+                return bool(ok) if ok is not None else False
+        except urllib.error.HTTPError as exc:
+            # HTTPError is file-like — read Telegram's error description.
+            try:
+                body = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                body = ""
+            logger.warning("Telegram API returned HTTP %d: %s", exc.code, body[:200])
+            if exc.code != 429 or attempt >= _SEND_ATTEMPTS:
+                return False
+            wait = _flood_wait_seconds(body)
+            logger.warning(
+                "Telegram flood limit — retrying once in %.0fs.",
+                wait,
+            )
+            time.sleep(wait)
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+                logger.warning("Telegram send timed out after 10s — API unreachable")
+            else:
+                logger.warning("Telegram send network error: %s", exc.reason)
+            return False
+        except Exception as exc:
+            # Unexpected errors from urllib quote the request URL, which carries
+            # the bot token — never copy it into the log verbatim.
+            logger.warning(
+                "Telegram send failed unexpectedly: %s",
+                str(exc).replace(token, "<redacted>"),
+            )
+            return False
+    return False  # pragma: no cover - the last attempt always returns above
 
 
 def send_notification(
@@ -795,7 +952,12 @@ def send_notification(
     urls = _subscription_urls()
 
     validation_section = _format_validation_section(summary)
-    subscriptions_section = _format_subscriptions_section(summary, subscription_file)
+    subscriptions_section = _format_subscriptions_section(
+        summary,
+        subscription_file,
+        fallback_count=configs_count,
+        fallback_countries=countries,
+    )
 
     # Build message.
     repo_slug = _repo_slug()

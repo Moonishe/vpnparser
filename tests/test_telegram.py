@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import urllib.error
@@ -62,15 +63,38 @@ class TestTruncateHtmlSafe:
         assert telegram_module._truncate_html_safe(text, 17) == text
 
     def test_truncate_empty_tag_name(self) -> None:
-        """Line 80-81: empty tag name '<>' counted but skipped.
+        """An empty tag name ('<>' / '</>') is skipped, not a crash.
 
-        NOTE: This exposes that an empty closing tag name '</>' triggers an
-        IndexError at line 83 in the current implementation.  We accept the
-        behaviour as-is (tag_text="/" -> split()[0] on empty string fails).
+        The helper exists to survive broken HTML, but a nameless closing tag
+        made ``tag_text[1:].split()[0]`` index an empty list, so the whole
+        notification was lost to an IndexError raised before the send.
         """
         text = "<>some text</> and <b>bold</b>"
-        with pytest.raises(IndexError):
-            telegram_module._truncate_html_safe(text, 20)
+        result = telegram_module._truncate_html_safe(text, 20)
+        assert "..." in result
+
+    @pytest.mark.parametrize("text", ["</>", "</ >", "x</>y", "</></></>"])
+    def test_open_tags_survives_nameless_closing_tag(self, text: str) -> None:
+        """A nameless closing tag closes nothing instead of raising IndexError."""
+        assert telegram_module._open_tags(text) == []
+
+    def test_open_tags_nameless_closing_tag_keeps_open_stack(self) -> None:
+        """'</>' must not pop a genuinely open tag."""
+        assert telegram_module._open_tags("<b>bold</>") == ["b"]
+
+    def test_truncate_nameless_closing_tag_does_not_raise(self) -> None:
+        """The reduced repro from fuzzing: '</>' repeated past the limit."""
+        assert telegram_module._truncate_html_safe("</>" * 3, 6) == "</>..."
+
+    def test_open_tags_stops_at_unterminated_tag_opener(self) -> None:
+        """A '<' with no '>' ends the scan instead of being treated as a tag."""
+        assert telegram_module._open_tags("<b>ok</b> then <broken") == []
+
+    def test_truncate_returns_empty_when_limit_leaves_no_room(self) -> None:
+        """A limit smaller than the ellipsis yields "" instead of overflowing."""
+        assert (
+            telegram_module._truncate_html_safe("<blockquote>hi</blockquote>", 2) == ""
+        )
 
     def test_truncate_entity_with_semicolon_in_range(self) -> None:
         """If entity has ';' before limit, no backing up needed."""
@@ -105,6 +129,77 @@ class TestTruncateHtmlSafe:
         result = telegram_module._truncate_html_safe(text, 4)
         assert "..." in result
         assert "<b>" not in result.split("...")[0]
+
+    # --- the limit covers ellipsis + closing tags (regression) -----------
+
+    def test_truncate_result_fits_limit_with_closing_tags(self) -> None:
+        """The closing tags are counted against the limit, not appended past it."""
+        text = "<blockquote>" + "x" * 200 + "</blockquote>"
+        result = telegram_module._truncate_html_safe(text, 100)
+        assert len(result) <= 100
+        assert result.endswith("...</blockquote>")
+
+    def test_truncate_result_fits_limit_with_anchor(self) -> None:
+        """An <a href=...> open at the cut is closed inside the limit."""
+        text = '<a href="https://example.com/path">' + "y" * 200 + "</a>"
+        result = telegram_module._truncate_html_safe(text, 60)
+        assert len(result) <= 60
+        assert result.endswith("...</a>")
+        assert result.count("<a ") == result.count("</a>")
+
+    def test_truncate_semicolon_exactly_at_limit_drops_entity(self) -> None:
+        """';' sitting on the limit index is not part of text[:limit].
+
+        The old bound (limit + 1) treated the entity as complete and left a
+        bare '&amp' in the message, which Telegram rejects with 400
+        "can't parse entities".
+        """
+        text = "xxxxxx&amp;tail and more text"
+        assert text[10] == ";"
+        result = telegram_module._truncate_html_safe(text, 10)
+        assert len(result) <= 10
+        assert "&" not in result
+
+    def test_truncate_keeps_complete_entity_before_limit(self) -> None:
+        """An entity that ends before the limit is kept intact."""
+        text = "xxxxx&amp;tail and more text"
+        assert text[9] == ";"
+        result = telegram_module._truncate_html_safe(text, 15)
+        assert len(result) <= 15
+        assert result.startswith("xxxxx&amp;")
+
+    # --- the cut never leaves a dangling '<' (regression) ----------------
+
+    @pytest.mark.parametrize(
+        ("text", "limit"),
+        [
+            ("&amp;<<<a<", 9),
+            ("aaa<<bbb", 5),
+            ("<<<<<<<<", 8),
+            ("a<<<b>c", 4),
+        ],
+    )
+    def test_safe_cut_offset_never_ends_on_unclosed_tag(
+        self, text: str, limit: int
+    ) -> None:
+        """Backing up over '<' repeats until the prefix has no open tag.
+
+        Backing up only once landed the boundary right after a preceding '<'
+        ("&amp;<<"), and Telegram answers such a prefix with 400 "can't parse
+        entities".
+        """
+        offset = telegram_module._safe_cut_offset(text, limit)
+        prefix = text[:offset]
+        assert offset <= limit
+        last_open = prefix.rfind("<")
+        assert last_open == -1 or prefix.find(">", last_open) != -1
+
+    def test_truncate_does_not_emit_dangling_tag_opener(self) -> None:
+        """The full truncation path inherits the invariant."""
+        result = telegram_module._truncate_html_safe("&amp;<<<a<", 9)
+        assert len(result) <= 9
+        last_open = result.rfind("<")
+        assert last_open == -1 or result.find(">", last_open) != -1
 
 
 # ── _load_run_summary ───────────────────────────────────────────────────
@@ -408,6 +503,62 @@ class TestFormatSubscriptionsSection:
         )
         result = telegram_module._format_subscriptions_section({}, "")
         assert "данных по файлам нет" in result
+
+    # --- the caller's own count/countries are used as fallback -----------
+
+    def test_caller_totals_used_when_no_summary_and_no_files(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Without run-summary.json the numbers passed in still get reported."""
+        monkeypatch.setattr(
+            telegram_module,
+            "_subscription_file_paths",
+            lambda _: {"combined": str(tmp_path / "nope.txt")},
+        )
+        result = telegram_module._format_subscriptions_section(
+            {},
+            "",
+            fallback_count=75,
+            fallback_countries="DE FI NL",
+        )
+        assert "<b>Общая</b>: 75" in result
+        # The codes are the caller's allow-list, so they are labelled as
+        # expected countries instead of masquerading as measured counts.
+        assert "ожидались" in result
+        assert "Германия" in result
+        assert "данных по файлам нет" not in result
+
+    def test_caller_totals_ignored_when_summary_has_outputs(self) -> None:
+        """Exact pipeline metadata always wins over the caller's totals."""
+        result = telegram_module._format_subscriptions_section(
+            {"outputs": {"combined": {"count": 12, "countries": {"DE": 12}}}},
+            "",
+            fallback_count=999,
+            fallback_countries="US",
+        )
+        assert "<b>Общая</b>: 12" in result
+        assert "999" not in result
+
+
+class TestFormatCountryCodes:
+    """The plain 'DE FI NL' CLI form, as opposed to the counted dict form."""
+
+    def test_empty_string_returns_empty(self) -> None:
+        assert telegram_module._format_country_codes("") == ""
+        assert telegram_module._format_country_codes("   ") == ""
+
+    def test_codes_are_deduplicated_and_uppercased(self) -> None:
+        result = telegram_module._format_country_codes("de,DE fi")
+        assert result.count("Германия") == 1
+        assert "Финляндия" in result
+
+    def test_unknown_code_is_escaped(self) -> None:
+        """The CLI value is operator input — it must not inject HTML."""
+        assert "&lt;B&gt;" in telegram_module._format_country_codes("<b>")
+
+    def test_overflow_is_summarised(self) -> None:
+        result = telegram_module._format_country_codes("DE FI NL US GB", max_items=2)
+        assert result.endswith("+3 стран")
 
 
 # ── _count_countries_from_file ──────────────────────────────────────────
@@ -819,6 +970,40 @@ class TestSendTelegram:
         )
         assert "truncated to 4096 chars" in caplog.text
 
+    @pytest.mark.parametrize(
+        "prefix,suffix",
+        [
+            ("<blockquote>", "</blockquote>"),
+            ('<a href="https://example.com/some/long/path">', "</a>"),
+            ("<b><i>", "</i></b>"),
+        ],
+    )
+    def test_truncated_payload_never_exceeds_telegram_limit(
+        self, monkeypatch, prefix, suffix
+    ) -> None:
+        """The body actually sent must fit 4096 chars, closing tags included.
+
+        Reserving only 3 chars for the ellipsis made the closing tags overflow
+        the limit and Telegram answered 400 'message is too long'.
+        """
+        sent: dict[str, object] = {}
+
+        def fake_urlopen(req, timeout=15):
+            sent.update(json.loads(req.data.decode("utf-8")))
+            return FakeResponse(b'{"ok": true}')
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+
+        long_text = f"{prefix}{'x' * 4200}{suffix}"
+        assert telegram_module._send_telegram(
+            "123456789:ABCDEFGHIJKLMNOPQRST", "-100123", long_text
+        )
+        text = sent["text"]
+        assert isinstance(text, str)
+        assert len(text) <= 4096
+        # Every tag opened before the cut is closed after the ellipsis.
+        assert text.endswith(f"...{suffix}")
+
     def test_http_error_returns_false(self, monkeypatch, caplog) -> None:
         caplog.set_level("WARNING")
 
@@ -885,6 +1070,157 @@ class TestSendTelegram:
         )
         assert "unexpectedly" in caplog.text
 
+    # --- the token never reaches the log (regression) --------------------
+
+    @pytest.mark.parametrize(
+        "token",
+        [
+            "123456789:AAHf\nSECRETSECRETSECRET-xyz",
+            "123456789:AAHf SECRETSECRETSECRET-xyz",
+            "123456789:AAHf\tSECRETSECRETSECRET-xyz",
+        ],
+    )
+    def test_token_with_control_char_is_rejected_before_the_request(
+        self, monkeypatch, caplog, token
+    ) -> None:
+        """A token pasted with an embedded newline/space must not be sent.
+
+        The token is interpolated into the sendMessage URL; urllib rejects the
+        control character with a message quoting the whole path, which the
+        generic handler used to log verbatim — leaking the secret into the run
+        log (and into the log file on a local run).
+        """
+        caplog.set_level("WARNING")
+
+        def fail_urlopen(req, timeout=10):  # pragma: no cover - must not run
+            raise AssertionError("malformed token must not reach urllib")
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fail_urlopen)
+
+        assert telegram_module._send_telegram(token, "-100123", "text") is False
+        assert "invalid format" in caplog.text
+        assert "SECRETSECRETSECRET" not in caplog.text
+
+    def test_unexpected_error_message_is_redacted(self, monkeypatch, caplog) -> None:
+        """Even an unexpected error must not echo the token into the log."""
+        caplog.set_level("WARNING")
+        token = "123456789:ABCDEFGHIJKLMNOPQRST"
+
+        def fake_urlopen(req, timeout=10):
+            raise RuntimeError(f"boom while posting to /bot{token}/sendMessage")
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+
+        assert telegram_module._send_telegram(token, "-100123", "text") is False
+        assert "unexpectedly" in caplog.text
+        assert token not in caplog.text
+        assert "<redacted>" in caplog.text
+
+    # --- 429 flood limit is retried once (regression) --------------------
+
+    def test_flood_limit_is_retried_once_and_succeeds(
+        self, monkeypatch, caplog
+    ) -> None:
+        """A 429 with retry_after is honoured instead of losing the message."""
+        caplog.set_level("WARNING")
+        calls: list[int] = []
+        slept: list[float] = []
+
+        def fake_urlopen(req, timeout=10):
+            calls.append(1)
+            if len(calls) == 1:
+                raise urllib.error.HTTPError(
+                    "https://api.telegram.org/",
+                    429,
+                    "Too Many Requests",
+                    {},
+                    io.BytesIO(
+                        json.dumps(
+                            {"ok": False, "parameters": {"retry_after": 7}},
+                        ).encode("utf-8"),
+                    ),
+                )
+            return FakeResponse(b'{"ok": true}')
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(telegram_module.time, "sleep", slept.append)
+
+        assert telegram_module._send_telegram(
+            "123456789:ABCDEFGHIJKLMNOPQRST", "-100123", "text"
+        )
+        assert len(calls) == 2
+        assert slept == [7.0]
+        assert "flood limit" in caplog.text
+
+    def test_flood_limit_gives_up_after_one_retry(self, monkeypatch) -> None:
+        """A second 429 is final — no unbounded retry loop."""
+        calls: list[int] = []
+        slept: list[float] = []
+
+        def fake_urlopen(req, timeout=10):
+            calls.append(1)
+            raise urllib.error.HTTPError(
+                "https://api.telegram.org/",
+                429,
+                "Too Many Requests",
+                {},
+                io.BytesIO(b'{"parameters": {"retry_after": 1}}'),
+            )
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(telegram_module.time, "sleep", slept.append)
+
+        assert (
+            telegram_module._send_telegram(
+                "123456789:ABCDEFGHIJKLMNOPQRST", "-100123", "text"
+            )
+            is False
+        )
+        assert len(calls) == 2
+        assert slept == [1.0]
+
+    def test_non_flood_http_error_is_not_retried(self, monkeypatch) -> None:
+        """A 400 stays a single attempt — retrying a bad request is pointless."""
+        calls: list[int] = []
+
+        def fake_urlopen(req, timeout=10):
+            calls.append(1)
+            raise urllib.error.HTTPError(
+                "https://api.telegram.org/",
+                400,
+                "Bad Request",
+                {},
+                None,
+            )
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+
+        assert (
+            telegram_module._send_telegram(
+                "123456789:ABCDEFGHIJKLMNOPQRST", "-100123", "text"
+            )
+            is False
+        )
+        assert len(calls) == 1
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            ('{"parameters": {"retry_after": 5}}', 5.0),
+            ('{"parameters": {"retry_after": "12"}}', 12.0),
+            ('{"parameters": {"retry_after": 9999}}', 30.0),
+            ('{"parameters": {"retry_after": -4}}', 0.0),
+            ('{"parameters": {"retry_after": "soon"}}', 3.0),
+            ('{"parameters": null}', 3.0),
+            ("{}", 3.0),
+            ("not json", 3.0),
+            ("", 3.0),
+        ],
+    )
+    def test_flood_wait_seconds_is_clamped(self, body: str, expected: float) -> None:
+        """retry_after is parsed defensively and capped at 30s."""
+        assert telegram_module._flood_wait_seconds(body) == expected
+
     def test_http_error_body_read_failure(self, monkeypatch, caplog) -> None:
         caplog.set_level("WARNING")
 
@@ -937,6 +1273,33 @@ class TestSendNotification:
         monkeypatch.setattr(telegram_module, "_send_telegram", lambda t, c, text: True)
         monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda k: "fact")
         assert telegram_module.send_notification(configs_count="invalid")  # type: ignore[arg-type]
+
+    def test_configs_count_and_countries_reach_the_message(self, monkeypatch) -> None:
+        """Both arguments were validated and then dropped before rendering.
+
+        With run-summary.json missing (the very case the required ``--configs``
+        flag exists for) the operator used to get a notification with no numbers
+        at all: "нет данных по этому прогону" plus "данных по файлам нет".
+        """
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda k: "fact")
+        sent: dict[str, str] = {}
+
+        def fake_send(_token, _chat_id, text) -> bool:
+            sent["text"] = text
+            return True
+
+        monkeypatch.setattr(telegram_module, "_send_telegram", fake_send)
+
+        assert telegram_module.send_notification(
+            configs_count=75,
+            countries="DE FI NL",
+            subscription_file="output/nope.txt",
+            status_file="output/nope.json",
+        )
+        assert "75" in sent["text"]
+        assert "Германия" in sent["text"]
 
     def test_send_notification_success(self, monkeypatch) -> None:
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")

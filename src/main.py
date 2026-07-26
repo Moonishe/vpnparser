@@ -8,13 +8,21 @@ Usage::
     python -m src.main --run --continuous
 
 Flags:
-    --run        Run the full pipeline (fetch -> parse -> validate -> aggregate -> write).
+    --run        Run the full pipeline (fetch -> parse -> validate -> write).
     --publish    Also publish the result to a GitHub repo (needs GITHUB_TOKEN).
     --settings   Path to settings.yaml (default: config/settings.yaml).
     --sources    Path to sources.json (default: config/sources.json).
-    --output     Path to the output subscription file (default: output/subscription.txt).
+    --output     Path to the subscription file (default: output/subscription.txt).
     --verbose    Enable DEBUG-level logging (default: INFO).
-    --continuous Keep running in a loop — next run starts immediately after previous finishes.
+    --continuous Keep running in a loop, backing off after a failed run.
+
+Exit codes:
+    0   Pipeline ran (and, when --publish was given, publishing succeeded).
+    1   Pipeline crashed, or PipelineRunner could not be imported.
+    2   No action requested (missing --run).
+    3   Pipeline wrote configs but --publish did not succeed (expired token,
+        409/422, network error) — the published subscription is stale.
+    130 Interrupted by the user (Ctrl-C).
 """
 
 from __future__ import annotations
@@ -24,12 +32,36 @@ import asyncio
 import logging
 import os
 import sys
+import time
+from typing import TYPE_CHECKING, TextIO
 
 from src.env import load_dotenv_if_available
 
+#: Returned when the pipeline itself succeeded but the requested publish did
+#: not — a stale subscription must not look like a green run in CI.
+EXIT_PUBLISH_FAILED = 3
 
-class _Cp1251SafeStreamHandler(logging.StreamHandler):
-    """Stream handler that replaces unencodable unicode on Windows cp1251."""
+#: Backoff bounds for --continuous. A run that fails in milliseconds (broken
+#: sources.json, no network) would otherwise spin the loop at full speed.
+_CONTINUOUS_BACKOFF_START = 5.0
+_CONTINUOUS_BACKOFF_MAX = 300.0
+
+if TYPE_CHECKING:
+    # StreamHandler is generic to type checkers only; subscripting it at
+    # runtime is not supported on every interpreter we build against.
+    _StreamHandlerBase = logging.StreamHandler[TextIO]
+else:
+    _StreamHandlerBase = logging.StreamHandler
+
+
+class _EncodingSafeStreamHandler(_StreamHandlerBase):
+    """Stream handler that survives streams unable to encode the message.
+
+    Windows consoles run on legacy code pages (cp1251, cp866, cp437 ...) and
+    raise ``UnicodeEncodeError`` on characters they cannot represent. The retry
+    re-encodes through the *stream's own* encoding, not a hardcoded one, so the
+    record is never silently dropped on a console with a different code page.
+    """
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -38,15 +70,26 @@ class _Cp1251SafeStreamHandler(logging.StreamHandler):
             try:
                 stream.write(msg + self.terminator)
             except UnicodeEncodeError:
-                encoded = msg.encode("cp1251", errors="replace").decode("cp1251")
-                stream.write(encoded + self.terminator)
+                stream.write(self._downgrade(msg) + self.terminator)
             self.flush()
         except Exception:
             self.handleError(record)
 
+    def _downgrade(self, msg: str) -> str:
+        """Return ``msg`` with every character the stream cannot encode replaced."""
+        encoding = getattr(self.stream, "encoding", None) or "utf-8"
+        try:
+            return msg.encode(encoding, errors="replace").decode(
+                encoding,
+                errors="replace",
+            )
+        except LookupError:
+            # Unknown codec name on the stream — ASCII always exists.
+            return msg.encode("ascii", errors="replace").decode("ascii")
+
 
 def _setup_logging(verbose: bool) -> None:
-    """Configure the root logger with a cp1251-safe stream handler."""
+    """Configure the root logger with an encoding-safe stream handler."""
     level = logging.DEBUG if verbose else logging.INFO
     fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     logging.basicConfig(
@@ -56,9 +99,9 @@ def _setup_logging(verbose: bool) -> None:
         stream=sys.stdout,
         force=True,
     )
-    # Replace the default StreamHandler with our cp1251-safe version.
+    # Replace the default StreamHandler with our encoding-safe version.
     root = logging.getLogger()
-    handler = _Cp1251SafeStreamHandler(sys.stdout)
+    handler = _EncodingSafeStreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter(fmt, datefmt="%Y-%m-%d %H:%M:%S"))
     root.handlers = [handler]
     root.setLevel(level)
@@ -113,7 +156,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--continuous",
         action="store_true",
-        help="Keep running in a loop — next run starts immediately after previous finishes.",
+        help="Keep running in a loop, backing off after a failed run.",
     )
     parser.add_argument(
         "--notify",
@@ -127,9 +170,15 @@ def _run_once(
     args: argparse.Namespace,
     github_token: str | None,
     logger: logging.Logger,
-) -> int:
-    """Execute a single pipeline run. Returns config count or raises."""
-    from src.scheduler.runner import PipelineRunner  # noqa: PLC0415 — lazy import
+) -> tuple[int, bool]:
+    """Execute a single pipeline run.
+
+    Returns:
+        Tuple of ``(config count, publish_ok)``. ``publish_ok`` is ``True``
+        when ``--publish`` was not requested, so callers can read it as
+        "nothing was left undone". Raises whatever the pipeline raises.
+    """
+    from src.scheduler.runner import PipelineRunner
 
     runner = PipelineRunner(
         settings_path=args.settings,
@@ -137,10 +186,18 @@ def _run_once(
         github_token=github_token,
     )
     count = asyncio.run(runner.run(output_file=args.output, publish=args.publish))
+    # An empty run publishes its (empty) artifacts through
+    # PipelineRunner._finish_empty_run(), which does not record the outcome in
+    # ``_publish_ok``.  Reading the flag there would report every empty run as
+    # a failed publish — exit 3 plus a --continuous backoff for a run that
+    # actually published fine.
+    publish_ok = (
+        not args.publish or count == 0 or bool(getattr(runner, "_publish_ok", False))
+    )
 
     if count > 0:
         logger.info("Done. %d configs written to %s.", count, args.output)
-        if args.publish and hasattr(runner, "_publish_ok") and runner._publish_ok:
+        if args.publish and publish_ok:
             logger.info("Result published to GitHub.")
         elif args.publish:
             logger.warning(
@@ -148,7 +205,7 @@ def _run_once(
             )
         if args.notify:
             try:
-                from src.notify import telegram as tg  # noqa: PLC0415
+                from src.notify import telegram as tg
 
                 status_file = str(
                     runner.settings.get("publisher", {}).get(
@@ -165,7 +222,12 @@ def _run_once(
                 logger.warning("Telegram notification failed: %s", exc)
     else:
         logger.warning("Pipeline completed but produced 0 configs.")
-    return count
+        if args.publish:
+            logger.info(
+                "Empty-run artifacts were handed to the publisher — see the "
+                "publish log above for the outcome.",
+            )
+    return count, publish_ok
 
 
 def main() -> int:
@@ -199,14 +261,14 @@ def main() -> int:
     # Import lazily so that --help / argument errors do not require the full
     # dependency tree (and missing sibling modules) to be importable.
     try:
-        from src.scheduler.runner import PipelineRunner  # noqa: PLC0415,F811
+        from src.scheduler.runner import PipelineRunner  # noqa: F401
     except ImportError:
         logger.exception("Failed to import PipelineRunner")
         return 1
 
     def single_run() -> int:
         try:
-            _run_once(args, github_token, logger)
+            _count, publish_ok = _run_once(args, github_token, logger)
         except KeyboardInterrupt:
             logger.warning("Interrupted by user.")
             return 130
@@ -215,22 +277,39 @@ def main() -> int:
             return 1
         # _run_once returns the config count, but the process exit code must be
         # 0 on success - returning the count makes shells/CI mark runs failed.
+        # A requested-but-failed publish is a real failure: the pipeline wrote
+        # local files while the published subscription stayed stale.
+        if not publish_ok:
+            return EXIT_PUBLISH_FAILED
         return 0
 
     if not args.continuous:
         return single_run()
 
-    # --continuous mode: loop forever
-    logger.info("Continuous mode enabled — restarting immediately after each run.")
-    while True:
-        exit_code = single_run()
-        if exit_code == 130:
-            logger.warning("Exiting continuous loop due to KeyboardInterrupt.")
-            return 130
-        logger.info(
-            "Run finished (exit=%d). Starting next run immediately.",
-            exit_code,
-        )
+    # --continuous mode: loop until interrupted.
+    logger.info("Continuous mode enabled — looping until interrupted.")
+    backoff = _CONTINUOUS_BACKOFF_START
+    try:
+        while True:
+            exit_code = single_run()
+            if exit_code == 130:
+                logger.warning("Exiting continuous loop due to KeyboardInterrupt.")
+                return 130
+            if exit_code == 0:
+                backoff = _CONTINUOUS_BACKOFF_START
+                logger.info("Run finished (exit=0). Starting next run immediately.")
+                continue
+            logger.warning(
+                "Run finished (exit=%d). Waiting %.0fs before the next run.",
+                exit_code,
+                backoff,
+            )
+            time.sleep(backoff)
+            backoff = min(backoff * 2, _CONTINUOUS_BACKOFF_MAX)
+    except KeyboardInterrupt:
+        # Ctrl-C between runs (during logging or the backoff sleep) lands here.
+        logger.warning("Interrupted by user.")
+        return 130
 
 
 if __name__ == "__main__":

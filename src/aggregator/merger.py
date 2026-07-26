@@ -27,10 +27,15 @@ def _latency_sort_key(config: Config) -> tuple[int, float]:
 def deduplicate(configs: list[Config]) -> list[Config]:
     """Remove duplicate configs by dedup_key.
 
-    dedup_key is (address, port) — one server = one config, regardless of
-    protocol/uuid. When duplicates are found, keep the one with the lowest
-    latency_ms. latency_ms=None counts as infinity (worst), so a config with
-    a real latency always wins over one without.
+    dedup_key is (protocol, address, port), so the same server reached over
+    two different protocols (e.g. VLESS + Trojan) survives as two configs.
+    Credentials are *not* part of the key: two configs sharing protocol,
+    address and port but carrying different uuid/password collapse into the
+    first one seen (after the latency comparison below).
+
+    When duplicates are found, keep the one with the lowest latency_ms.
+    latency_ms=None counts as infinity (worst), so a config with a real
+    latency always wins over one without.
 
     Preserves first-seen insertion order for the surviving config of each key.
     Returns an empty list for empty input.
