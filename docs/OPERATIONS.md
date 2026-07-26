@@ -15,7 +15,9 @@
      the list; per-source counters are `.validation.lists.<list>.sources.<source>`
      with `checked`/`alive`
    - No source banned > 1 run in a row
-3. Review Telegram notification (if enabled) for the fun fact and counts.
+3. Review Telegram notification (if enabled) for the fun fact and counts. A
+   `skip_publish: true` dispatch sends none on purpose — it publishes nothing,
+   so there is no update to announce.
 
 ## Exit codes
 

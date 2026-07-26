@@ -134,7 +134,7 @@ Local `.env` files are loaded automatically when `python-dotenv` is installed.
 | `GITHUB_TOKEN` | GitHub API token (unauthenticated rate limits are tight) |
 | `GITHUB_OWNER` | Repository owner for publishing |
 | `GITHUB_REPO` | Repository name for publishing |
-| `GITHUB_BRANCH`| Branch for publishing (default: `main`) |
+| `GITHUB_BRANCH`| Branch for publishing *and* for the raw links in the Telegram notification (default: `main`). Both readers use this one variable, so they cannot drift apart; `update.yml` passes the repository default branch |
 | `LLM_API_KEY` | Key for the provider in `llm.provider` (DashScope Qwen); fallback parsing is off by default |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token for notifications |
 | `TELEGRAM_CHAT_ID` | Target chat ID for notifications |
@@ -201,6 +201,9 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 - Installs dependencies and a checksum-verified Xray-core, runs the checks and
   the test suite, executes the pipeline, publishes the subscription files, and
   sends an optional Telegram notification with a summary and a fun VPN fact.
+- `skip_publish: true` runs the pipeline without `--publish` and **sends no
+  notification**: nothing reaches the repository, so an "updated" message would
+  advertise counts that exist only on the runner.
 - Exit code 3 from `python -m src.main` means "pipeline fine, publish failed":
   the run is marked failed before the notification goes out. See
   [docs/OPERATIONS.md](docs/OPERATIONS.md#exit-codes).

@@ -2,7 +2,6 @@
 
 # --- Source Manager ---
 sources:
-  cache_ttl_minutes: 30
   max_concurrent_fetches: 10
   github_api_base: "https://api.github.com"
 
@@ -36,7 +35,10 @@ validator:
   tcp_concurrency: 120
   tcp_candidate_limit: 1000
   tcp_search_rounds: 3
-  tcp_max_alive: 150
+  # 0 = no early stop. Per-list values below win over this default, so keep
+  # them in sync: the aggregator balances countries over the whole alive pool
+  # and the Xray stage (xray_max_alive) caps the survivors afterwards.
+  tcp_max_alive: 0
   tcp_max_alive_by_list:
     blacklist: 0
     whitelist: 0
@@ -56,7 +58,8 @@ validator:
   xray_candidate_limit_by_list:
     blacklist: 1000
     whitelist: 1000
-  xray_max_alive: 0
+  # Same rule as tcp_max_alive: the per-list values below override this one.
+  xray_max_alive: 200
   xray_max_alive_by_list:
     blacklist: 200
     whitelist: 200
@@ -93,7 +96,6 @@ validator:
       ban_after_consecutive_failures: 3
       latency_window: 5
       max_latency_ms: 8000
-      refresh_if_below_min: true
     sources:
       - "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks5/data.txt"
       - "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/protocols/socks5/data.txt"
@@ -126,6 +128,10 @@ validator:
 quality:
   health_history_enabled: true
   health_history_file: "output/health-history.json"
+  # Records untouched for this long are dropped on save. The file is published
+  # to the repo on every run, so without a retention window it grows with every
+  # config the sources have ever served. Still-banned records are always kept.
+  health_history_retention_days: 30
   health_recent_window: 5
   ban_after_consecutive_failures: 2
   ban_cooldown_hours: 12
@@ -152,7 +158,9 @@ aggregator:
 
 # --- Publisher ---
 publisher:
-  mode: "repo"
+  # The publish target branch comes from GITHUB_BRANCH (CI passes the default
+  # branch). Adding `branch:` here would override it for publishing only — the
+  # Telegram links keep reading the env var.
   output_file: "output/subscription.txt"
   mix_output_file: "output/subscription-mix.txt"
   location_outputs_enabled: true

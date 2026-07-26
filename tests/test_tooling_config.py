@@ -91,6 +91,13 @@ def settings() -> dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
+def source_list_types() -> set[str]:
+    """List types actually configured in config/sources.json."""
+    data = json.loads((_ROOT / "config/sources.json").read_text(encoding="utf-8"))
+    return {str(e["list_type"]) for e in data["sources"] if e.get("list_type")}
+
+
+@pytest.fixture(scope="module")
 def readme() -> str:
     """Raw README.md text."""
     return (_ROOT / "README.md").read_text(encoding="utf-8")
@@ -128,6 +135,32 @@ def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     jobs = list(workflow["jobs"].values())
     assert len(jobs) == 1, "helper assumes a one-job workflow"
     return [dict(step) for step in jobs[0]["steps"]]
+
+
+def _named_step(workflow: dict[str, Any], name: str) -> dict[str, Any]:
+    """Return the workflow step called ``name``."""
+    for step in _steps(workflow):
+        if str(step.get("name", "")) == name:
+            return step
+    raise AssertionError(f"workflow has no step named {name!r}")
+
+
+def _setting_paths(node: Any, prefix: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
+    """Return the key path of every leaf in a parsed settings mapping.
+
+    Args:
+        node: Mapping, sequence or scalar to walk.
+        prefix: Keys already traversed.
+
+    Returns:
+        One tuple of keys per leaf value; sequences count as leaves.
+    """
+    if not isinstance(node, dict):
+        return [prefix]
+    paths: list[tuple[str, ...]] = []
+    for key, value in node.items():
+        paths.extend(_setting_paths(value, (*prefix, str(key))))
+    return paths
 
 
 def _make_target(name: str) -> list[str]:
@@ -345,6 +378,51 @@ def test_publishing_workflow_queues_instead_of_cancelling(
     """Cancelling mid-publish leaves a half-updated set of subscriptions."""
     concurrency = update_workflow["concurrency"]
     assert concurrency["cancel-in-progress"] is False
+
+
+def test_publish_and_notify_read_the_same_branch(
+    update_workflow: dict[str, Any],
+    settings: dict[str, Any],
+) -> None:
+    """The published branch and the linked branch must be one variable.
+
+    ``PipelineRunner._publish`` reads ``GITHUB_BRANCH`` and falls back to
+    ``main``; ``src.repo_info.github_branch`` builds the raw links from the same
+    variable but also accepts GitHub's own ``GITHUB_REF_NAME``.  Passing it to
+    the notify step only made a dispatch from a feature ref publish to the
+    default branch while advertising links to the ref where nothing landed.
+    """
+    pipeline = _named_step(update_workflow, "Run pipeline")
+    notify = _named_step(update_workflow, "Telegram notify")
+    branch = str(pipeline.get("env", {}).get("GITHUB_BRANCH", ""))
+    assert branch, "the publishing step does not pin GITHUB_BRANCH"
+    assert branch == str(notify.get("env", {}).get("GITHUB_BRANCH", "")), (
+        "publish and notification advertise different branches"
+    )
+    assert "branch" not in settings["publisher"], (
+        "publisher.branch would override GITHUB_BRANCH for publishing only"
+    )
+
+
+def test_skip_publish_run_sends_no_notification(
+    update_workflow: dict[str, Any],
+) -> None:
+    """A run that publishes nothing must not announce an update.
+
+    ``skip_publish`` drops ``--publish``, so the repository keeps the previous
+    subscription while the notification still says "конфиг обновился" and links
+    to the unchanged files.  run-summary.json carries no publish flag, so the
+    notify step can only tell the two runs apart through the pipeline output.
+    """
+    pipeline = _named_step(update_workflow, "Run pipeline")
+    notify = _named_step(update_workflow, "Telegram notify")
+    script = str(pipeline["run"])
+    assert 'echo "published=' in script, "the pipeline step exports no publish flag"
+    skipped, _, published = script.partition("else")
+    assert "published=false" in skipped and "--publish" not in skipped
+    assert "published=true" in published and "--publish" in published
+    condition = str(notify.get("if", ""))
+    assert f"steps.{pipeline['id']}.outputs.published" in condition
 
 
 # ---------------------------------------------------------------------------
@@ -633,3 +711,62 @@ def test_security_policy_does_not_plan_finished_work(
     # Round-1 hardening that is live in src/ but was missing from the policy.
     assert "redirect" in mitigations.lower()
     assert "check_hostnames" in mitigations
+
+
+# ---------------------------------------------------------------------------
+# config/settings.yaml
+# ---------------------------------------------------------------------------
+
+
+def test_every_setting_is_read_by_src(
+    settings: dict[str, Any],
+    source_list_types: set[str],
+) -> None:
+    """A key nothing looks up is a knob that silently does nothing.
+
+    ``sources.cache_ttl_minutes`` advertised a source cache that was never
+    implemented, ``publisher.mode`` a second publish target, and
+    ``proxy_pool.health.refresh_if_below_min`` a re-fetch that existed only as
+    an entry in a defaults dict.  Operators tune such keys and observe no
+    change, which reads as a broken pipeline rather than a stale file.
+    """
+    sources_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in (_ROOT / "src").rglob("*.py")
+    )
+    dead: list[str] = []
+    for path in _setting_paths(settings):
+        key = path[-1]
+        # Maps keyed by list type carry data, not identifiers code looks up.
+        if key in source_list_types:
+            continue
+        if not re.search(rf"""(?:get\(|\[)\s*["']{re.escape(key)}["']""", sources_text):
+            dead.append(".".join(path))
+    assert not dead, f"settings.yaml declares keys no code reads: {dead}"
+
+
+def test_per_list_overrides_do_not_shadow_the_default(
+    settings: dict[str, Any],
+    source_list_types: set[str],
+) -> None:
+    """A default that every configured list overrides is an unreachable number.
+
+    ``tcp_max_alive: 150`` sat above ``tcp_max_alive_by_list: {blacklist: 0,
+    whitelist: 0}``.  The liveness stage takes the per-list value whenever it is
+    not ``None``, so early TCP stop was off for every real list while the file
+    still advertised a 150-alive limit.
+    """
+    validator = settings["validator"]
+    for name, overrides in validator.items():
+        if not name.endswith("_by_list") or not isinstance(overrides, dict):
+            continue
+        base_key = name.removesuffix("_by_list")
+        assert base_key in validator, f"{name} overrides a missing {base_key}"
+        values = [overrides[t] for t in sorted(source_list_types) if t in overrides]
+        if len(values) != len(source_list_types):
+            continue  # some list still runs on the top-level default
+        if any(value != values[0] for value in values[1:]):
+            continue  # the lists differ, so no single value shadows the default
+        assert validator[base_key] == values[0], (
+            f"validator.{base_key} = {validator[base_key]!r} never applies: "
+            f"every configured list pins {name} to {values[0]!r}"
+        )
