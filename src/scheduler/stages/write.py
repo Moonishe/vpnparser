@@ -54,22 +54,87 @@ class OutputWriter(PipelineStage):
         code = "".join(ch for ch in country.upper() if ch.isalnum())
         return f"subscription-{code or 'XX'}.txt"
 
-    def _clear_location_outputs(self) -> None:
-        enabled, output_dir, _limit = self._location_output_config()
-        if not enabled:
-            return
+    @staticmethod
+    def _location_root(output_dir: str) -> Path | None:
+        """Resolve the location output dir stale per-country files live in.
+
+        Args:
+            output_dir: Configured location output directory.
+
+        Returns:
+            The resolved directory, or ``None`` when the path is unsafe.
+        """
         try:
-            root = resolve_safe_output_path(output_dir)
+            return resolve_safe_output_path(output_dir)
         except ValueError as exc:
             logger.warning(
                 "Unsafe location output dir %r rejected: %s",
                 output_dir,
                 exc,
             )
-            return
-        if not root.exists():
-            return
-        for path in root.glob("subscription-*.txt"):
+            return None
+
+    @classmethod
+    def _removable_location_root(cls, output_dir: str) -> Path | None:
+        """Resolve the location output dir that stale files may be deleted from.
+
+        ``resolve_safe_output_path`` only *warns* for absolute paths outside the
+        project, which is fine for writing but not for unlinking: an absolute
+        ``location_output_dir`` would let the cleanup remove unrelated files.
+        Deletion therefore requires the directory to stay inside the project
+        root; outside it the stale files are only overwritten with an empty
+        subscription, which is exactly what writing there already does.
+
+        Args:
+            output_dir: Configured location output directory.
+
+        Returns:
+            The resolved directory, or ``None`` when nothing may be unlinked.
+        """
+        root = cls._location_root(output_dir)
+        if root is None:
+            return None
+        # "." resolves to the project root the same helper anchors on.
+        base = resolve_safe_output_path(".")
+        if root != base and base not in root.parents:
+            logger.warning(
+                "Location output dir %r is outside the project root %s — "
+                "refusing to remove stale files there.",
+                output_dir,
+                base,
+            )
+            return None
+        return root
+
+    def _clear_location_outputs(self) -> list[str]:
+        """Remove stale per-country subscription files and report their paths.
+
+        The caller is expected to leave an empty subscription behind for every
+        returned path: a published location file is only replaced when the same
+        path is written again, so a country that merely disappears locally would
+        keep serving the previous run's configs from the repository forever.
+
+        Returns:
+            Paths (relative to the configured output dir) of the stale files.
+        """
+        enabled, output_dir, _limit = self._location_output_config()
+        if not enabled:
+            return []
+        root = self._location_root(output_dir)
+        if root is None or not root.exists():
+            return []
+        removable_root = self._removable_location_root(output_dir)
+        stale: list[str] = []
+        for path in sorted(root.glob("subscription-*.txt")):
+            # Symlinks may point anywhere, so only plain files inside the
+            # resolved root are touched.
+            if path.is_symlink() or not path.is_file():
+                continue
+            if path.resolve().parent != root:
+                continue
+            stale.append(str(Path(output_dir) / path.name))
+            if removable_root is None:
+                continue
             try:
                 path.unlink()
             except OSError as exc:
@@ -78,6 +143,7 @@ class OutputWriter(PipelineStage):
                     path,
                     exc,
                 )
+        return stale
 
     def _build_location_outputs(
         self,
@@ -99,10 +165,19 @@ class OutputWriter(PipelineStage):
         return result
 
     def _write_location_outputs(self, configs: list[Config]) -> list[str]:
+        """Write one subscription per country and retire the vanished ones.
+
+        Args:
+            configs: Configs to split by country.
+
+        Returns:
+            Paths of every location file to publish: the ones written this run
+            plus the empty placeholders left for countries that disappeared.
+        """
         enabled, output_dir, limit = self._location_output_config()
         if not enabled:
             return []
-        self._clear_location_outputs()
+        stale_files = self._clear_location_outputs()
         outputs = self._build_location_outputs(configs, limit)
         output_files: list[str] = []
         for country, country_configs in outputs.items():
@@ -122,6 +197,14 @@ class OutputWriter(PipelineStage):
                 country,
                 output_file,
             )
+        for output_file in stale_files:
+            if output_file in output_files:
+                continue
+            # Empty, not missing: the placeholder is what replaces the stale
+            # copy already published for a country that is gone.
+            self._write_empty_output(output_file)
+            output_files.append(output_file)
+            logger.info("Retired location output %s (now empty).", output_file)
         return output_files
 
     def _write_outputs(
@@ -303,7 +386,11 @@ class OutputWriter(PipelineStage):
             "outputs": self.context.output_stats,
             "validation": validation,
         }
-        path = Path(output_file)
+        try:
+            path = resolve_safe_output_path(output_file)
+        except ValueError:
+            logger.exception("Unsafe run summary path %r rejected", output_file)
+            return None
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(

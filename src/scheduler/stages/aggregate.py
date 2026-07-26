@@ -86,9 +86,13 @@ class Aggregator(PipelineStage):
         for cfg in sorted_configs:
             if cfg.country is None:
                 # Preserve configs with an unknown country in a fallback bucket
-                # instead of silently dropping them. They participate in the
-                # round-robin after known-country configs are exhausted.
-                unknown_bucket.append(cfg)
+                # instead of silently dropping them. The bucket then joins the
+                # round-robin as one more "country" (last, because "__UNKNOWN__"
+                # sorts after any code), so max_per_country must apply to it too
+                # — mixed-list sources have no country and would otherwise
+                # ignore the quota entirely.
+                if max_per_country <= 0 or len(unknown_bucket) < max_per_country:
+                    unknown_bucket.append(cfg)
                 continue
             country = str(cfg.country).upper()
             bucket = groups.setdefault(country, [])

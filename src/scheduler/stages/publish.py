@@ -60,14 +60,13 @@ class Publisher(PipelineStage):
             repo=repo,
             branch=branch,
         ) as publisher:
+            # The first written file is the combined subscription; its local
+            # path may differ from the path it must take in the repo.
+            combined_local_path = state.output_files[0] if state.output_files else None
             all_ok = True
             for output_file in dict.fromkeys(state.output_files):
                 repo_path = output_file
-                if (
-                    configured_combined_path
-                    and output_file == state.output_files[0]
-                    and output_file == configured_combined_path
-                ):
+                if configured_combined_path and output_file == combined_local_path:
                     repo_path = str(configured_combined_path)
                 ok = await self._publish_file(
                     publisher,

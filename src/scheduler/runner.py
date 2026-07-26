@@ -141,6 +141,9 @@ class PipelineRunner:
         start = time.monotonic()
         self._liveness_stats = {}
         self._output_stats = {}
+        # The stage context outlives a single run: stale ``location_*`` entries
+        # would leak into this run's summary via _write_location_outputs().
+        self._context.output_stats.clear()
         self._publish_ok = False
         self._liveness.reset_proxy_cache()
         logger.info("Pipeline started.")
@@ -626,8 +629,13 @@ class PipelineRunner:
 
         return path_str
 
-    def _write_empty_secondary_outputs(self, combined_output_file: str) -> None:
-        """Clear configured split and mix outputs on empty runs."""
+    def _write_empty_secondary_outputs(self, combined_output_file: str) -> list[str]:
+        """Clear configured split and mix outputs on empty runs.
+
+        Returns:
+            Paths of the emptied location files, which the caller must publish
+            too — they are not part of the statically configured output set.
+        """
         split_output_files = self._split_output_files(combined_output_file)
         self._write_empty_split_outputs(combined_output_file)
         mix_output_file = self._mix_output_file(
@@ -636,7 +644,9 @@ class PipelineRunner:
         )
         if mix_output_file:
             self._write_empty_output(mix_output_file)
-        self._clear_location_outputs()
+        # Writing no countries empties every existing location file instead of
+        # deleting it, so the published per-country lists are replaced as well.
+        return self._write_location_outputs([])
 
     def _configured_subscription_output_paths(
         self,
@@ -645,7 +655,8 @@ class PipelineRunner:
         """Return all subscription paths that should stay in sync on every run.
 
         Includes combined, mix, and split outputs. Location files are omitted
-        here because empty runs clear them rather than rewriting placeholders.
+        here because they are not statically configured — the writer reports
+        the ones it emptied.
         """
         paths: list[str] = [combined_output_file]
         split_output_files = self._split_output_files(combined_output_file)
@@ -673,7 +684,7 @@ class PipelineRunner:
         consumers never see outdated "live" lists after a dead run.
         """
         self._write_empty_output(output_file)
-        self._write_empty_secondary_outputs(output_file)
+        location_files = self._write_empty_secondary_outputs(output_file)
 
         # Keep run-summary outputs in sync with the empty files we just wrote.
         self._output_stats = {}
@@ -690,6 +701,7 @@ class PipelineRunner:
         self._save_proxy_health_history()
         if publish:
             publish_paths = self._configured_subscription_output_paths(output_file)
+            publish_paths.extend(location_files)
             if summary_file:
                 publish_paths.append(summary_file)
             if health_file:
@@ -712,8 +724,8 @@ class PipelineRunner:
     def _location_output_filename(country: str) -> str:
         return OutputWriter._location_output_filename(country)
 
-    def _clear_location_outputs(self) -> None:
-        self._writer._clear_location_outputs()
+    def _clear_location_outputs(self) -> list[str]:
+        return self._writer._clear_location_outputs()
 
     def _build_location_outputs(
         self,

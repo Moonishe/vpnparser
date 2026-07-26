@@ -25,14 +25,15 @@ def load_settings(path: str) -> dict[str, Any]:
     except yaml.YAMLError:
         logger.exception("Failed to parse settings %s — using defaults.", path)
         return {}
-    return data or {}
-
+    if data is None:
+        return {}
     if not isinstance(data, dict):
         logger.warning(
             "Settings root is %s, expected dict — using defaults.",
             type(data).__name__,
         )
         return {}
+    return data
 
 
 class Settings:

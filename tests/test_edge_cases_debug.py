@@ -691,10 +691,10 @@ validator:
     print(f"  FIXED: interleave default=500 -> {count} configs flow through (was 150)")
 
 
-def _make_runner() -> PipelineRunner:
-    """Create a PipelineRunner with minimal temp settings/sources."""
-    settings = Path(tempfile.mktemp(suffix=".yaml"))
-    sources = Path(tempfile.mktemp(suffix=".json"))
+def _make_runner(tmp_path: Path) -> PipelineRunner:
+    """Create a PipelineRunner with minimal settings/sources under tmp_path."""
+    settings = tmp_path / "settings.yaml"
+    sources = tmp_path / "sources.json"
     settings.write_text(
         "aggregator:\n  max_configs_in_output: 75\n  max_per_country: 0\n  sort_by: country\n"
         "validator:\n  allowed_countries: [RU, DE, FI, NL, US, GB, FR, JP, CA]\n  max_configs_to_validate: 0\n"
@@ -717,9 +717,9 @@ def _make_configs(countries: list[str]) -> list[Config]:
     ]
 
 
-def test_whitelist_balance_80_20_split():
+def test_whitelist_balance_80_20_split(tmp_path: Path) -> None:
     """Whitelist output should be ~80% RU, ~20% EU countries."""
-    runner = _make_runner()
+    runner = _make_runner(tmp_path)
     max_total = 75
     # 100 RU + 50 other
     configs = _make_configs(["RU"] * 100 + ["DE"] * 30 + ["FI"] * 20)
@@ -731,9 +731,9 @@ def test_whitelist_balance_80_20_split():
     assert other == 15, f"Expected 15 EU (20%), got {other}"
 
 
-def test_whitelist_balance_fills_shortfall_from_other():
+def test_whitelist_balance_fills_shortfall_from_other(tmp_path: Path) -> None:
     """If RU < 80% target, fill remaining slots from EU countries."""
-    runner = _make_runner()
+    runner = _make_runner(tmp_path)
     max_total = 75
     # Only 10 RU, 100 other
     configs = _make_configs(["RU"] * 10 + ["DE"] * 60 + ["FI"] * 40)
@@ -745,9 +745,9 @@ def test_whitelist_balance_fills_shortfall_from_other():
     assert other == 65, f"Expected 65 other (filling shortfall), got {other}"
 
 
-def test_whitelist_balance_fills_shortfall_from_ru():
+def test_whitelist_balance_fills_shortfall_from_ru(tmp_path: Path) -> None:
     """If EU < 20% target, fill remaining slots from RU."""
-    runner = _make_runner()
+    runner = _make_runner(tmp_path)
     max_total = 75
     # 100 RU, only 5 other
     configs = _make_configs(["RU"] * 100 + ["DE"] * 5)
@@ -759,16 +759,16 @@ def test_whitelist_balance_fills_shortfall_from_ru():
     assert ru == 70, f"Expected 70 RU (filling shortfall), got {ru}"
 
 
-def test_whitelist_balance_empty():
+def test_whitelist_balance_empty(tmp_path: Path) -> None:
     """Empty input should return empty."""
-    runner = _make_runner()
+    runner = _make_runner(tmp_path)
     result = runner._whitelist_balance([], 75)
     assert result == []
 
 
-def test_whitelist_balance_all_ru():
+def test_whitelist_balance_all_ru(tmp_path: Path) -> None:
     """All RU configs should return max_total RU."""
-    runner = _make_runner()
+    runner = _make_runner(tmp_path)
     configs = _make_configs(["RU"] * 100)
     result = runner._whitelist_balance(configs, 75)
     ru = sum(1 for c in result if c.country == "RU")
@@ -776,9 +776,9 @@ def test_whitelist_balance_all_ru():
     assert ru == 75
 
 
-def test_whitelist_balance_all_other():
+def test_whitelist_balance_all_other(tmp_path: Path) -> None:
     """All non-RU configs should return max_total other."""
-    runner = _make_runner()
+    runner = _make_runner(tmp_path)
     configs = _make_configs(["DE"] * 50 + ["FI"] * 50)
     result = runner._whitelist_balance(configs, 75)
     other = sum(1 for c in result if c.country != "RU")

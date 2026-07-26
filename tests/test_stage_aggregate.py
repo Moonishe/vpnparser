@@ -353,6 +353,31 @@ class TestCountryBalancedLimit:
         unknown = [c for c in result if c.country is None]
         assert unknown[0].address == "high-q.com"
 
+    def test_max_per_country_applies_to_unknown_bucket(self) -> None:
+        """country=None is one round-robin bucket, so the quota applies to it.
+
+        Mixed lists have no country filter, so their configs arrive with
+        country=None and used to ignore max_per_country entirely.
+        """
+        context = _make_context(
+            {
+                "aggregator": {
+                    "max_configs_in_output": 100,
+                    "max_per_country": 1,
+                    "sort_by": "country",
+                },
+            }
+        )
+        agg = Aggregator(context)
+        configs = [
+            _make_config("de1.com", 443, country="DE"),
+            _make_config("de2.com", 444, country="DE"),
+            _make_config("u1.com", 445, country=None),
+            _make_config("u2.com", 446, country=None),
+        ]
+        result = agg._country_balanced_limit(configs, 100)
+        assert [cfg.address for cfg in result] == ["de1.com", "u1.com"]
+
     def test_max_per_country_capping(self) -> None:
         """max_per_country limits per-country count. (line 96)"""
         context = _make_context(

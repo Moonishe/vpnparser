@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from src.parsers.base import Config
 from src.scheduler.context import PipelineState
 from src.scheduler.runner import PipelineRunner
 from src.scheduler.stages.write import OutputWriter
+from src.utils.paths import resolve_safe_output_path
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -183,16 +185,16 @@ def test_location_output_filename(country: str, expected: str) -> None:
 def test_clear_location_outputs_removes_existing_files(
     runner: PipelineRunner, tmp_path: Path
 ) -> None:
-    # Set location directory to tmp_path
-    loc_dir = tmp_path / "loc"
-    loc_dir.mkdir()
+    # Project-relative dir: resolves inside the isolated project root.
+    loc_dir = resolve_safe_output_path("output/loc")
+    loc_dir.mkdir(parents=True)
     (loc_dir / "subscription-DE.txt").write_text("old", encoding="utf-8")
     (loc_dir / "subscription-RU.txt").write_text("old", encoding="utf-8")
     (loc_dir / "other.txt").write_text("keep", encoding="utf-8")
 
     settings = tmp_path / "settings.yaml"
     settings.write_text(
-        f"publisher:\n  location_output_dir: {loc_dir}\n", encoding="utf-8"
+        "publisher:\n  location_output_dir: output/loc\n", encoding="utf-8"
     )
     r = PipelineRunner(
         settings_path=str(settings),
@@ -203,6 +205,106 @@ def test_clear_location_outputs_removes_existing_files(
     assert not (loc_dir / "subscription-DE.txt").exists()
     assert not (loc_dir / "subscription-RU.txt").exists()
     assert (loc_dir / "other.txt").exists()  # should not be touched
+
+
+def test_clear_location_outputs_keeps_files_outside_project(tmp_path: Path) -> None:
+    """An absolute dir outside the project must never have files removed."""
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    victim = outside_dir / "subscription-DE.txt"
+    victim.write_text("someone else's file", encoding="utf-8")
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"publisher:\n  location_output_dir: {outside_dir}\n",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    r._writer._clear_location_outputs()
+
+    assert victim.exists()
+
+
+def test_removable_location_root_rejects_unsafe_dir() -> None:
+    """A traversing dir is not resolvable, so nothing may be unlinked in it."""
+    assert OutputWriter._removable_location_root("../../etc/unsafe") is None
+
+
+def test_clear_location_outputs_skips_non_files(runner: PipelineRunner) -> None:
+    """A directory matching the glob is neither reported nor removed."""
+    loc_dir = resolve_safe_output_path("output/locations")
+    (loc_dir / "subscription-DIR.txt").mkdir(parents=True)
+
+    assert runner._clear_location_outputs() == []
+    assert (loc_dir / "subscription-DIR.txt").is_dir()
+
+
+def test_write_location_outputs_retires_vanished_country(
+    runner: PipelineRunner,
+    config_de: Config,
+) -> None:
+    """A country that disappears is republished empty, not silently orphaned."""
+    ru = Config(
+        "vless",
+        "ru-1.example",
+        443,
+        "11111111-1111-4111-8111-111111111111",
+        raw_link="vless://11111111-1111-4111-8111-111111111111@ru-1.example:443#RU",
+        country="RU",
+    )
+
+    first = runner._writer._write_location_outputs([config_de, ru])
+    assert sorted(Path(path).name for path in first) == [
+        "subscription-DE.txt",
+        "subscription-RU.txt",
+    ]
+
+    second = runner._writer._write_location_outputs([ru])
+
+    # DE must stay in the published set, otherwise the repo copy keeps serving
+    # the configs of the previous run forever.
+    assert sorted(Path(path).name for path in second) == [
+        "subscription-DE.txt",
+        "subscription-RU.txt",
+    ]
+    de_path = resolve_safe_output_path("output/locations/subscription-DE.txt")
+    assert de_path.exists()
+    decoded = base64.b64decode(de_path.read_text(encoding="utf-8")).decode("utf-8")
+    assert "de.example.com" not in decoded
+    ru_path = resolve_safe_output_path("output/locations/subscription-RU.txt")
+    assert "ru-1.example" in base64.b64decode(
+        ru_path.read_text(encoding="utf-8"),
+    ).decode("utf-8")
+
+
+def test_write_location_outputs_retires_dir_outside_project(tmp_path: Path) -> None:
+    """Stale files in an absolute dir are emptied even though never unlinked."""
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    stale = outside_dir / "subscription-DE.txt"
+    stale.write_text("dead-configs", encoding="utf-8")
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"publisher:\n"
+        f"  location_output_dir: {outside_dir}\n"
+        f"  location_output_limit: 5\n",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+
+    files = r._writer._write_location_outputs([])
+
+    assert [Path(path).name for path in files] == ["subscription-DE.txt"]
+    # Writing there is allowed, so the cleanup must not leave dead configs.
+    assert stale.exists()
+    assert "dead-configs" not in stale.read_text(encoding="utf-8")
 
 
 def test_clear_location_outputs_when_disabled(
@@ -814,13 +916,13 @@ def test_clear_location_outputs_oserror_on_unlink(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """OSError from path.unlink should be caught and logged."""
-    loc_dir = tmp_path / "loc"
-    loc_dir.mkdir()
+    loc_dir = resolve_safe_output_path("output/loc")
+    loc_dir.mkdir(parents=True)
     (loc_dir / "subscription-DE.txt").write_text("old", encoding="utf-8")
 
     settings = tmp_path / "settings.yaml"
     settings.write_text(
-        f"publisher:\n  location_output_dir: {loc_dir}\n",
+        "publisher:\n  location_output_dir: output/loc\n",
         encoding="utf-8",
     )
     r = PipelineRunner(
@@ -982,3 +1084,34 @@ def test_write_run_summary_exception_returns_none(
     )
     result = r._writer._write_run_summary("success", str(summary_file))
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _write_run_summary — unsafe path
+# ---------------------------------------------------------------------------
+
+
+def test_write_run_summary_rejects_traversal_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A status_output_file escaping the project is refused, like in the runner."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        'publisher:\n  status_output_file: "../../run-summary.json"\n',
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    written: list[Path] = []
+
+    def _record_write_text(self: Path, *args: object, **kwargs: object) -> int:
+        written.append(self)
+        return 0
+
+    monkeypatch.setattr(Path, "write_text", _record_write_text)
+
+    assert r._writer._write_run_summary("success") is None
+    assert written == []

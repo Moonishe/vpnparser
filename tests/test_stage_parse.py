@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -310,7 +309,7 @@ class TestParseAllByList:
         ctx = _make_context({"validator": {"geoip_enabled": True}})
         lp = LinkParser(ctx)
 
-        async def fake_enrich(configs, api_url="http://ip-api.com/json/{ip}"):
+        async def fake_enrich(configs, api_url="http://ip-api.com/json/{ip}", **_kw):
             for c in configs:
                 c.country = "DE"
 
@@ -326,6 +325,86 @@ class TestParseAllByList:
             )
             grouped = await lp.parse_all_by_list([result])
         assert grouped["blacklist"][0].country == "DE"
+
+    async def test_geoip_respects_per_run_lookup_cap(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A large batch is capped so a throttled API cannot stall the run."""
+        caplog.set_level(logging.WARNING)
+        ctx = _make_context(
+            {
+                "validator": {
+                    "geoip_enabled": True,
+                    "geoip_max_lookups": 2,
+                    "geoip_requests_per_minute": 40,
+                },
+            },
+        )
+        lp = LinkParser(ctx)
+        seen: list[int] = []
+
+        async def fake_enrich(configs, api_url=None, **kwargs):
+            seen.append(len(configs))
+            assert kwargs["requests_per_minute"] == 40.0
+
+        files = [(f"g{i}.txt", _vless(f"g{i}.example")) for i in range(5)]
+        with patch(
+            "src.validators.geoip.enrich_configs_geoip",
+            side_effect=fake_enrich,
+        ):
+            result = _ns(list_type="blacklist", files=files, name="src")
+            grouped = await lp.parse_all_by_list([result])
+
+        assert seen == [2]
+        assert len(grouped["blacklist"]) == 5
+        assert "skipping 3" in caplog.text
+
+    async def test_geoip_cap_counts_unique_addresses(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The cap is a request budget, and one address costs one request.
+
+        Capping configs instead of addresses dropped whole servers without
+        saving a single lookup: geoip groups configs by address.
+        """
+        caplog.set_level(logging.WARNING)
+        ctx = _make_context(
+            {
+                "validator": {
+                    "geoip_enabled": True,
+                    "geoip_max_lookups": 2,
+                },
+            },
+        )
+        lp = LinkParser(ctx)
+        seen: list[list[str]] = []
+
+        async def fake_enrich(configs, api_url=None, **kwargs):
+            seen.append([cfg.address for cfg in configs])
+
+        # 3 hosts x 2 ports: 6 configs but only 3 lookups are needed.
+        files = [
+            (f"g{host}-{port}.txt", _vless(f"g{host}.example", port=port))
+            for host in range(3)
+            for port in (443, 8443)
+        ]
+        with patch(
+            "src.validators.geoip.enrich_configs_geoip",
+            side_effect=fake_enrich,
+        ):
+            result = _ns(list_type="blacklist", files=files, name="src")
+            grouped = await lp.parse_all_by_list([result])
+
+        assert len(grouped["blacklist"]) == 6
+        # Two addresses fit the cap, and both of their configs are enriched.
+        assert len(seen) == 1
+        assert sorted(seen[0]) == [
+            "g0.example",
+            "g0.example",
+            "g1.example",
+            "g1.example",
+        ]
+        assert "3 addresses need a country" in caplog.text
 
     async def test_geoip_enrichment_fails_gracefully(
         self, caplog: pytest.LogCaptureFixture
@@ -482,36 +561,36 @@ class TestLlmFallback:
         result = await lp.llm_fallback("some text", "f.txt", "src")
         assert result == []
 
-    async def test_no_api_key(self) -> None:
+    async def test_no_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """LLM enabled but no API key in env -> []."""
         ctx = _make_context({"llm": {"enabled": True}})
         lp = LinkParser(ctx)
-        os.environ.pop("LLM_API_KEY", None)
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
         result = await lp.llm_fallback("some text", "f.txt", "src")
         assert result == []
 
-    async def test_text_too_short(self) -> None:
+    async def test_text_too_short(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Text below min_text_length -> []."""
         ctx = _make_context({"llm": {"enabled": True}})
         lp = LinkParser(ctx)
-        os.environ["LLM_API_KEY"] = "test-key"
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
         result = await lp.llm_fallback("short", "f.txt", "src")
         assert result == []
 
-    async def test_should_use_llm_false(self) -> None:
+    async def test_should_use_llm_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """should_use_llm returns False -> []."""
         ctx = _make_context({"llm": {"enabled": True}})
         lp = LinkParser(ctx)
-        os.environ["LLM_API_KEY"] = "test-key"
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
         with patch("src.scheduler.stages.parse.should_use_llm", return_value=False):
             result = await lp.llm_fallback("x" * 200, "f.txt", "src")
         assert result == []
 
-    async def test_llm_extract_success(self) -> None:
+    async def test_llm_extract_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """LLM extract returns links."""
         ctx = _make_context({"llm": {"enabled": True}})
         lp = LinkParser(ctx)
-        os.environ["LLM_API_KEY"] = "test-key"
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
         fake_llm = MagicMock()
         fake_llm.extract_links = AsyncMock(return_value=[_vless("x.com")])
         with (
@@ -527,11 +606,11 @@ class TestLlmFallback:
             result = await lp.llm_fallback("x" * 200, "f.txt", "src")
         assert result == [_vless("x.com")]
 
-    async def test_llm_extract_exception(self) -> None:
+    async def test_llm_extract_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """LLM extract raises exception -> []."""
         ctx = _make_context({"llm": {"enabled": True}})
         lp = LinkParser(ctx)
-        os.environ["LLM_API_KEY"] = "test-key"
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
         fake_llm = MagicMock()
         fake_llm.extract_links = AsyncMock(side_effect=RuntimeError("API error"))
         with (
@@ -547,12 +626,37 @@ class TestLlmFallback:
             result = await lp.llm_fallback("x" * 200, "f.txt", "src")
         assert result == []
 
-    async def test_custom_api_key_env(self) -> None:
-        """Uses custom api_key_env setting."""
+    async def test_custom_api_key_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Custom api_key_env supplies the key handed to the LLM parser."""
         ctx = _make_context({"llm": {"enabled": True, "api_key_env": "MY_KEY"}})
         lp = LinkParser(ctx)
-        os.environ["MY_KEY"] = "custom-key"
-        result = await lp.llm_fallback("short", "f.txt", "src")
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
+        monkeypatch.setenv("MY_KEY", "custom-key")
+        fake_llm = MagicMock()
+        fake_llm.extract_links = AsyncMock(return_value=[])
+        with (
+            patch(
+                "src.scheduler.stages.parse.LLMFallbackParser",
+                return_value=fake_llm,
+            ) as parser_cls,
+            patch(
+                "src.scheduler.stages.parse.should_use_llm",
+                return_value=True,
+            ),
+        ):
+            result = await lp.llm_fallback("x" * 200, "f.txt", "src")
+        assert result == []
+        assert parser_cls.call_args.kwargs["api_key"] == "custom-key"
+
+    async def test_custom_api_key_env_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A populated LLM_API_KEY does not substitute for a custom api_key_env."""
+        ctx = _make_context({"llm": {"enabled": True, "api_key_env": "MY_KEY"}})
+        lp = LinkParser(ctx)
+        monkeypatch.setenv("LLM_API_KEY", "default-key")
+        monkeypatch.delenv("MY_KEY", raising=False)
+        result = await lp.llm_fallback("x" * 200, "f.txt", "src")
         assert result == []
 
 

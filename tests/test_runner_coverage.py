@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
 import sys
 from pathlib import Path
@@ -14,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.parsers.base import Config
 from src.scheduler.runner import PipelineRunner
+from src.utils.paths import resolve_safe_output_path
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -919,6 +922,58 @@ async def test_run_empty_split_output(
     assert Path(tmp_path / "wl.txt").exists()
 
 
+@pytest.mark.asyncio
+async def test_run_summary_drops_location_stats_of_previous_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second run() must not report location outputs from the first run."""
+    extra = (
+        "aggregator:\n  max_configs_in_output: 100\n"
+        "publisher:\n"
+        "  output_file: output/combined.txt\n"
+        "  location_output_dir: output/locations\n"
+        "  location_output_limit: 5\n"
+        "  location_outputs_enabled: true\n"
+        "  status_output_file: output/status.json\n"
+    )
+    r = _make_runner(tmp_path, extra_settings=extra)
+    parsed: dict[str, list[Config]] = {"blacklist": [_mk("de.example", "DE")]}
+
+    async def fake_fetch() -> list[str]:
+        return ["data"]
+
+    async def fake_parse(results: object) -> dict[str, list[Config]]:
+        return {key: list(value) for key, value in parsed.items()}
+
+    async def fake_validate(data: dict[str, list[Config]]) -> dict[str, list[Config]]:
+        return data
+
+    monkeypatch.setattr(r, "_fetch_sources", fake_fetch)
+    monkeypatch.setattr(r, "_parse_all_by_list", fake_parse)
+    monkeypatch.setattr(r, "_preprocess_configs", lambda configs, **kw: list(configs))
+    monkeypatch.setattr(r, "_validate_liveness_by_list", fake_validate)
+    monkeypatch.setattr(r, "_apply_quality_filters", lambda data: data)
+
+    summary_path = resolve_safe_output_path("output/status.json")
+
+    await r.run(output_file="output/combined.txt", publish=False)
+    first = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert "location_de" in first["outputs"]
+
+    parsed["blacklist"] = [_mk("ru.example", "RU")]
+    await r.run(output_file="output/combined.txt", publish=False)
+    second = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert "location_ru" in second["outputs"]
+    assert "location_de" not in second["outputs"]
+    # The vanished country keeps an *empty* file: it is republished so the copy
+    # already served from the repo stops handing out the first run's configs.
+    stale = resolve_safe_output_path("output/locations/subscription-DE.txt")
+    assert stale.exists()
+    decoded = base64.b64decode(stale.read_text(encoding="utf-8")).decode("utf-8")
+    assert "de.example" not in decoded
+
+
 # ===================================================================
 # _notify_error — related to error notification
 # ===================================================================
@@ -980,6 +1035,45 @@ def test_write_empty_secondary_outputs(tmp_path: Path) -> None:
     r._write_empty_secondary_outputs(combined)
     assert Path(mix_file).exists()
     assert Path(bl_file).exists()
+
+
+@pytest.mark.asyncio
+async def test_finish_empty_run_publishes_emptied_location_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dead run must republish per-country files instead of orphaning them."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n"
+        "  output_file: output/combined.txt\n"
+        "  location_output_dir: output/locations\n"
+        "  location_output_limit: 5\n"
+        "  location_outputs_enabled: true\n",
+    )
+    loc_dir = resolve_safe_output_path("output/locations")
+    loc_dir.mkdir(parents=True)
+    stale = loc_dir / "subscription-DE.txt"
+    stale.write_text("stale-live-list", encoding="utf-8")
+
+    published: list[str] = []
+
+    async def fake_publish(paths: list[str], **_kwargs: object) -> bool:
+        published.extend(paths)
+        return True
+
+    monkeypatch.setattr(r, "_publish_files", fake_publish)
+
+    count = await r._finish_empty_run(
+        "output/combined.txt",
+        status="no_sources",
+        publish=True,
+    )
+
+    assert count == 0
+    assert any("subscription-DE.txt" in path for path in published)
+    assert stale.exists()
+    assert stale.read_text(encoding="utf-8") != "stale-live-list"
 
 
 # ===================================================================

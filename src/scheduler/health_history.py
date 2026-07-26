@@ -16,6 +16,64 @@ from src.utils.paths import resolve_safe_output_path
 
 logger = logging.getLogger(__name__)
 
+#: Record fields that readers below pass to ``int()``.
+_INT_RECORD_FIELDS = frozenset(
+    {
+        "bad_runs",
+        "banned_until",
+        "consecutive_failures",
+        "fails",
+        "last_alive",
+        "last_checked",
+        "last_seen",
+        "passes",
+        "runs",
+        "updated_at",
+    },
+)
+#: Record fields that readers below pass to ``float()``.
+_FLOAT_RECORD_FIELDS = frozenset({"last_alive_rate"})
+
+
+def _sanitize_numeric_fields(record: dict[str, Any]) -> int:
+    """Coerce a record's numeric fields in place, zeroing unusable values.
+
+    Every reader (``is_banned``, ``score``, ``update``, ``update_sources``)
+    calls ``int()``/``float()`` on these fields without a guard, so a single
+    hand-edited value such as ``"banned_until": "2026-01-01"`` would raise and
+    abort the whole run on every subsequent pass.
+
+    Args:
+        record: One health-history record, mutated in place.
+
+    Returns:
+        Number of fields that had to be replaced by a zero.
+    """
+    replaced = 0
+    for field in _INT_RECORD_FIELDS & record.keys():
+        value = record[field]
+        if value is None:
+            continue
+        try:
+            record[field] = int(value)
+        except (TypeError, ValueError):
+            record[field] = 0
+            replaced += 1
+    for field in _FLOAT_RECORD_FIELDS & record.keys():
+        value = record[field]
+        if value is None:
+            continue
+        try:
+            record[field] = float(value)
+        except (TypeError, ValueError):
+            record[field] = 0.0
+            replaced += 1
+    recent = record.get("recent")
+    if recent is not None and not isinstance(recent, list):
+        record["recent"] = []
+        replaced += 1
+    return replaced
+
 
 class HealthHistory:
     """Loads, updates, and persists config/source health records."""
@@ -52,10 +110,56 @@ class HealthHistory:
             data = {}
         if not isinstance(data, dict):
             data = {}
-        data.setdefault("configs", {})
-        data.setdefault("sources", {})
+        # A hand-edited or partially written file can hold anything; every
+        # caller below assumes dict-of-dicts, so coerce here once.
+        data["configs"] = self._sanitized_records(data.get("configs"), "configs")
+        data["sources"] = self._sanitized_records(data.get("sources"), "sources")
         self._cache = data
         return data
+
+    @staticmethod
+    def _sanitized_records(raw: Any, section: str) -> dict[str, dict[str, Any]]:
+        """Return only the well-formed records of a health-history section.
+
+        Args:
+            raw: Raw section value loaded from JSON.
+            section: Section name, used for warning messages.
+
+        Returns:
+            Mapping of record key to record dict; malformed entries are dropped
+            and unusable numeric fields inside a kept record are zeroed.
+        """
+        if raw is None:
+            return {}
+        if not isinstance(raw, dict):
+            logger.warning(
+                "Health history section %r is %s, expected object — ignoring it.",
+                section,
+                type(raw).__name__,
+            )
+            return {}
+        records: dict[str, dict[str, Any]] = {}
+        dropped = 0
+        replaced = 0
+        for key, value in raw.items():
+            if isinstance(value, dict):
+                replaced += _sanitize_numeric_fields(value)
+                records[str(key)] = value
+            else:
+                dropped += 1
+        if dropped:
+            logger.warning(
+                "Dropped %d malformed record(s) from health history section %r.",
+                dropped,
+                section,
+            )
+        if replaced:
+            logger.warning(
+                "Zeroed %d non-numeric field(s) in health history section %r.",
+                replaced,
+                section,
+            )
+        return records
 
     def save(self) -> str | None:
         path = self._file()
@@ -231,7 +335,11 @@ class HealthHistory:
             record["last_alive"] = alive
             record["last_alive_rate"] = rate
             record["updated_at"] = now
-            if checked >= min_checked and rate <= bad_rate:
+            if checked < min_checked:
+                # Too small a sample to judge: neither punish nor forgive, or a
+                # single preselected run would lift every source ban.
+                continue
+            if rate <= bad_rate:
                 record["bad_runs"] = int(record.get("bad_runs") or 0) + 1
                 if int(record["bad_runs"]) >= bad_runs:
                     record["banned_until"] = now + cooldown_seconds

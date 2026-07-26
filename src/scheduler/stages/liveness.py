@@ -343,17 +343,19 @@ class LivenessValidator(PipelineStage):
                 vcfg.get("drop_unchecked_after_tls"),
                 False,
             ),
-            "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), True),
-            "proxy_pool_required": self._as_bool(pool_cfg.get("required"), True),
+            # Defaults must mirror the ones used by the actual check calls below,
+            # otherwise run-summary.json reports settings that were never used.
+            "proxy_pool_enabled": self._as_bool(pool_cfg.get("enabled"), False),
+            "proxy_pool_required": self._as_bool(pool_cfg.get("required"), False),
             "proxy_pool_validate": self._as_bool(pool_cfg.get("validate"), True),
             "proxy_attempts_per_config": self._as_int(
                 vcfg.get("proxy_attempts_per_config"),
-                3,
+                5,
                 minimum=0,
             ),
             "tls_proxy_attempts_per_config": self._as_int(
                 vcfg.get("tls_proxy_attempts_per_config"),
-                self._as_int(vcfg.get("proxy_attempts_per_config"), 3, minimum=0),
+                self._as_int(vcfg.get("proxy_attempts_per_config"), 5, minimum=0),
                 minimum=0,
             ),
             "proxy_count": 0,
@@ -429,6 +431,9 @@ class LivenessValidator(PipelineStage):
             )
 
         current = list(configs)
+        # Set when a fail-open kept the unfiltered list: the remaining optional
+        # filters are skipped, but mandatory Xray validation still runs.
+        fail_open_active = False
 
         if tcp_enabled:
             checkable = [c for c in current if c.protocol not in _TCP_SKIP_PROTOCOLS]
@@ -539,26 +544,38 @@ class LivenessValidator(PipelineStage):
                             min_alive,
                         )
                         list_stats["fail_open"] = True
-                        return configs
-                    logger.warning(
-                        "%s TCP validation found %d/%d alive (<%d). "
-                        "Strict mode keeps only alive configs.",
+                        # The stage output is the unfiltered input; record it so
+                        # run-summary never leaves the TCP step blank.
+                        list_stats["output_after_tcp"] = len(configs)
+                        if not xray_enabled:
+                            return configs
+                        logger.warning(
+                            "%s TCP fail-open keeps unfiltered configs, but "
+                            "Xray validation still applies to them.",
+                            label,
+                        )
+                        fail_open_active = True
+                    else:
+                        logger.warning(
+                            "%s TCP validation found %d/%d alive (<%d). "
+                            "Strict mode keeps only alive configs.",
+                            label,
+                            len(alive_tcp),
+                            len(checkable),
+                            min_alive,
+                        )
+                if not fail_open_active:
+                    current = alive_tcp + passthrough
+                    list_stats["filtered"] = True
+                    list_stats["output_after_tcp"] = len(current)
+                    logger.info(
+                        "%s after TCP validation: %d alive, %d TCP-skipped.",
                         label,
                         len(alive_tcp),
-                        len(checkable),
-                        min_alive,
+                        len(passthrough),
                     )
-                current = alive_tcp + passthrough
-                list_stats["filtered"] = True
-                list_stats["output_after_tcp"] = len(current)
-                logger.info(
-                    "%s after TCP validation: %d alive, %d TCP-skipped.",
-                    label,
-                    len(alive_tcp),
-                    len(passthrough),
-                )
 
-        if tls_enabled:
+        if tls_enabled and not fail_open_active:
             tls_checkable = [
                 c
                 for c in current
@@ -630,19 +647,35 @@ class LivenessValidator(PipelineStage):
                             tls_min_alive,
                         )
                         list_stats["fail_open"] = True
-                        return before_tls
-                    logger.warning(
-                        "%s TLS validation left %d/%d configs (<%d). "
-                        "Strict mode keeps only TLS-alive configs.",
+                        # Same as the TCP fail-open: the pre-TLS list is what
+                        # leaves this step, so report its size.
+                        list_stats["output_after_tls"] = len(before_tls)
+                        if not xray_enabled:
+                            return before_tls
+                        logger.warning(
+                            "%s TLS fail-open keeps pre-TLS configs, but "
+                            "Xray validation still applies to them.",
+                            label,
+                        )
+                        fail_open_active = True
+                    else:
+                        logger.warning(
+                            "%s TLS validation left %d/%d configs (<%d). "
+                            "Strict mode keeps only TLS-alive configs.",
+                            label,
+                            len(alive_tls),
+                            len(tls_checkable),
+                            tls_min_alive,
+                        )
+                if not fail_open_active:
+                    current = alive_tls + tls_passthrough
+                    list_stats["filtered"] = True
+                    list_stats["output_after_tls"] = len(current)
+                    logger.info(
+                        "%s after TLS validation: %d configs.",
                         label,
-                        len(alive_tls),
-                        len(tls_checkable),
-                        tls_min_alive,
+                        len(current),
                     )
-                current = alive_tls + tls_passthrough
-                list_stats["filtered"] = True
-                list_stats["output_after_tls"] = len(current)
-                logger.info("%s after TLS validation: %d configs.", label, len(current))
             elif drop_unchecked_after_tls:
                 list_stats["checked"] = True
                 list_stats["tls_candidates"] = 0
@@ -687,11 +720,12 @@ class LivenessValidator(PipelineStage):
                 )
                 return current
 
+            before_xray = list(current)
             supported = [cfg for cfg in current if is_xray_supported(cfg)]
-            unsupported = len(current) - len(supported)
+            unsupported_configs = [cfg for cfg in current if not is_xray_supported(cfg)]
             drop_unsupported = self._as_bool(vcfg.get("xray_drop_unsupported"), True)
             list_stats["xray_candidates"] = len(supported)
-            list_stats["xray_unsupported"] = unsupported
+            list_stats["xray_unsupported"] = len(unsupported_configs)
             list_stats["xray_drop_unsupported"] = drop_unsupported
             if not supported:
                 list_stats["xray_checked"] = 0
@@ -857,29 +891,64 @@ class LivenessValidator(PipelineStage):
                 self._update_source_health_callback(xray_attempted, list_stats)
             else:
                 self.health.update_sources(xray_attempted, list_stats)
+            current = alive_xray
+            if not drop_unsupported and unsupported_configs:
+                current = self._merge_unsupported(
+                    before_xray,
+                    alive_xray,
+                    unsupported_configs,
+                )
+                list_stats["xray_unsupported_kept"] = len(unsupported_configs)
             health_ban_min_alive = self._as_int(
                 self.settings.section("quality").get("health_ban_min_alive"),
                 3,
                 minimum=0,
             )
-            if len(alive_xray) > health_ban_min_alive:
-                alive_xray = [
-                    cfg for cfg in alive_xray if not self.health.is_banned(cfg)
-                ]
+            # Bans are applied to the merged list: an Xray-unsupported config
+            # skips the probe, not the health/source ban, or a banned source
+            # would keep publishing every protocol Xray cannot check.
+            if len(current) > health_ban_min_alive:
+                current = [cfg for cfg in current if not self.health.is_banned(cfg)]
             else:
                 logger.info(
-                    "%s Xray found %d alive configs (<= %d); "
+                    "%s Xray stage kept %d config(s) (<= %d); "
                     "skipping health history bans.",
                     label,
-                    len(alive_xray),
+                    len(current),
                     health_ban_min_alive,
                 )
-            list_stats["output_after_health"] = len(alive_xray)
-            list_stats["output_after_xray"] = len(alive_xray)
-            current = alive_xray
+            list_stats["output_after_health"] = len(current)
+            list_stats["output_after_xray"] = len(current)
             logger.info("%s after Xray validation: %d configs.", label, len(current))
 
         return current
+
+    @staticmethod
+    def _merge_unsupported(
+        before_xray: list[Config],
+        alive: list[Config],
+        unsupported: list[Config],
+    ) -> list[Config]:
+        """Add Xray-unsupported configs back to the Xray-alive ones.
+
+        Used when ``xray_drop_unsupported`` is false: protocols Xray cannot
+        probe (for example hysteria2) must survive the stage instead of being
+        silently dropped together with the configs that failed the probe.
+
+        Args:
+            before_xray: Configs as they entered the Xray stage, in order.
+            alive: Configs that passed Xray validation.
+            unsupported: Configs Xray cannot validate at all.
+
+        Returns:
+            Alive plus unsupported configs, in the original input order and
+            without duplicates.
+        """
+        keep = {id(cfg) for cfg in alive} | {id(cfg) for cfg in unsupported}
+        merged = [cfg for cfg in before_xray if id(cfg) in keep]
+        seen = {id(cfg) for cfg in merged}
+        merged.extend(cfg for cfg in alive if id(cfg) not in seen)
+        return merged
 
     def _xray_candidate_preselect(
         self,
