@@ -89,7 +89,7 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider
 
       - name: Restore facts cache
-        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: facts_history.json
           key: facts-history
@@ -97,7 +97,7 @@ jobs:
             facts-history
 
       - name: Restore health-history cache
-        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: output/health-history.json
           key: health-history
@@ -110,7 +110,7 @@ jobs:
       # history and ban_after_consecutive_failures can never be reached — dead
       # proxies get retried forever. The Actions cache is private to the repo.
       - name: Restore proxy-health cache
-        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: output/proxy-health-history.json
           key: proxy-health
@@ -205,21 +205,21 @@ jobs:
 
       - name: Save facts cache
         if: always() && hashFiles('facts_history.json') != ''
-        uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: facts_history.json
           key: facts-history-${{ github.run_id }}
 
       - name: Save health-history cache
         if: always() && hashFiles('output/health-history.json') != ''
-        uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: output/health-history.json
           key: health-history-${{ github.run_id }}
 
       - name: Save proxy-health cache
         if: always() && hashFiles('output/proxy-health-history.json') != ''
-        uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: output/proxy-health-history.json
           key: proxy-health-${{ github.run_id }}
