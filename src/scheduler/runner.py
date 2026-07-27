@@ -938,6 +938,7 @@ class PipelineRunner:
         return all_ok
 
     @staticmethod
+    @staticmethod
     def _unique_publish_paths(output_files: list[str]) -> list[str]:
         """Drop duplicate output paths, ignoring separator/case differences.
 
@@ -945,11 +946,15 @@ class PipelineRunner:
         on Windows) while configured outputs keep the ``output/x.txt`` spelling
         from settings, so plain string dedup let the same file be committed
         twice — two Contents API round trips racing on one repo path.
+
+        ``os.path.normpath`` preserves backslashes on Linux, so normalise
+        separators separately before the dedup key.
         """
         seen: set[str] = set()
         unique: list[str] = []
         for output_file in output_files:
-            key = os.path.normcase(os.path.normpath(output_file))
+            normalised = output_file.replace("\\", "/")
+            key = os.path.normcase(os.path.normpath(normalised))
             if key in seen:
                 continue
             seen.add(key)

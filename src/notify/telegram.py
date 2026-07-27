@@ -326,7 +326,13 @@ def _repo_relative_output(summary: dict[str, Any], key: str) -> str | None:
     if not raw or not isinstance(raw, str):
         return None
     native = Path(raw)
-    if native.is_absolute() or native.drive:
+    if (
+        native.is_absolute()
+        or native.drive
+        # On Linux, PurePosixPath does not recognise drive letters, so
+        # C:/secrets/out.txt is neither absolute nor has .drive set.
+        or (len(raw) > 1 and raw[1:2] == ":")
+    ):
         return None
     path = PurePosixPath(raw.replace("\\", "/"))
     if path.is_absolute() or ".." in path.parts:
