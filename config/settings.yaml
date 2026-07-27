@@ -24,6 +24,12 @@ validator:
   # SOCKS5 proxy for TCP/TLS validation (optional, only when tcp/tls enabled).
   # proxy_url: "socks5://127.0.0.1:1080"
 
+  # Address guard (SSRF prevention). DNS queries only for hostnames (not IP literals).
+  # Set to false to skip DNS entirely and only block private/reserved IP literals.
+  check_hostnames: true
+  # Per-hostname DNS resolution timeout in seconds.
+  resolve_timeout: 5.0
+
   # GitHub Actions often cannot reach VPN servers directly from data-center IPs.
   # TCP liveness therefore uses a small free SOCKS5 proxy pool parsed from GitHub.
   # TCP only proves that a port opens; TLS adds a stricter handshake check for

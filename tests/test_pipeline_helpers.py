@@ -1951,6 +1951,9 @@ validator:
 
     async def fake_validate_configs_tcp(batch, **kwargs):
         call_sizes.append(len(batch))
+        for cfg in batch[1:]:
+            cfg.is_alive = False
+        batch[0].is_alive = True
         return [batch[0]]
 
     monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)

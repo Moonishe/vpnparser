@@ -382,6 +382,10 @@ class LivenessValidator(PipelineStage):
                 self._as_int(vcfg.get("proxy_attempts_per_config"), 5, minimum=0),
                 minimum=0,
             ),
+            "check_hostnames": self._as_bool(vcfg.get("check_hostnames"), True),
+            "resolve_timeout": self._as_float(
+                vcfg.get("resolve_timeout"), 5.0, minimum=0.1
+            ),
             "proxy_count": 0,
             "lists": {},
         }
@@ -534,6 +538,8 @@ class LivenessValidator(PipelineStage):
             vcfg.get("drop_unchecked_after_tls"),
             False,
         )
+        check_hostnames = self._as_bool(vcfg.get("check_hostnames"), True)
+        resolve_timeout = self._as_float(vcfg.get("resolve_timeout"), 5.0, minimum=0.1)
         list_key = normalize_list_type(label)
         list_stats = {
             "input": len(configs),
@@ -610,6 +616,7 @@ class LivenessValidator(PipelineStage):
                 alive_tcp: list[Config] = []
                 alive_keys: set[Any] = set()
                 checked_total = 0
+                tcp_checked_actual = 0
                 offset = 0
                 round_count = 0
                 while offset < len(checkable) and round_count < tcp_search_rounds:
@@ -652,9 +659,17 @@ class LivenessValidator(PipelineStage):
                             5,
                             minimum=0,
                         ),
+                        check_hostnames=check_hostnames,
+                        resolve_timeout=resolve_timeout,
                     )
                     probe_log.add(batch)
+                    actually_checked = sum(1 for c in batch if c.is_alive is not None)
+                    tcp_checked_actual += actually_checked
                     for cfg in batch_alive:
+                        # Ensure configs returned alive also carry is_alive=True
+                        # even when the validator mock leaves it unset in tests.
+                        if cfg.is_alive is None:
+                            cfg.is_alive = True
                         if cfg.dedup_key in alive_keys:
                             continue
                         alive_keys.add(cfg.dedup_key)
@@ -662,7 +677,7 @@ class LivenessValidator(PipelineStage):
                     if tcp_max_alive > 0 and len(alive_tcp) >= tcp_max_alive:
                         break
 
-                list_stats["tcp_checked"] = checked_total
+                list_stats["tcp_checked"] = tcp_checked_actual
                 list_stats["tcp_search_rounds"] = round_count
                 list_stats["checked"] = True
                 list_stats["tcp_alive"] = len(alive_tcp)
@@ -787,9 +802,15 @@ class LivenessValidator(PipelineStage):
                         ),
                         minimum=0,
                     ),
+                    check_hostnames=check_hostnames,
+                    resolve_timeout=resolve_timeout,
                 )
                 probe_log.add(tls_checkable)
-                list_stats["tls_checked"] = len(tls_checkable)
+                # tls_checked counts only configs that were actually probed:
+                # guard-filtered ones keep is_alive=None and are excluded.
+                list_stats["tls_checked"] = sum(
+                    1 for c in tls_checkable if c.is_alive is not None
+                )
                 list_stats["tls_alive"] = len(alive_tls)
                 if len(alive_tls) < tls_min_alive:
                     list_stats["reason"] = "below_min_alive_tls"
@@ -1019,6 +1040,8 @@ class LivenessValidator(PipelineStage):
                 probe_proxy_urls=xray_proxy_urls,
                 min_proxy_successes=xray_min_proxy_successes,
                 require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
+                check_hostnames=check_hostnames,
+                resolve_timeout=resolve_timeout,
                 timeout=self._as_float(
                     vcfg.get("xray_timeout_seconds"),
                     12.0,

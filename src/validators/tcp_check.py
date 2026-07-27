@@ -107,6 +107,7 @@ async def validate_configs_tcp(
     proxy_urls: list[str] | None = None,
     proxy_attempts_per_config: int = 1,
     check_hostnames: bool = True,
+    resolve_timeout: float = 5.0,
 ) -> list[Config]:
     """Check configs via TCP with optional early termination and SOCKS5 proxy.
 
@@ -134,6 +135,7 @@ async def validate_configs_tcp(
         configs,
         stage="TCP check",
         check_hostnames=check_hostnames,
+        resolve_timeout=resolve_timeout,
     )
     if not configs:
         return []

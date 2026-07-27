@@ -836,6 +836,7 @@ async def validate_configs_xray(
     require_distinct_outbound_ip: bool = False,
     verify_probe_tls: bool = True,
     check_hostnames: bool = True,
+    resolve_timeout: float = 5.0,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
     concurrency: int = 6,
@@ -854,6 +855,7 @@ async def validate_configs_xray(
         configs,
         stage="Xray probe",
         check_hostnames=check_hostnames,
+        resolve_timeout=resolve_timeout,
     )
     if not configs:
         return []

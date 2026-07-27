@@ -223,6 +223,7 @@ async def validate_configs_tls(
     proxy_urls: list[str] | None = None,
     proxy_attempts_per_config: int = 1,
     check_hostnames: bool = True,
+    resolve_timeout: float = 5.0,
 ) -> list[Config]:
     """Filter configs by TLS handshake.
 
@@ -246,6 +247,7 @@ async def validate_configs_tls(
         configs,
         stage="TLS check",
         check_hostnames=check_hostnames,
+        resolve_timeout=resolve_timeout,
     )
     if not configs:
         return []

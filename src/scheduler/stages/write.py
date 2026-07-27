@@ -96,7 +96,7 @@ class OutputWriter(PipelineStage):
         if root is None:
             return None
         # "." resolves to the project root the same helper anchors on.
-        base = resolve_safe_output_path(".")
+        base = resolve_safe_output_path(".", strict=True)
         if root != base and base not in root.parents:
             logger.warning(
                 "Location output dir %r is outside the project root %s — "
@@ -137,7 +137,7 @@ class OutputWriter(PipelineStage):
         reserved: set[Path] = set()
         for candidate in candidates:
             try:
-                reserved.add(resolve_safe_output_path(candidate))
+                reserved.add(resolve_safe_output_path(candidate, strict=True))
             except ValueError:
                 # An unsafe path is never written either, so nothing to protect.
                 continue
