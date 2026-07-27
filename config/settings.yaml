@@ -71,7 +71,7 @@ validator:
     whitelist: 200
   xray_timeout_seconds: 15
   xray_startup_timeout_seconds: 5
-  xray_concurrency: 5
+  xray_concurrency: 10
   # Relaxed L3 gate: free SOCKS5 proxies are unstable. A single real Xray HTTPS
   # probe is enough; do not require a distinct outbound IP or a proxy-network
   # success. The real-handshake barrier still filters garbage configs.
