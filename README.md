@@ -178,7 +178,7 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 | `validator` | `max_configs_to_validate` | `0` | Cap on parsed configs (0 = unlimited) |
 | `validator` | `tcp_enabled`, `tls_enabled`, `xray_enabled` | `true` | Liveness check toggles |
 | `validator` | `proxy_attempts_per_config`, `tls_proxy_attempts_per_config` | `3` | SOCKS5 proxy retries |
-| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `200`, `5` | Xray probe limits |
+| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `200`, `10` | Xray probe limits |
 | `validator` | `xray_required` | `true` | Drop everything when Xray cannot run (see `XRAY_EXECUTABLE`) |
 | `validator` | `xray_require_distinct_outbound_ip` | `false` | Fail-closed when direct IP unknown |
 | `validator` | `min_alive_to_filter`, `fail_open_on_low_alive` | `10`, `false` | Low-live thresholds |
