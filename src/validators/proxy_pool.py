@@ -258,6 +258,27 @@ async def load_proxy_pool(
         logger.warning("Proxy pool: no candidates fetched.")
         return []
 
+    if history is not None:
+        # Before the self-check, not after it: a proxy that fails the check is
+        # given a fresh `consecutive_failures = 0` by ``record(success=True)``
+        # only when it *passes*, so ranking the survivors can never drop a
+        # banned one — the ban simply never applied, and every dead proxy was
+        # re-probed at full cost on every run.
+        healthy = history.rank(candidates)
+        if healthy:
+            logger.info(
+                "Proxy pool: %d/%d candidates left after health history.",
+                len(healthy),
+                len(candidates),
+            )
+            candidates = healthy
+        else:
+            logger.warning(
+                "Proxy pool: health history rejects all %d candidate(s); "
+                "checking them anyway rather than running without a pool.",
+                len(candidates),
+            )
+
     if not validate:
         pool = candidates[:max_proxies]
         logger.info("Proxy pool: using %d unvalidated proxies.", len(pool))

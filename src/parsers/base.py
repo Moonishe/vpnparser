@@ -115,10 +115,23 @@ class BaseParser(ABC):
 # --- utility functions shared across parsers ---
 
 
+# Noise to drop before base64 decoding: any whitespace plus U+FEFF, the BOM as
+# it appears once the bytes have been decoded to text.  U+FEFF is NOT matched by
+# ``\s`` and NOT removed by ``str.strip()``, yet sources routinely carry one at
+# the start of a file (``src/sources/github.py`` decodes bytes to text, keeping
+# it), so it has to be listed explicitly.
+_B64_NOISE_RE = re.compile(r"[\s\ufeff]+")
+
+
 def safe_b64decode(data: str) -> str:
     """Base64 decode with padding fix and utf-8 fallback."""
-    # strip whitespace and URL-safe chars
-    cleaned = data.strip().replace("-", "+").replace("_", "/")
+    # Drop ALL noise (not just the outer edges) and normalize URL-safe chars.
+    # Interior newlines are ignored by b64decode but would corrupt the padding
+    # arithmetic below — a MIME-wrapped payload (64/76 chars per line, no "=")
+    # then decoded to "" and the whole subscription was lost.  A leading BOM
+    # shifted the length to 4n+1 (padding 3, never valid) and lost it the same
+    # way.
+    cleaned = _B64_NOISE_RE.sub("", data).replace("-", "+").replace("_", "/")
     # fix padding
     padding = 4 - (len(cleaned) % 4)
     if padding != 4:
@@ -308,7 +321,15 @@ PROTOCOL_PATTERN = re.compile(
     # match to a scheme boundary.  Without it, substrings matched the ``ss``
     # alternative inside unrelated words — e.g. ``boss://x``, ``sss://x`` and
     # ``less://x`` were all extracted as ``ss://x`` false positives.
-    r"\b(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)://[^\s<>'\"()\[\]{}]+",
+    r"\b(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)://"
+    # Optional userinfo terminated by "@".  "?" and "#" are excluded so a
+    # remark containing "@" (ad remarks do) is not mistaken for userinfo.
+    r"(?:[^\s<>'\"()\[\]{}@?#]*@)?"
+    # Either a bracketed IPv6 literal in the host position followed by the
+    # rest of the link, or a plain (bracket-free) remainder.  Brackets are
+    # accepted ONLY in the host position: allowing them anywhere would make
+    # ``[vless://a@b:443]`` and markdown links swallow the closing bracket.
+    r"(?:\[[0-9A-Fa-f:.]+\][^\s<>'\"()\[\]{}]*|[^\s<>'\"()\[\]{}]+)",
     re.IGNORECASE,
 )
 
@@ -332,6 +353,19 @@ _PLACEHOLDER_PATTERNS = re.compile(
     r"|\bPASSWORD\b"  # literal "PASSWORD"
     r"|\byour[_-]?domain\b"  # yourdomain.com, your-domain.com (word-bounded: not yourdomains.com)  # noqa: E501
     r"|\bexample\.com\b",  # example.com (IANA reserved; word-bounded: not bestexample.com)  # noqa: E501
+)
+
+# The subset of _PLACEHOLDER_PATTERNS that is safe to match *inside* a
+# credential: everything except ``\bUUID\b`` / ``\bPASSWORD\b``, which
+# false-positive on real credentials ("super-password-2024", "not-a-uuid-pass").
+# Those two are handled by whole-value exact match in _is_garbage_credential.
+_CREDENTIAL_PLACEHOLDER_PATTERNS = re.compile(
+    r"(?i)"
+    r"\bSERVER_IP"
+    r"|\bPUBLIC_KEY"
+    r"|\bSHORT_ID"
+    r"|\byour[_-]?domain\b"
+    r"|\bexample\.com\b",
 )
 
 # Advertising in remark — Telegram handles, URLs, promotional text.
@@ -361,10 +395,25 @@ _AD_PATTERNS = re.compile(
     r"|купить"
     r"|openproxylist"
     r"|oneclickvpn"
-    r"|v2ray.*pool"
+    # Bounded quantifier, NOT ``v2ray.*pool``: the unbounded form re-scanned the
+    # rest of the remark from every ``v2ray`` occurrence, so a remark that
+    # repeats ``v2ray`` without ever containing ``pool`` cost O(n^2) — 17 s at
+    # 160 KB, ~28 h at the 12 MB source download limit, with GarbageFilter
+    # hanging the whole run before any sampling or dedup could shrink the input.
+    # ``.`` (not ``[^\s]``) so the real ad remarks this targets — "V2Ray Pool",
+    # "v2ray free pool" — keep matching across their spaces.
+    r"|v2ray.{0,64}?pool"
     r"|shadowproxy"
     r"|gozargah",
 )
+
+# Upper bound on how much of a remark :func:`_has_ad_remark` inspects.  A remark
+# is a display name: real ones are a few dozen characters, while the ``#fragment``
+# of a link taken straight from a public source is bounded only by the 12 MB
+# download limit.  Ad markers sit at the front of a remark, so scanning a fixed
+# prefix loses nothing in practice and keeps the filter's cost constant per
+# config no matter what a source ships.
+_MAX_AD_SCAN_CHARS = 512
 
 # Valid UUID format (8-4-4-4-12 hex, hyphens optional). Module-level so it is
 # compiled once, not looked up in re's internal cache on every is_garbage_config()
@@ -374,6 +423,96 @@ _AD_PATTERNS = re.compile(
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$",
 )
+
+
+def _split_link_userinfo(body: str) -> tuple[str, str]:
+    """Split a fragment-less link body into ``(userinfo, link_without_userinfo)``.
+
+    Only the authority component is inspected: the ``@`` must appear before the
+    first ``/`` or ``?``, otherwise an ``@`` inside a path or query string would
+    be mistaken for the userinfo separator.
+
+    Args:
+        body: Link with the ``#fragment`` already removed.
+
+    Returns:
+        ``(userinfo, rest)`` where *rest* is *body* with ``userinfo@`` removed.
+        ``userinfo`` is ``""`` when the link carries no credentials.
+    """
+    scheme_end = body.find("://")
+    if scheme_end == -1:
+        return ("", body)
+    after_scheme = body[scheme_end + 3 :]
+    authority_end = min(
+        (i for i in (after_scheme.find("/"), after_scheme.find("?")) if i != -1),
+        default=len(after_scheme),
+    )
+    at = after_scheme.rfind("@", 0, authority_end)
+    if at == -1:
+        return ("", body)
+    return (after_scheme[:at], body[: scheme_end + 3] + after_scheme[at + 1 :])
+
+
+def _has_ad_remark(remark: str) -> bool:
+    """Judge a remark as advertising (channel handle, URL, promotional text).
+
+    Only the first :data:`_MAX_AD_SCAN_CHARS` characters are inspected, so the
+    check costs the same for a 30-character display name and for a multi-megabyte
+    ``#fragment`` pulled from a public source.  Shared by both branches of
+    :func:`is_garbage_config` so a link string and the :class:`Config` parsed
+    from it are judged identically.
+
+    Args:
+        remark: Display name, already percent-decoded.
+
+    Returns:
+        ``True`` when the remark carries an advertising marker.
+    """
+    return _AD_PATTERNS.search(remark[:_MAX_AD_SCAN_CHARS]) is not None
+
+
+def _is_garbage_credential(protocol: str, credential: str) -> bool:
+    """Judge a single credential (uuid / password) as placeholder or malformed.
+
+    Shared by both branches of :func:`is_garbage_config` so that a link string
+    and the :class:`Config` parsed from it are always judged identically — the
+    two used to disagree (``vless://garbage@host:443`` passed as a string while
+    the equivalent Config was rejected).
+
+    ``UUID`` / ``PASSWORD`` are matched only as the *whole* value: as
+    sub-patterns they false-positive on real credentials such as
+    ``super-password-2024``.  The remaining placeholders are matched anywhere
+    (see :data:`_CREDENTIAL_PLACEHOLDER_PATTERNS`).
+
+    Args:
+        protocol: Protocol / link scheme (case-insensitive).
+        credential: ``uuid_or_password`` value, already percent-decoded.
+
+    Returns:
+        ``True`` when the credential cannot belong to a real server.
+    """
+    proto = protocol.lower()
+    if not credential:
+        # These three protocols cannot work without a credential.
+        return proto in ("vless", "vmess", "tuic")
+    if credential.upper() in ("UUID", "PASSWORD"):
+        return True
+    if _CREDENTIAL_PLACEHOLDER_PATTERNS.search(credential):
+        return True
+    # A vless/vmess uuid must look like a real UUID (8-4-4-4-12 hex, hyphens
+    # optional), not literal "UUID" or arbitrary text.
+    if proto in ("vless", "vmess"):
+        return _UUID_RE.match(credential) is None
+    # TUIC v5 uses ``UUID:PASSWORD`` — the uuid half before the first colon must
+    # be a real UUID.  Without this, a placeholder like ``UUID:pass`` slipped
+    # through (exact-match only ever saw the whole string).  TUIC v4 uses a bare
+    # token (no colon) which is arbitrary, so it is not format-validated.
+    if proto == "tuic" and ":" in credential:
+        uuid_part = credential.split(":", 1)[0]
+        if uuid_part.upper() in ("UUID", "PASSWORD"):
+            return True
+        return _UUID_RE.match(uuid_part) is None
+    return False
 
 
 def is_garbage_config(link_or_config: str | Config) -> bool:
@@ -424,45 +563,34 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
             ):
                 return True
             # Filter advertising: @channel, http://, .com, .net, etc.
-            if _AD_PATTERNS.search(cfg.remark):
+            if _has_ad_remark(cfg.remark):
                 return True
-        # uuid_or_password: check for literal placeholder values only.
-        if cfg.uuid_or_password:
-            uop = cfg.uuid_or_password
-            uop_upper = uop.upper()
-            if uop_upper in ("UUID", "PASSWORD"):
-                return True
-            # UUID must look like a real UUID (8-4-4-4-12 hex, hyphens optional),
-            # not literal "UUID". Accepts both hyphenated and non-hyphenated forms
-            # (some vmess/vless sources emit 32 hex chars without hyphens).
-            if cfg.protocol in ("vless", "vmess"):
-                if not _UUID_RE.match(uop):
-                    return True
-            # TUIC v4 uses ``UUID:PASSWORD`` — the uuid half before the first
-            # colon must be a real UUID.  Without this, a placeholder like
-            # ``UUID:pass`` slipped through (exact-match only checked the whole
-            # string, never "UUID:pass").  TUIC v5 uses a bare token (no colon)
-            # which is arbitrary, so it is not format-validated here.
-            elif cfg.protocol == "tuic" and ":" in uop:
-                uuid_part = uop.split(":", 1)[0]
-                if uuid_part.upper() in ("UUID", "PASSWORD"):
-                    return True
-                if not _UUID_RE.match(uuid_part):
-                    return True
-        # vless/vmess/tuic with empty credential = garbage (parsers reject
-        # these, but is_garbage_config must be safe if called directly).
-        elif cfg.protocol in ("vless", "vmess", "tuic"):
-            return True
-        return False
+        # uuid_or_password: literal placeholders + per-protocol format.  An
+        # empty credential is garbage for vless/vmess/tuic (parsers reject
+        # those, but is_garbage_config must be safe if called directly).
+        return _is_garbage_credential(cfg.protocol, cfg.uuid_or_password)
 
     # String link — check raw text for placeholders.
     # Mirror the Config path: ``\bUUID\b`` / ``\bPASSWORD\b`` are NOT run on the
-    # URL fragment (remark) because they false-positive on real remarks such as
-    # ``free-password-vpn``.  The fragment is judged only by literal-placeholder
-    # exact-match + the ad filter — exactly what the Config path does.
+    # URL fragment (remark) nor on the userinfo (credential) because they
+    # false-positive on real values such as ``free-password-vpn`` or
+    # ``super-password-2024``.  Both go through the same narrower checks the
+    # Config path uses (_is_garbage_credential / exact match + ad filter).
     raw = str(link_or_config)
     body, _, remark = raw.partition("#")
-    if _PLACEHOLDER_PATTERNS.search(body):
+    scheme, _, _ = body.partition("://")
+    userinfo, body_without_userinfo = _split_link_userinfo(body)
+    # A rewritten body is the only reliable "this link carried userinfo" signal:
+    # _split_link_userinfo also returns an empty userinfo for ``vless://@host``,
+    # which IS garbage, while a link that keeps its credential elsewhere
+    # (vmess:// stores it inside the base64 JSON) has no userinfo at all and must
+    # not be judged as if the credential were empty.
+    if body_without_userinfo != body and _is_garbage_credential(
+        scheme.strip(),
+        unquote(userinfo).strip(),
+    ):
+        return True
+    if _PLACEHOLDER_PATTERNS.search(body_without_userinfo):
         return True
     if remark:
         decoded_remark = unquote(remark)
@@ -474,6 +602,6 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
             "SHORT_ID",
         ):
             return True
-        if _AD_PATTERNS.search(decoded_remark):
+        if _has_ad_remark(decoded_remark):
             return True
     return False

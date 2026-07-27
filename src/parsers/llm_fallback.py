@@ -65,6 +65,22 @@ _MAX_TOKENS_CATEGORIZE = 10  # single word
 _REMARK_MAX_LENGTH = 60
 
 
+def _unknown_provider_message(provider: str) -> str:
+    """Build the error message for an unsupported provider name.
+
+    Args:
+        provider: Provider name as configured (not lower-cased).
+
+    Returns:
+        Message naming the offending value and the supported providers.
+    """
+    supported = ", ".join(sorted(_PROVIDER_URLS))
+    return (
+        f"Unsupported LLM provider {provider!r}: expected one of {supported}, "
+        "or pass an explicit api_base"
+    )
+
+
 class LLMFallbackParser:
     """Uses an LLM to extract proxy links from messy text when regex fails.
 
@@ -101,6 +117,10 @@ class LLMFallbackParser:
             max_tokens: Default maximum tokens for LLM responses.  Individual
                 methods override this with task-specific values (e.g.
                 ``categorize`` uses only 10 tokens).
+
+        Raises:
+            ValueError: *provider* is not in :data:`_PROVIDER_URLS` and no
+                explicit *api_base* was given.
         """
         self.provider = provider.lower()
         self.model = model
@@ -111,11 +131,15 @@ class LLMFallbackParser:
 
         if api_base:
             self.api_base = api_base
+        elif self.provider in _PROVIDER_URLS:
+            self.api_base = _PROVIDER_URLS[self.provider]
         else:
-            self.api_base = _PROVIDER_URLS.get(
-                self.provider,
-                _PROVIDER_URLS["groq"],
-            )
+            # Never silently fall back to another vendor's endpoint: a typo or
+            # an unsupported provider in settings.yaml would POST the user's
+            # Authorization header to a service the key was not issued for
+            # (credential leak) and answer with an opaque 401 per file.  A
+            # config error must surface as a config error.
+            raise ValueError(_unknown_provider_message(provider))
 
         if not self.api_key:
             logger.warning(
@@ -413,12 +437,25 @@ class LLMFallbackParser:
                         )
                         return ""
                     try:
-                        return payload["choices"][0]["message"]["content"] or ""
+                        content = payload["choices"][0]["message"]["content"]
                     except (KeyError, IndexError, TypeError):
                         logger.exception(
                             "LLM API response missing choices[0].message.content",
                         )
                         return ""
+                    if not content:
+                        return ""
+                    if not isinstance(content, str):
+                        # Some gateways answer with the multimodal content-parts
+                        # form (a list of blocks).  Returning it as-is broke the
+                        # "-> str" contract and made callers raise on
+                        # .splitlines()/.strip() instead of degrading.
+                        logger.error(
+                            "LLM API returned non-string content of type %s",
+                            type(content).__name__,
+                        )
+                        return ""
+                    return content
 
             # --- exponential backoff before next retry (1, 2, 4 seconds) ---
             if attempt < _MAX_RETRIES - 1:

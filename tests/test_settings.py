@@ -47,6 +47,27 @@ def test_load_settings_empty(tmp_path):
     assert result2 == {}
 
 
+def test_load_settings_list_root_returns_empty(tmp_path, caplog):
+    """A YAML list at the root is rejected instead of being handed to Settings."""
+    caplog.set_level("WARNING")
+    cfg = tmp_path / "list.yaml"
+    cfg.write_text("- one\n- two\n", encoding="utf-8")
+    result = load_settings(str(cfg))
+    assert result == {}
+    assert "Settings root is list" in caplog.text
+    # The result must be usable by Settings without blowing up mid-run.
+    assert Settings(result).section("validator") == {}
+
+
+def test_load_settings_scalar_root_returns_empty(tmp_path, caplog):
+    """A YAML scalar at the root is rejected as well."""
+    caplog.set_level("WARNING")
+    cfg = tmp_path / "scalar.yaml"
+    cfg.write_text("just-a-string\n", encoding="utf-8")
+    assert load_settings(str(cfg)) == {}
+    assert "Settings root is str" in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------

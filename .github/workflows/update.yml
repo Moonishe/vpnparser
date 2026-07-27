@@ -15,16 +15,26 @@ on:
         default: "false"
         type: boolean
 
-# Cancel a previous run if a new one starts on the same ref.
+# Queue runs on the same ref instead of cancelling them: publishing walks the
+# output files one Contents API commit at a time, so a cancelled run can leave
+# the repo with a half-updated set of subscriptions.
 concurrency:
   group: update-configs-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write # needed to push the updated subscription back to the repo
 
 env:
   XRAY_VERSION: "v26.3.27" # pin explicitly; update .github/xray.sha256 when bumping
+  # One source of truth for "which branch does this run touch": the pipeline
+  # commits the output files there (GITHUB_BRANCH) and the Telegram links must
+  # point at the very same branch. Publishing has no ref of its own — the runner
+  # falls back to `main` when GITHUB_BRANCH is unset — so a workflow_dispatch
+  # from a feature ref used to update the default branch while advertising raw
+  # links to the dispatch ref, where nothing was published. The `|| 'main'`
+  # mirrors that fallback, so an empty payload field cannot split the two again.
+  PUBLISH_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
 
 jobs:
   update-configs:
@@ -94,18 +104,52 @@ jobs:
           restore-keys: |
             health-history
 
+      # Proxy health is the only state that survives *nothing* otherwise: the
+      # file is deliberately not published (it holds the free SOCKS5 pool with
+      # credentials), so without this cache every run starts with an empty
+      # history and ban_after_consecutive_failures can never be reached — dead
+      # proxies get retried forever. The Actions cache is private to the repo.
+      - name: Restore proxy-health cache
+        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: output/proxy-health-history.json
+          key: proxy-health
+          restore-keys: |
+            proxy-health
+
       - name: Run pipeline
         id: pipeline
         run: |
+          set +e
           if [ "${{ inputs.skip_publish }}" = "true" ]; then
+            published=false
             python -m src.main --run
           else
+            published=true
             python -m src.main --run --publish
+          fi
+          code=$?
+          set -e
+          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+          # The notification announces "the subscription changed" and links to
+          # the files in the repo. A skip_publish run leaves the repo untouched,
+          # and run-summary.json carries no publish flag, so the notify step can
+          # only tell the two runs apart through this output.
+          echo "published=${published}" >> "$GITHUB_OUTPUT"
+          # Exit 3 (src.main EXIT_PUBLISH_FAILED) means the pipeline ran fine but
+          # publishing to the repo failed. Keep going so the local output still
+          # gets verified, then fail in "Fail on stale publish" *before* the
+          # Telegram step: run-summary.json carries no publish flag, so a
+          # notification sent after a failed publish would advertise counts that
+          # only exist locally while subscribers still get the stale file.
+          if [ "${code}" -ne 0 ] && [ "${code}" -ne 3 ]; then
+            exit "${code}"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
+          GITHUB_BRANCH: ${{ env.PUBLISH_BRANCH }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
           XRAY_EXECUTABLE: ${{ github.workspace }}/bin/xray/xray
@@ -142,8 +186,14 @@ jobs:
             exit 1
           fi
 
+      - name: Fail on stale publish
+        if: steps.pipeline.outputs.exit_code == '3'
+        run: |
+          echo "::error::Pipeline succeeded but publishing failed — the subscription in the repo is stale. See docs/OPERATIONS.md"
+          exit 1
+
       - name: Telegram notify
-        if: env.configs_count != ''
+        if: env.configs_count != '' && steps.pipeline.outputs.published == 'true'
         run: python -m src.notify.telegram --configs "${{ env.configs_count }}" --file output/subscription.txt --status-file output/run-summary.json
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -151,7 +201,7 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
-          GITHUB_BRANCH: ${{ github.ref_name }}
+          GITHUB_BRANCH: ${{ env.PUBLISH_BRANCH }}
 
       - name: Save facts cache
         if: always() && hashFiles('facts_history.json') != ''
@@ -166,6 +216,13 @@ jobs:
         with:
           path: output/health-history.json
           key: health-history-${{ github.run_id }}
+
+      - name: Save proxy-health cache
+        if: always() && hashFiles('output/proxy-health-history.json') != ''
+        uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: output/proxy-health-history.json
+          key: proxy-health-${{ github.run_id }}
 
       - name: Alert on failure
         if: failure()

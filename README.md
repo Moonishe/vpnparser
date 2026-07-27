@@ -53,7 +53,7 @@ ones back into subscriptions.
 
 | File | Contents |
 |------|----------|
-| `output/subscription.txt` | Combined pool (country-balanced, ~200 configs) |
+| `output/subscription.txt` | Combined pool (country-balanced, ≤`aggregator.max_configs_in_output`, currently 100) |
 | `output/subscription-blacklist.txt` | Blacklist pool |
 | `output/subscription-whitelist.txt` | Whitelist / restricted-network pool |
 | `output/subscription-mix.txt` | 100 black + 100 white |
@@ -70,12 +70,20 @@ Each source supports:
 
 | Field | Description |
 |-------|-------------|
-| `type` | `subscription` (single file), `raw` (directory), `url` (direct HTTPS) |
+| `type` | `url` (direct HTTPS file), `url-list` (index file listing further URLs), `subscription` (single file in a GitHub repo), `raw` (directory in a GitHub repo) |
 | `list_type` | `blacklist`, `whitelist`, or `mixed` |
-| `owner`, `repo`, `path`, `branch` | GitHub source location |
-| `url` | Direct URL (for `url` type) |
+| `url` | Direct URL (for `url` and `url-list`) |
+| `owner`, `repo`, `path`, `branch` | GitHub source location (for `subscription` / `raw`) |
 | `default_country` | Fallback when country detection fails |
-| `max_depth`, `max_files`, `include_files`, `exclude_files` | Directory crawl options |
+| `timeout` | Per-request timeout in seconds |
+| `max_depth`, `include_files`, `exclude_files` | Directory crawl options (`raw`) |
+| `max_files` | Cap on fetched files: crawl depth for `raw`, URLs taken from the index for `url-list` (default 200) |
+| `max_concurrent_urls` | Parallel fetches of the URLs listed by a `url-list` index (default 10) |
+
+A `url-list` source fetches an index file and then every URL inside it, so the
+targets are chosen by a third party. Those fetches are SSRF-guarded and size-
+capped — see [SECURITY.md](SECURITY.md). All sources currently shipped are
+`url` or `url-list`; none uses `owner`/`repo`.
 
 ### Included upstreams
 
@@ -84,6 +92,7 @@ Each source supports:
 - **DarkRoyalty/shnajder-vpn-configs** — Whitelist entries
 - **V2RayRoot/V2RayConfig**, **sakha1370/OpenRay** — Blacklist pools
 - **jsxta/whitelist-russia** — Whitelist subscription
+- **kort0881/vpn-vless-configs-russia** — `url-list` indexes of mirrored blacklist sources
 - **proxifly/free-proxy-list**, **ProxyScrape/free-proxy-list**, **VPSLabCloud/VPSLab-Free-Proxy-List**, **gfpcom/free-proxy-list** — SOCKS5 proxy pool
 
 ---
@@ -125,11 +134,13 @@ Local `.env` files are loaded automatically when `python-dotenv` is installed.
 | `GITHUB_TOKEN` | GitHub API token (unauthenticated rate limits are tight) |
 | `GITHUB_OWNER` | Repository owner for publishing |
 | `GITHUB_REPO` | Repository name for publishing |
-| `GITHUB_BRANCH`| Branch for publishing (default: `main`) |
-| `LLM_API_KEY` | DashScope Qwen key for LLM fallback parsing |
+| `GITHUB_BRANCH`| Branch for publishing *and* for the raw links in the Telegram notification (default: `main`). Both readers use this one variable, so they cannot drift apart; `update.yml` passes the repository default branch |
+| `LLM_API_KEY` | Key for the provider in `llm.provider` (DashScope Qwen); fallback parsing is off by default |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token for notifications |
 | `TELEGRAM_CHAT_ID` | Target chat ID for notifications |
-| `VALIDATOR_PROXY` | Optional HTTP proxy for validation |
+| `VALIDATOR_PROXY` | Optional SOCKS5 proxy for validation |
+| `XRAY_EXECUTABLE` | Xray-core binary for the L3 probe. Relative paths resolve from the project root, bare names from `PATH`. With `xray_required: true` and no binary the liveness stage drops everything |
+| `XRAY_LOCATION_ASSET` | Directory with `geoip.dat`/`geosite.dat`, read by the Xray binary itself (optional) |
 
 ---
 
@@ -167,26 +178,45 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 | `validator` | `max_configs_to_validate` | `0` | Cap on parsed configs (0 = unlimited) |
 | `validator` | `tcp_enabled`, `tls_enabled`, `xray_enabled` | `true` | Liveness check toggles |
 | `validator` | `proxy_attempts_per_config`, `tls_proxy_attempts_per_config` | `3` | SOCKS5 proxy retries |
-| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `200`, `20` | Xray probe limits |
-| `validator` | `require_distinct_outbound_ip` | `false` | Fail-closed when direct IP unknown |
+| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `200`, `5` | Xray probe limits |
+| `validator` | `xray_required` | `true` | Drop everything when Xray cannot run (see `XRAY_EXECUTABLE`) |
+| `validator` | `xray_require_distinct_outbound_ip` | `false` | Fail-closed when direct IP unknown |
 | `validator` | `min_alive_to_filter`, `fail_open_on_low_alive` | `10`, `false` | Low-live thresholds |
-| `aggregator` | `max_configs_in_output` | `200` | Hard cap per file |
-| `aggregator` | `max_per_country` | `50` | Per-country cap |
+| `validator` | `geoip_enabled` | `false` | IP→country enrichment via `geoip_api_url` |
+| `validator` | `geoip_requests_per_minute`, `geoip_max_lookups` | `40`, `300` | GeoIP rate limit and per-run lookup cap (extra configs keep `country=None`) |
+| `aggregator` | `max_configs_in_output` | `100` | Hard cap per file |
+| `aggregator` | `max_per_country` | `200` | Per-country cap in the combined output |
 | `publisher` | `output_file` | `output/subscription.txt` | Combined output path |
+| `publisher` | `location_output_limit` | `50` | Cap per `output/locations/subscription-XX.txt` |
 | `llm` | `enabled` | `false` | LLM fallback when regex finds no links |
 
 ---
 
 ## GitHub Actions
 
-[`.github/workflows/update.yml`](.github/workflows/update.yml) runs:
+[`.github/workflows/update.yml`](.github/workflows/update.yml) — the pipeline:
 
-- **Schedule:** every hour
-- **Triggers:** manual dispatch, pushes touching pipeline code
+- **Triggers:** hourly schedule (`0 * * * *`) and manual dispatch (with a
+  `skip_publish` input). No push trigger — pushes are handled by `ci.yml`.
+- Installs dependencies and a checksum-verified Xray-core, runs the checks and
+  the test suite, executes the pipeline, publishes the subscription files, and
+  sends an optional Telegram notification with a summary and a fun VPN fact.
+- `skip_publish: true` runs the pipeline without `--publish` and **sends no
+  notification**: nothing reaches the repository, so an "updated" message would
+  advertise counts that exist only on the runner.
+- Exit code 3 from `python -m src.main` means "pipeline fine, publish failed":
+  the run is marked failed before the notification goes out. See
+  [docs/OPERATIONS.md](docs/OPERATIONS.md#exit-codes).
 
-It installs dependencies, runs tests, executes the pipeline, publishes
-subscription files, and sends an optional Telegram notification with a
-summary and a fun VPN fact.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) — pull requests and
+pushes to `main`:
+
+- `lint` (ruff check + format), `typecheck` (`mypy src`), `security`
+  (bandit, pip-audit, trufflehog secret scan).
+- `test` matrix: Python 3.11/3.12/3.13 on `ubuntu-latest` plus 3.13 on
+  `windows-latest`. The suite runs under a coverage gate
+  (`--cov-fail-under` in [`pyproject.toml`](pyproject.toml)), so a branch that
+  drops tests fails even when every test passes.
 
 ---
 
@@ -201,4 +231,5 @@ summary and a fun VPN fact.
 - Blacklist output keeps only `DE`, `FI`, `NL`, `US`, `GB`, `FR`, `JP`, `CA`.
 - Whitelist targets 200 checked configs with an 80% RU / 20% EU split.
 - LLM fallback ([DashScope Qwen](https://dashscope.aliyun.com)) can extract
-  links from pages where regex parsing fails.
+  links from pages where regex parsing fails. Disabled by default
+  (`llm.enabled: false`); the key in `LLM_API_KEY` must match `llm.provider`.

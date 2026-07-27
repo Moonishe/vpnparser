@@ -20,11 +20,18 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.parsers.base import Config
+from src.validators.address_guard import filter_public_configs, is_blocked_literal
 
 logger = logging.getLogger(__name__)
 
 _TLS_SECURITY_VALUES = {"tls", "reality"}
 _EMPTY_SERVER_NAMES = {"", "none", "null", "false", "0", "-"}
+#: Cap on the SNI candidates one config may cost. ``sni``/``host`` come from an
+#: untrusted subscription link and take a comma-separated list, so a single
+#: config could otherwise demand hundreds of handshakes — each up to the full
+#: TLS timeout, all inside one slot of the stage semaphore. Real links carry a
+#: handful of names; the rest is either a typo or a deliberate stall.
+_MAX_SERVER_NAME_CANDIDATES = 4
 
 
 async def _open_connection_direct(
@@ -112,7 +119,11 @@ def _split_server_names(value: str | None) -> list[str]:
 
 
 def _tls_server_names(cfg: Config) -> list[str | None]:
-    """Return SNI candidates matching how clients commonly interpret links."""
+    """Return SNI candidates matching how clients commonly interpret links.
+
+    At most :data:`_MAX_SERVER_NAME_CANDIDATES` names are returned, in the order
+    the link listed them.
+    """
     names: list[str | None] = []
     seen: set[str | None] = set()
 
@@ -130,7 +141,7 @@ def _tls_server_names(cfg: Config) -> list[str | None]:
         add(name)
 
     if explicit_names:
-        return names
+        return names[:_MAX_SERVER_NAME_CANDIDATES]
 
     address = _clean_server_name(cfg.address)
     if address and not _is_ip_address(address):
@@ -159,6 +170,10 @@ async def tls_check(
 
     Returns True if the handshake completes successfully, False on any error.
     """
+    if is_blocked_literal(host):
+        logger.warning("Refusing TLS check of non-public address %s:%s.", host, port)
+        return False
+
     server_hostname = sni or host
     try:
         ssl_context = ssl.create_default_context()
@@ -207,6 +222,8 @@ async def validate_configs_tls(
     proxy_url: str | None = None,
     proxy_urls: list[str] | None = None,
     proxy_attempts_per_config: int = 1,
+    check_hostnames: bool = True,
+    resolve_timeout: float = 5.0,
 ) -> list[Config]:
     """Filter configs by TLS handshake.
 
@@ -223,7 +240,18 @@ async def validate_configs_tls(
             over ``proxy_url``.
         proxy_attempts_per_config: Number of different proxies to try per
             config before marking it dead. ``0`` means try the whole pool.
+        check_hostnames: Resolve hostnames to reject configs pointing at
+            internal addresses. IP literals are rejected either way.
     """
+    configs = await filter_public_configs(
+        configs,
+        stage="TLS check",
+        check_hostnames=check_hostnames,
+        resolve_timeout=resolve_timeout,
+    )
+    if not configs:
+        return []
+
     proxy_choices = [p for p in (proxy_urls or []) if p]
     if not proxy_choices and proxy_url:
         proxy_choices = [proxy_url]

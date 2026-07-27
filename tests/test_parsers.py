@@ -871,6 +871,7 @@ def test_trojan_parse_port_out_of_range_explicit(
     class _MockParseResult:
         scheme = "trojan"
         username = "secret"
+        password = None
         hostname = "example.com"
         port = 99999
         query = ""

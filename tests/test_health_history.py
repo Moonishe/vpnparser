@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -81,6 +82,126 @@ class TestLoad:
         result = h.load()
         assert result == {"configs": {}, "sources": {}}
 
+    def test_load_section_of_wrong_type_is_replaced(
+        self,
+        tmp_path: Path,
+        caplog,
+    ) -> None:
+        """A list under "configs" is dropped so update() cannot crash on it."""
+        caplog.set_level("WARNING")
+        f = tmp_path / "health.json"
+        f.write_text(json.dumps({"configs": [], "sources": []}), encoding="utf-8")
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        assert h.load() == {"configs": {}, "sources": {}}
+        assert "expected object" in caplog.text
+        # The whole run used to die here with AttributeError.
+        h.update([_make_config(is_alive=True)])
+        assert not h.is_banned(_make_config(source_name="src"))
+
+    def test_load_drops_malformed_records(self, tmp_path: Path, caplog) -> None:
+        """Non-dict records inside a section are dropped with a warning."""
+        caplog.set_level("WARNING")
+        f = tmp_path / "health.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "configs": {"key": "junk", "good": {"passes": 1}},
+                    "sources": {"src": ["junk"]},
+                },
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        data = h.load()
+        assert data["configs"] == {"good": {"passes": 1}}
+        assert data["sources"] == {}
+        assert "malformed record" in caplog.text
+        cfg = _make_config(source_name="src", is_alive=False)
+        assert h.is_banned(cfg) is False
+        h.update([cfg])
+
+    def test_load_zeroes_non_numeric_record_fields(
+        self,
+        tmp_path: Path,
+        caplog,
+    ) -> None:
+        """A hand-edited numeric field must not abort every following run.
+
+        Editing ``banned_until`` to a date (or any non-number) used to make
+        ``is_banned()``/``score()``/``update_sources()`` raise inside the
+        pipeline, so every hourly run died until the file was deleted.
+        """
+        caplog.set_level("WARNING")
+        cfg = _make_config(source_name="src-a")
+        f = tmp_path / "health.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "configs": {
+                        HealthHistory.config_key(cfg): {
+                            "banned_until": "2026-01-01",
+                            "passes": {"a": 1},
+                            "recent": "yes",
+                        },
+                    },
+                    "sources": {
+                        "src-a": {
+                            "banned_until": "later",
+                            "runs": "x",
+                            "last_alive_rate": "high",
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+
+        assert h.is_banned(cfg) is False
+        assert h.score(cfg) == 0.0
+        h.update([cfg])
+        h.update_sources([cfg], {})
+        assert "non-numeric" in caplog.text
+
+    def test_load_keeps_numeric_strings(self, tmp_path: Path) -> None:
+        """Values ``int()`` accepts stay meaningful instead of being zeroed."""
+        cfg = _make_config(source_name="src-a")
+        f = tmp_path / "health.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "configs": {
+                        HealthHistory.config_key(cfg): {"banned_until": "9999999999"}
+                    }
+                },
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        assert h.is_banned(cfg) is True
+
+    def test_load_keeps_null_numeric_fields(self, tmp_path: Path) -> None:
+        """``null`` stays ``null``: every reader already treats it as zero."""
+        cfg = _make_config(source_name="src-a")
+        f = tmp_path / "health.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "configs": {
+                        HealthHistory.config_key(cfg): {"banned_until": None},
+                    },
+                    "sources": {"src-a": {"last_alive_rate": None}},
+                },
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        data = h.load()
+        assert data["configs"][HealthHistory.config_key(cfg)] == {"banned_until": None}
+        assert data["sources"]["src-a"] == {"last_alive_rate": None}
+        assert h.is_banned(cfg) is False
+        assert h.score(cfg) == 0.0
+
 
 # ---------------------------------------------------------------------------
 # save()
@@ -109,6 +230,55 @@ class TestSave:
         result = h.save()
         assert result is not None
         assert Path(result).exists()
+
+    def test_save_prunes_records_unseen_past_retention(self, tmp_path: Path) -> None:
+        """Stale records are dropped so the published file stops growing."""
+        now = int(time.time())
+        f = tmp_path / "health-history.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "configs": {
+                        "fresh": {"last_seen": now - 3600, "banned_until": 0},
+                        "stale": {"last_seen": now - 40 * 86400, "banned_until": 0},
+                        # Still banned: the ban is why the config is skipped,
+                        # so dropping it would silently unban it.
+                        "stale_but_banned": {
+                            "last_seen": now - 40 * 86400,
+                            "banned_until": now + 3600,
+                        },
+                    },
+                    "sources": {},
+                },
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(
+            _make_settings(
+                {"health_history_file": str(f), "health_history_retention_days": 30},
+            ),
+        )
+        h.load()
+
+        assert h.save() is not None
+
+        kept = json.loads(f.read_text(encoding="utf-8"))["configs"]
+        assert set(kept) == {"fresh", "stale_but_banned"}
+
+    def test_prune_keeps_everything_within_retention(self, tmp_path: Path) -> None:
+        """A short-lived history is left untouched."""
+        now = int(time.time())
+        f = tmp_path / "health-history.json"
+        f.write_text(
+            json.dumps(
+                {"configs": {"a": {"last_seen": now - 86400}}, "sources": {}},
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        h.load()
+
+        assert h.prune(now=now) == 0
 
     def test_save_exception_logs_warning(self, monkeypatch, caplog) -> None:
         """save() catches OSError, logs warning, returns None."""
@@ -249,6 +419,62 @@ class TestUpdateSources:
         assert history["sources"]["good_src"]["bad_runs"] == 0
         assert history["sources"]["good_src"]["banned_until"] == 0
 
+    def test_update_sources_small_sample_keeps_ban(self) -> None:
+        """A run with too few checks neither lifts the ban nor clears bad_runs."""
+        h = HealthHistory(
+            _make_settings(
+                {
+                    "source_min_checked": 50,
+                    "source_bad_alive_rate": 0.02,
+                    "source_bad_runs_to_ban": 2,
+                }
+            ),
+        )
+        banned_until = 9_999_999_999
+        h.load()["sources"]["banned_src"] = {
+            "runs": 5,
+            "bad_runs": 2,
+            "banned_until": banned_until,
+        }
+        cfg = _make_config(is_alive=True, source_name="banned_src")
+
+        h.update_sources([cfg], {})
+
+        record = h.load()["sources"]["banned_src"]
+        assert record["bad_runs"] == 2
+        assert record["banned_until"] == banned_until
+        assert record["runs"] == 6
+        assert h.is_banned(_make_config(source_name="banned_src")) is True
+
+    def test_update_sources_confirmed_good_run_lifts_ban(self) -> None:
+        """A run with a sufficient sample and good rate clears the ban."""
+        h = HealthHistory(
+            _make_settings(
+                {
+                    "source_min_checked": 3,
+                    "source_bad_alive_rate": 0.02,
+                    "source_bad_runs_to_ban": 2,
+                }
+            ),
+        )
+        h.load()["sources"]["banned_src"] = {
+            "runs": 5,
+            "bad_runs": 2,
+            "banned_until": 9_999_999_999,
+        }
+        configs = [
+            _make_config(
+                f"h{i}.example", 4000 + i, is_alive=True, source_name="banned_src"
+            )
+            for i in range(3)
+        ]
+
+        h.update_sources(configs, {})
+
+        record = h.load()["sources"]["banned_src"]
+        assert record["bad_runs"] == 0
+        assert record["banned_until"] == 0
+
 
 # ---------------------------------------------------------------------------
 # score()
@@ -353,3 +579,40 @@ class TestScore:
         s = h.score(cfg)
         # base 60 + latency: 10*(1 - 100/10000) = 10*0.99 = 9.9
         assert s == pytest.approx(69.9, rel=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# load() — a broken history file must never vanish silently
+# ---------------------------------------------------------------------------
+
+
+class TestLoadReportsUnreadableFile:
+    """A truncated file is overwritten by the next save(), so it must be logged."""
+
+    def test_corrupt_json_is_reported(self, tmp_path: Path, caplog) -> None:
+        """Every accumulated ban used to disappear without a single message."""
+        caplog.set_level("WARNING")
+        f = tmp_path / "health.json"
+        f.write_text('{"configs": {"aaa": {"passes": 5, "conse', encoding="utf-8")
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+
+        assert h.load() == {"configs": {}, "sources": {}}
+        assert "Failed to load health history" in caplog.text
+
+    def test_unsafe_path_is_reported(self, caplog) -> None:
+        """A traversal path is refused loudly instead of loading nothing."""
+        caplog.set_level("WARNING")
+        h = HealthHistory(_make_settings({"health_history_file": "../../evil.json"}))
+
+        assert h.load() == {"configs": {}, "sources": {}}
+        assert "Unsafe health history path" in caplog.text
+
+    def test_missing_file_stays_silent(self, tmp_path: Path, caplog) -> None:
+        """A first run has no history file — that is not a problem."""
+        caplog.set_level("WARNING")
+        h = HealthHistory(
+            _make_settings({"health_history_file": str(tmp_path / "none.json")}),
+        )
+
+        assert h.load() == {"configs": {}, "sources": {}}
+        assert "health history" not in caplog.text

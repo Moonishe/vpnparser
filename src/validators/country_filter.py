@@ -365,16 +365,45 @@ _HOST_AMBIGUOUS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Two-letter city/state abbreviations ("la", "tx", "nj", ...) are far too
+# short for a case-insensitive \b-search over remark+address+sni+host: they hit
+# hostname labels ("vpn.example.ca" -> California, "proxy.host.la" -> US) and
+# ordinary words ("Casa de la Montaña" -> US).  They are therefore matched
+# separately: remark-only, and framed by structural delimiters on both sides.
+# Keys that are also supported country codes ("ca" -> Canada) are excluded
+# outright, so a remark like "CA-01" cannot flip between Canada and California
+# depending on its case.
+_SHORT_CITY_KEYS = tuple(
+    sorted(
+        key
+        for key in _CITY_TO_CODE
+        if len(key) <= 2 and key.upper() not in _SUPPORTED_CODES
+    ),
+)
+_LONG_CITY_KEYS = tuple(
+    sorted((key for key in _CITY_TO_CODE if len(key) > 2), key=len, reverse=True),
+)
+
 # Precompiled word-boundary regexes for city and country-name matching.
 # Sorting alternatives by length (descending) ensures longer names are
 # preferred when multiple could match at the same position (e.g.
-# "los angeles" before "la").  The ``\b`` anchors prevent substring false
-# positives like "la" in "flash", "us" in "trust", "paris" in "parisian",
-# or "rome" in "romero".
+# "los angeles" before "hong kong").  The ``\b`` anchors prevent substring
+# false positives like "us" in "trust", "paris" in "parisian", or "rome" in
+# "romero".
 _CITY_PATTERN = re.compile(
-    r"\b("
-    + "|".join(re.escape(city) for city in sorted(_CITY_TO_CODE, key=len, reverse=True))
-    + r")\b",
+    r"\b(" + "|".join(re.escape(city) for city in _LONG_CITY_KEYS) + r")\b",
+    re.IGNORECASE,
+)
+
+# Delimiter-anchored on BOTH sides, case-insensitive: matches "LA-01", "[tx]",
+# "server-la-01", "NJ01" and rejects ".ca", "de la", "kl.example.com", "Kl
+# node".  Case matters far less than structure here — lowercase remarks like
+# "server-la-01" are as common as uppercase ones, while a plain-prose "la"
+# never carries a hyphen or bracket around it.
+_SHORT_CITY_RE = re.compile(
+    r"(?:^|[-|\[(/])("
+    + "|".join(re.escape(key) for key in _SHORT_CITY_KEYS)
+    + r")(?=[-\d\]/|)]|$)",
     re.IGNORECASE,
 )
 
@@ -391,10 +420,11 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
 
     Tries in order:
     1. Flag emoji (🇩🇪 → DE)
-    2. City names (frankfurt, amsterdam, tokyo...)
+    2. City names of 3+ characters (frankfurt, amsterdam, tokyo...)
     3. Full country names (germany, usa, russia...)
     4. Standalone 2-letter code (DE, US-01, [FI])
-    5. Hostname country prefix (de01.vpn.com, us-east.server.net)
+    5. Two-letter city/state abbreviation in the remark (LA-01, [TX])
+    6. Hostname country prefix (de01.vpn.com, us-east.server.net)
 
     All non-empty text fields (remark + extra_fields) are combined into a
     single string so each regex runs **once** instead of once per field.
@@ -422,7 +452,7 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
         if emoji in combined:
             return code
 
-    # 2. City names — single regex search on combined text.
+    # 2. City names (3+ chars) — single regex search on combined text.
     m = _CITY_PATTERN.search(combined)
     if m:
         return _CITY_TO_CODE[m.group(1).lower()]
@@ -441,7 +471,15 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
         if m:
             return m.group(1).upper()
 
-    # 5. Hostname country prefix — check address/sni/host.
+    # 5. Two-letter city/state abbreviations — remark only, uppercase, and
+    #    delimiter-anchored.  Runs after the country codes so "CA-01" is read
+    #    as Canada rather than California.
+    if remark:
+        m = _SHORT_CITY_RE.search(remark)
+        if m:
+            return _CITY_TO_CODE[m.group(1).lower()]
+
+    # 6. Hostname country prefix — check address/sni/host.
     #    Ambiguous codes require a digit after (not hyphen) so that reverse
     #    DNS like "in-addr.arpa" or "my-server.example.com" don't match.
     for field in extra_fields:

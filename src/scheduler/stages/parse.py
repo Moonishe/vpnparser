@@ -13,6 +13,7 @@ from src.parsers.subscription import SubscriptionParser
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.stages.base import PipelineStage
 from src.sources.list_types import normalize_list_type
+from src.validators.country_filter import detect_country
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,38 @@ class LinkParser(PipelineStage):
         vcfg = self.settings.section("validator")
         if self.settings.as_bool(vcfg.get("geoip_enabled"), False):
             all_configs = [cfg for bucket in grouped.values() for cfg in bucket]
-            to_enrich = [cfg for cfg in all_configs if cfg.country is None]
+            to_enrich = [cfg for cfg in all_configs if self._needs_geoip(cfg)]
+            # ip-api.com allows 45 req/min, so enrichment is throttled and its
+            # duration grows linearly with the number of distinct addresses.
+            # Cap the batch instead of letting a large parse stall the run for
+            # hours; skipped configs simply keep country=None.
+            rpm = self.settings.as_float(
+                vcfg.get("geoip_requests_per_minute"),
+                40.0,
+                minimum=1.0,
+            )
+            max_lookups = self.settings.as_int(
+                vcfg.get("geoip_max_lookups"),
+                300,
+                minimum=1,
+            )
+            # enrich_configs_geoip() groups configs by resolved address and
+            # spends one request per group, so the cap must count addresses:
+            # capping configs would drop whole servers without saving a
+            # single request.
+            addresses = list(dict.fromkeys(cfg.address for cfg in to_enrich))
+            if len(addresses) > max_lookups:
+                logger.warning(
+                    "GeoIP: %d addresses need a country but the per-run cap is "
+                    "%d (%.0f req/min); enriching the first %d, skipping %d.",
+                    len(addresses),
+                    max_lookups,
+                    rpm,
+                    max_lookups,
+                    len(addresses) - max_lookups,
+                )
+                kept = set(addresses[:max_lookups])
+                to_enrich = [cfg for cfg in to_enrich if cfg.address in kept]
             if to_enrich:
                 try:
                     from src.validators.geoip import enrich_configs_geoip
@@ -148,7 +180,11 @@ class LinkParser(PipelineStage):
                     api_url = str(
                         vcfg.get("geoip_api_url", "http://ip-api.com/json/{ip}"),
                     )
-                    await enrich_configs_geoip(to_enrich, api_url=api_url)
+                    await enrich_configs_geoip(
+                        to_enrich,
+                        api_url=api_url,
+                        requests_per_minute=rpm,
+                    )
                     enriched = sum(1 for cfg in to_enrich if cfg.country is not None)
                     logger.info(
                         "GeoIP enriched %d/%d configs.",
@@ -159,6 +195,35 @@ class LinkParser(PipelineStage):
                     logger.warning("GeoIP enrichment failed: %s", exc)
 
         return grouped
+
+    @staticmethod
+    def _needs_geoip(cfg: Config) -> bool:
+        """Return ``True`` when only a GeoIP lookup can give this config a country.
+
+        No parser ever sets ``Config.country``, so testing ``country is None``
+        here selected *every* parsed config and the ``geoip_max_lookups`` budget
+        was spent on the first N addresses in parse order — usually servers
+        whose remark already names the country. The same detection the country
+        filter runs later (:func:`detect_country` plus the source's
+        ``default_country``) therefore decides who actually needs a lookup.
+
+        Args:
+            cfg: Freshly parsed config.
+
+        Returns:
+            ``True`` when no free source of a country code is available.
+        """
+        if cfg.country is not None or getattr(cfg, "source_default_country", None):
+            return False
+        return (
+            detect_country(
+                cfg.remark,
+                getattr(cfg, "address", None),
+                getattr(cfg, "sni", None),
+                getattr(cfg, "host", None),
+            )
+            is None
+        )
 
     async def extract_links(
         self,

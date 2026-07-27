@@ -226,13 +226,34 @@ def test_prune_removes_old_records() -> None:
     assert "socks5://new:1080" in hist.records
 
 
-def test_prune_keeps_few_attempts_regardless_of_age() -> None:
-    """Records with fewer than 2 attempts are kept regardless of age."""
+def test_prune_removes_stale_single_attempt_records() -> None:
+    """Age alone decides — a proxy seen once and never again is not special.
+
+    Exempting single-attempt records kept the least informative entries
+    forever, which is most of the file: free proxy lists rotate, so nearly
+    every run adds a batch of addresses that are never seen again.
+    """
     hist = ProxyHealthHistory()
     hist.record("socks5://few:1080", True)
     hist.records["socks5://few:1080"]["last_seen"] = 0.0
     hist.prune(max_age_seconds=1.0)
-    assert "socks5://few:1080" in hist.records
+    assert "socks5://few:1080" not in hist.records
+
+
+def test_save_prunes_stale_records(tmp_path, monkeypatch) -> None:
+    """Nothing else ever drops an entry, so the published file only grew."""
+    monkeypatch.chdir(tmp_path)
+    hist = ProxyHealthHistory()
+    hist.record("socks5://gone:1080", False)
+    hist.records["socks5://gone:1080"]["last_seen"] = 1.0
+    hist.record("socks5://live:1080", True, latency_ms=12.0)
+
+    target = tmp_path / "output" / "proxy-health-history.json"
+    hist.save(target)
+
+    saved = json.loads(target.read_text(encoding="utf-8"))
+    assert list(saved) == ["socks5://live:1080"]
+    assert "socks5://gone:1080" not in hist.records
 
 
 def test_prune_empty_history() -> None:
@@ -309,6 +330,67 @@ def test_load_success_path() -> None:
         hist = ProxyHealthHistory.load(str(path))
         assert hist.records["socks5://1.2.3.4:1080"]["attempts"] == 3
         assert hist.records["socks5://1.2.3.4:1080"]["successes"] == 2
+
+
+def test_load_drops_non_dict_entry_values(caplog) -> None:
+    """A corrupted entry must not reach record()/rank() as-is."""
+    caplog.set_level("WARNING")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        path.write_text(json.dumps({"socks5://1.2.3.4:1080": 5}), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+    assert hist.records == {}
+    assert "malformed proxy health record" in caplog.text
+    # The dropped entry must not break the normal API afterwards.
+    hist.record("socks5://1.2.3.4:1080", True, latency_ms=10)
+    assert hist.records["socks5://1.2.3.4:1080"]["attempts"] == 1
+    assert hist.rank(["socks5://1.2.3.4:1080"]) == ["socks5://1.2.3.4:1080"]
+
+
+def test_load_drops_entry_with_wrong_field_types() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        data = {
+            "socks5://bad-counter:1080": {"attempts": "3", "successes": 1},
+            "socks5://bad-latency:1080": {"attempts": 1, "latency_ms": "120"},
+            "socks5://bad-seen:1080": {"attempts": 1, "last_seen": "yesterday"},
+            "socks5://ok:1080": {
+                "attempts": 2,
+                "successes": 1,
+                "consecutive_failures": 0,
+                "latency_ms": [100, "junk", -5, 200],
+                "last_seen": 1000,
+            },
+        }
+        path.write_text(json.dumps(data), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+    assert list(hist.records) == ["socks5://ok:1080"]
+    entry = hist.records["socks5://ok:1080"]
+    assert entry["latency_ms"] == [100.0, 200.0]
+    assert entry["last_seen"] == 1000.0
+    assert hist._avg_latency("socks5://ok:1080") == 150.0
+
+
+def test_load_recovers_from_corrupted_latency_list() -> None:
+    """record() used to raise TypeError on a string latency list."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        data = {"socks5://1.2.3.4:1080": {"attempts": 1, "latency_ms": "500"}}
+        path.write_text(json.dumps(data), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+    hist.record("socks5://1.2.3.4:1080", False)
+    assert hist.records["socks5://1.2.3.4:1080"]["consecutive_failures"] == 1
+    assert hist.is_banned("socks5://1.2.3.4:1080") is False
+
+
+def test_load_drops_non_string_and_empty_keys() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        # JSON object keys are always strings, so an empty key is the only
+        # non-usable variant a real file can hold.
+        path.write_text(json.dumps({"   ": {"attempts": 1}}), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+    assert hist.records == {}
 
 
 def test_load_on_directory_path() -> None:

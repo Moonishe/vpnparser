@@ -32,21 +32,32 @@ This project processes untrusted network data and executes third-party binaries.
 ## Mitigations in Place
 
 - SSRF protection rejects private, loopback, link-local, and reserved IP addresses in validators.
+  Hostnames are resolved first (`check_hostnames=True` in the TCP, TLS, and Xray validators),
+  so a config pointing at `localhost.example.com` is rejected too.
+- Source fetches of third-party URLs (`url-list` indexes and their targets) are restricted to
+  an `http`/`https` allowlist, re-checked against the SSRF guard on **every redirect hop**
+  (`follow_redirects=False`, bounded hop count), and truncated past `MAX_DOWNLOAD_BYTES`.
 - Free proxy pool candidates are restricted to public IPv4 addresses.
 - Xray execution is time-bounded and the generated config is written to a temporary file.
+  Xray L3 probes verify the TLS certificate of the probe URL by default.
+- GeoIP enrichment shares one global rate limiter and a per-run lookup cap, so an untrusted
+  source cannot turn a run into thousands of third-party API calls.
 - LLM output is validated against a strict proxy-link regex before use.
-- CI actions are pinned to specific commit SHAs.
+- CI actions are pinned to specific commit SHAs, and the Xray-core release is pinned by tag
+  and verified against `.github/xray.sha256` before it is executed.
+- Secret scanning runs in both places: `detect-private-key` in pre-commit and a trufflehog
+  scan in `ci.yml` (diff-scan on pull requests, full checkout otherwise).
 
 ## Planned Hardening
 
-- Pin and verify Xray-core release checksums/signatures in CI.
 - Run Xray in a sandboxed/network-isolated environment.
 - Add a staging publish step with smoke tests before committing to `main`.
-- Implement automated secret scanning in pre-commit and CI.
 - Scope `GITHUB_TOKEN` to the minimal required permissions.
 
 ## Secret Handling
 
-- Never commit `.env` or real credentials to the repository.
+- Never commit `.env` or real credentials to the repository. `.gitignore` covers every
+  `.env*` variant (`.env.local`, a `.env.bak` left over from a rotation, …) except the
+  `.env.example` template.
 - Use GitHub Actions secrets for `GITHUB_TOKEN`, `LLM_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `VALIDATOR_PROXY`.
 - Rotate secrets periodically and after any suspected leak.

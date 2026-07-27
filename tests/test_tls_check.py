@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.parsers.base import Config
+from src.validators import address_guard
+from src.validators import tls_check as tls_check_module
 from src.validators.tls_check import (
     _alpn_protocols,
     _clean_server_name,
@@ -21,6 +23,17 @@ from src.validators.tls_check import (
     tls_check,
     validate_configs_tls,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve every hostname to a public IP so no test touches real DNS."""
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str]:
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+
 
 # ===========================================================================
 # Helper: _is_tls_security
@@ -261,6 +274,44 @@ class TestTlsServerNames:
         )
         names = _tls_server_names(cfg)
         assert names == ["sni.com", "host.com"]
+
+    def test_sni_list_from_a_link_is_capped(self) -> None:
+        """One link must not be able to demand hundreds of handshakes.
+
+        ``sni`` is attacker-controlled and comma-separated, and the stage tries
+        every name (times every proxy attempt) inside a single semaphore slot
+        with no early stop, so an unbounded list stalls the whole TLS stage.
+        """
+        cfg = Config(
+            "vless",
+            "1.2.3.4",
+            443,
+            "uuid",
+            sni=",".join(f"h{i}.example.com" for i in range(200)),
+        )
+        names = _tls_server_names(cfg)
+        assert names == [f"h{i}.example.com" for i in range(4)]
+
+    @pytest.mark.asyncio
+    async def test_check_one_tries_at_most_the_capped_names(self, monkeypatch) -> None:
+        calls: list[str | None] = []
+
+        async def _fake_tls_check(_host, _port, sni=None, **_kwargs) -> bool:
+            calls.append(sni)
+            return False
+
+        monkeypatch.setattr(tls_check_module, "tls_check", _fake_tls_check)
+        cfg = Config(
+            "vless",
+            "server.example.com",
+            443,
+            "uuid",
+            security="tls",
+            sni=",".join(f"h{i}.example.com" for i in range(50)),
+        )
+        result = await validate_configs_tls([cfg], check_hostnames=False)
+        assert result == []
+        assert len(calls) == 4
 
 
 # ===========================================================================
@@ -730,3 +781,43 @@ class TestValidateConfigsTls:
         assert len(result) == 1
         _, kwargs = mock_check.call_args
         assert kwargs["proxy_url"] is None
+
+    @pytest.mark.asyncio
+    async def test_private_literals_never_reach_open_connection(self) -> None:
+        """SSRF guard: internal literals are dropped, whatever their security."""
+        configs = [
+            Config("vless", "10.0.0.5", 22, "uuid", security="tls"),
+            Config("vless", "127.0.0.1", 5432, "uuid", security="none"),
+            Config("vless", "169.254.169.254", 80, "uuid", security="reality"),
+        ]
+
+        with patch(
+            "src.validators.tls_check.asyncio.open_connection",
+            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        ) as mock_open:
+            result = await validate_configs_tls(configs)
+        assert result == []
+        mock_open.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_public_literal_reaches_open_connection(self) -> None:
+        cfg = Config("vless", "93.184.216.34", 443, "uuid", security="tls")
+        mock_writer = MagicMock()
+        mock_writer.wait_closed = AsyncMock()
+
+        with patch(
+            "src.validators.tls_check.asyncio.open_connection",
+            new=AsyncMock(return_value=(MagicMock(), mock_writer)),
+        ) as mock_open:
+            result = await validate_configs_tls([cfg])
+        assert result == [cfg]
+        assert mock_open.call_args.args[:2] == ("93.184.216.34", 443)
+
+    @pytest.mark.asyncio
+    async def test_tls_check_refuses_private_literal_without_dns(self) -> None:
+        with patch(
+            "src.validators.tls_check._open_connection_direct",
+            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        ) as mock_open:
+            assert await tls_check("192.168.1.1", 8443) is False
+        mock_open.assert_not_called()

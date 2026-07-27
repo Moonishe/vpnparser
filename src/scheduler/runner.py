@@ -17,11 +17,14 @@ continues with whatever data survived the previous stage.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import time
 from collections import Counter
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from src.parsers.base import Config
@@ -70,6 +73,7 @@ class PipelineRunner:
             settings_path=self.settings_path,
         )
         self._validator_proxy_urls_cache: list[str] | None = None
+        self._shared_publisher: Any | None = None
         self._liveness_stats: dict[str, Any] = {}
         self._output_stats: dict[str, Any] = {}
         self._health_history: HealthHistory | None = None
@@ -104,6 +108,27 @@ class PipelineRunner:
         """Deprecated: use ``src.scheduler.settings.load_settings``."""
         return load_settings(path)
 
+    def _require_settings_file(self) -> None:
+        """Refuse to run the pipeline on the built-in defaults.
+
+        A mistyped ``--settings`` path used to leave the run on defaults, where
+        ``tcp/tls/xray_enabled`` are false and ``allowed_countries`` is empty:
+        unvalidated configs were written, published, and the process still
+        exited 0. Building the runner stays tolerant — helpers and tools use it
+        without a settings file — but a full run insists on it.
+
+        Raises:
+            FileNotFoundError: If the configured settings file does not exist.
+        """
+        if Path(self.settings_path).is_file():
+            return
+        msg = (
+            f"Settings file not found: {self.settings_path}. Refusing to run "
+            "on built-in defaults — they disable TCP/TLS/Xray validation and "
+            "the country filter."
+        )
+        raise FileNotFoundError(msg)
+
     def _section(self, key: str) -> dict[str, Any]:
         """Return a settings section (empty dict if missing)."""
         return self._settings.section(key)
@@ -137,10 +162,19 @@ class PipelineRunner:
             output_file: Path to the output subscription file.
             publish: If True, commit the output to a GitHub repo (requires
                 ``GITHUB_TOKEN`` and repo config).
+
+        Raises:
+            FileNotFoundError: If the configured settings file does not exist —
+                running on the built-in defaults would publish unvalidated
+                configs and still look successful.
         """
+        self._require_settings_file()
         start = time.monotonic()
         self._liveness_stats = {}
         self._output_stats = {}
+        # The stage context outlives a single run: stale ``location_*`` entries
+        # would leak into this run's summary via _write_location_outputs().
+        self._context.output_stats.clear()
         self._publish_ok = False
         self._liveness.reset_proxy_cache()
         logger.info("Pipeline started.")
@@ -272,7 +306,13 @@ class PipelineRunner:
                 logger.warning("No configs for %s output.", list_type)
             output_files.append(split_file)
 
-        location_output_files = self._write_location_outputs(all_live_configs)
+        # The subscription paths are reserved: location_output_dir may point at
+        # the directory that holds them, and the cleanup mask would delete the
+        # split/mix files written a few lines above.
+        location_output_files = self._write_location_outputs(
+            all_live_configs,
+            self._configured_subscription_output_paths(output_file),
+        )
         output_files.extend(location_output_files)
 
         summary_file = self._write_run_summary("ok")
@@ -626,8 +666,13 @@ class PipelineRunner:
 
         return path_str
 
-    def _write_empty_secondary_outputs(self, combined_output_file: str) -> None:
-        """Clear configured split and mix outputs on empty runs."""
+    def _write_empty_secondary_outputs(self, combined_output_file: str) -> list[str]:
+        """Clear configured split and mix outputs on empty runs.
+
+        Returns:
+            Paths of the emptied location files, which the caller must publish
+            too — they are not part of the statically configured output set.
+        """
         split_output_files = self._split_output_files(combined_output_file)
         self._write_empty_split_outputs(combined_output_file)
         mix_output_file = self._mix_output_file(
@@ -636,7 +681,12 @@ class PipelineRunner:
         )
         if mix_output_file:
             self._write_empty_output(mix_output_file)
-        self._clear_location_outputs()
+        # Writing no countries empties every existing location file instead of
+        # deleting it, so the published per-country lists are replaced as well.
+        return self._write_location_outputs(
+            [],
+            self._configured_subscription_output_paths(combined_output_file),
+        )
 
     def _configured_subscription_output_paths(
         self,
@@ -645,7 +695,8 @@ class PipelineRunner:
         """Return all subscription paths that should stay in sync on every run.
 
         Includes combined, mix, and split outputs. Location files are omitted
-        here because empty runs clear them rather than rewriting placeholders.
+        here because they are not statically configured — the writer reports
+        the ones it emptied.
         """
         paths: list[str] = [combined_output_file]
         split_output_files = self._split_output_files(combined_output_file)
@@ -673,7 +724,7 @@ class PipelineRunner:
         consumers never see outdated "live" lists after a dead run.
         """
         self._write_empty_output(output_file)
-        self._write_empty_secondary_outputs(output_file)
+        location_files = self._write_empty_secondary_outputs(output_file)
 
         # Keep run-summary outputs in sync with the empty files we just wrote.
         self._output_stats = {}
@@ -690,11 +741,15 @@ class PipelineRunner:
         self._save_proxy_health_history()
         if publish:
             publish_paths = self._configured_subscription_output_paths(output_file)
+            publish_paths.extend(location_files)
             if summary_file:
                 publish_paths.append(summary_file)
             if health_file:
                 publish_paths.append(health_file)
-            await self._publish_files(
+            # Record the outcome like the main path does: an empty run whose
+            # publish failed leaves the previous, non-empty subscription live in
+            # the repository, which is the one case that must never look green.
+            self._publish_ok = await self._publish_files(
                 publish_paths,
                 combined_output_file=output_file,
             )
@@ -712,8 +767,11 @@ class PipelineRunner:
     def _location_output_filename(country: str) -> str:
         return OutputWriter._location_output_filename(country)
 
-    def _clear_location_outputs(self) -> None:
-        self._writer._clear_location_outputs()
+    def _clear_location_outputs(
+        self,
+        reserved_paths: Iterable[str] | None = None,
+    ) -> list[str]:
+        return self._writer._clear_location_outputs(reserved_paths)
 
     def _build_location_outputs(
         self,
@@ -722,8 +780,12 @@ class PipelineRunner:
     ) -> dict[str, list[Config]]:
         return self._writer._build_location_outputs(configs, per_location_limit)
 
-    def _write_location_outputs(self, configs: list[Config]) -> list[str]:
-        result = self._writer._write_location_outputs(configs)
+    def _write_location_outputs(
+        self,
+        configs: list[Config],
+        reserved_paths: Iterable[str] | None = None,
+    ) -> list[str]:
+        result = self._writer._write_location_outputs(configs, reserved_paths)
         for key, value in self._writer.context.output_stats.items():
             if key.startswith("location_"):
                 self._output_stats[key] = value
@@ -772,6 +834,11 @@ class PipelineRunner:
         """Write machine-readable run metadata for Telegram and debugging."""
         output_file = self._status_output_file()
         if not output_file:
+            logger.warning(
+                "publisher.status_output_file is not configured — this run "
+                "leaves no run summary, so the Telegram report and any "
+                "operational tooling see nothing about it.",
+            )
             return None
 
         # Never publish working SOCKS5 proxy URLs in the summary output.
@@ -781,6 +848,9 @@ class PipelineRunner:
         payload = {
             "status": status,
             "outputs": self._output_stats,
+            # Failed sources are invisible in ``outputs``: a dead source only
+            # shows up as a smaller subscription, so record the fetch outcome.
+            "sources": dict(self._context.source_stats),
             "validation": validation,
         }
         try:
@@ -826,15 +896,105 @@ class PipelineRunner:
         Returns True if all files were published successfully."""
         pcfg = self._section("publisher")
         configured_combined_path = pcfg.get("output_file")
+        if (
+            combined_output_file is not None
+            and configured_combined_path
+            and str(configured_combined_path) != combined_output_file
+        ):
+            logger.warning(
+                "publisher.output_file %r only renames the combined "
+                "subscription inside the repository — locally it is still "
+                "written to %r (--output), and the repo copy of that path is "
+                "never refreshed. Fix: run with --output %s or drop "
+                "publisher.output_file.",
+                str(configured_combined_path),
+                combined_output_file,
+                configured_combined_path,
+            )
+
+        targets = self._unique_publish_paths(output_files)
+        if not targets:
+            return True
 
         all_ok = True
-        for output_file in dict.fromkeys(output_files):
-            repo_path = output_file
-            if combined_output_file is not None and output_file == combined_output_file:
-                repo_path = str(configured_combined_path or output_file)
-            if not await self._publish(output_file, repo_path=repo_path):
-                all_ok = False
+        # One publisher (and therefore one HTTPS connection to the API) for the
+        # whole batch: a fresh httpx.AsyncClient per file re-parses the CA
+        # bundle and re-handshakes, which costs ~0.2s of blocked event loop per
+        # output — over ten seconds for a run with per-country files.
+        async with contextlib.AsyncExitStack() as stack:
+            self._shared_publisher = await self._enter_shared_publisher(stack)
+            try:
+                for output_file in targets:
+                    repo_path = output_file
+                    if (
+                        combined_output_file is not None
+                        and output_file == combined_output_file
+                    ):
+                        repo_path = str(configured_combined_path or output_file)
+                    if not await self._publish(output_file, repo_path=repo_path):
+                        all_ok = False
+            finally:
+                self._shared_publisher = None
         return all_ok
+
+    @staticmethod
+    @staticmethod
+    def _unique_publish_paths(output_files: list[str]) -> list[str]:
+        """Drop duplicate output paths, ignoring separator/case differences.
+
+        Location files are built with :class:`pathlib.Path` (``output\\x.txt``
+        on Windows) while configured outputs keep the ``output/x.txt`` spelling
+        from settings, so plain string dedup let the same file be committed
+        twice — two Contents API round trips racing on one repo path.
+
+        ``os.path.normpath`` preserves backslashes on Linux, so normalise
+        separators separately before the dedup key.
+        """
+        seen: set[str] = set()
+        unique: list[str] = []
+        for output_file in output_files:
+            normalised = output_file.replace("\\", "/")
+            key = os.path.normcase(os.path.normpath(normalised))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(output_file)
+        return unique
+
+    async def _enter_shared_publisher(
+        self,
+        stack: contextlib.AsyncExitStack,
+    ) -> Any | None:
+        """Open one ``GitHubPublisher`` for a whole publish batch, if possible.
+
+        Args:
+            stack: Exit stack that owns the publisher for the batch.
+
+        Returns:
+            The entered publisher, or ``None`` when publishing is not
+            configured — :meth:`_publish` then reports the exact reason per
+            file, exactly as it did before.
+        """
+        pcfg = self._section("publisher")
+        owner = pcfg.get("owner") or os.environ.get("GITHUB_OWNER")
+        repo = pcfg.get("repo") or os.environ.get("GITHUB_REPO")
+        if not self.github_token or not owner or not repo:
+            return None
+        branch = pcfg.get("branch") or os.environ.get("GITHUB_BRANCH") or "main"
+        try:
+            from src.publisher.github import GitHubPublisher
+
+            return await stack.enter_async_context(
+                GitHubPublisher(
+                    token=self.github_token,
+                    owner=str(owner),
+                    repo=str(repo),
+                    branch=str(branch),
+                ),
+            )
+        except Exception:
+            logger.exception("Could not open a shared GitHub publisher")
+            return None
 
     async def _publish(self, output_file: str, repo_path: str | None = None) -> bool:
         """Publish the output file to a GitHub repo via ``GitHubPublisher``.
@@ -885,20 +1045,27 @@ class PipelineRunner:
             logger.exception("Cannot import GitHubPublisher — skipping publish.")
             return False
 
+        ok = False
         try:
-            async with GitHubPublisher(
-                token=self.github_token,
-                owner=owner,
-                repo=repo,
-                branch=branch,
-            ) as publisher:
-                ok = await publisher.publish_file(repo_path, content, commit_message)
-                if not ok:
-                    logger.error(
-                        "Publish completed but reported failure for %s.",
-                        repo_path,
+            async with contextlib.AsyncExitStack() as stack:
+                # _publish_files opens one publisher for the whole batch; a
+                # standalone call still gets its own.
+                publisher: Any = self._shared_publisher
+                if publisher is None:
+                    publisher = await stack.enter_async_context(
+                        GitHubPublisher(
+                            token=self.github_token,
+                            owner=owner,
+                            repo=repo,
+                            branch=branch,
+                        ),
                     )
-                return bool(ok)
+                ok = bool(
+                    await publisher.publish_file(repo_path, content, commit_message),
+                )
         except Exception:
             logger.exception("Publish failed")
             return False
+        if not ok:
+            logger.error("Publish completed but reported failure for %s.", repo_path)
+        return ok

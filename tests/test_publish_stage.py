@@ -270,6 +270,51 @@ async def test_run_output_file_equals_configured_path(
     assert captured == ["output/sub.txt"]
 
 
+async def test_run_remaps_local_combined_path_to_repo_path(
+    context: PipelineContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The combined file is published under the configured repo path."""
+    state = PipelineState(
+        output_files=["output/local-combined.txt", "output/locations/sub-DE.txt"],
+    )
+
+    mock_publisher = AsyncMock()
+
+    class FakeGitHubPublisher:
+        def __init__(self, token, owner, repo, branch):
+            pass
+
+        async def __aenter__(self) -> AsyncMock:
+            return mock_publisher
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+    import src.publisher.github as gh_mod
+
+    monkeypatch.setattr(gh_mod, "GitHubPublisher", FakeGitHubPublisher)
+
+    captured: list[tuple[str, str]] = []
+
+    async def fake_publish_file(
+        publisher: object, output_file: str, repo_path: str, commit_message: str
+    ) -> bool:
+        captured.append((output_file, repo_path))
+        return True
+
+    monkeypatch.setattr(Publisher, "_publish_file", staticmethod(fake_publish_file))
+
+    stage = Publisher(context)
+    result = await stage.run(state, context=context)
+
+    assert result.published is True
+    assert captured == [
+        ("output/local-combined.txt", "output/sub.txt"),
+        ("output/locations/sub-DE.txt", "output/locations/sub-DE.txt"),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # _publish_file
 # ---------------------------------------------------------------------------

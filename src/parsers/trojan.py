@@ -57,16 +57,24 @@ class TrojanParser(BaseParser):
             if parsed.scheme.lower() != "trojan":
                 return None
 
-            password = parsed.username
+            # The trojan userinfo is the password as a whole, but urlparse
+            # splits it on the first ":" into username/password.  Rejoin the
+            # halves so a password containing colons ("pa:ss:word") survives —
+            # taking ``parsed.username`` alone silently truncated it to "pa"
+            # and produced a Config with unusable credentials.
+            userinfo = parsed.username or ""
+            if parsed.password is not None:
+                userinfo = f"{userinfo}:{parsed.password}"
             host = parsed.hostname
             port = parsed.port
-            if not password or not host or port is None:
+            if not userinfo or not host or port is None:
                 return None
 
-            password = unquote(password).strip()
+            password = unquote(userinfo).strip()
             # Reject empty / whitespace-only passwords after percent-decoding
-            # (e.g. ``trojan://%20@host:port`` decodes to a single space).
-            if not password:
+            # (e.g. ``trojan://%20@host:port`` decodes to a single space).  A
+            # userinfo made of bare ":" separators carries no credential either.
+            if not password or not password.strip(":"):
                 return None
             # Explicit port range check (defence in depth). CPython's urlparse
             # raises for out-of-range ports, but that is implicit; vmess

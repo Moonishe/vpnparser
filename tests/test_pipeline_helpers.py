@@ -43,6 +43,22 @@ from src.validators import xray_probe as xray_module
 from src.validators.proxy_pool import parse_proxy_candidates
 
 
+class _StreamBody:
+    """Streamed-body support for a fake response: exposes text as aiter_bytes.
+
+    Raw downloads go through ``client.stream()`` so an oversized body is dropped
+    mid-flight; a fake that only carries ``.text`` cannot stand in for that.
+    """
+
+    text = ""
+    encoding = "utf-8"
+
+    async def aiter_bytes(self, chunk_size: int = 4):
+        payload = str(self.text).encode(self.encoding)
+        for start in range(0, len(payload), chunk_size):
+            yield payload[start : start + chunk_size]
+
+
 def test_list_type_normalization_and_inference() -> None:
     assert normalize_list_type("BL") == "blacklist"
     assert normalize_list_type("white-list") == "whitelist"
@@ -462,7 +478,7 @@ def test_github_fetch_file_falls_back_to_raw_url_on_rate_limit(monkeypatch) -> N
 def test_github_request_raises_rate_limit_after_retry(monkeypatch) -> None:
     client = GitHubClient()
 
-    class FakeResponse:
+    class FakeResponse(_StreamBody):
         status_code = 403
         headers = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "0"}
 
@@ -503,7 +519,7 @@ def test_github_fetch_raw_file_does_not_send_authorization(monkeypatch) -> None:
     client = GitHubClient(token="secret")
     captured_headers = {}
 
-    class FakeResponse:
+    class FakeResponse(_StreamBody):
         status_code = 200
         text = "raw-content"
 
@@ -523,6 +539,19 @@ def test_github_fetch_raw_file_does_not_send_authorization(monkeypatch) -> None:
         async def get(self, url, headers=None):
             captured_headers.update(headers or {})
             return FakeResponse()
+
+        def stream(self, method, url, **kwargs):
+            """Delegate to get() so each fake keeps its own behaviour."""
+            client = self
+
+            class _Ctx:
+                async def __aenter__(self):
+                    return await client.get(url, **kwargs)
+
+                async def __aexit__(self, *args):
+                    return None
+
+            return _Ctx()
 
     monkeypatch.setattr("src.sources.github.httpx.AsyncClient", FakeRawClient)
 
@@ -550,6 +579,19 @@ def test_github_fetch_raw_file_returns_empty_on_network_error(monkeypatch) -> No
         async def get(self, *args, **kwargs):
             raise httpx.ConnectError("boom")
 
+        def stream(self, method, url, **kwargs):
+            """Delegate to get() so each fake keeps its own behaviour."""
+            client = self
+
+            class _Ctx:
+                async def __aenter__(self):
+                    return await client.get(url, **kwargs)
+
+                async def __aexit__(self, *args):
+                    return None
+
+            return _Ctx()
+
     monkeypatch.setattr("src.sources.github.httpx.AsyncClient", FakeRawClient)
 
     async def fake_sleep(_seconds):
@@ -568,7 +610,7 @@ def test_github_fetch_raw_file_retries_transient_network_error(monkeypatch) -> N
     client = GitHubClient()
     attempts = {"count": 0}
 
-    class FakeResponse:
+    class FakeResponse(_StreamBody):
         status_code = 200
         text = "raw-content"
 
@@ -590,6 +632,19 @@ def test_github_fetch_raw_file_retries_transient_network_error(monkeypatch) -> N
             if attempts["count"] == 1:
                 raise httpx.ConnectError("temporary")
             return FakeResponse()
+
+        def stream(self, method, url, **kwargs):
+            """Delegate to get() so each fake keeps its own behaviour."""
+            client = self
+
+            class _Ctx:
+                async def __aenter__(self):
+                    return await client.get(url, **kwargs)
+
+                async def __aexit__(self, *args):
+                    return None
+
+            return _Ctx()
 
     async def fake_sleep(_seconds):
         return None
@@ -1038,9 +1093,13 @@ def test_tls_validator_tries_host_when_sni_is_missing(monkeypatch) -> None:
         return sni == "cdn.example.com"
 
     monkeypatch.setattr(tls_module, "tls_check", fake_tls_check)
+    # Fixture addresses must be globally routable: src.validators.address_guard
+    # drops configs pointing at non-public ranges before any connect, and
+    # Python classifies the RFC 5737 documentation ranges (203.0.113.0/24 and
+    # friends) as private.
     cfg = Config(
         protocol="vless",
-        address="203.0.113.10",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -1053,13 +1112,13 @@ def test_tls_validator_tries_host_when_sni_is_missing(monkeypatch) -> None:
 
     assert result == [cfg]
     assert cfg.is_alive is True
-    assert calls == [("203.0.113.10", 443, "cdn.example.com", "h2,http/1.1")]
+    assert calls == [("93.184.216.34", 443, "cdn.example.com", "h2,http/1.1")]
 
 
 def test_xray_probe_builds_vless_reality_config() -> None:
     cfg = Config(
         protocol="vless",
-        address="203.0.113.10",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         network="tcp",
@@ -1085,7 +1144,7 @@ def test_xray_probe_builds_vless_reality_config() -> None:
 def test_xray_probe_can_dial_vpn_through_socks_proxy() -> None:
     cfg = Config(
         protocol="vless",
-        address="203.0.113.10",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         network="tcp",
@@ -1140,7 +1199,7 @@ def test_xray_extracts_identity_probe_ip() -> None:
 def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> None:
     cfg = Config(
         protocol="vless",
-        address="203.0.113.10",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -1149,7 +1208,7 @@ def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> No
 
     monkeypatch.setattr(xray_module, "_free_local_port", lambda: 18080)
 
-    async def fake_wait_for_port(*_args):
+    async def fake_wait_for_port(*_args, **_kwargs):
         return True
 
     monkeypatch.setattr(xray_module, "_wait_for_port", fake_wait_for_port)
@@ -1169,7 +1228,7 @@ def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> No
     async def fake_create_subprocess_exec(*_args, **_kwargs):
         return DummyProc()
 
-    async def fake_probe(*, socks_port, probe_url, timeout):
+    async def fake_probe(*, socks_port, probe_url, timeout, **_kwargs):
         assert socks_port == 18080
         calls.append(probe_url)
         status = {
@@ -1208,14 +1267,14 @@ def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> No
 def test_xray_probe_requires_distinct_outbound_ip(monkeypatch) -> None:
     cfg = Config(
         protocol="vless",
-        address="203.0.113.10",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
     )
     monkeypatch.setattr(xray_module, "_free_local_port", lambda: 18080)
 
-    async def fake_wait_for_port(*_args):
+    async def fake_wait_for_port(*_args, **_kwargs):
         return True
 
     monkeypatch.setattr(xray_module, "_wait_for_port", fake_wait_for_port)
@@ -1892,6 +1951,9 @@ validator:
 
     async def fake_validate_configs_tcp(batch, **kwargs):
         call_sizes.append(len(batch))
+        for cfg in batch[1:]:
+            cfg.is_alive = False
+        batch[0].is_alive = True
         return [batch[0]]
 
     monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)

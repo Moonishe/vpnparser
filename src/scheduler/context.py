@@ -32,6 +32,8 @@ class PipelineContext:
     settings_path: str | None = None
     liveness_stats: dict[str, Any] = field(default_factory=dict)
     output_stats: dict[str, Any] = field(default_factory=dict)
+    #: Fetch outcome per run: totals plus the error of every failed source.
+    source_stats: dict[str, Any] = field(default_factory=dict)
     health_history: dict[str, Any] | None = None
     proxy_health_history: Any = None
     proxy_health_file: str | None = None

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
 import sys
 from pathlib import Path
@@ -14,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.parsers.base import Config
 from src.scheduler.runner import PipelineRunner
+from src.utils.paths import resolve_safe_output_path
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -409,7 +412,10 @@ def test_write_run_summary_success(tmp_path: Path) -> None:
     )
     result = r._write_run_summary("ok")
     assert result is not None
-    assert Path(result).exists()
+    # settings hold a project-relative path, so the file lands under the
+    # project root — not the current directory. Asserting on Path(result)
+    # directly passed only when a stray summary.json sat in the CWD.
+    assert resolve_safe_output_path(result).exists()
 
 
 # ===================================================================
@@ -919,6 +925,60 @@ async def test_run_empty_split_output(
     assert Path(tmp_path / "wl.txt").exists()
 
 
+@pytest.mark.asyncio
+async def test_run_summary_drops_location_stats_of_previous_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second run() must not report location outputs from the first run."""
+    extra = (
+        "aggregator:\n  max_configs_in_output: 100\n"
+        "publisher:\n"
+        "  output_file: output/combined.txt\n"
+        "  location_output_dir: output/locations\n"
+        "  location_output_limit: 5\n"
+        "  location_outputs_enabled: true\n"
+        "  status_output_file: output/status.json\n"
+    )
+    r = _make_runner(tmp_path, extra_settings=extra)
+    parsed: dict[str, list[Config]] = {"blacklist": [_mk("de.example", "DE")]}
+
+    async def fake_fetch() -> list[str]:
+        return ["data"]
+
+    async def fake_parse(results: object) -> dict[str, list[Config]]:
+        return {key: list(value) for key, value in parsed.items()}
+
+    async def fake_validate(data: dict[str, list[Config]]) -> dict[str, list[Config]]:
+        return data
+
+    monkeypatch.setattr(r, "_fetch_sources", fake_fetch)
+    monkeypatch.setattr(r, "_parse_all_by_list", fake_parse)
+    monkeypatch.setattr(r, "_preprocess_configs", lambda configs, **kw: list(configs))
+    monkeypatch.setattr(r, "_validate_liveness_by_list", fake_validate)
+    monkeypatch.setattr(r, "_apply_quality_filters", lambda data: data)
+
+    summary_path = resolve_safe_output_path("output/status.json")
+
+    await r.run(output_file="output/combined.txt", publish=False)
+    first = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert "location_de" in first["outputs"]
+
+    parsed["blacklist"] = [_mk("ru.example", "RU")]
+    await r.run(output_file="output/combined.txt", publish=False)
+    second = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert "location_ru" in second["outputs"]
+    # The vanished country is reported with the count it now has (0), never
+    # with the first run's numbers — the file is rewritten and republished.
+    assert second["outputs"]["location_de"]["count"] == 0
+    # The vanished country keeps an *empty* file: it is republished so the copy
+    # already served from the repo stops handing out the first run's configs.
+    stale = resolve_safe_output_path("output/locations/subscription-DE.txt")
+    assert stale.exists()
+    decoded = base64.b64decode(stale.read_text(encoding="utf-8")).decode("utf-8")
+    assert "de.example" not in decoded
+
+
 # ===================================================================
 # _notify_error — related to error notification
 # ===================================================================
@@ -982,6 +1042,45 @@ def test_write_empty_secondary_outputs(tmp_path: Path) -> None:
     assert Path(bl_file).exists()
 
 
+@pytest.mark.asyncio
+async def test_finish_empty_run_publishes_emptied_location_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dead run must republish per-country files instead of orphaning them."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n"
+        "  output_file: output/combined.txt\n"
+        "  location_output_dir: output/locations\n"
+        "  location_output_limit: 5\n"
+        "  location_outputs_enabled: true\n",
+    )
+    loc_dir = resolve_safe_output_path("output/locations")
+    loc_dir.mkdir(parents=True)
+    stale = loc_dir / "subscription-DE.txt"
+    stale.write_text("stale-live-list", encoding="utf-8")
+
+    published: list[str] = []
+
+    async def fake_publish(paths: list[str], **_kwargs: object) -> bool:
+        published.extend(paths)
+        return True
+
+    monkeypatch.setattr(r, "_publish_files", fake_publish)
+
+    count = await r._finish_empty_run(
+        "output/combined.txt",
+        status="no_sources",
+        publish=True,
+    )
+
+    assert count == 0
+    assert any("subscription-DE.txt" in path for path in published)
+    assert stale.exists()
+    assert stale.read_text(encoding="utf-8") != "stale-live-list"
+
+
 # ===================================================================
 # _configured_subscription_output_paths
 # ===================================================================
@@ -1001,6 +1100,258 @@ def test_configured_subscription_output_paths(tmp_path: Path) -> None:
     assert "combined.txt" in paths
     assert "mix.txt" in paths
     assert "bl.txt" in paths
+
+
+# ===================================================================
+# regressions: publish bookkeeping, settings guard, fetch reporting
+# ===================================================================
+
+
+@pytest.mark.asyncio
+async def test_finish_empty_run_records_publish_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty run must report whether its artifacts really were published.
+
+    ``_finish_empty_run`` threw the ``_publish_files`` result away, so an empty
+    run always looked like a failed publish and the CLI had to treat every
+    ``count == 0`` run as successful — hiding the one case that matters: empty
+    local files that never reached the repository, leaving the previous, dead
+    subscription live.
+    """
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  status_output_file: output/status.json\n",
+        github_token="t",
+    )
+    outcome = True
+
+    async def fake_publish(output_file: str, repo_path: str | None = None) -> bool:
+        return outcome
+
+    monkeypatch.setattr(r, "_publish", fake_publish)
+    r._publish_ok = False
+
+    await r._finish_empty_run("output/combined.txt", status="no_sources", publish=True)
+    assert r._publish_ok is True
+
+    outcome = False
+    await r._finish_empty_run("output/combined.txt", status="no_sources", publish=True)
+    assert r._publish_ok is False
+
+
+@pytest.mark.asyncio
+async def test_publish_files_dedups_separator_variants(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same file spelled with both separators is published once.
+
+    Location files are built with ``pathlib`` (``output\\x.txt`` on Windows)
+    while configured outputs keep the ``output/x.txt`` spelling, so a plain
+    string dedup let one repo path be committed twice per run.
+    """
+    r = _make_runner(tmp_path, github_token="t")
+    published: list[str] = []
+
+    async def fake_publish(output_file: str, repo_path: str | None = None) -> bool:
+        published.append(output_file)
+        return True
+
+    monkeypatch.setattr(r, "_publish", fake_publish)
+    ok = await r._publish_files(
+        ["output/subscription-mix.txt", "output\\subscription-mix.txt"],
+    )
+    assert ok is True
+    assert published == ["output/subscription-mix.txt"]
+
+
+@pytest.mark.asyncio
+async def test_publish_files_reuses_one_publisher(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All files of one batch go through a single GitHubPublisher.
+
+    A publisher per file meant a fresh ``httpx.AsyncClient`` (CA bundle parse
+    plus TLS handshake) for every output — tens of seconds of blocked event
+    loop on a run with per-country files.
+    """
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  owner: o\n  repo: rp\n",
+        github_token="t",
+    )
+    created: list[MagicMock] = []
+    first = tmp_path / "first.txt"
+    first.write_text("data", encoding="utf-8")
+    second = tmp_path / "second.txt"
+    second.write_text("data", encoding="utf-8")
+
+    def _factory(**_kwargs: object) -> MagicMock:
+        publisher = MagicMock()
+        publisher.publish_file = AsyncMock(return_value=True)
+        publisher.__aenter__ = AsyncMock(return_value=publisher)
+        publisher.__aexit__ = AsyncMock(return_value=False)
+        created.append(publisher)
+        return publisher
+
+    module = MagicMock()
+    module.GitHubPublisher = _factory
+    monkeypatch.setitem(sys.modules, "src.publisher.github", module)
+
+    ok = await r._publish_files([str(first), str(second)])
+    assert ok is True
+    assert len(created) == 1
+    assert created[0].publish_file.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_publish_files_warns_when_repo_path_differs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """publisher.output_file only renames the repo copy — say so.
+
+    The key is documented as "combined output path", but the local file always
+    follows ``--output``; without the warning the repo keeps two combined
+    files, one of which is never refreshed again.
+    """
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  output_file: output/all-configs.txt\n",
+        github_token="t",
+    )
+
+    async def fake_publish(output_file: str, repo_path: str | None = None) -> bool:
+        return True
+
+    monkeypatch.setattr(r, "_publish", fake_publish)
+    caplog.set_level(logging.WARNING)
+    await r._publish_files(
+        ["output/subscription.txt"],
+        combined_output_file="output/subscription.txt",
+    )
+    assert "only renames the combined subscription" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_run_refuses_missing_settings_file(tmp_path: Path) -> None:
+    """A mistyped --settings path must stop the run, not silently use defaults.
+
+    On defaults ``tcp/tls/xray_enabled`` are false and ``allowed_countries`` is
+    empty, so the run published unvalidated configs and still exited 0.
+    """
+    r = PipelineRunner(
+        settings_path=str(tmp_path / "typo.yaml"),
+        sources_path=str(tmp_path / "sources.json"),
+    )
+    with pytest.raises(FileNotFoundError, match="Settings file not found"):
+        await r.run(output_file=str(tmp_path / "out.txt"))
+
+
+def test_write_run_summary_warns_without_status_file(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """No status_output_file means no run summary at all — warn about it."""
+    r = _make_runner(tmp_path)
+    caplog.set_level(logging.WARNING)
+    assert r._write_run_summary("ok") is None
+    assert "status_output_file is not configured" in caplog.text
+
+
+def test_source_fetcher_reports_failed_sources(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A source that returned an error is logged and counted.
+
+    ``SourceResult.error`` was read nowhere: a 404 counted as a fetched result,
+    its subscription silently became empty and the run still reported "ok".
+    """
+    from src.scheduler.stages.fetch import SourceFetcher
+    from src.sources.manager import SourceResult
+
+    caplog.set_level(logging.WARNING)
+    stats = SourceFetcher._report_failures(
+        [
+            SourceResult(source_name="good", files=[("a.txt", "x")]),
+            SourceResult(source_name="dead", error="url source is empty or not found"),
+        ],
+    )
+    assert stats == {
+        "total": 2,
+        "ok": 1,
+        "failed": 1,
+        "errors": [
+            {"source": "dead", "error": "url source is empty or not found"},
+        ],
+    }
+    assert "dead" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_run_summary_reports_source_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run-summary.json carries the fetch outcome, not only the outputs."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  status_output_file: output/status.json\n",
+    )
+    r._context.source_stats = {
+        "total": 2,
+        "ok": 1,
+        "failed": 1,
+        "errors": [{"source": "dead", "error": "404"}],
+    }
+    monkeypatch.setattr(r._writer, "_write_location_outputs", lambda *a, **k: [])
+    summary_file = r._write_run_summary("ok")
+    assert summary_file is not None
+    payload = json.loads(
+        resolve_safe_output_path(summary_file).read_text(encoding="utf-8"),
+    )
+    assert payload["sources"]["failed"] == 1
+    assert payload["sources"]["errors"][0]["source"] == "dead"
+
+
+@pytest.mark.asyncio
+async def test_publish_files_without_paths_opens_nothing(tmp_path: Path) -> None:
+    """An empty batch must not open a GitHub client just to close it."""
+    r = _make_runner(tmp_path, "publisher:\n  owner: o\n  repo: rp\n", github_token="t")
+    assert await r._publish_files([]) is True
+
+
+@pytest.mark.asyncio
+async def test_publish_files_falls_back_when_publisher_cannot_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A publisher that cannot be built must not stop the per-file path."""
+    r = _make_runner(tmp_path, "publisher:\n  owner: o\n  repo: rp\n", github_token="t")
+    published: list[str] = []
+
+    async def fake_publish(output_file: str, repo_path: str | None = None) -> bool:
+        published.append(output_file)
+        return True
+
+    def _boom(**_kwargs: object) -> object:
+        msg = "no client"
+        raise RuntimeError(msg)
+
+    module = MagicMock()
+    module.GitHubPublisher = _boom
+    monkeypatch.setitem(sys.modules, "src.publisher.github", module)
+    monkeypatch.setattr(r, "_publish", fake_publish)
+    caplog.set_level(logging.ERROR)
+
+    assert await r._publish_files(["output/x.txt"]) is True
+    assert published == ["output/x.txt"]
+    assert "shared GitHub publisher" in caplog.text
 
 
 # ===================================================================

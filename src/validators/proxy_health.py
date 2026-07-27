@@ -15,6 +15,74 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_COUNTER_FIELDS = ("attempts", "successes", "consecutive_failures")
+
+#: How long a proxy nobody probed successfully or unsuccessfully is remembered.
+#: The file is rewritten (and committed) on every run, so without an upper
+#: bound it keeps every proxy the upstream lists ever rotated through.
+_DEFAULT_RETENTION_SECONDS = 86400.0
+
+
+def _as_count(value: Any) -> int | None:
+    """Return *value* as a non-negative int, or None when it is not one."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    count = int(value)
+    return count if count >= 0 else None
+
+
+def _sanitize_entry(raw: Any) -> dict[str, Any] | None:
+    """Return a well-typed history entry, or None when *raw* is unusable.
+
+    The history file is rewritten on every run and read back on the next one,
+    so a truncated or hand-edited file must not reach :meth:`record` or
+    :meth:`rank` — an ``int`` where a dict is expected used to raise deep inside
+    the proxy pool, where the error is swallowed and the pool silently empties.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    entry: dict[str, Any] = {}
+    for field in _COUNTER_FIELDS:
+        count = _as_count(raw.get(field, 0))
+        if count is None:
+            return None
+        entry[field] = count
+
+    latencies = raw.get("latency_ms", [])
+    if not isinstance(latencies, list):
+        return None
+    entry["latency_ms"] = [
+        float(value)
+        for value in latencies
+        if not isinstance(value, bool) and isinstance(value, int | float) and value > 0
+    ]
+
+    last_seen = raw.get("last_seen", 0.0)
+    if isinstance(last_seen, bool) or not isinstance(last_seen, int | float):
+        return None
+    entry["last_seen"] = float(last_seen)
+    return entry
+
+
+def _sanitize_records(data: dict[Any, Any]) -> dict[str, dict[str, Any]]:
+    """Keep only well-formed ``proxy_url -> entry`` pairs, warning about drops."""
+    records: dict[str, dict[str, Any]] = {}
+    dropped: list[str] = []
+    for key, raw in data.items():
+        entry = _sanitize_entry(raw) if isinstance(key, str) and key.strip() else None
+        if entry is None:
+            dropped.append(str(key))
+            continue
+        records[key] = entry
+    if dropped:
+        logger.warning(
+            "Dropped %d malformed proxy health record(s): %s",
+            len(dropped),
+            ", ".join(repr(key) for key in dropped[:5]),
+        )
+    return records
+
 
 class ProxyHealthHistory:
     """In-memory proxy health history with JSON persistence."""
@@ -48,7 +116,7 @@ class ProxyHealthHistory:
                 data = json.load(fh)
             if not isinstance(data, dict):
                 return cls(**kwargs)
-            return cls(data, **kwargs)
+            return cls(_sanitize_records(data), **kwargs)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning(
                 "Failed to load proxy health history from %s: %s",
@@ -58,6 +126,15 @@ class ProxyHealthHistory:
             return cls(**kwargs)
 
     def save(self, path: str | Path) -> None:
+        """Write the history to *path*, forgetting proxies nobody saw lately.
+
+        Pruning belongs here because this is the only moment the whole history
+        is touched: the file is rewritten and published on every run, and
+        nothing else ever dropped an entry, so it grew monotonically with every
+        proxy the free lists rotated through. Everything probed during this run
+        has a fresh ``last_seen`` and survives.
+        """
+        self.prune()
         from src.utils.paths import resolve_safe_output_path
 
         try:
@@ -166,13 +243,19 @@ class ProxyHealthHistory:
         result.sort(key=lambda p: self._score(p), reverse=True)
         return result
 
-    def prune(self, max_age_seconds: float = 86400.0) -> None:
-        now = time.time()
-        cutoff = now - max_age_seconds
+    def prune(self, max_age_seconds: float = _DEFAULT_RETENTION_SECONDS) -> None:
+        """Drop every record older than *max_age_seconds*.
+
+        Age alone decides. Single-attempt records used to be exempt, which kept
+        exactly the entries with the least information (a proxy seen once and
+        never again) forever — 623 of the 1423 records in the shipped history
+        file — so the history never actually stopped growing.
+        """
+        cutoff = time.time() - max_age_seconds
         self.records = {
             key: value
             for key, value in self.records.items()
-            if value.get("last_seen", 0) > cutoff or value.get("attempts", 0) < 2
+            if float(value.get("last_seen", 0.0)) > cutoff
         }
 
     def to_dict(self) -> dict[str, dict[str, Any]]:
