@@ -292,7 +292,6 @@ class TestSave:
         assert h.prune(now=now) == 1  # only the stale, unbanned source
         assert set(h._cache["sources"]) == {"fresh", "stale_but_banned"}
 
-
     def test_prune_keeps_everything_within_retention(self, tmp_path: Path) -> None:
         """A short-lived history is left untouched."""
         now = int(time.time())
