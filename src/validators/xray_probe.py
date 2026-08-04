@@ -1040,6 +1040,12 @@ async def validate_configs_xray(
         if isinstance(result, BaseException):
             # Without this the real reason (missing binary, permission error)
             # is swallowed and the whole stage just returns no configs.
+            #
+            # A probe that raised reached no verdict, so it must not leave the
+            # config marked as attempted: the health history would count it as
+            # a failed probe and move the config towards a ban (the same rule
+            # as the CancelledError branch above).
+            cfg.xray_was_checked = False
             logger.warning(
                 "Xray probe of %s:%s raised %s: %s",
                 cfg.address,

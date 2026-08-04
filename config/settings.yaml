@@ -122,7 +122,7 @@ validator:
 
   # GeoIP (optional enrichment, disabled by default to avoid rate limits)
   geoip_enabled: false
-  geoip_api_url: "http://ip-api.com/json/{ip}"
+  geoip_api_url: "https://ip-api.com/json/{ip}"
   # ip-api.com free tier allows 45 req/min; lookups share one global rate
   # limiter, so enrichment takes roughly (distinct addresses / rpm) minutes.
   geoip_requests_per_minute: 40

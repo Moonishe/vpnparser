@@ -26,7 +26,7 @@ _DEFAULT_CONCURRENCY = 8
 # ip-api.com free tier allows 45 req/min. 40 leaves headroom for clock skew and
 # for whatever else on the runner's IP talks to the same endpoint.
 _DEFAULT_REQUESTS_PER_MINUTE = 40.0
-_DEFAULT_API_URL = "http://ip-api.com/json/{ip}"
+_DEFAULT_API_URL = "https://ip-api.com/json/{ip}"
 
 #: Injectable sleep, so tests can drive the limiter without real waiting.
 SleepFunc = Callable[[float], Awaitable[None]]

@@ -146,7 +146,7 @@ class Hysteria2Parser(BaseParser):
                 address=host,
                 port=port,
                 uuid_or_password=password,
-                network="tcp",
+                network="quic",
                 security="tls",
                 sni=sni,
                 alpn=alpn,
