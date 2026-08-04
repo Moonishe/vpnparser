@@ -109,7 +109,7 @@ class GitHubPublisher:
                     base_url=self.api_base,
                     headers=self._headers(),
                     timeout=self._timeout,
-                    follow_redirects=True,
+                    follow_redirects=False,
                 )
         return self._client
 

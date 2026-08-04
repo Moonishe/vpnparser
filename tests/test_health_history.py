@@ -265,6 +265,34 @@ class TestSave:
         kept = json.loads(f.read_text(encoding="utf-8"))["configs"]
         assert set(kept) == {"fresh", "stale_but_banned"}
 
+    def test_prune_drops_stale_source_records(self, tmp_path: Path) -> None:
+        """Stale source records age out; recent and still-banned sources stay."""
+        now = int(time.time())
+        f = tmp_path / "health-history.json"
+        h = HealthHistory(
+            _make_settings(
+                {"health_history_file": str(f), "health_history_retention_days": 30},
+            ),
+        )
+        h.load()
+        h._cache["configs"] = {
+            "a": {"last_seen": now - 3600, "banned_until": 0},
+        }
+        h._cache["sources"] = {
+            "fresh": {"updated_at": now - 3600, "banned_until": 0},
+            "stale": {"updated_at": now - 40 * 86400, "banned_until": 0},
+            # Still banned: the ban is why the source is skipped, so dropping it
+            # would silently unban it.
+            "stale_but_banned": {
+                "updated_at": now - 40 * 86400,
+                "banned_until": now + 3600,
+            },
+        }
+
+        assert h.prune(now=now) == 1  # only the stale, unbanned source
+        assert set(h._cache["sources"]) == {"fresh", "stale_but_banned"}
+
+
     def test_prune_keeps_everything_within_retention(self, tmp_path: Path) -> None:
         """A short-lived history is left untouched."""
         now = int(time.time())

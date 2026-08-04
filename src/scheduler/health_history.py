@@ -229,7 +229,29 @@ class HealthHistory:
                 len(stale),
                 self._retention_seconds() // 86400,
             )
-        return len(stale)
+        # Source records age out exactly like config records; nothing ever used
+        # to remove them, so the `sources` section kept growing even after the
+        # config pruning was added (the file is committed on every run). A
+        # still-banned source is always kept, mirroring the config rule.
+        sources = self._cache.get("sources")
+        stale_sources: list[str] = []
+        if isinstance(sources, dict) and sources:
+            stale_sources = [
+                key
+                for key, record in sources.items()
+                if isinstance(record, dict)
+                and int(record.get("updated_at") or 0) < cutoff
+                and int(record.get("banned_until") or 0) <= now
+            ]
+            for key in stale_sources:
+                del sources[key]
+        if stale_sources:
+            logger.info(
+                "Health history: dropped %d source record(s) unseen for %d day(s).",
+                len(stale_sources),
+                self._retention_seconds() // 86400,
+            )
+        return len(stale) + len(stale_sources)
 
     def save(self) -> str | None:
         path = self._file()

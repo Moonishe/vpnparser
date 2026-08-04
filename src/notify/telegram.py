@@ -27,6 +27,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import quote
 
 from src.repo_info import github_branch, github_repo_slug
 from src.utils.paths import resolve_safe_output_path
@@ -347,10 +348,19 @@ def _subscription_urls(summary: dict[str, Any] | None = None) -> dict[str, str]:
         summary: Parsed run-summary.json. When it names the files this run
             wrote, the links follow them; otherwise the default layout is used.
     """
-    base = f"https://raw.githubusercontent.com/{_repo_slug()}/{_repo_branch()}"
+    # Percent-encode each path segment so a run-summary path containing a
+    # space, "#", "?" or non-ASCII still yields a clickable raw link instead of
+    # silently truncating at the fragment/query or breaking the URL. Slugs carry
+    # "owner/repo" and paths carry "/" separators, so keep the separator literal
+    # (safe="/") while encoding the dangerous characters.
     summary = summary if isinstance(summary, dict) else {}
+    slug = quote(_repo_slug(), safe="/")
+    branch = quote(_repo_branch(), safe="/")
     return {
-        key: f"{base}/{_repo_relative_output(summary, key) or default}"
+        key: (
+            f"https://raw.githubusercontent.com/{slug}/{branch}/"
+            f"{quote(_repo_relative_output(summary, key) or default, safe='/')}"
+        )
         for key, default in _DEFAULT_OUTPUT_PATHS.items()
     }
 
@@ -652,7 +662,10 @@ def _format_subscriptions_section(
             if not isinstance(item, dict):
                 continue
             label = _SUBSCRIPTION_LABELS.get(key, key)
-            count = int(item.get("count") or 0)
+            try:
+                count = int(item.get("count") or 0)
+            except (TypeError, ValueError):
+                count = 0
             countries = item.get("countries")
             country_text = _format_country_counts(
                 countries if isinstance(countries, dict) else {},
@@ -665,7 +678,12 @@ def _format_subscriptions_section(
         ]
         if location_outputs:
             total_locations = len(location_outputs)
-            max_count = max(int(item.get("count") or 0) for item in location_outputs)
+            try:
+                max_count = max(
+                    int(item.get("count") or 0) for item in location_outputs
+                )
+            except (TypeError, ValueError):
+                max_count = 0
             lines.append(
                 f"  {_b('Локации')}: {total_locations} файлов, до {max_count} серверов",
             )
@@ -960,7 +978,7 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
     for attempt in range(1, _SEND_ATTEMPTS + 1):
         try:
             req = urllib.request.Request(
-                f"https://api.telegram.org/bot{token}/sendMessage",
+                f"https://api.telegram.org/bot{quote(token, safe='')}/sendMessage",
                 data=data,
                 headers={
                     "Content-Type": "application/json",

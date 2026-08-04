@@ -7,6 +7,7 @@ Config is the unified internal representation of a proxy server.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -68,8 +69,19 @@ class Config:
         Different protocols or credentials on the same address:port are
         independent configs (e.g. VLESS + Trojan on one server).  The
         protocol is included so they are not merged.
+
+        Hostnames are case-insensitive and an IPv6 literal has many textual
+        spellings, so the address is normalised (lowercased; IPv6 collapsed)
+        before it enters the key - otherwise ``Example.COM`` and
+        ``example.com`` (or two spellings of one IPv6 literal) would survive
+        as duplicates.
         """
-        return (self.protocol, self.address, self.port)
+        address = str(self.address or "")
+        try:
+            address_key = str(ipaddress.ip_address(address.strip("[]")))
+        except ValueError:
+            address_key = address.lower()
+        return (str(self.protocol).lower(), address_key, int(self.port))
 
     def to_dict(self) -> dict[str, object]:
         return {

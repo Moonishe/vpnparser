@@ -938,7 +938,6 @@ class PipelineRunner:
         return all_ok
 
     @staticmethod
-    @staticmethod
     def _unique_publish_paths(output_files: list[str]) -> list[str]:
         """Drop duplicate output paths, ignoring separator/case differences.
 

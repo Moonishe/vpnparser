@@ -11,6 +11,8 @@ import base64
 import contextlib
 import logging
 import time
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -40,15 +42,33 @@ _MAX_RETRY_AFTER = 30.0
 #: while streaming, so an oversized body is never fully buffered.
 MAX_RAW_FILE_BYTES = 12 * 1024 * 1024
 
+#: Statuses followed manually so each redirect hop can be re-validated against
+#: the trusted-host allow-list (see fetch_raw_file).
+_RAW_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_RAW_REDIRECTS = 5
+
 
 def _retry_after_delay(header_value: str | None, fallback: float) -> float:
-    """Return the delay to wait before a retry, honouring ``Retry-After``."""
+    """Return the delay to wait before a retry, honouring ``Retry-After``.
+
+    ``Retry-After`` may be a delta in seconds or an absolute HTTP-date (RFC 7231).
+    Only the numeric form used to be parsed; the date form fell back to a short
+    backoff and could hammer a throttled endpoint.
+    """
     if not header_value:
         return fallback
     try:
         seconds = float(header_value)
     except (TypeError, ValueError):
-        return fallback
+        seconds = None
+    if seconds is None:
+        try:
+            parsed = parsedate_to_datetime(header_value)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            seconds = (parsed - datetime.now(UTC)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return fallback
     return min(max(0.0, seconds), _MAX_RETRY_AFTER)
 
 
@@ -153,7 +173,7 @@ class GitHubClient:
                     base_url=self.api_base,
                     headers=self._headers(),
                     timeout=self._timeout,
-                    follow_redirects=True,
+                    follow_redirects=False,
                 )
         return self._client
 
@@ -323,7 +343,7 @@ class GitHubClient:
                 async with (
                     httpx.AsyncClient(
                         timeout=self._timeout,
-                        follow_redirects=True,
+                        follow_redirects=False,
                     ) as client,
                     self._api_semaphore,
                     client.stream(
@@ -334,6 +354,16 @@ class GitHubClient:
                 ):
                     if response.status_code == 404:
                         logger.debug("404 fetching raw file %s", download_url)
+                        return ""
+                    if response.status_code in _RAW_REDIRECT_STATUSES:
+                        # Never follow a redirect from the trusted host here: the
+                        # destination is not re-validated, so it could be any host
+                        # (SSRF). Raw file URLs do not legitimately redirect.
+                        logger.warning(
+                            "Raw download %s redirects (%d) - refusing to follow.",
+                            download_url,
+                            response.status_code,
+                        )
                         return ""
                     if response.status_code in _RETRIABLE_RAW_STATUSES:
                         retry_delay = _retry_after_delay(
@@ -410,7 +440,20 @@ class GitHubClient:
                 repo,
                 path,
             )
-            return await self.fetch_raw_file(raw_url)
+            try:
+                return await self.fetch_raw_file(raw_url)
+            except httpx.HTTPStatusError as exc:
+                # The raw fallback raises when a retriable status (429/5xx) is
+                # still failing on its last attempt; keep fetch_file's contract of
+                # returning an empty string on failure instead of propagating.
+                logger.warning(
+                    "Raw fallback for %s/%s/%s failed: HTTP %s",
+                    owner,
+                    repo,
+                    path,
+                    exc.response.status_code,
+                )
+                return ""
         if not isinstance(data, dict):
             logger.warning("Unexpected GitHub file response for %s: %r", url, data)
             return ""
