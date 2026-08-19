@@ -30,6 +30,7 @@ from src.validators.xray_probe import (
     _rotated_proxy_urls_for_config,
     _server_name,
     _stream_settings,
+    _valid_server_name,
     _wait_for_port,
     build_xray_config,
     discover_public_ip,
@@ -154,6 +155,30 @@ def test_server_name_from_address() -> None:
 def test_server_name_all_ips() -> None:
     cfg = _make_cfg(sni="8.8.8.8", address="1.2.3.4")
     assert _server_name(cfg) is None
+
+
+def test_server_name_rejects_invalid_sni_falls_back() -> None:
+    """SNI with garbage characters must not reach the Xray config."""
+    cfg = _make_cfg(
+        sni="bad name with spaces",
+        host="good.example.com",
+        address="1.2.3.4",
+    )
+    assert _server_name(cfg) == "good.example.com"
+
+
+def test_server_name_rejects_slash_and_quotes() -> None:
+    cfg = _make_cfg(sni='evil.example.com/path"quote')
+    assert _server_name(cfg) is None
+
+
+def test_server_name_keeps_wildcard_and_underscore() -> None:
+    """Leaders like *.cdn and _tls style names are valid SNI values."""
+    assert _valid_server_name("*.example.com") is True
+    assert _valid_server_name("_tls.example.com") is True
+    assert _valid_server_name("a" * 254) is False
+    assert _valid_server_name("") is False
+    assert _valid_server_name(None) is False
 
 
 # ===================== _alpn ======================

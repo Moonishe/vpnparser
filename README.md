@@ -22,14 +22,14 @@ fetch ──► parse ──► garbage filter ──► dedup ──► country
                                          aggregate ──► write ──► publish
 ```
 
-1. **Fetch** — downloads subscription files from configured GitHub repos and URLs.
-2. **Parse** — extracts proxy links (`vmess://`, `vless://`, `trojan://`, …), decodes base64 blobs.
-3. **Garbage filter** — drops malformed or obviously invalid configs.
-4. **Dedup** — removes duplicates by `(protocol, address, port)`.
-5. **Country filter** — keeps only allowed countries, applies per-list rules.
-6. **Aggregate** — country-balanced round-robin selection caps per output.
-7. **Write** — produces base64-encoded subscription files.
-8. **Publish** — pushes outputs to a configured GitHub repository.
+1. **Fetch** -- downloads subscription files from configured GitHub repos and URLs.
+2. **Parse** -- extracts proxy links (`vmess://`, `vless://`, `trojan://`, …), decodes base64 blobs.
+3. **Garbage filter** -- drops malformed or obviously invalid configs.
+4. **Dedup** -- removes duplicates by `(protocol, address, port)`.
+5. **Country filter** -- keeps only allowed countries, applies per-list rules.
+6. **Aggregate** -- country-balanced round-robin selection caps per output.
+7. **Write** -- produces base64-encoded subscription files.
+8. **Publish** -- pushes outputs to a configured GitHub repository.
 
 ### Network validation
 
@@ -82,18 +82,18 @@ Each source supports:
 
 A `url-list` source fetches an index file and then every URL inside it, so the
 targets are chosen by a third party. Those fetches are SSRF-guarded and size-
-capped — see [SECURITY.md](SECURITY.md). All sources currently shipped are
+capped -- see [SECURITY.md](SECURITY.md). All sources currently shipped are
 `url` or `url-list`; none uses `owner`/`repo`.
 
 ### Included upstreams
 
-- **igareck/vpn-configs-for-russia** — Black + White lists
-- **luxxuria/harvester** — Top tested configs
-- **DarkRoyalty/shnajder-vpn-configs** — Whitelist entries
-- **V2RayRoot/V2RayConfig**, **sakha1370/OpenRay** — Blacklist pools
-- **jsxta/whitelist-russia** — Whitelist subscription
-- **kort0881/vpn-vless-configs-russia** — `url-list` indexes of mirrored blacklist sources
-- **proxifly/free-proxy-list**, **ProxyScrape/free-proxy-list**, **VPSLabCloud/VPSLab-Free-Proxy-List**, **gfpcom/free-proxy-list** — SOCKS5 proxy pool
+- **igareck/vpn-configs-for-russia** -- Black + White lists
+- **luxxuria/harvester** -- Top tested configs
+- **DarkRoyalty/shnajder-vpn-configs** -- Whitelist entries
+- **V2RayRoot/V2RayConfig**, **sakha1370/OpenRay** -- Blacklist pools
+- **jsxta/whitelist-russia** -- Whitelist subscription
+- **kort0881/vpn-vless-configs-russia** -- `url-list` indexes of mirrored blacklist sources
+- **proxifly/free-proxy-list**, **ProxyScrape/free-proxy-list**, **VPSLabCloud/VPSLab-Free-Proxy-List**, **gfpcom/free-proxy-list** -- SOCKS5 proxy pool
 
 ---
 
@@ -194,10 +194,10 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 
 ## GitHub Actions
 
-[`.github/workflows/update.yml`](.github/workflows/update.yml) — the pipeline:
+[`.github/workflows/update.yml`](.github/workflows/update.yml) -- the pipeline:
 
 - **Triggers:** hourly schedule (`0 * * * *`) and manual dispatch (with a
-  `skip_publish` input). No push trigger — pushes are handled by `ci.yml`.
+  `skip_publish` input). No push trigger -- pushes are handled by `ci.yml`.
 - Installs dependencies and a checksum-verified Xray-core, runs the checks and
   the test suite, executes the pipeline, publishes the subscription files, and
   sends an optional Telegram notification with a summary and a fun VPN fact.
@@ -208,7 +208,7 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
   the run is marked failed before the notification goes out. See
   [docs/OPERATIONS.md](docs/OPERATIONS.md#exit-codes).
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) — pull requests and
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) -- pull requests and
 pushes to `main`:
 
 - `lint` (ruff check + format), `typecheck` (`mypy src`), `security`
@@ -226,7 +226,7 @@ pushes to `main`:
   raw proxy links.
 - Each output starts with a harmless VMess watermark entry for client
   identification.
-- Fetch failures are isolated per source — one dead upstream does not fail
+- Fetch failures are isolated per source -- one dead upstream does not fail
   the whole run.
 - Blacklist output keeps only `DE`, `FI`, `NL`, `US`, `GB`, `FR`, `JP`, `CA`.
 - Whitelist targets 200 checked configs with an 80% RU / 20% EU split.

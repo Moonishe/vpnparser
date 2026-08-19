@@ -17,6 +17,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -143,9 +144,24 @@ def _is_ip(value: str | None) -> bool:
     return True
 
 
+#: Allowed characters in a server name passed to Xray. SNI/serverName comes
+#: from an untrusted subscription link, so anything outside DNS characters is
+#: rejected instead of being handed to the probe verbatim; a weird value would
+#: otherwise just fail the probe with an opaque Xray error.
+_SERVER_NAME_RE = re.compile(r"^[A-Za-z0-9._*-]+$")
+_MAX_SERVER_NAME_LENGTH = 253
+
+
+def _valid_server_name(value: str | None) -> bool:
+    """Return ``True`` when *value* is a sane DNS-style server name."""
+    if not value or len(value) > _MAX_SERVER_NAME_LENGTH:
+        return False
+    return _SERVER_NAME_RE.match(value) is not None
+
+
 def _server_name(cfg: Config) -> str | None:
     for candidate in (_first_csv(cfg.sni), _first_csv(cfg.host), cfg.address):
-        if candidate and not _is_ip(candidate):
+        if candidate and not _is_ip(candidate) and _valid_server_name(candidate):
             return candidate
     return None
 

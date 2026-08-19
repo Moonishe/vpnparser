@@ -330,6 +330,13 @@ class PipelineRunner:
                 output_files,
                 combined_output_file=output_file,
             )
+            if not self._publish_ok and summary_file:
+                # The local run-summary was written with "ok" before the publish
+                # result existed; with a failed publish the repo copy may hold
+                # the optimistic status until a later run refreshes it. Rewrite
+                # the local copy truthfully so local tooling and the next run
+                # see the failure.
+                self._rewrite_summary_status(summary_file, "publish_failed")
 
         elapsed = time.monotonic() - start
         logger.info("Pipeline finished in %.2fs with %d configs.", elapsed, count)
@@ -753,6 +760,8 @@ class PipelineRunner:
                 publish_paths,
                 combined_output_file=output_file,
             )
+            if not self._publish_ok and summary_file:
+                self._rewrite_summary_status(summary_file, "publish_failed")
         return 0
 
     def _write_empty_split_outputs(self, combined_output_file: str) -> None:
@@ -878,6 +887,29 @@ class PipelineRunner:
     def _write_empty_output(self, output_file: str) -> None:
         """Ensure the output file exists as a valid base64 subscription."""
         self._writer._write_empty_output(output_file)
+
+    def _rewrite_summary_status(self, output_file: str, status: str) -> None:
+        """Overwrite the ``status`` field of an existing run summary file.
+
+        Used after a publish failure: the summary was written with ``"ok"``
+        before the publish result was known, and the local copy should not
+        keep claiming success the repo copy is not entitled to.
+        """
+        try:
+            path = resolve_safe_output_path(output_file)
+        except ValueError:
+            logger.exception("Unsafe run summary path %r rejected", output_file)
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                payload["status"] = status
+                path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+        except Exception as exc:
+            logger.warning("Could not rewrite run summary %s: %s", output_file, exc)
 
     @staticmethod
     def _write_plain_fallback(configs: list[Config], output_file: str) -> int:

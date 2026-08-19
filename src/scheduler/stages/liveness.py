@@ -804,6 +804,10 @@ class LivenessValidator(PipelineStage):
                     ),
                     check_hostnames=check_hostnames,
                     resolve_timeout=resolve_timeout,
+                    verify_tls=self._as_bool(
+                        vcfg.get("tls_verify_certificates"),
+                        False,
+                    ),
                 )
                 probe_log.add(tls_checkable)
                 # tls_checked counts only configs that were actually probed:

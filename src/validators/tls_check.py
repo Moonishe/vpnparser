@@ -165,8 +165,15 @@ async def tls_check(
     alpn: str | None = None,
     timeout: float = 5.0,
     proxy_url: str | None = None,
+    verify_tls: bool = False,
 ) -> bool:
     """TLS handshake to host:port, optionally through a SOCKS5 proxy.
+
+    By default the handshake only proves that the server completes one — most
+    VPN servers use self-signed certificates, so certificate validation would
+    mark every one of them dead. Pass ``verify_tls=True`` to additionally
+    require a certificate valid for the connection target; only meaningful
+    when the checked servers are known to hold trusted certificates.
 
     Returns True if the handshake completes successfully, False on any error.
     """
@@ -177,8 +184,10 @@ async def tls_check(
     server_hostname = sni or host
     try:
         ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
+        if not verify_tls:
+            # Liveness-only mode: accept any certificate and any hostname.
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
         protocols = _alpn_protocols(alpn)
         if protocols:
             ssl_context.set_alpn_protocols(protocols)
@@ -224,6 +233,7 @@ async def validate_configs_tls(
     proxy_attempts_per_config: int = 1,
     check_hostnames: bool = True,
     resolve_timeout: float = 5.0,
+    verify_tls: bool = False,
 ) -> list[Config]:
     """Filter configs by TLS handshake.
 
@@ -242,6 +252,9 @@ async def validate_configs_tls(
             config before marking it dead. ``0`` means try the whole pool.
         check_hostnames: Resolve hostnames to reject configs pointing at
             internal addresses. IP literals are rejected either way.
+        verify_tls: Require a certificate valid for the connection target in
+            the handshake probes. ``False`` (default) only checks that a
+            handshake completes — see :func:`tls_check`.
     """
     configs = await filter_public_configs(
         configs,
@@ -286,6 +299,7 @@ async def validate_configs_tls(
                             alpn=cfg.alpn,
                             timeout=timeout,
                             proxy_url=candidate_proxy,
+                            verify_tls=verify_tls,
                         )
                         if ok:
                             break

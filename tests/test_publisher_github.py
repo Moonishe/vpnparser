@@ -422,7 +422,7 @@ async def test_publish_file_retries_on_403_rate_limit(monkeypatch) -> None:
 
 
 async def test_publish_file_conflict_409(monkeypatch) -> None:
-    """409 conflict should return False (recoverable failure)."""
+    """409 conflict after all retries should return False."""
 
     class _FakeClient:
         def __init__(self) -> None:
@@ -444,10 +444,61 @@ async def test_publish_file_conflict_409(monkeypatch) -> None:
         async def aclose(self) -> None:
             return None
 
-    pub = _make_publisher(monkeypatch, _FakeClient())
+    fake = _FakeClient()
+    pub = _make_publisher(monkeypatch, fake)
+
+    # The initial PUT plus _CONFLICT_RETRIES re-PUTs, all conflicting.
+    from src.publisher.github import _CONFLICT_RETRIES
+
     result = await pub.publish_file("f.txt", "data", "msg")
 
     assert result is False
+    assert len(fake.put_calls) == 1 + _CONFLICT_RETRIES
+
+
+async def test_publish_file_conflict_409_then_succeeds(monkeypatch) -> None:
+    """A 409 on the first PUT is retried with a fresh SHA and succeeds."""
+    put_count = 0
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.put_shas: list[object] = []
+            self.get_count = 0
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            self.get_count += 1
+            # The first GET (for the initial PUT) sees the old SHA; the
+            # re-fetch after the 409 sees the fresh one.
+            sha = "abc" if self.get_count == 1 else "fresh-sha"
+            return _FakeResp(200, json_data={"sha": sha})
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            nonlocal put_count
+            put_count += 1
+            body = kw.get("json")
+            self.put_shas.append(body.get("sha") if isinstance(body, dict) else None)
+            if put_count == 1:
+                return _FakeResp(409, text="Conflict")
+            return _FakeResp(201, json_data={"content": {"sha": "x"}})
+
+        async def aclose(self) -> None:
+            return None
+
+    fake = _FakeClient()
+    pub = _make_publisher(monkeypatch, fake)
+    result = await pub.publish_file("f.txt", "data", "msg")
+
+    assert result is True
+    # The retry PUT carried the freshly fetched SHA.
+    assert put_count == 2
+    assert fake.put_shas[0] == "abc"  # SHA from the first GET
+    assert fake.put_shas[1] == "fresh-sha"  # SHA re-fetched after 409
 
 
 # ---------------------------------------------------------------------------

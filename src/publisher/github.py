@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 _DEFAULT_RATELIMIT_WAIT = 60.0
 # Upper bound on a single rate-limit sleep to avoid blocking the pipeline forever.
 _RATELIMIT_WAIT_CAP = 300.0
+#: Retries for the optimistic-lock conflict (409): a parallel run or a manual
+#: commit can bump the file SHA between our GET and PUT.
+_CONFLICT_RETRIES = 2
 
 
 def _clean_repo_path(path: str) -> str:
@@ -292,7 +295,45 @@ class GitHubPublisher:
             )
             return True
 
+        # 409 = optimistic-lock race: another run (or a manual commit) bumped
+        # the file's SHA after our GET. Re-fetch the SHA and retry a couple of
+        # times before giving up — parallel runs are queued by the workflow
+        # concurrency group, but manual commits and manual-dispatched runs can
+        # still collide.
         if response.status_code == 409:
+            for attempt in range(1, _CONFLICT_RETRIES + 1):
+                logger.warning(
+                    "GitHub 409 conflict publishing %s; fetching fresh SHA "
+                    "(retry %d/%d).",
+                    path,
+                    attempt,
+                    _CONFLICT_RETRIES,
+                )
+                try:
+                    sha = await self._get_file_sha(path)
+                except Exception:
+                    logger.exception("Failed to GET %s for SHA after conflict", path)
+                    break
+                body["sha"] = sha
+                try:
+                    response = await client.put(url, json=body)
+                except httpx.RequestError:
+                    logger.exception(
+                        "Network error on conflict retry publishing %s", path
+                    )
+                    return False
+                if response.status_code in (200, 201):
+                    action = "updated" if sha else "created"
+                    logger.info(
+                        "Successfully %s %s in %s/%s (after conflict).",
+                        action,
+                        path,
+                        self.owner,
+                        self.repo,
+                    )
+                    return True
+                if response.status_code != 409:
+                    break
             logger.error(
                 "GitHub 409 conflict publishing %s (race or empty repo). Aborting this publish.",  # noqa: E501
                 path,

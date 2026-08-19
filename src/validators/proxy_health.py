@@ -7,8 +7,11 @@ consistently dead ones across runs.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -133,6 +136,10 @@ class ProxyHealthHistory:
         nothing else ever dropped an entry, so it grew monotonically with every
         proxy the free lists rotated through. Everything probed during this run
         has a fresh ``last_seen`` and survives.
+
+        The write is atomic (temp file + ``os.replace``), mirroring
+        ``HealthHistory.save``: a crash mid-write would otherwise truncate the
+        file and lose the accumulated history.
         """
         self.prune()
         from src.utils.paths import resolve_safe_output_path
@@ -145,8 +152,15 @@ class ProxyHealthHistory:
         try:
             if target.parent and not target.parent.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-            with target.open("w", encoding="utf-8") as fh:
-                json.dump(self.records, fh, indent=2, ensure_ascii=False)
+            fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(self.records, fh, indent=2, ensure_ascii=False)
+                os.replace(tmp, str(target))
+            except Exception:
+                with contextlib.suppress(Exception):
+                    os.unlink(tmp)
+                raise
         except OSError as exc:
             logger.warning("Failed to save proxy health history to %s: %s", target, exc)
 

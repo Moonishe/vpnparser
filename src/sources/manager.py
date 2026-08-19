@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -85,6 +86,34 @@ _download_gates: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]
 def _host_literal(host: str) -> str:
     """Return *host* in URL form, re-bracketing an IPv6 literal."""
     return f"[{host}]" if ":" in host else host
+
+
+#: ``scheme://user:pass@host`` — the shortest safe match for credentials in a
+#: URL string. URLs from untrusted indexes may carry any amount of userinfo,
+#: and error strings end up in ``run-summary.json`` published to the repo.
+_URL_USERINFO_RE = re.compile(r"//[^/@\s]+@")
+
+
+def _redact_url(url: str) -> str:
+    """Replace URL userinfo with ``***`` for logs and published errors."""
+    return _URL_USERINFO_RE.sub("//***@", url) if url else url
+
+
+def _safe_error_message(exc: BaseException, *, limit: int = 300) -> str:
+    """Short, bounded, single-line error text for logs and results.
+
+    Full tracebacks and long messages can expose internal paths and stack
+    structure; error strings also land in ``run-summary.json``, which is
+    published to the repository. URL credentials (``user:pass@host``) are
+    masked — httpx error strings embed the full request URL. The traceback
+    itself stays in the debug log.
+    """
+    text = str(exc).strip() or type(exc).__name__
+    first_line = text.splitlines()[0].strip() if text else type(exc).__name__
+    first_line = _redact_url(first_line)
+    if len(first_line) > limit:
+        first_line = f"{first_line[: limit - 1]}…"
+    return first_line
 
 
 def _download_gate() -> asyncio.Semaphore:
@@ -254,10 +283,12 @@ class SourceManager:
                 logger.error(
                     "Unhandled error fetching source '%s': %s",
                     name,
-                    raw,
-                    exc_info=raw,
+                    _safe_error_message(raw),
                 )
-                results.append(SourceResult(source_name=name, error=str(raw)))
+                logger.debug("Fetch of source '%s' raised:", name, exc_info=raw)
+                results.append(
+                    SourceResult(source_name=name, error=_safe_error_message(raw))
+                )
             elif isinstance(raw, BaseException):
                 # Cancellation / system exit — must propagate, not be swallowed.
                 raise raw
@@ -302,9 +333,10 @@ class SourceManager:
                     **self._direct_fetch_overrides(source),
                 )
                 if not content:
+                    redacted_url = _redact_url(str(url))
                     return SourceResult(
                         source_name=name,
-                        error=f"url source '{url}' is empty or not found",
+                        error=f"url source '{redacted_url}' is empty or not found",
                         list_type=list_type,
                         default_country=default_country,
                     )
@@ -397,9 +429,18 @@ class SourceManager:
                 default_country=default_country,
             )
         except Exception as exc:
-            # Isolate failures: log and surface as a structured error.
-            logger.error("Failed to fetch source '%s': %s", name, exc, exc_info=True)
-            return SourceResult(source_name=name, error=str(exc), list_type=list_type)
+            # Isolate failures: surface a concise reason as a structured error.
+            # Full tracebacks stay in the debug log — error strings end up in
+            # run-summary.json, which is published to the repository.
+            logger.error(
+                "Failed to fetch source '%s': %s", name, _safe_error_message(exc)
+            )
+            logger.debug("Fetch of source '%s' raised:", name, exc_info=True)
+            return SourceResult(
+                source_name=name,
+                error=_safe_error_message(exc),
+                list_type=list_type,
+            )
 
     @staticmethod
     async def _fetch_direct_url(
@@ -428,7 +469,7 @@ class SourceManager:
         """
         parsed = urlparse((url or "").strip())
         if parsed.scheme not in SAFE_URL_SCHEMES or not parsed.netloc:
-            msg = f"source url must be absolute HTTP/HTTPS: {url!r}"
+            msg = f"source url must be absolute HTTP/HTTPS: {_redact_url(url)!r}"
             raise ValueError(msg)
 
         max_attempts = max(1, attempts)
@@ -453,13 +494,14 @@ class SourceManager:
                     last_error = exc
                 except TimeoutError:
                     last_error = TimeoutError(
-                        f"fetch of {url!r} exceeded its {budget:.1f}s budget",
+                        f"fetch of {_redact_url(url)!r} "
+                        f"exceeded its {budget:.1f}s budget",
                     )
                 if attempt >= max_attempts:
                     break
                 logger.warning(
                     "Direct source fetch failed for %s (attempt %d/%d): %s",
-                    url,
+                    _redact_url(url),
                     attempt,
                     max_attempts,
                     last_error,
@@ -491,17 +533,18 @@ class SourceManager:
             # at "http://host:99999/".
             port = f":{parts.port}" if parts.port is not None else ""
         except ValueError:
+            parts = None
             host = None
             port = ""
-        if not host or parts.scheme.lower() not in SAFE_URL_SCHEMES:
-            logger.warning("Dropped non-public source url: %s", url)
-            msg = f"refusing to fetch non-public url: {url!r}"
+        if parts is None or not host or parts.scheme.lower() not in SAFE_URL_SCHEMES:
+            logger.warning("Dropped non-public source url: %s", _redact_url(url))
+            msg = f"refusing to fetch non-public url: {_redact_url(url)!r}"
             raise ValueError(msg)
 
         addresses = await resolve_global_ips(host)
         if not addresses:
-            logger.warning("Dropped non-public source url: %s", url)
-            msg = f"refusing to fetch non-public url: {url!r}"
+            logger.warning("Dropped non-public source url: %s", _redact_url(url))
+            msg = f"refusing to fetch non-public url: {_redact_url(url)!r}"
             raise ValueError(msg)
 
         userinfo = ""
@@ -578,7 +621,7 @@ class SourceManager:
             if body is None:
                 logger.warning(
                     "Discarded oversized response from %s (limit %d bytes).",
-                    connect_url,
+                    _redact_url(connect_url),
                     MAX_DOWNLOAD_BYTES,
                 )
                 return None, ""
@@ -650,7 +693,7 @@ class SourceManager:
         if not index_content:
             return SourceResult(
                 source_name=name,
-                error=f"url-list index '{url}' is empty or not found",
+                error=f"url-list index '{_redact_url(str(url))}' is empty or not found",
                 list_type=list_type,
                 default_country=default_country,
             )
@@ -686,9 +729,10 @@ class SourceManager:
                     break
 
         if not urls:
+            redacted_url = _redact_url(str(url))
             return SourceResult(
                 source_name=name,
-                error=f"url-list index '{url}' contains no valid URLs",
+                error=f"url-list index '{redacted_url}' contains no valid URLs",
                 list_type=list_type,
                 default_country=default_country,
             )
@@ -715,7 +759,11 @@ class SourceManager:
                         attempts=attempts,
                     )
                 except Exception as exc:
-                    logger.warning("url-list fetch failed for %s: %s", target, exc)
+                    logger.warning(
+                        "url-list fetch failed for %s: %s",
+                        _redact_url(target),
+                        exc,
+                    )
                     return None
                 if not content:
                     return None

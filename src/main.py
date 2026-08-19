@@ -233,14 +233,11 @@ def _run_once(
         github_token=github_token,
     )
     count = asyncio.run(runner.run(output_file=args.output, publish=args.publish))
-    # An empty run publishes its (empty) artifacts through
-    # PipelineRunner._finish_empty_run(), which does not record the outcome in
-    # ``_publish_ok``.  Reading the flag there would report every empty run as
-    # a failed publish — exit 3 plus a --continuous backoff for a run that
-    # actually published fine.
-    publish_ok = (
-        not args.publish or count == 0 or bool(getattr(runner, "_publish_ok", False))
-    )
+    # The runner records the publish outcome in ``_publish_ok`` for both full
+    # and empty runs (see PipelineRunner._publish_files / _finish_empty_run),
+    # so the exit code can trust it. A failed publish of an empty run must
+    # still fail: the previous, non-empty subscription stays live in the repo.
+    publish_ok = not args.publish or bool(getattr(runner, "_publish_ok", False))
 
     if count > 0:
         logger.info("Done. %d configs written to %s.", count, args.output)

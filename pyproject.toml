@@ -89,6 +89,10 @@ ignore = [
     "PLR0915", # too many statements — will refactor later
     "PLR0917", # too many positional arguments — will refactor later
     "TRY300",  # try body too long — readability preference
+    "TRY400",  # logging.exception suggested in except-logger — intentional:
+               # tracebacks stay in debug logs, error lines stay concise
+    "TRY401",  # exc_info omitted in except-logger — intentional: tracebacks
+               # stay in debug logs, error lines stay concise (manager.py _safe_error_message)
     "ASYNC109",# async timeout param — intentional pattern
     "RUF059",  # unpacked variable never used
     "S310",    # URL security — reviewed safe
