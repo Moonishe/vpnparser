@@ -44,7 +44,7 @@ from src.scheduler.stages.parse import LinkParser
 from src.scheduler.stages.quality import QualityFilter
 from src.scheduler.stages.write import OutputWriter
 from src.sources.list_types import normalize_list_type
-from src.utils.paths import resolve_safe_output_path
+from src.utils.paths import resolve_safe_output_path, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -731,10 +731,14 @@ class PipelineRunner:
         consumers never see outdated "live" lists after a dead run.
         """
         self._write_empty_output(output_file)
+        # Reset the run stats BEFORE the location outputs are recorded: the
+        # secondary-output writer reports every emptied location file into
+        # _output_stats, and a reset after that (as it used to be) wiped the
+        # location_* entries from the run summary of every empty run.
+        self._output_stats = {}
         location_files = self._write_empty_secondary_outputs(output_file)
 
         # Keep run-summary outputs in sync with the empty files we just wrote.
-        self._output_stats = {}
         self._record_output_stats("combined", output_file, [])
         split_output_files = self._split_output_files(output_file)
         for list_type, split_file in split_output_files.items():
@@ -868,10 +872,11 @@ class PipelineRunner:
             logger.exception("Unsafe run summary path %r rejected", output_file)
             return None
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
+            # Atomic write: a crash mid-write must not leave a truncated
+            # run-summary.json for CI and the Telegram reporter to read.
+            write_text_atomic(
+                path,
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-                encoding="utf-8",
             )
         except Exception as exc:
             logger.warning("Could not write run summary %s: %s", output_file, exc)
@@ -904,9 +909,14 @@ class PipelineRunner:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(payload, dict):
                 payload["status"] = status
-                path.write_text(
-                    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-                    encoding="utf-8",
+                write_text_atomic(
+                    path,
+                    json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    ),
                 )
         except Exception as exc:
             logger.warning("Could not rewrite run summary %s: %s", output_file, exc)

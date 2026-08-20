@@ -1689,6 +1689,9 @@ class TestSourceDefaultCountry:
         assert SourceManager._source_default_country({"default_country": "USA"}) is None
         assert SourceManager._source_default_country({"default_country": ""}) is None
         assert SourceManager._source_default_country({"default_country": "12"}) is None
+        # A 2-letter string that is not a supported ISO code is also rejected:
+        # stamping it onto Config.country would leak into location files.
+        assert SourceManager._source_default_country({"default_country": "XX"}) is None
 
 
 # ===================================================================

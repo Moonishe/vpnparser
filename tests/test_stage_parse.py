@@ -194,6 +194,12 @@ class TestResultDefaultCountry:
         """Returns uppercased version."""
         assert _result_default_country(_ns(default_country="us")) == "US"
 
+    def test_unsupported_code_returns_none(self) -> None:
+        """A hint outside the supported ISO set must not reach Config.country."""
+        assert _result_default_country(_ns(default_country="XX")) is None
+        assert _result_default_country({"default_country": "USA"}) is None
+        assert _result_default_country(_ns(default_country="12")) is None
+
 
 # ===========================================================================
 # LinkParser.run()

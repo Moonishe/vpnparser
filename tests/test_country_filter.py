@@ -19,7 +19,11 @@ import typing
 import pytest
 
 from src.parsers.base import Config
-from src.validators.country_filter import detect_country, filter_by_country
+from src.validators.country_filter import (
+    detect_country,
+    filter_by_country,
+    normalize_country_code,
+)
 
 # ---------------------------------------------------------------------------
 # Line 19 — TYPE_CHECKING import
@@ -245,4 +249,27 @@ def test_filter_by_country_detects_country_when_none() -> None:
     result = filter_by_country([cfg], ["DE"])
     assert len(result) == 1
     assert result[0].country == "DE"
+
+
+# ---------------------------------------------------------------------------
+# normalize_country_code
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("DE", "DE"),
+        ("ru", "RU"),
+        ("  us  ", "US"),
+        (None, None),
+        ("", None),
+        ("USA", None),  # full name, not a code
+        ("12", None),  # digits
+        ("XX", None),  # not a supported code
+        ("CURAÇAO", None),  # non-ISO junk must never reach Config.country
+    ],
+)
+def test_normalize_country_code(value: str | None, expected: str | None) -> None:
+    assert normalize_country_code(value) == expected
     # The remark "DE-01" is matched by _CODE_RE -> "DE"

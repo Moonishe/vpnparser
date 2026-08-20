@@ -413,6 +413,8 @@ async def test_filter_drops_empty_address(monkeypatch) -> None:
         "100.64.0.1",  # RFC 6598 carrier-grade NAT
         "100.127.255.254",
         "fec0::1",  # deprecated IPv6 site-local (RFC 3879)
+        "192.88.99.1",  # deprecated 6to4 relay anycast (RFC 3068/7526)
+        "192.88.99.254",
         "64:ff9b::7f00:1",  # NAT64-wrapped 127.0.0.1
         "64:ff9b::a00:1",  # NAT64-wrapped 10.0.0.1
     ],

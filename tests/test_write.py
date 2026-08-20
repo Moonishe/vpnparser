@@ -1074,11 +1074,13 @@ def test_write_run_summary_exception_returns_none(
         encoding="utf-8",
     )
 
-    def _raising_write_text(self: Path, *args: object, **kwargs: object) -> int:
+    def _raising_write_text(_path: object, _content: str) -> None:
         msg = "disk full"
         raise OSError(msg)
 
-    monkeypatch.setattr(Path, "write_text", _raising_write_text)
+    monkeypatch.setattr(
+        "src.scheduler.stages.write.write_text_atomic", _raising_write_text
+    )
     r = PipelineRunner(
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
@@ -1106,13 +1108,14 @@ def test_write_run_summary_rejects_traversal_path(
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    written: list[Path] = []
+    written: list[object] = []
 
-    def _record_write_text(self: Path, *args: object, **kwargs: object) -> int:
-        written.append(self)
-        return 0
+    def _record_write_text(_path: object, _content: str) -> None:
+        written.append(_path)
 
-    monkeypatch.setattr(Path, "write_text", _record_write_text)
+    monkeypatch.setattr(
+        "src.scheduler.stages.write.write_text_atomic", _record_write_text
+    )
 
     assert r._writer._write_run_summary("success") is None
     assert written == []

@@ -13,7 +13,7 @@ from src.parsers.subscription import SubscriptionParser
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.stages.base import PipelineStage
 from src.sources.list_types import normalize_list_type
-from src.validators.country_filter import detect_country
+from src.validators.country_filter import detect_country, normalize_country_code
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +59,19 @@ def _result_name(result: Any) -> str:
 
 
 def _result_default_country(result: Any) -> str | None:
-    """Best-effort default country hint carried by a source result."""
+    """Best-effort default country hint carried by a source result.
+
+    Only a supported 2-letter ISO code survives (mirrors
+    ``SourceManager._source_default_country``): an unvalidated hint would
+    otherwise be stamped onto ``Config.country`` when remark-based detection
+    fails, producing bogus location files and filter verdicts.
+    """
     raw: Any = None
     if hasattr(result, "default_country"):
         raw = result.default_country
     elif isinstance(result, dict):
         raw = result.get("default_country")
-    if raw is None or raw == "":
-        return None
-    return str(raw).upper()
+    return normalize_country_code(None if raw is None else str(raw))
 
 
 class LinkParser(PipelineStage):

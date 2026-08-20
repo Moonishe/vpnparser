@@ -26,6 +26,7 @@ from src.sources.github import GitHubClient
 from src.sources.list_types import DEFAULT_LIST_TYPE, infer_source_list_type
 from src.utils.http import read_limited_text
 from src.utils.net import RESOLVER_CONCURRENCY, SAFE_URL_SCHEMES, resolve_global_ips
+from src.validators.country_filter import normalize_country_code
 
 logger = logging.getLogger(__name__)
 
@@ -796,10 +797,10 @@ class SourceManager:
     @staticmethod
     def _source_default_country(source: dict[str, Any]) -> str | None:
         raw = source.get("default_country")
-        if raw is None:
-            return None
-        text = str(raw).strip().upper()
-        return text if len(text) == 2 and text.isalpha() else None
+        # Only a supported 2-letter ISO code counts: anything else would be
+        # stamped onto Config.country and leak into location files and filter
+        # verdicts (see src.validators.country_filter.normalize_country_code).
+        return normalize_country_code(raw)
 
     @staticmethod
     def _int_source_value(

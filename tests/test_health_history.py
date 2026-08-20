@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -312,12 +311,14 @@ class TestSave:
         h = HealthHistory(_make_settings({"health_history_file": "output/h.json"}))
         h.load()  # populate _cache
 
-        mock_path = MagicMock()
-        mock_path.parent = mock_path
-        mock_path.write_text.side_effect = OSError("mock write error")
+        def _failing_write(_path: object, _content: str) -> None:
+            raise OSError("mock write error")
+
+        # Writing is delegated to write_text_atomic; a failing writer must
+        # surface as a logged warning and a None return, never as a crash.
         monkeypatch.setattr(
-            "src.scheduler.health_history.resolve_safe_output_path",
-            lambda p: mock_path,
+            "src.scheduler.health_history.write_text_atomic",
+            _failing_write,
         )
 
         result = h.save()
