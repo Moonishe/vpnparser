@@ -150,11 +150,14 @@ class GitHubClient:
         # (file fetches, directory listings).  Prevents overwhelming the API
         # when fetch_directory recurses into a large repo tree.
         self._api_semaphore = asyncio.Semaphore(max(1, max_concurrent_api))
-        #: Repo tree cache: (owner, repo, branch) -> tree listing. One recursive
-        #: Trees API request is expensive on a big repo, and several deep
-        #: directories may each trip the Contents listing cap within one run.
+        #: Repo tree cache: (owner, repo, branch) -> in-flight or settled fetch.
+        #: A settled future carries the recursive Trees API listing (or
+        #: ``None``); failed fetches are removed again so a transient error
+        #: cannot pin a repo to "no tree". Parallel callers await the very
+        #: same future, so concurrent recursive listings share one request.
         self._tree_cache: dict[
-            tuple[str, str, str], list[dict[str, object]] | None
+            tuple[str, str, str],
+            asyncio.Future[list[dict[str, object]] | None],
         ] = {}
 
     # --- client lifecycle ---
@@ -362,15 +365,22 @@ class GitHubClient:
             str(branch).strip(),
         )
         if key not in self._tree_cache:
-            tree = await self._fetch_repo_tree(owner, repo, branch)
-            # Only *successful* trees are cached: a transient failure (rate
+            # The first caller starts the fetch and publishes the future
+            # BEFORE awaiting, so concurrent recursive listings (fetch_directory
+            # gathers subdirectories in parallel) join the same in-flight
+            # request instead of issuing a duplicate Trees API call each.
+            future: asyncio.Future[list[dict[str, object]] | None] = (
+                asyncio.ensure_future(self._fetch_repo_tree(owner, repo, branch))
+            )
+            self._tree_cache[key] = future
+        else:
+            future = self._tree_cache[key]
+        tree = await future
+        if tree is None:
+            # Only *successful* trees are retained: a transient failure (rate
             # limit wait exceeded, network blip) must not pin this repo to an
             # eternal "no tree" state for the rest of the run.
-            if tree is not None:
-                self._tree_cache[key] = tree
-        else:
-            tree = self._tree_cache[key]
-        if tree is None:
+            self._tree_cache.pop(key, None)
             return None
         prefix = str(path).strip("/")
         results: list[dict[str, object]] = []
@@ -407,7 +417,11 @@ class GitHubClient:
         """Fetch the recursive tree of *branch*, or ``None`` on failure."""
         url = (
             f"/repos/{quote(str(owner).strip(), safe='')}/"
-            f"{quote(str(repo).strip(), safe='')}/git/trees/{_quote_path(branch)}"
+            f"{quote(str(repo).strip(), safe='')}/git/trees/"
+            # The whole branch, percent-encoded as ONE path segment (mirrors
+            # _raw_url): a branch named "feature/test" must not turn the tree
+            # ref into two path segments, which GitHub would route wrong.
+            f"{quote(str(branch).strip(), safe='')}"
         )
         try:
             data = await self._request(

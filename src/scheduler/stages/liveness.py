@@ -1142,5 +1142,9 @@ class LivenessValidator(PipelineStage):
         from src.scheduler.stages.aggregate import Aggregator
 
         if normalize_list_type(list_type) == "whitelist":
+            # _whitelist_balance honors whitelist_ru_ratio strictly: with
+            # ratio=1.0 a shortfall of RU servers stays a shortfall and fewer
+            # candidates reach Xray. That is intentional — the operator asked
+            # for RU-only; final balancing happens later in Aggregator anyway.
             return Aggregator(self.context)._whitelist_balance(configs, max_total)
         return Aggregator(self.context)._country_balanced_limit(configs, max_total)

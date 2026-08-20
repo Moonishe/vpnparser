@@ -782,6 +782,56 @@ class TestListRepoTree:
         assert [e["name"] for e in second] == ["a.txt"]
         assert fc._call_count == 2
 
+    def test_concurrent_tree_requests_share_one_fetch(self, monkeypatch) -> None:
+        """Parallel listings of the same repo must not duplicate the fetch.
+
+        fetch_directory gathers subdirectories concurrently; without a shared
+        in-flight future each of them would issue its own Trees API request,
+        burning API budget on the same whole-branch tree.
+        """
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    json_data={
+                        "tree": [{"path": "dir/a.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        async def _two_listings() -> tuple[object, object]:
+            first = client._list_repo_tree("owner", "repo", "dir", "main")
+            second = client._list_repo_tree("owner", "repo", "dir", "main")
+            return await asyncio.gather(first, second)
+
+        first, second = asyncio.run(_two_listings())
+        assert first == second
+        assert fc._call_count == 1
+
+    def test_branch_with_slash_is_one_url_segment(self, monkeypatch) -> None:
+        """A branch named ``feature/test`` is %-encoded, not split in the URL."""
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    json_data={
+                        "tree": [{"path": "dir/a.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(
+            client._list_repo_tree("owner", "repo", "dir", "feature/test")
+        )
+        assert result is not None
+        assert isinstance(fc._last_url, str)
+        assert "/git/trees/feature/test" not in fc._last_url
+        assert "feature%2Ftest" in fc._last_url
+
 
 # ===================================================================
 # fetch_file
