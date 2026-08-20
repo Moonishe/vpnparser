@@ -272,4 +272,3 @@ def test_filter_by_country_detects_country_when_none() -> None:
 )
 def test_normalize_country_code(value: str | None, expected: str | None) -> None:
     assert normalize_country_code(value) == expected
-    # The remark "DE-01" is matched by _CODE_RE -> "DE"

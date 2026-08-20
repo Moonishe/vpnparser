@@ -755,6 +755,33 @@ class TestListRepoTree:
         assert first == second
         assert fc._call_count == 1
 
+    def test_tree_failure_is_not_cached(self, monkeypatch) -> None:
+        """A transient failure must not pin the repo to a permanent 'no tree'.
+
+        The failure used to be cached alongside successes, so one rate-limit
+        or network blip disabled the Trees fallback for the whole run.
+        """
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(status_code=500),
+                _FakeResponse(
+                    json_data={
+                        "tree": [{"path": "dir/a.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        first = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert first is None
+        # The retry actually goes to the network again instead of a cached None.
+        second = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert second is not None
+        assert [e["name"] for e in second] == ["a.txt"]
+        assert fc._call_count == 2
+
 
 # ===================================================================
 # fetch_file

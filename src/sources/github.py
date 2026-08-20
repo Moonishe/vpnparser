@@ -361,11 +361,15 @@ class GitHubClient:
             str(repo).strip().lower(),
             str(branch).strip(),
         )
-        if key in self._tree_cache:
-            tree = self._tree_cache[key]
-        else:
+        if key not in self._tree_cache:
             tree = await self._fetch_repo_tree(owner, repo, branch)
-            self._tree_cache[key] = tree
+            # Only *successful* trees are cached: a transient failure (rate
+            # limit wait exceeded, network blip) must not pin this repo to an
+            # eternal "no tree" state for the rest of the run.
+            if tree is not None:
+                self._tree_cache[key] = tree
+        else:
+            tree = self._tree_cache[key]
         if tree is None:
             return None
         prefix = str(path).strip("/")
