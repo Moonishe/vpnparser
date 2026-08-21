@@ -799,10 +799,13 @@ class SourceManager:
             final = filename
             n = 1
             while final in used_names:
-                stem_path = PurePosixPath(filename)
-                suffix = stem_path.suffix or ".txt"
-                stem = filename[: len(filename) - len(suffix)]
-                final = f"{stem}_{n}{suffix}"
+                suffix = PurePosixPath(filename).suffix
+                if suffix:
+                    stem = filename[: len(filename) - len(suffix)]
+                    final = f"{stem}_{n}{suffix}"
+                else:
+                    # No extension: never invent one ("data" → "data_1").
+                    final = f"{filename}_{n}"
                 n += 1
             used_names.add(final)
             deduped_files.append((final, content))

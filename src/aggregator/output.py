@@ -128,8 +128,10 @@ def write_subscription(
     Creates parent directories if needed.
 
     The returned count is the number of configs that actually contributed
-    a link to the output (i.e. those with a non-empty raw_link).
+    a link to the output: those with a non-empty raw_link that survived the
+    control-character filter (see :func:`_safe_raw_link`).
     """
+    written = sum(1 for c in configs if _safe_raw_link(c.raw_link))
     output = generate_output(configs, fmt=fmt)
 
     path = resolve_safe_output_path(filepath)
@@ -147,4 +149,4 @@ def write_subscription(
             os.unlink(tmp)
         raise
 
-    return sum(1 for c in configs if c.raw_link)
+    return written

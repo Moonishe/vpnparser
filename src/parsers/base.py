@@ -170,7 +170,9 @@ def parse_qs_single(query_string: str) -> dict[str, str]:
             continue
         key, _, value = pair.partition("=")
         # unquote_plus would turn "+" into a space; plain unquote keeps it.
-        result[unquote(key)] = unquote(value)
+        # First occurrence wins, matching the previous parse_qs-based behaviour.
+        if key not in result:
+            result[unquote(key)] = unquote(value)
     return result
 
 
