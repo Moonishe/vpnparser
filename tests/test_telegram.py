@@ -1166,6 +1166,23 @@ class TestSendTelegram:
         assert token not in caplog.text
         assert "<redacted>" in caplog.text
 
+    def test_percent_encoded_token_is_redacted_too(self, monkeypatch, caplog) -> None:
+        """The URL carries quote(token); that form must be masked as well."""
+        from urllib.parse import quote
+
+        caplog.set_level("WARNING")
+        token = "123456789:ABCDEFGHIJKLMNOPQRST"
+
+        def fake_urlopen(req, timeout=10):
+            raise RuntimeError(f"boom near /bot{quote(token, safe='')}/sendMessage")
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+
+        assert telegram_module._send_telegram(token, "-100123", "text") is False
+        assert token not in caplog.text
+        assert quote(token, safe="") not in caplog.text
+        assert "<redacted>" in caplog.text
+
     # --- 429 flood limit is retried once (regression) --------------------
 
     def test_flood_limit_is_retried_once_and_succeeds(

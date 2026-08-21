@@ -24,13 +24,12 @@ import os
 import time
 from collections import Counter
 from collections.abc import Iterable
-from pathlib import Path
 from typing import Any
 
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
-from src.scheduler.settings import Settings, load_settings
+from src.scheduler.settings import Settings, load_settings, load_settings_strict
 from src.scheduler.stages.aggregate import Aggregator
 from src.scheduler.stages.fetch import SourceFetcher
 from src.scheduler.stages.filter import (
@@ -79,6 +78,7 @@ class PipelineRunner:
         self._health_history: HealthHistory | None = None
         self._proxy_health_history: Any | None = None
         self._proxy_health_file: str | None = None
+        self._last_summary_path: str | None = None
         self._fetcher = SourceFetcher()
         self._parser = LinkParser(self._context)
         self._preprocessor = PreprocessFilter(self._context)
@@ -115,19 +115,17 @@ class PipelineRunner:
         ``tcp/tls/xray_enabled`` are false and ``allowed_countries`` is empty:
         unvalidated configs were written, published, and the process still
         exited 0. Building the runner stays tolerant — helpers and tools use it
-        without a settings file — but a full run insists on it.
+        without a settings file — but a full run insists on a settings file
+        that exists *and* parses: a truncated commit or invalid YAML would
+        otherwise silently produce the same fail-open run via ``{}``.
 
         Raises:
             FileNotFoundError: If the configured settings file does not exist.
+            SettingsParseError: If the file exists but does not parse into a
+                non-empty mapping.
         """
-        if Path(self.settings_path).is_file():
-            return
-        msg = (
-            f"Settings file not found: {self.settings_path}. Refusing to run "
-            "on built-in defaults — they disable TCP/TLS/Xray validation and "
-            "the country filter."
-        )
-        raise FileNotFoundError(msg)
+        # Strict load covers both "missing" and "exists but broken".
+        load_settings_strict(self.settings_path)
 
     def _section(self, key: str) -> dict[str, Any]:
         """Return a settings section (empty dict if missing)."""
@@ -173,9 +171,13 @@ class PipelineRunner:
         self._liveness_stats = {}
         self._output_stats = {}
         # The stage context outlives a single run: stale ``location_*`` entries
-        # would leak into this run's summary via _write_location_outputs().
+        # would leak into this run's summary via _write_location_outputs(), and
+        # stale liveness stats would leak the *previous* run's validation block
+        # into an empty run's summary when the runner object is reused.
         self._context.output_stats.clear()
+        self._context.liveness_stats.clear()
         self._publish_ok = False
+        self._last_summary_path = None
         self._liveness.reset_proxy_cache()
         logger.info("Pipeline started.")
 
@@ -844,7 +846,13 @@ class PipelineRunner:
         }
 
     def _write_run_summary(self, status: str) -> str | None:
-        """Write machine-readable run metadata for Telegram and debugging."""
+        """Write machine-readable run metadata for Telegram and debugging.
+
+        On success the path is also recorded in ``self._last_summary_path`` so
+        callers can distinguish "this run wrote its summary" from "an older
+        summary file happens to exist on disk".
+        """
+        self._last_summary_path = None
         output_file = self._status_output_file()
         if not output_file:
             logger.warning(
@@ -881,6 +889,7 @@ class PipelineRunner:
         except Exception as exc:
             logger.warning("Could not write run summary %s: %s", output_file, exc)
             return None
+        self._last_summary_path = output_file
         return output_file
 
     # --- stage 5: write ---

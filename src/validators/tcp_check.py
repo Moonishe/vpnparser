@@ -22,9 +22,18 @@ import time
 from typing import Any
 
 from src.parsers.base import Config
-from src.validators.address_guard import filter_public_configs, is_blocked_literal
+from src.validators.address_guard import (
+    filter_public_configs,
+    is_blocked_literal,
+    resolve_pinned_address,
+)
 
 logger = logging.getLogger(__name__)
+
+#: Cap on the total connect attempts one config may cost when the whole proxy
+#: pool is requested (``proxy_attempts_per_config=0``) — otherwise a large pool
+#: keeps one semaphore slot busy for minutes.
+_MAX_ATTEMPTS_PER_CONFIG = 12
 
 
 async def _open_connection_direct(host: str, port: int) -> tuple[Any, Any]:
@@ -72,16 +81,24 @@ async def tcp_check(
         logger.warning("Refusing TCP check of non-public address %s:%s.", host, port)
         return (False, None)
 
+    # Pin the connect target to the address the guard validated: connecting
+    # to the hostname would let the OS resolve it a second time, reopening
+    # the DNS-rebinding window between verdict and socket.
+    pinned = await resolve_pinned_address(host)
+    if pinned is None:
+        logger.warning("Refusing TCP check of unpinnable address %s:%s.", host, port)
+        return (False, None)
+
     start = time.monotonic()
     try:
         if proxy_url:
             reader, writer = await asyncio.wait_for(
-                _open_connection_via_socks(host, port, proxy_url),
+                _open_connection_via_socks(pinned, port, proxy_url),
                 timeout=timeout,
             )
         else:
             reader, writer = await asyncio.wait_for(
-                _open_connection_direct(host, port),
+                _open_connection_direct(pinned, port),
                 timeout=timeout,
             )
     except (TimeoutError, ConnectionRefusedError, socket.gaierror, OSError):
@@ -170,7 +187,8 @@ async def validate_configs_tcp(
                 return
             is_alive = False
             latency_ms: float | None = None
-            for candidate_proxy in _proxies_for(index):
+            candidates = _proxies_for(index)[:_MAX_ATTEMPTS_PER_CONFIG]
+            for candidate_proxy in candidates:
                 is_alive, latency_ms = await tcp_check(
                     cfg.address,
                     cfg.port,

@@ -1393,6 +1393,89 @@ class TestFetchUrlList:
         assert result.ok is False
         assert "missing url" in result.error
 
+    def test_duplicate_filenames_are_disambiguated(self, tmp_path, monkeypatch) -> None:
+        """Two URLs sharing one basename (or a source-wide filename) survive."""
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+
+        async def fake_direct(url, **kw):
+            if str(url).endswith("index.txt"):
+                return "\n".join(
+                    [
+                        "https://a.example.com/f.txt",
+                        "https://b.example.com/f.txt",
+                        "https://c.example.com/f.txt",
+                    ]
+                )
+            return f"content of {url}"
+
+        monkeypatch.setattr(sm, "_fetch_direct_url", fake_direct)
+
+        result = asyncio.run(
+            sm._fetch_url_list(
+                {
+                    "name": "dup",
+                    "url": "https://example.com/index.txt",
+                    "filename": "same.txt",
+                    "max_files": 3,
+                    "max_concurrent_urls": 2,
+                },
+                "dup",
+                DEFAULT_LIST_TYPE,
+                None,
+            )
+        )
+        assert result.ok is True
+        names = [name for name, _content in result.files]
+        assert len(names) == len(set(names)) == 3
+        assert names[0] == "same.txt"
+        assert names[1] == "same_1.txt"
+        assert names[2] == "same_2.txt"
+
+    def test_redirect_without_location_is_not_success(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A 3xx without Location must fail the hop, not yield an empty body."""
+        import httpx as httpx_mod
+
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+
+        class _FakeResp:
+            status_code = 302
+            headers: dict[str, str] = {}
+
+            def raise_for_status(self) -> None:
+                return None  # 3xx is a no-op, like real httpx
+
+        class _FakeStreamCtx:
+            async def __aenter__(self) -> _FakeResp:
+                return _FakeResp()
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+        class _FakePinned:
+            connect_urls = ("https://r.example/file.txt",)
+            host_header = "r.example"
+            extensions: dict[str, str] = {}
+
+        async def fake_pin(url):
+            return _FakePinned()
+
+        def fake_stream(*args, **kwargs):
+            return _FakeStreamCtx()
+
+        monkeypatch.setattr(SourceManager, "_pin_public_target", staticmethod(fake_pin))
+        monkeypatch.setattr(httpx_mod.AsyncClient, "stream", fake_stream)
+
+        with pytest.raises(ValueError, match="without a Location header"):
+            asyncio.run(sm._fetch_direct_url("https://r.example/file.txt", attempts=1))
+
     def test_empty_index(self, tmp_path, monkeypatch) -> None:
         sm = SourceManager(
             sources_file=str(tmp_path / "missing.json"),

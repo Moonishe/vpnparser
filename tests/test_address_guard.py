@@ -600,3 +600,50 @@ async def test_expired_verdict_is_resolved_again(monkeypatch) -> None:
     await filter_public_configs([_cfg("good.example")], stage="tls")
 
     assert lookups == ["good.example", "good.example"]
+
+
+@pytest.mark.asyncio
+async def test_classify_host_empty_answers_is_blocked(monkeypatch) -> None:
+    """A resolver that answered but filtered out every sockaddr is blocked."""
+
+    async def empty_answers(host: str, timeout: float = 5.0) -> list[str]:
+        return []
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", empty_answers)
+    assert await address_guard.classify_host("weird.example") == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_resolve_pinned_address_returns_public_literal(monkeypatch) -> None:
+    """Pinning returns one of the public answers of the same resolution."""
+
+    async def answers(host: str, timeout: float = 5.0) -> list[str]:
+        return ["10.0.0.1", "93.184.216.34"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", answers)
+    assert await address_guard.resolve_pinned_address("example.com") == (
+        "93.184.216.34"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_pinned_address_fails_closed(monkeypatch) -> None:
+    async def only_private(host: str, timeout: float = 5.0) -> list[str]:
+        return ["10.0.0.5"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", only_private)
+    assert await address_guard.resolve_pinned_address("evil.example") is None
+
+    async def no_answers(host: str, timeout: float = 5.0) -> list[str]:
+        return []
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", no_answers)
+    assert await address_guard.resolve_pinned_address("dead.example") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_pinned_address_passes_public_literal_through() -> None:
+    assert await address_guard.resolve_pinned_address("93.184.216.34") == (
+        "93.184.216.34"
+    )
+    assert await address_guard.resolve_pinned_address("192.168.1.1") is None

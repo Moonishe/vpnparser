@@ -228,14 +228,25 @@ def _stream_settings(cfg: Config) -> dict[str, Any] | None:
 
 
 def _proxy_outbound(proxy_url: str) -> dict[str, Any] | None:
-    parsed = urlparse(proxy_url)
+    try:
+        parsed = urlparse(proxy_url)
+        # Reading .port validates it and raises ValueError on garbage like
+        # "socks5://h:notaport" — one bad operator URL must not crash the
+        # probe phase for every config.
+        port = int(
+            parsed.port
+            or (1080 if parsed.scheme.lower() in {"socks", "socks5"} else 8080)
+        )
+    except ValueError:
+        logger.warning("Skipping invalid proxy url (bad port): %r", proxy_url)
+        return None
     scheme = parsed.scheme.lower()
     if scheme not in {"socks", "socks5", "http"} or not parsed.hostname:
         return None
 
     server: dict[str, Any] = {
         "address": parsed.hostname,
-        "port": int(parsed.port or (1080 if scheme in {"socks", "socks5"} else 8080)),
+        "port": port,
     }
     if parsed.username or parsed.password:
         server["users"] = [

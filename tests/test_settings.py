@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from src.scheduler.settings import Settings, load_settings
+import pytest
+
+from src.scheduler.settings import (
+    Settings,
+    SettingsParseError,
+    load_settings,
+    load_settings_strict,
+)
 
 # ---------------------------------------------------------------------------
 # load_settings
@@ -195,3 +202,39 @@ def test_settings_as_list_non_list():
     assert Settings.as_list(42) == []
     assert Settings.as_list(None) == []
     assert Settings.as_list({"a": 1}) == []
+
+
+def test_load_settings_strict_missing_file(tmp_path):
+    """A missing file raises FileNotFoundError on the strict path."""
+    with pytest.raises(FileNotFoundError):
+        load_settings_strict(str(tmp_path / "nope.yaml"))
+
+
+def test_load_settings_strict_broken_yaml(tmp_path):
+    """Existing but unparseable YAML raises instead of falling back to {}."""
+    broken = tmp_path / "settings.yaml"
+    broken.write_text("validator: [unclosed", encoding="utf-8")
+    with pytest.raises(SettingsParseError, match="failed to parse"):
+        load_settings_strict(str(broken))
+
+
+def test_load_settings_strict_non_mapping_root(tmp_path):
+    """A YAML list root is refused: defaults would disable all validation."""
+    root_list = tmp_path / "settings.yaml"
+    root_list.write_text("- just\n- a\n- list\n", encoding="utf-8")
+    with pytest.raises(SettingsParseError, match="non-empty mapping"):
+        load_settings_strict(str(root_list))
+
+
+def test_load_settings_strict_empty_mapping(tmp_path):
+    empty = tmp_path / "settings.yaml"
+    empty.write_text("", encoding="utf-8")
+    with pytest.raises(SettingsParseError, match="non-empty mapping"):
+        load_settings_strict(empty)
+
+
+def test_load_settings_strict_valid_file(tmp_path):
+    ok = tmp_path / "settings.yaml"
+    ok.write_text("validator:\n  tcp_enabled: true\n", encoding="utf-8")
+    data = load_settings_strict(str(ok))
+    assert data == {"validator": {"tcp_enabled": True}}

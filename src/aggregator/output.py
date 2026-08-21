@@ -10,12 +10,15 @@ from __future__ import annotations
 import base64
 import contextlib
 import json
+import logging
 import os
 import tempfile
 
 from src.parsers.base import Config
 from src.repo_info import github_repo_slug
 from src.utils.paths import resolve_safe_output_path
+
+logger = logging.getLogger(__name__)
 
 # Watermark config — shown first in Happ as a "title" entry.
 # Uses a dummy vmess link with the configured GitHub repo name as remark.
@@ -54,6 +57,25 @@ def _watermark_link() -> str:
     ).decode("utf-8")
 
 
+def _safe_raw_link(raw_link: str) -> str | None:
+    """Return *raw_link* only when it is a single clean line.
+
+    ``raw_link`` is rebuilt from untrusted source content (remarks, query
+    parameters). A link carrying ``\\n``/``\\r`` or other control characters
+    would inject arbitrary lines into the published subscription file, so it
+    is dropped with a warning instead.
+    """
+    if not raw_link:
+        return None
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in raw_link):
+        logger.warning(
+            "Dropped raw_link containing control characters (length %d).",
+            len(raw_link),
+        )
+        return None
+    return raw_link
+
+
 def generate_plain(configs: list[Config]) -> str:
     """Generate plain text subscription (one link per line).
 
@@ -63,7 +85,10 @@ def generate_plain(configs: list[Config]) -> str:
     raw_link. Returns just the watermark for empty input.
     """
     links = [_watermark_link()]
-    links.extend(config.raw_link for config in configs if config.raw_link)
+    for config in configs:
+        safe = _safe_raw_link(config.raw_link)
+        if safe:
+            links.append(safe)
     return "\n".join(links)
 
 

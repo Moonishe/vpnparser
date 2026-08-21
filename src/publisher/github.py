@@ -341,7 +341,31 @@ class GitHubPublisher:
             return False
 
         if response.status_code == 422:
-            # Often: branch does not exist, or sha mismatch already handled.
+            # Create-vs-create race: our GET saw no file (or a stale SHA) but
+            # a parallel run created/updated it before our PUT — GitHub
+            # answers 422 ("sha wasn't supplied" / invalid sha). Mirror the
+            # 409 path: re-fetch the current SHA and retry once. This also
+            # recovers the 409-on-GET case where the file actually exists.
+            try:
+                fresh_sha = await self._get_file_sha(path)
+            except Exception:
+                logger.exception("Failed to GET %s for SHA after 422", path)
+                fresh_sha = None
+            if fresh_sha:
+                body["sha"] = fresh_sha
+                try:
+                    response = await client.put(url, json=body)
+                except httpx.RequestError:
+                    logger.exception("Network error on 422 retry publishing %s", path)
+                    return False
+                if response.status_code in (200, 201):
+                    logger.info(
+                        "Successfully updated %s in %s/%s (after 422 race).",
+                        path,
+                        self.owner,
+                        self.repo,
+                    )
+                    return True
             try:
                 detail = response.json()
             except Exception:

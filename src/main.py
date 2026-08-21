@@ -174,18 +174,27 @@ def _status_summary_file(runner: Any) -> str:
     returns ``None``). Substituting the literal default path here made the
     notifier read whatever ``output/run-summary.json`` was left on disk — the
     counts and the ``status`` field of a *previous* run — and report it as the
-    result of this one.
+    result of this one. The same trap exists when the file *is* configured but
+    writing it failed, so the runner records the path it actually wrote in
+    ``_last_summary_path`` and that is the only value trusted here.
 
     Args:
         runner: The :class:`~src.scheduler.runner.PipelineRunner` that ran.
 
     Returns:
-        The configured path, or ``""`` when no summary was written.
+        The path written by *this* run, or ``""`` when no summary was written.
     """
+    written = getattr(runner, "_last_summary_path", None)
+    if written:
+        return str(written)
+    # Fall back to the configured path only for runners predating
+    # _last_summary_path (debug tooling), never for a fresh PipelineRunner.
     settings = getattr(runner, "settings", None)
     publisher = settings.get("publisher") if isinstance(settings, dict) else None
     raw = publisher.get("status_output_file") if isinstance(publisher, dict) else None
-    return str(raw) if raw else ""
+    if raw and not hasattr(runner, "_last_summary_path"):
+        return str(raw)
+    return ""
 
 
 def _notify(

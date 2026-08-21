@@ -457,7 +457,8 @@ def test_is_xray_supported_false() -> None:
 def test_find_xray_explicit(monkeypatch) -> None:
     monkeypatch.setattr(Path, "exists", lambda self: True)
     r = find_xray_executable(explicit_path="/usr/local/bin/xray")
-    assert r is not None and "xray" in r
+    # The explicit path must be returned verbatim, not any substring match.
+    assert r == "/usr/local/bin/xray"
 
 
 def test_find_xray_from_env(monkeypatch) -> None:

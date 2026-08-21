@@ -382,7 +382,11 @@ class GitHubClient:
             # eternal "no tree" state for the rest of the run.
             self._tree_cache.pop(key, None)
             return None
-        prefix = str(path).strip("/")
+        # Normalize the prefix the same way URL building does: a raw path in
+        # Windows style ("dir\sub") would never match any tree path, and the
+        # empty result used to REPLACE a correct (possibly truncated) Contents
+        # listing instead of complementing it.
+        prefix = str(_clean_repo_path(path)).strip("/")
         results: list[dict[str, object]] = []
         for entry in tree:
             if not isinstance(entry, dict):

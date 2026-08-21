@@ -373,6 +373,63 @@ def test_vmess_parse_exception_returns_none() -> None:
     assert VmessParser().parse(None) is None
 
 
+def test_uuid_regex_rejects_trailing_newline() -> None:
+    """``\\Z`` anchoring: a credential with a trailing \\n is not a valid UUID.
+
+    ``$`` matched before a final newline, so ``is_garbage_config`` accepted
+    ``"uuid\\n"`` (e.g. from ``json.loads`` of a vmess "id" field).
+    """
+    from src.parsers.base import is_garbage_config
+
+    cfg = Config(
+        protocol="vless",
+        address="a.com",
+        port=443,
+        uuid_or_password=_GOOD_UUID + "\n",
+    )
+    assert is_garbage_config(cfg) is True
+    clean_cfg = Config(
+        protocol="vless",
+        address="a.com",
+        port=443,
+        uuid_or_password=_GOOD_UUID,
+    )
+    assert is_garbage_config(clean_cfg) is False
+
+
+def test_vmess_tls_field_case_insensitive() -> None:
+    """Panels emit "TLS"/"true"/"1" — all must enable TLS security."""
+    for tls_value in ("TLS", "True", "true", "1"):
+        payload = json.dumps(
+            {"add": "a.com", "port": 443, "id": _GOOD_UUID, "tls": tls_value},
+        )
+        encoded = base64.b64encode(payload.encode()).decode()
+        cfg = VmessParser().parse(f"vmess://{encoded}")
+        assert cfg is not None and cfg.security == "tls", tls_value
+    payload = json.dumps({"add": "a.com", "port": 443, "id": _GOOD_UUID})
+    encoded = base64.b64encode(payload.encode()).decode()
+    cfg = VmessParser().parse(f"vmess://{encoded}")
+    assert cfg is not None and cfg.security == "none"
+
+
+def test_parse_qs_single_keeps_plus_literal() -> None:
+    """``+`` in a query value stays literal (base64 pbk corruption guard)."""
+    from src.parsers.base import parse_qs_single
+
+    parsed = parse_qs_single("pbk=Ym9i+abc/def&sni=a.com")
+    assert parsed["pbk"] == "Ym9i+abc/def"
+    assert parsed["sni"] == "a.com"
+
+
+def test_split_host_port_rejects_unicode_and_underscore_ports() -> None:
+    """int() would accept unicode digits / underscores; a port may not."""
+    from src.parsers.base import split_host_port
+
+    assert split_host_port("a.com:٤٤٣") is None
+    assert split_host_port("a.com:4_43") is None
+    assert split_host_port("a.com:443") == ("a.com", 443)
+
+
 # ========================================================================
 # Subscription parser edge cases
 # ========================================================================

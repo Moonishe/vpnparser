@@ -317,3 +317,25 @@ def test_merge_and_filter_per_country_with_mixed_countries() -> None:
     ]
     result = merge_and_filter(configs, max_total=50, max_per_country=2)
     assert len(result) == 4  # 2 DE + 2 US
+
+
+# ---------------------------------------------------------------------------
+# NaN latency
+# ---------------------------------------------------------------------------
+
+
+def test_deduplicate_nan_latency_treated_as_worst() -> None:
+    """A NaN latency never wins dedup against a real one."""
+    nan_first = make_config(address="x.com", uuid="a", latency_ms=float("nan"))
+    real = make_config(address="x.com", uuid="b", latency_ms=10.0)
+    result = deduplicate([nan_first, real])
+    assert len(result) == 1
+    assert result[0].latency_ms == 10.0
+
+
+def test_sort_configs_nan_goes_last() -> None:
+    fast = make_config(latency_ms=5.0)
+    nan = make_config(address="n.com", latency_ms=float("nan"))
+    result = sort_configs([nan, fast])
+    assert result[0] is fast
+    assert result[-1] is nan

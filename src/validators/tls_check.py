@@ -20,7 +20,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.parsers.base import Config
-from src.validators.address_guard import filter_public_configs, is_blocked_literal
+from src.validators.address_guard import (
+    filter_public_configs,
+    is_blocked_literal,
+    resolve_pinned_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,11 @@ _EMPTY_SERVER_NAMES = {"", "none", "null", "false", "0", "-"}
 #: TLS timeout, all inside one slot of the stage semaphore. Real links carry a
 #: handful of names; the rest is either a typo or a deliberate stall.
 _MAX_SERVER_NAME_CANDIDATES = 4
+#: Cap on the TOTAL handshakes one config may cost (proxies x SNI names).
+#: Without it, ``proxy_attempts_per_config=0`` ("whole pool") times four SNI
+#: candidates could keep one semaphore slot busy for minutes — the same stall
+#: the per-name cap above already prevents for a single dimension.
+_MAX_ATTEMPTS_PER_CONFIG = 12
 
 
 async def _open_connection_direct(
@@ -181,6 +190,13 @@ async def tls_check(
         logger.warning("Refusing TLS check of non-public address %s:%s.", host, port)
         return False
 
+    # Pin the connect target to the address the guard validated (DNS
+    # rebinding); SNI/certificate identity still comes from server_hostname.
+    pinned = await resolve_pinned_address(host)
+    if pinned is None:
+        logger.warning("Refusing TLS check of unpinnable address %s:%s.", host, port)
+        return False
+
     server_hostname = sni or host
     try:
         ssl_context = ssl.create_default_context()
@@ -198,7 +214,7 @@ async def tls_check(
         if proxy_url:
             reader, writer = await asyncio.wait_for(
                 _open_connection_via_socks(
-                    host,
+                    pinned,
                     port,
                     ssl_context,
                     server_hostname,
@@ -208,7 +224,7 @@ async def tls_check(
             )
         else:
             reader, writer = await asyncio.wait_for(
-                _open_connection_direct(host, port, ssl_context, server_hostname),
+                _open_connection_direct(pinned, port, ssl_context, server_hostname),
                 timeout=timeout,
             )
     except (TimeoutError, ssl.SSLError, ConnectionRefusedError, OSError):
@@ -290,19 +306,23 @@ async def validate_configs_tls(
         async with semaphore:
             try:
                 ok = False
-                for candidate_proxy in _proxies_for(index):
-                    for server_name in _tls_server_names(cfg):
-                        ok = await tls_check(
-                            cfg.address,
-                            cfg.port,
-                            sni=server_name,
-                            alpn=cfg.alpn,
-                            timeout=timeout,
-                            proxy_url=candidate_proxy,
-                            verify_tls=verify_tls,
-                        )
-                        if ok:
-                            break
+                # Flatten proxies x SNI names and cap the total: the product
+                # used to be unbounded when the whole pool was requested.
+                combos = [
+                    (candidate_proxy, server_name)
+                    for candidate_proxy in _proxies_for(index)
+                    for server_name in _tls_server_names(cfg)
+                ][:_MAX_ATTEMPTS_PER_CONFIG]
+                for candidate_proxy, server_name in combos:
+                    ok = await tls_check(
+                        cfg.address,
+                        cfg.port,
+                        sni=server_name,
+                        alpn=cfg.alpn,
+                        timeout=timeout,
+                        proxy_url=candidate_proxy,
+                        verify_tls=verify_tls,
+                    )
                     if ok:
                         break
                 cfg.is_alive = ok

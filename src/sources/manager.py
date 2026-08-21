@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
+from urllib.parse import quote, urljoin, urlparse, urlsplit, urlunsplit
 from weakref import WeakKeyDictionary
 
 import httpx
@@ -89,10 +89,9 @@ def _host_literal(host: str) -> str:
     return f"[{host}]" if ":" in host else host
 
 
-#: ``scheme://user:pass@host`` — the shortest safe match for credentials in a
-#: URL string. URLs from untrusted indexes may carry any amount of userinfo,
-#: and error strings end up in ``run-summary.json`` published to the repo.
-_URL_USERINFO_RE = re.compile(r"//[^/@\s]+@")
+#: ``scheme://user:pass@host`` — greedy across slashes so the *full* userinfo is
+#: masked even when a credential itself contains a ``/`` (``u:pa/ss@host``).
+_URL_USERINFO_RE = re.compile(r"//[^\s]*@")
 
 
 def _redact_url(url: str) -> str:
@@ -505,7 +504,7 @@ class SourceManager:
                     _redact_url(url),
                     attempt,
                     max_attempts,
-                    last_error,
+                    _safe_error_message(last_error),
                 )
                 await asyncio.sleep(max(0.0, retry_delay))
         if last_error is not None:
@@ -550,10 +549,12 @@ class SourceManager:
 
         userinfo = ""
         if parts.username or parts.password:
-            userinfo = parts.username or ""
-            if parts.password:
-                userinfo = f"{userinfo}:{parts.password}"
-            userinfo += "@"
+            # urlsplit() returns percent-DECODED credentials; re-quoting them
+            # keeps a password like "p%40ss" from breaking out of the userinfo
+            # field when the authority is rebuilt around the pinned address.
+            username = quote(parts.username or "", safe="")
+            password = quote(parts.password, safe="") if parts.password else ""
+            userinfo = f"{username}:{password}@" if password else f"{username}@"
         connect_urls = tuple(
             urlunsplit(
                 (
@@ -611,6 +612,14 @@ class SourceManager:
                         location = response.headers.get("location")
                         if location:
                             return location.strip(), ""
+                        # A 3xx without Location used to fall through to
+                        # raise_for_status() (a no-op for 3xx), read an empty
+                        # body and surface as a "successful" empty fetch.
+                        msg = (
+                            f"redirect {response.status_code} without a "
+                            f"Location header — refusing to treat it as success"
+                        )
+                        raise ValueError(msg)
                     response.raise_for_status()
                     body = await read_limited_text(
                         response,
@@ -699,9 +708,11 @@ class SourceManager:
                 default_country=default_country,
             )
 
-        from datetime import datetime
+        from datetime import UTC, datetime
 
-        now = datetime.now()
+        # Date tokens in listed URLs must be stable regardless of the runner's
+        # local timezone — a local-time boundary produced yesterday's date.
+        now = datetime.now(UTC)
         date_tokens = {
             "{YYYY}": now.strftime("%Y"),
             "{MM}": now.strftime("%m"),
@@ -763,7 +774,7 @@ class SourceManager:
                     logger.warning(
                         "url-list fetch failed for %s: %s",
                         _redact_url(target),
-                        exc,
+                        _safe_error_message(exc),
                     )
                     return None
                 if not content:
@@ -778,6 +789,24 @@ class SourceManager:
         tasks = [fetch_one(target) for target in urls]
         fetched = await asyncio.gather(*tasks)
         files = [item for item in fetched if item is not None]
+
+        # Disambiguate duplicate filenames: a source-wide ``filename`` (or
+        # index URLs sharing one basename) used to collapse every download to
+        # the same entry, losing all but one file downstream.
+        used_names: set[str] = set()
+        deduped_files: list[tuple[str, str]] = []
+        for filename, content in files:
+            final = filename
+            n = 1
+            while final in used_names:
+                stem_path = PurePosixPath(filename)
+                suffix = stem_path.suffix or ".txt"
+                stem = filename[: len(filename) - len(suffix)]
+                final = f"{stem}_{n}{suffix}"
+                n += 1
+            used_names.add(final)
+            deduped_files.append((final, content))
+        files = deduped_files
 
         if not files:
             return SourceResult(

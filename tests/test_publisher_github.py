@@ -531,6 +531,78 @@ async def test_publish_file_unprocessable_422(monkeypatch) -> None:
     assert result is False
 
 
+async def test_publish_file_422_create_race_recovers(monkeypatch) -> None:
+    """A 422 after a create (GET 404) is retried with the fresh SHA."""
+    put_count = 0
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.get_count = 0
+            self.put_shas: list[object] = []
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            self.get_count += 1
+            # First GET (before PUT): file absent. Re-GET after the 422 sees
+            # the file the parallel run created.
+            return (
+                _FakeResp(404)
+                if self.get_count == 1
+                else _FakeResp(200, json_data={"sha": "parallel-sha"})
+            )
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            nonlocal put_count
+            put_count += 1
+            body = kw.get("json")
+            self.put_shas.append(body.get("sha") if isinstance(body, dict) else None)
+            if put_count == 1:
+                return _FakeResp(422, json_data={"message": "sha wasn't supplied"})
+            return _FakeResp(201, json_data={"content": {"sha": "x"}})
+
+        async def aclose(self) -> None:
+            return None
+
+    fake = _FakeClient()
+    pub = _make_publisher(monkeypatch, fake)
+    result = await pub.publish_file("f.txt", "data", "msg")
+
+    assert result is True
+    assert put_count == 2
+    assert fake.put_shas[0] is None  # initial create had no sha
+    assert fake.put_shas[1] == "parallel-sha"  # retry used the re-fetched sha
+
+
+async def test_publish_file_422_without_recoverable_sha_fails(monkeypatch) -> None:
+    """A 422 that stays unexplained (no sha on re-fetch) returns False."""
+
+    class _FakeClient2:
+        async def __aenter__(self) -> _FakeClient2:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(404)
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(422, json_data={"message": "invalid"})
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient2())
+    result = await pub.publish_file("f.txt", "data", "msg")
+
+    assert result is False
+
+
 # ---------------------------------------------------------------------------
 # publish_file: network error on PUT
 # ---------------------------------------------------------------------------

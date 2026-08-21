@@ -193,6 +193,12 @@ def write_text_atomic(
     try:
         with os.fdopen(fd, "w", encoding=encoding, newline="") as fh:
             fh.write(content)
+            # os.replace only orders the rename against other processes; on a
+            # power loss / kill -9 the file data may not have hit the disk
+            # yet, leaving an empty or truncated target behind (this is how
+            # accumulated health-history bans would be silently lost).
+            fh.flush()
+            os.fsync(fh.fileno())
         os.replace(tmp, str(target))
     except Exception:
         with contextlib.suppress(Exception):

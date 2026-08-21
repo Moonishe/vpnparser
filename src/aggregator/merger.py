@@ -17,9 +17,11 @@ def _latency_sort_key(config: Config) -> tuple[int, float]:
 
     None latency sorts last (is_none=1); real latency sorts first (is_none=0)
     in ascending order. math.inf guarantees None stays last even when all
-    real latencies are large.
+    real latencies are large. NaN is treated like None: ``nan < nan`` is
+    False, so a NaN latency would otherwise make dedup comparisons and
+    sorted() order undefined.
     """
-    if config.latency_ms is None:
+    if config.latency_ms is None or math.isnan(config.latency_ms):
         return (1, math.inf)
     return (0, float(config.latency_ms))
 
@@ -54,9 +56,16 @@ def deduplicate(configs: list[Config]) -> list[Config]:
         else:
             existing = seen[key]
             existing_lat = (
-                existing.latency_ms if existing.latency_ms is not None else math.inf
+                existing.latency_ms
+                if existing.latency_ms is not None
+                and not math.isnan(existing.latency_ms)
+                else math.inf
             )
-            new_lat = config.latency_ms if config.latency_ms is not None else math.inf
+            new_lat = (
+                config.latency_ms
+                if config.latency_ms is not None and not math.isnan(config.latency_ms)
+                else math.inf
+            )
             if new_lat < existing_lat:
                 seen[key] = config
 

@@ -166,6 +166,10 @@ class ProxyHealthHistory:
         if not proxy_url:
             return
         key = proxy_url.strip()
+        if not key:
+            # Whitespace-only input would create a "" record that
+            # _sanitize_records drops on the next load — never store it.
+            return
         entry = self.records.setdefault(
             key,
             {
