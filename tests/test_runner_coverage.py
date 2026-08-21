@@ -390,15 +390,13 @@ def test_write_run_summary_write_error(
         tmp_path,
         "publisher:\n  status_output_file: summary.json\n",
     )
-    # Monkeypatch path.write_text to raise
-    original_write_text = Path.write_text
 
-    def bad_write(self, *args: object, **kwargs: object) -> None:
-        if "summary" in str(self):
-            raise OSError("disk full")
-        return original_write_text(self, *args, **kwargs)  # type: ignore[arg-type]
+    def bad_write(_path: object, _content: str) -> None:
+        raise OSError("disk full")
 
-    monkeypatch.setattr(Path, "write_text", bad_write)
+    # The summary is written atomically via write_text_atomic; a failing
+    # writer must surface as a logged warning, never as a crash.
+    monkeypatch.setattr("src.scheduler.runner.write_text_atomic", bad_write)
     result = r._write_run_summary("ok")
     assert result is None
     assert "Could not write run summary" in caplog.text
@@ -1079,6 +1077,41 @@ async def test_finish_empty_run_publishes_emptied_location_files(
     assert any("subscription-DE.txt" in path for path in published)
     assert stale.exists()
     assert stale.read_text(encoding="utf-8") != "stale-live-list"
+
+
+@pytest.mark.asyncio
+async def test_finish_empty_run_keeps_location_stats_in_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty run still reports every emptied location file in run-summary.
+
+    The stats reset used to happen AFTER ``_write_empty_secondary_outputs``
+    recorded the location_* entries, so they vanished from the summary of
+    every empty run while the emptied files were still written and published.
+    """
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n"
+        "  status_output_file: output/status.json\n"
+        "  location_output_dir: output/locations\n"
+        "  location_output_limit: 5\n"
+        "  location_outputs_enabled: true\n",
+    )
+    loc_dir = resolve_safe_output_path("output/locations")
+    loc_dir.mkdir(parents=True)
+    (loc_dir / "subscription-DE.txt").write_text("stale", encoding="utf-8")
+
+    await r._finish_empty_run(
+        "output/combined.txt",
+        status="no_sources",
+        publish=False,
+    )
+    summary = json.loads(
+        resolve_safe_output_path("output/status.json").read_text(encoding="utf-8"),
+    )
+    assert "location_de" in summary["outputs"]
+    assert summary["outputs"]["location_de"]["count"] == 0
 
 
 # ===================================================================

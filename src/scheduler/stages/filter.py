@@ -9,7 +9,11 @@ from src.parsers.base import Config, is_garbage_config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.stages.base import PipelineStage
 from src.sources.list_types import normalize_list_type
-from src.validators.country_filter import detect_country, filter_by_country
+from src.validators.country_filter import (
+    detect_country,
+    filter_by_country,
+    normalize_country_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +107,9 @@ class CountryFilter(PipelineStage):
                 )
             if cfg.country is None:
                 default_country = getattr(cfg, "source_default_country", None)
-                if default_country:
-                    cfg.country = str(default_country).upper()
+                # Normalize again so a hint set directly on a Config (bypassing
+                # the parse stage) cannot stamp a bogus country onto the config.
+                cfg.country = normalize_country_code(default_country)
 
         if not allowed:
             logger.info("No country filter configured — keeping all configs.")

@@ -11,10 +11,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
+from urllib.parse import quote, urljoin, urlparse, urlsplit, urlunsplit
 from weakref import WeakKeyDictionary
 
 import httpx
@@ -25,6 +26,7 @@ from src.sources.github import GitHubClient
 from src.sources.list_types import DEFAULT_LIST_TYPE, infer_source_list_type
 from src.utils.http import read_limited_text
 from src.utils.net import RESOLVER_CONCURRENCY, SAFE_URL_SCHEMES, resolve_global_ips
+from src.validators.country_filter import normalize_country_code
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,33 @@ _download_gates: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]
 def _host_literal(host: str) -> str:
     """Return *host* in URL form, re-bracketing an IPv6 literal."""
     return f"[{host}]" if ":" in host else host
+
+
+#: ``scheme://user:pass@host`` — greedy across slashes so the *full* userinfo is
+#: masked even when a credential itself contains a ``/`` (``u:pa/ss@host``).
+_URL_USERINFO_RE = re.compile(r"//[^\s]*@")
+
+
+def _redact_url(url: str) -> str:
+    """Replace URL userinfo with ``***`` for logs and published errors."""
+    return _URL_USERINFO_RE.sub("//***@", url) if url else url
+
+
+def _safe_error_message(exc: BaseException, *, limit: int = 300) -> str:
+    """Short, bounded, single-line error text for logs and results.
+
+    Full tracebacks and long messages can expose internal paths and stack
+    structure; error strings also land in ``run-summary.json``, which is
+    published to the repository. URL credentials (``user:pass@host``) are
+    masked — httpx error strings embed the full request URL. The traceback
+    itself stays in the debug log.
+    """
+    text = str(exc).strip() or type(exc).__name__
+    first_line = text.splitlines()[0].strip() if text else type(exc).__name__
+    first_line = _redact_url(first_line)
+    if len(first_line) > limit:
+        first_line = f"{first_line[: limit - 1]}…"
+    return first_line
 
 
 def _download_gate() -> asyncio.Semaphore:
@@ -254,10 +283,12 @@ class SourceManager:
                 logger.error(
                     "Unhandled error fetching source '%s': %s",
                     name,
-                    raw,
-                    exc_info=raw,
+                    _safe_error_message(raw),
                 )
-                results.append(SourceResult(source_name=name, error=str(raw)))
+                logger.debug("Fetch of source '%s' raised:", name, exc_info=raw)
+                results.append(
+                    SourceResult(source_name=name, error=_safe_error_message(raw))
+                )
             elif isinstance(raw, BaseException):
                 # Cancellation / system exit — must propagate, not be swallowed.
                 raise raw
@@ -302,9 +333,10 @@ class SourceManager:
                     **self._direct_fetch_overrides(source),
                 )
                 if not content:
+                    redacted_url = _redact_url(str(url))
                     return SourceResult(
                         source_name=name,
-                        error=f"url source '{url}' is empty or not found",
+                        error=f"url source '{redacted_url}' is empty or not found",
                         list_type=list_type,
                         default_country=default_country,
                     )
@@ -397,9 +429,18 @@ class SourceManager:
                 default_country=default_country,
             )
         except Exception as exc:
-            # Isolate failures: log and surface as a structured error.
-            logger.error("Failed to fetch source '%s': %s", name, exc, exc_info=True)
-            return SourceResult(source_name=name, error=str(exc), list_type=list_type)
+            # Isolate failures: surface a concise reason as a structured error.
+            # Full tracebacks stay in the debug log — error strings end up in
+            # run-summary.json, which is published to the repository.
+            logger.error(
+                "Failed to fetch source '%s': %s", name, _safe_error_message(exc)
+            )
+            logger.debug("Fetch of source '%s' raised:", name, exc_info=True)
+            return SourceResult(
+                source_name=name,
+                error=_safe_error_message(exc),
+                list_type=list_type,
+            )
 
     @staticmethod
     async def _fetch_direct_url(
@@ -428,7 +469,7 @@ class SourceManager:
         """
         parsed = urlparse((url or "").strip())
         if parsed.scheme not in SAFE_URL_SCHEMES or not parsed.netloc:
-            msg = f"source url must be absolute HTTP/HTTPS: {url!r}"
+            msg = f"source url must be absolute HTTP/HTTPS: {_redact_url(url)!r}"
             raise ValueError(msg)
 
         max_attempts = max(1, attempts)
@@ -453,16 +494,17 @@ class SourceManager:
                     last_error = exc
                 except TimeoutError:
                     last_error = TimeoutError(
-                        f"fetch of {url!r} exceeded its {budget:.1f}s budget",
+                        f"fetch of {_redact_url(url)!r} "
+                        f"exceeded its {budget:.1f}s budget",
                     )
                 if attempt >= max_attempts:
                     break
                 logger.warning(
                     "Direct source fetch failed for %s (attempt %d/%d): %s",
-                    url,
+                    _redact_url(url),
                     attempt,
                     max_attempts,
-                    last_error,
+                    _safe_error_message(last_error),
                 )
                 await asyncio.sleep(max(0.0, retry_delay))
         if last_error is not None:
@@ -491,25 +533,28 @@ class SourceManager:
             # at "http://host:99999/".
             port = f":{parts.port}" if parts.port is not None else ""
         except ValueError:
+            parts = None
             host = None
             port = ""
-        if not host or parts.scheme.lower() not in SAFE_URL_SCHEMES:
-            logger.warning("Dropped non-public source url: %s", url)
-            msg = f"refusing to fetch non-public url: {url!r}"
+        if parts is None or not host or parts.scheme.lower() not in SAFE_URL_SCHEMES:
+            logger.warning("Dropped non-public source url: %s", _redact_url(url))
+            msg = f"refusing to fetch non-public url: {_redact_url(url)!r}"
             raise ValueError(msg)
 
         addresses = await resolve_global_ips(host)
         if not addresses:
-            logger.warning("Dropped non-public source url: %s", url)
-            msg = f"refusing to fetch non-public url: {url!r}"
+            logger.warning("Dropped non-public source url: %s", _redact_url(url))
+            msg = f"refusing to fetch non-public url: {_redact_url(url)!r}"
             raise ValueError(msg)
 
         userinfo = ""
         if parts.username or parts.password:
-            userinfo = parts.username or ""
-            if parts.password:
-                userinfo = f"{userinfo}:{parts.password}"
-            userinfo += "@"
+            # urlsplit() returns percent-DECODED credentials; re-quoting them
+            # keeps a password like "p%40ss" from breaking out of the userinfo
+            # field when the authority is rebuilt around the pinned address.
+            username = quote(parts.username or "", safe="")
+            password = quote(parts.password, safe="") if parts.password else ""
+            userinfo = f"{username}:{password}@" if password else f"{username}@"
         connect_urls = tuple(
             urlunsplit(
                 (
@@ -567,6 +612,14 @@ class SourceManager:
                         location = response.headers.get("location")
                         if location:
                             return location.strip(), ""
+                        # A 3xx without Location used to fall through to
+                        # raise_for_status() (a no-op for 3xx), read an empty
+                        # body and surface as a "successful" empty fetch.
+                        msg = (
+                            f"redirect {response.status_code} without a "
+                            f"Location header — refusing to treat it as success"
+                        )
+                        raise ValueError(msg)
                     response.raise_for_status()
                     body = await read_limited_text(
                         response,
@@ -578,7 +631,7 @@ class SourceManager:
             if body is None:
                 logger.warning(
                     "Discarded oversized response from %s (limit %d bytes).",
-                    connect_url,
+                    _redact_url(connect_url),
                     MAX_DOWNLOAD_BYTES,
                 )
                 return None, ""
@@ -650,14 +703,16 @@ class SourceManager:
         if not index_content:
             return SourceResult(
                 source_name=name,
-                error=f"url-list index '{url}' is empty or not found",
+                error=f"url-list index '{_redact_url(str(url))}' is empty or not found",
                 list_type=list_type,
                 default_country=default_country,
             )
 
-        from datetime import datetime
+        from datetime import UTC, datetime
 
-        now = datetime.now()
+        # Date tokens in listed URLs must be stable regardless of the runner's
+        # local timezone — a local-time boundary produced yesterday's date.
+        now = datetime.now(UTC)
         date_tokens = {
             "{YYYY}": now.strftime("%Y"),
             "{MM}": now.strftime("%m"),
@@ -686,9 +741,10 @@ class SourceManager:
                     break
 
         if not urls:
+            redacted_url = _redact_url(str(url))
             return SourceResult(
                 source_name=name,
-                error=f"url-list index '{url}' contains no valid URLs",
+                error=f"url-list index '{redacted_url}' contains no valid URLs",
                 list_type=list_type,
                 default_country=default_country,
             )
@@ -715,7 +771,11 @@ class SourceManager:
                         attempts=attempts,
                     )
                 except Exception as exc:
-                    logger.warning("url-list fetch failed for %s: %s", target, exc)
+                    logger.warning(
+                        "url-list fetch failed for %s: %s",
+                        _redact_url(target),
+                        _safe_error_message(exc),
+                    )
                     return None
                 if not content:
                     return None
@@ -729,6 +789,27 @@ class SourceManager:
         tasks = [fetch_one(target) for target in urls]
         fetched = await asyncio.gather(*tasks)
         files = [item for item in fetched if item is not None]
+
+        # Disambiguate duplicate filenames: a source-wide ``filename`` (or
+        # index URLs sharing one basename) used to collapse every download to
+        # the same entry, losing all but one file downstream.
+        used_names: set[str] = set()
+        deduped_files: list[tuple[str, str]] = []
+        for filename, content in files:
+            final = filename
+            n = 1
+            while final in used_names:
+                suffix = PurePosixPath(filename).suffix
+                if suffix:
+                    stem = filename[: len(filename) - len(suffix)]
+                    final = f"{stem}_{n}{suffix}"
+                else:
+                    # No extension: never invent one ("data" → "data_1").
+                    final = f"{filename}_{n}"
+                n += 1
+            used_names.add(final)
+            deduped_files.append((final, content))
+        files = deduped_files
 
         if not files:
             return SourceResult(
@@ -748,10 +829,10 @@ class SourceManager:
     @staticmethod
     def _source_default_country(source: dict[str, Any]) -> str | None:
         raw = source.get("default_country")
-        if raw is None:
-            return None
-        text = str(raw).strip().upper()
-        return text if len(text) == 2 and text.isalpha() else None
+        # Only a supported 2-letter ISO code counts: anything else would be
+        # stamped onto Config.country and leak into location files and filter
+        # verdicts (see src.validators.country_filter.normalize_country_code).
+        return normalize_country_code(raw)
 
     @staticmethod
     def _int_source_value(

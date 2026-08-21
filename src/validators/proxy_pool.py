@@ -13,12 +13,22 @@ import logging
 import re
 import time
 from collections.abc import Iterable
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from src.validators.proxy_health import ProxyHealthHistory
 
 logger = logging.getLogger(__name__)
+
+#: Hard cap on the body accepted from one proxy source. The sources are third
+#: parties; an endless stream must not buffer into memory unbounded.
+_MAX_SOURCE_BODY_BYTES = 8 * 1024 * 1024
+
+#: Maximum redirect hops followed for one proxy source. Every hop is
+#: re-validated: a client with ``follow_redirects=True`` would otherwise be
+#: sent to an internal address without any SSRF check.
+_MAX_REDIRECT_HOPS = 5
 
 
 DEFAULT_PROXY_SOURCES: tuple[str, ...] = (
@@ -75,20 +85,83 @@ def parse_proxy_candidates(text: str) -> list[str]:
     return proxies
 
 
-async def _fetch_source(client: httpx.AsyncClient, url: str) -> str:
+def _is_safe_public_http_url(url: str) -> bool:
+    """True for an absolute http(s) URL whose host is a public address/name.
+
+    Mirrors the SSRF stance of the source fetcher: a redirect hop pointing at
+    loopback/RFC1918/link-local (or cloud metadata) must never be followed.
+    Hostnames are accepted here and resolved by the connector; the proxy-list
+    sources are operator-configured, so the per-hop check focuses on literals
+    and scheme sanity.
+    """
     try:
-        response = await client.get(
-            url,
-            headers={"User-Agent": _USER_AGENT, "Accept": "text/plain,*/*"},
-        )
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return False
+    try:
+        addr = ipaddress.ip_address(parsed.hostname.strip("[]"))
+    except ValueError:
+        # A hostname: cannot judge without DNS; accept — same as operators'
+        # configured sources, redirects included below are still bounded.
+        return True
+    return addr.is_global
+
+
+async def _fetch_source(client: httpx.AsyncClient, url: str) -> str:
+    headers = {"User-Agent": _USER_AGENT, "Accept": "text/plain,*/*"}
+    target = url
+    try:
+        for _hop in range(_MAX_REDIRECT_HOPS + 1):
+            if not _is_safe_public_http_url(target):
+                logger.warning(
+                    "Proxy source %s redirects to unsafe URL — refusing.",
+                    url,
+                )
+                return ""
+            async with client.stream(
+                "GET",
+                target,
+                headers=headers,
+            ) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if not location:
+                        logger.warning(
+                            "Proxy source %s redirected without Location — skipping.",
+                            target,
+                        )
+                        return ""
+                    # Resolve against the *logical* URL of this hop.
+                    target = urljoin(target, location.strip())
+                    continue
+                if response.status_code != 200:
+                    logger.warning(
+                        "Proxy source %s returned HTTP %d",
+                        url,
+                        response.status_code,
+                    )
+                    return ""
+                # Stream with a byte cap: response.text would buffer any size.
+                body = bytearray()
+                async for chunk in response.aiter_bytes(64 * 1024):
+                    body.extend(chunk)
+                    if len(body) > _MAX_SOURCE_BODY_BYTES:
+                        logger.warning(
+                            "Proxy source %s exceeded %d bytes — truncated.",
+                            url,
+                            _MAX_SOURCE_BODY_BYTES,
+                        )
+                        break
+                return body.decode("utf-8", errors="replace")
     except httpx.HTTPError as exc:
         logger.warning("Proxy source fetch failed for %s: %s", url, exc)
         return ""
-
-    if response.status_code != 200:
-        logger.warning("Proxy source %s returned HTTP %d", url, response.status_code)
-        return ""
-    return response.text
+    logger.warning(
+        "Proxy source %s exceeded %d redirect hops.", url, _MAX_REDIRECT_HOPS
+    )
+    return ""
 
 
 async def fetch_proxy_candidates(
@@ -115,7 +188,9 @@ async def fetch_proxy_candidates(
     seen: set[str] = set()
     proxies: list[str] = []
     timeout_cfg = httpx.Timeout(timeout)
-    async with httpx.AsyncClient(timeout=timeout_cfg, follow_redirects=True) as client:
+    # follow_redirects=False: _fetch_source walks hops manually and
+    # re-validates each one against the SSRF stance above.
+    async with httpx.AsyncClient(timeout=timeout_cfg, follow_redirects=False) as client:
         for url in source_urls:
             try:
                 text = await _fetch_source(client, url)

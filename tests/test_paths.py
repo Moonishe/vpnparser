@@ -12,6 +12,7 @@ from src.utils.paths import (
     resolve_safe_output_path,
     safe_open,
     validate_safe_output_path,
+    write_text_atomic,
 )
 
 # ---------------------------------------------------------------------------
@@ -262,3 +263,38 @@ def test_safe_open_strict_passes_kwargs_through(tmp_path):
     fh.write("привет")
     fh.close()
     assert target.read_text(encoding="utf-8") == "привет"
+
+
+# ---------------------------------------------------------------------------
+# write_text_atomic
+# ---------------------------------------------------------------------------
+
+
+def test_write_text_atomic_writes_and_replaces(tmp_path):
+    """The target gets the content; a previous version is replaced."""
+    target = tmp_path / "state.json"
+    target.write_text("old", encoding="utf-8")
+    write_text_atomic(target, '{"new": 1}')
+    assert target.read_text(encoding="utf-8") == '{"new": 1}'
+    # No temp files are left behind next to the target.
+    assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
+
+
+def test_write_text_atomic_creates_parent_dirs(tmp_path):
+    """Missing parent directories are created on demand."""
+    target = tmp_path / "nested" / "deep" / "state.json"
+    write_text_atomic(target, "data")
+    assert target.read_text(encoding="utf-8") == "data"
+
+
+def test_write_text_atomic_cleans_temp_on_failure(tmp_path, monkeypatch):
+    """A failing write raises and does not leave a temp file behind."""
+    target = tmp_path / "state.json"
+
+    def _boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("src.utils.paths.os.replace", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        write_text_atomic(target, "data")
+    assert [p.name for p in tmp_path.iterdir()] == []

@@ -475,8 +475,37 @@ class TestWhitelistBalance:
             _make_config("de.com", 444, country="DE"),
         ]
         result = agg._whitelist_balance(configs, 10)
-        # With ratio clamped to 1.0, all should be RU
-        assert sum(1 for c in result if c.country == "RU") <= 10
+        # With the ratio clamped to 1.0 the EU quota is zero: the shortfall
+        # filler must NOT borrow EU servers to pad the output.
+        assert [c.country for c in result] == ["RU"]
+
+    def test_ratio_one_keeps_eu_out_even_on_ru_shortfall(self) -> None:
+        """whitelist_ru_ratio=1.0 must never fall back to EU configs."""
+        context = _make_context(
+            {
+                "validator": {
+                    "whitelist_ru_ratio": 1.0,
+                    "whitelist_eu_countries": ["DE"],
+                },
+            }
+        )
+        agg = Aggregator(context)
+        ru_configs = [
+            _make_config(
+                f"ru-{i}.com", 4000 + i, country="RU", quality_score=0.9, latency_ms=10
+            )
+            for i in range(3)
+        ]
+        eu_configs = [
+            _make_config(
+                f"de-{i}.com", 5000 + i, country="DE", quality_score=0.8, latency_ms=20
+            )
+            for i in range(10)
+        ]
+        result = agg._whitelist_balance(ru_configs + eu_configs, 10)
+        # Only the 3 available RU servers are emitted; the missing 7 stay a
+        # shortfall instead of being padded with the excluded EU servers.
+        assert [c.country for c in result] == ["RU", "RU", "RU"]
 
     def test_eu_raw_string(self) -> None:
         """eu_raw as string is wrapped in list. (line 152)"""

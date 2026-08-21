@@ -28,6 +28,11 @@ _DEFAULT_RATELIMIT_WAIT = 60.0
 _TRUSTED_RAW_HOSTS = {"raw.githubusercontent.com"}
 _RAW_FETCH_ATTEMPTS = 3
 
+#: A single Contents API directory listing is capped at 1000 entries with no
+#: pagination endpoint; directories beyond that are only fully visible through
+#: the Git Trees API (see ``_list_repo_tree``).
+_CONTENTS_LISTING_LIMIT = 1000
+
 #: Statuses worth retrying on a raw download: the raw host throttles bursts
 #: with 429, and 5xx are transient by definition.
 _RETRIABLE_RAW_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -145,6 +150,15 @@ class GitHubClient:
         # (file fetches, directory listings).  Prevents overwhelming the API
         # when fetch_directory recurses into a large repo tree.
         self._api_semaphore = asyncio.Semaphore(max(1, max_concurrent_api))
+        #: Repo tree cache: (owner, repo, branch) -> in-flight or settled fetch.
+        #: A settled future carries the recursive Trees API listing (or
+        #: ``None``); failed fetches are removed again so a transient error
+        #: cannot pin a repo to "no tree". Parallel callers await the very
+        #: same future, so concurrent recursive listings share one request.
+        self._tree_cache: dict[
+            tuple[str, str, str],
+            asyncio.Future[list[dict[str, object]] | None],
+        ] = {}
 
     # --- client lifecycle ---
 
@@ -289,16 +303,28 @@ class GitHubClient:
 
         Returns a list of dicts with keys: ``name``, ``path``, ``download_url``,
         ``type`` (``"file"`` or ``"dir"``). Returns an empty list on 404.
+
+        The Contents API hard-caps a directory listing at 1000 entries with no
+        pagination; when the response hits that cap the listing is re-read
+        through the recursive Git Trees API so nothing beyond the first 1000
+        files is silently dropped from a large directory.
         """
         url = _contents_url(owner, repo, path)
         data = await self._request("GET", url, params={"ref": branch}, parse_json=True)
         if isinstance(data, dict):
             # Single file returned (path points to a file, not a dir).
             data = [data]
-        result: list[dict[str, object]] = []
         if not isinstance(data, list):
             logger.warning("Unexpected GitHub contents response for %s: %r", url, data)
             return []
+        if len(data) >= _CONTENTS_LISTING_LIMIT:
+            # Likely truncated: the only complete view of a directory this size
+            # is the recursive tree. On failure keep the partial listing — it
+            # is no worse than what every previous run got.
+            tree = await self._list_repo_tree(owner, repo, path, branch)
+            if tree is not None:
+                return tree
+        result: list[dict[str, object]] = []
         for entry in data:
             if not isinstance(entry, dict):
                 continue
@@ -311,6 +337,125 @@ class GitHubClient:
                 },
             )
         return result
+
+    async def _list_repo_tree(
+        self,
+        owner: str,
+        repo: str,
+        path: str,
+        branch: str,
+    ) -> list[dict[str, object]] | None:
+        """Return the entries under *path* via the Git Trees API (recursive).
+
+        ``GET /repos/{owner}/{repo}/git/trees/{branch}?recursive=1`` walks the
+        whole tree in one request, so a directory with more entries than the
+        Contents API listing cap is only fully visible through it. Only the
+        direct children of *path* are returned, mapped to the same shape as
+        :meth:`list_repo_contents` (``download_url`` is always ``None`` — the
+        Trees API does not carry it, and callers fall back to the Contents
+        API per file, which does).
+
+        Returns ``None`` when the tree cannot be fetched (rate limit beyond
+        the wait bound, missing ref, truncated payload); the caller then
+        keeps its possibly truncated Contents listing.
+        """
+        key = (
+            str(owner).strip().lower(),
+            str(repo).strip().lower(),
+            str(branch).strip(),
+        )
+        if key not in self._tree_cache:
+            # The first caller starts the fetch and publishes the future
+            # BEFORE awaiting, so concurrent recursive listings (fetch_directory
+            # gathers subdirectories in parallel) join the same in-flight
+            # request instead of issuing a duplicate Trees API call each.
+            future: asyncio.Future[list[dict[str, object]] | None] = (
+                asyncio.ensure_future(self._fetch_repo_tree(owner, repo, branch))
+            )
+            self._tree_cache[key] = future
+        else:
+            future = self._tree_cache[key]
+        tree = await future
+        if tree is None:
+            # Only *successful* trees are retained: a transient failure (rate
+            # limit wait exceeded, network blip) must not pin this repo to an
+            # eternal "no tree" state for the rest of the run.
+            self._tree_cache.pop(key, None)
+            return None
+        # Normalize the prefix the same way URL building does: a raw path in
+        # Windows style ("dir\sub") would never match any tree path, and the
+        # empty result used to REPLACE a correct (possibly truncated) Contents
+        # listing instead of complementing it.
+        prefix = str(_clean_repo_path(path)).strip("/")
+        results: list[dict[str, object]] = []
+        for entry in tree:
+            if not isinstance(entry, dict):
+                continue
+            tree_path = str(entry.get("path") or "")
+            if prefix:
+                if not tree_path.startswith(prefix + "/"):
+                    continue
+                rel = tree_path[len(prefix) + 1 :]
+            else:
+                rel = tree_path
+            if not rel or "/" in rel:
+                # Only direct children of the requested directory.
+                continue
+            etype = entry.get("type")
+            results.append(
+                {
+                    "name": rel.rsplit("/", 1)[-1],
+                    "path": tree_path,
+                    "download_url": None,
+                    "type": "file" if etype == "blob" else "dir",
+                },
+            )
+        return results
+
+    async def _fetch_repo_tree(
+        self,
+        owner: str,
+        repo: str,
+        branch: str,
+    ) -> list[dict[str, object]] | None:
+        """Fetch the recursive tree of *branch*, or ``None`` on failure."""
+        url = (
+            f"/repos/{quote(str(owner).strip(), safe='')}/"
+            f"{quote(str(repo).strip(), safe='')}/git/trees/"
+            # The whole branch, percent-encoded as ONE path segment (mirrors
+            # _raw_url): a branch named "feature/test" must not turn the tree
+            # ref into two path segments, which GitHub would route wrong.
+            f"{quote(str(branch).strip(), safe='')}"
+        )
+        try:
+            data = await self._request(
+                "GET",
+                url,
+                params={"recursive": "1"},
+                parse_json=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to list tree of %s/%s via Trees API: %s",
+                owner,
+                repo,
+                exc,
+            )
+            return None
+        if not isinstance(data, dict):
+            logger.warning("Unexpected GitHub trees response for %s: %r", url, data)
+            return None
+        if data.get("truncated"):
+            logger.warning(
+                "Tree of %s/%s is truncated by the Trees API — files beyond "
+                "the truncation point are invisible.",
+                owner,
+                repo,
+            )
+        entries = data.get("tree")
+        if not isinstance(entries, list):
+            return None
+        return [entry for entry in entries if isinstance(entry, dict)]
 
     async def fetch_raw_file(self, download_url: str) -> str:
         """Fetch raw file content from a ``download_url``.

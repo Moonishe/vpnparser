@@ -40,6 +40,13 @@ _NAT64_WELL_KNOWN = ipaddress.IPv6Network("64:ff9b::/96")
 #: still calls it global.
 _EXTRA_NON_PUBLIC = (ipaddress.IPv6Network("fec0::/10"),)
 
+#: Deprecated 6to4 relay anycast (RFC 3068/7526): ``192.88.99.0/24`` was
+#: handed back to IANA and is neither private nor reserved to Python, so
+#: ``is_global`` calls it global. Nothing legitimate routes through the
+#: anycast relays any more, so a config pointing there is either stale or
+#: hostile.
+_6TO4_ANYCAST = ipaddress.IPv4Network("192.88.99.0/24")
+
 #: How many lookups a caller is expected to keep in flight at once.
 RESOLVER_CONCURRENCY = 50
 
@@ -165,7 +172,7 @@ def is_private_address(value: str) -> bool:
     return (
         # is_global covers CGNAT (100.64.0.0/10), which none of the predicates
         # below classifies; the explicit ones cover what is_global still calls
-        # global, such as multicast.
+        # global, such as multicast and the deprecated 6to4 anycast relay.
         not addr.is_global
         or addr.is_private
         or addr.is_loopback
@@ -174,6 +181,7 @@ def is_private_address(value: str) -> bool:
         or addr.is_multicast
         or addr.is_unspecified
         or any(addr in network for network in _EXTRA_NON_PUBLIC)
+        or (isinstance(addr, ipaddress.IPv4Address) and addr in _6TO4_ANYCAST)
     )
 
 

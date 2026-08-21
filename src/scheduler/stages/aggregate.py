@@ -170,12 +170,27 @@ class Aggregator(PipelineStage):
 
         shortfall = max_total - len(ru_result) - len(eu_result)
         if shortfall > 0:
-            if len(ru_result) < ru_target and len(eu_sorted) > len(eu_result):
+            # The fillers must respect the ratio's bounds: with
+            # whitelist_ru_ratio=1.0 the EU quota is zero and a shortfall of RU
+            # servers must stay a shortfall, not be silently padded with EU
+            # configs the operator asked to exclude.
+            if (
+                eu_target > 0
+                and len(ru_result) < ru_target
+                and len(eu_sorted) > len(eu_result)
+            ):
                 extra = eu_sorted[len(eu_result) : len(eu_result) + shortfall]
                 eu_result.extend(extra)
             elif len(eu_result) < eu_target and len(ru_sorted) > len(ru_result):
                 extra = ru_sorted[len(ru_result) : len(ru_result) + shortfall]
                 ru_result.extend(extra)
+            else:
+                logger.warning(
+                    "Whitelist balance: %d config(s) of shortfall unfilled — "
+                    "the ru_ratio=%.2f quota leaves no configs to borrow.",
+                    shortfall,
+                    ru_ratio,
+                )
 
         result = ru_result + eu_result
         logger.info(

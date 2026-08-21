@@ -29,8 +29,8 @@ env:
   XRAY_VERSION: "v26.3.27" # pin explicitly; update .github/xray.sha256 when bumping
   # One source of truth for "which branch does this run touch": the pipeline
   # commits the output files there (GITHUB_BRANCH) and the Telegram links must
-  # point at the very same branch. Publishing has no ref of its own — the runner
-  # falls back to `main` when GITHUB_BRANCH is unset — so a workflow_dispatch
+  # point at the very same branch. Publishing has no ref of its own -- the runner
+  # falls back to `main` when GITHUB_BRANCH is unset -- so a workflow_dispatch
   # from a feature ref used to update the default branch while advertising raw
   # links to the dispatch ref, where nothing was published. The `|| 'main'`
   # mirrors that fallback, so an empty payload field cannot split the two again.
@@ -71,14 +71,14 @@ jobs:
           set -euo pipefail
           asset="Xray-linux-64.zip"
           url="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${asset}"
-          curl -L --retry 3 --retry-delay 2 -o "/tmp/${asset}" "$url"
-          if [ -f .github/xray.sha256 ]; then
-            echo "Verifying Xray checksum..."
-            sed "s|${asset}|/tmp/${asset}|" .github/xray.sha256 > /tmp/xray.sha256
-            sha256sum -c /tmp/xray.sha256
-          else
-            echo "::warning::No checksum file .github/xray.sha256; skipping verification."
+          curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 300 -o "/tmp/${asset}" "$url"
+          if [ ! -f .github/xray.sha256 ]; then
+            echo "::error::No checksum file .github/xray.sha256; refusing to install an unverified Xray binary. Update .github/xray.sha256 when bumping XRAY_VERSION."
+            exit 1
           fi
+          echo "Verifying Xray checksum..."
+          sed "s|${asset}|/tmp/${asset}|" .github/xray.sha256 > /tmp/xray.sha256
+          sha256sum -c /tmp/xray.sha256
           mkdir -p bin/xray
           unzip -q "/tmp/${asset}" -d bin/xray
           chmod +x bin/xray/xray
@@ -107,7 +107,7 @@ jobs:
       # Proxy health is the only state that survives *nothing* otherwise: the
       # file is deliberately not published (it holds the free SOCKS5 pool with
       # credentials), so without this cache every run starts with an empty
-      # history and ban_after_consecutive_failures can never be reached — dead
+      # history and ban_after_consecutive_failures can never be reached -- dead
       # proxies get retried forever. The Actions cache is private to the repo.
       - name: Restore proxy-health cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -189,7 +189,7 @@ jobs:
       - name: Fail on stale publish
         if: steps.pipeline.outputs.exit_code == '3'
         run: |
-          echo "::error::Pipeline succeeded but publishing failed — the subscription in the repo is stale. See docs/OPERATIONS.md"
+          echo "::error::Pipeline succeeded but publishing failed -- the subscription in the repo is stale. See docs/OPERATIONS.md"
           exit 1
 
       - name: Telegram notify

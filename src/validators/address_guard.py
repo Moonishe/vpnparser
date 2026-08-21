@@ -134,6 +134,40 @@ async def classify_host(host: str | None, *, timeout: float = 5.0) -> HostVerdic
     return "blocked"
 
 
+async def resolve_pinned_address(
+    host: str | None,
+    *,
+    timeout: float = 5.0,
+) -> str | None:
+    """Return an IP literal that is safe to connect to for *host*.
+
+    Closes the resolve-then-connect window (DNS rebinding): a verdict from
+    :func:`classify_host` alone does not help when the socket then resolves
+    the name again — an attacker with a short-TTL record can answer the guard
+    with a public address and the connect with RFC1918/metadata. The check
+    functions therefore connect to the literal returned here, which comes
+    from the SAME resolution that was validated.
+
+    IP literals pass through unchanged (private ones return ``None``). For a
+    hostname, ``None`` means "no validated public address" — callers must
+    treat the config as dead (fail closed).
+    """
+    bare = _bare_host(host)
+    if not bare:
+        return None
+    if _is_ip_literal(bare):
+        return None if is_private_address(bare) else bare
+    answers = await resolve_host_addresses(bare, timeout=timeout)
+    if not answers:
+        # Unresolvable names cannot be pinned; connecting to the name would
+        # reopen the rebinding window, so fail closed.
+        return None
+    public = [answer for answer in answers if not is_private_address(answer)]
+    if not public:
+        return None
+    return public[0]
+
+
 def _verdict_or_unresolved(
     host: str,
     result: HostVerdict | BaseException,

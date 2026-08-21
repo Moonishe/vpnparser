@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import logging
-import os
-import tempfile
 import time
 from typing import Any
 
 from src.parsers.base import Config
 from src.scheduler.settings import Settings
-from src.utils.paths import resolve_safe_output_path
+from src.utils.paths import resolve_safe_output_path, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -262,17 +259,13 @@ class HealthHistory:
         payload["updated_at"] = int(time.time())
         try:
             target = resolve_safe_output_path(path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            # Atomic write — write to temp file then rename.
-            fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, ensure_ascii=False, indent=2, sort_keys=True)
-                os.replace(tmp, str(target))
-            except Exception:
-                with contextlib.suppress(Exception):
-                    os.unlink(tmp)
-                raise
+            # Atomic write — write to temp file then rename. An in-place write
+            # can leave a truncated history on a crash mid-write, wiping the
+            # accumulated bans the very next run silently re-learns.
+            write_text_atomic(
+                target,
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+            )
         except Exception as exc:
             logger.warning("Could not write health history %s: %s", path, exc)
             return None

@@ -594,3 +594,49 @@ class TestValidateConfigsTcp:
         ):
             result = await validate_configs_tcp(configs, max_alive=2, concurrency=1)
         assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_tcp_check_connects_to_pinned_ip_not_hostname() -> None:
+    """The socket target is the resolved literal — DNS rebinding is closed."""
+    captured: dict[str, object] = {}
+
+    async def fake_direct(host: str, port: int) -> tuple[MagicMock, MagicMock]:
+        captured["host"] = host
+        return MagicMock(), MagicMock()
+
+    with (
+        patch.object(
+            address_guard,
+            "resolve_host_addresses",
+            AsyncMock(return_value=["9.9.9.9"]),
+        ),
+        patch(
+            "src.validators.tcp_check._open_connection_direct",
+            new=fake_direct,
+        ),
+    ):
+        is_alive, _latency = await tcp_check("example.com", 443)
+    assert is_alive is True
+    assert captured["host"] == "9.9.9.9"
+
+
+@pytest.mark.asyncio
+async def test_tcp_check_unpinnable_host_is_dead() -> None:
+    """A hostname that cannot be pinned fails closed without a socket."""
+    opener = AsyncMock()
+    with (
+        patch.object(
+            address_guard,
+            "resolve_host_addresses",
+            AsyncMock(return_value=None),
+        ),
+        patch(
+            "src.validators.tcp_check._open_connection_direct",
+            new=opener,
+        ),
+    ):
+        is_alive, latency = await tcp_check("example.com", 443)
+    assert is_alive is False
+    assert latency is None
+    opener.assert_not_awaited()

@@ -367,6 +367,27 @@ class TestFilterCountries:
         assert len(result) == 1
         assert result[0].country == "RU"
 
+    def test_unsupported_source_default_country_ignored(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A default_country outside the supported ISO set is not stamped.
+
+        Otherwise a bogus hint (e.g. ``"XX"``) would land in Config.country and
+        produce garbage location files and filter verdicts.
+        """
+        cf = CountryFilter(
+            _make_context(
+                {
+                    "validator": {"allowed_countries": ["RU"]},
+                }
+            )
+        )
+        cfg = _make_config("unknown.example", 443, country=None, remark="NODETECT")
+        cfg.source_default_country = "XX"
+        result = cf.filter_countries([cfg], list_type="blacklist")
+        assert result == []
+
 
 # ---------------------------------------------------------------------------
 # DedupFilter

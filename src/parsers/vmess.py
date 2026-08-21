@@ -143,7 +143,12 @@ class VmessParser(BaseParser):
                 return None
 
             tls_field = obj.get("tls")
-            security = "tls" if tls_field == "tls" else "none"
+            # Panels emit "tls", "TLS", "true", "1" — all mean TLS enabled.
+            security = (
+                "tls"
+                if str(tls_field).strip().lower() in ("tls", "true", "1")
+                else "none"
+            )
 
             # ``type`` is the transport header type ("none"/"http"). Config has
             # no header_type field, so it is intentionally not stored.

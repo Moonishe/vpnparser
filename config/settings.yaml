@@ -7,8 +7,8 @@ sources:
 
 # --- Validator ---
 validator:
-  # Country filter — only keep configs from these countries (by remark).
-  # No network calls — instant for 620K+ configs.
+  # Country filter -- only keep configs from these countries (by remark).
+  # No network calls -- instant for 620K+ configs.
   # Empty list = keep all. Common: DE, FI, NL, US, GB, FR, JP, SG, CA
   allowed_countries: []
   allowed_countries_by_list:
@@ -18,7 +18,7 @@ validator:
   whitelist_eu_countries: ["DE", "FI", "NL", "FR"]
 
   # If more configs than this are parsed, randomly sample before filtering.
-  # Set to 0 to process ALL configs (country filter is instant — no network).
+  # Set to 0 to process ALL configs (country filter is instant -- no network).
   max_configs_to_validate: 0
 
   # SOCKS5 proxy for TCP/TLS validation (optional, only when tcp/tls enabled).
@@ -56,6 +56,11 @@ validator:
   tls_proxy_attempts_per_config: 3
   tls_timeout_seconds: 6
   tls_concurrency: 80
+  # TLS handshake probes verify the server certificate when true. Most VPN
+  # servers use self-signed certificates, so the default false only proves
+  # that a handshake completes. Enable only for sources known to hold valid
+  # certificates — with this off, certificates are never checked.
+  tls_verify_certificates: false
   tls_candidate_limit: 0
   xray_enabled: true
   xray_required: true
@@ -126,7 +131,7 @@ validator:
   # ip-api.com free tier allows 45 req/min; lookups share one global rate
   # limiter, so enrichment takes roughly (distinct addresses / rpm) minutes.
   geoip_requests_per_minute: 40
-  # Hard cap per run — configs beyond it keep country=None instead of making
+  # Hard cap per run -- configs beyond it keep country=None instead of making
   # the parse stage run for hours.
   geoip_max_lookups: 300
 
@@ -165,7 +170,7 @@ aggregator:
 # --- Publisher ---
 publisher:
   # The publish target branch comes from GITHUB_BRANCH (CI passes the default
-  # branch). Adding `branch:` here would override it for publishing only — the
+  # branch). Adding `branch:` here would override it for publishing only -- the
   # Telegram links keep reading the env var.
   output_file: "output/subscription.txt"
   mix_output_file: "output/subscription-mix.txt"

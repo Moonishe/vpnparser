@@ -20,7 +20,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.parsers.base import Config
-from src.validators.address_guard import filter_public_configs, is_blocked_literal
+from src.validators.address_guard import (
+    filter_public_configs,
+    is_blocked_literal,
+    resolve_pinned_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,11 @@ _EMPTY_SERVER_NAMES = {"", "none", "null", "false", "0", "-"}
 #: TLS timeout, all inside one slot of the stage semaphore. Real links carry a
 #: handful of names; the rest is either a typo or a deliberate stall.
 _MAX_SERVER_NAME_CANDIDATES = 4
+#: Cap on the TOTAL handshakes one config may cost (proxies x SNI names).
+#: Without it, ``proxy_attempts_per_config=0`` ("whole pool") times four SNI
+#: candidates could keep one semaphore slot busy for minutes — the same stall
+#: the per-name cap above already prevents for a single dimension.
+_MAX_ATTEMPTS_PER_CONFIG = 12
 
 
 async def _open_connection_direct(
@@ -165,8 +174,15 @@ async def tls_check(
     alpn: str | None = None,
     timeout: float = 5.0,
     proxy_url: str | None = None,
+    verify_tls: bool = False,
 ) -> bool:
     """TLS handshake to host:port, optionally through a SOCKS5 proxy.
+
+    By default the handshake only proves that the server completes one — most
+    VPN servers use self-signed certificates, so certificate validation would
+    mark every one of them dead. Pass ``verify_tls=True`` to additionally
+    require a certificate valid for the connection target; only meaningful
+    when the checked servers are known to hold trusted certificates.
 
     Returns True if the handshake completes successfully, False on any error.
     """
@@ -174,11 +190,20 @@ async def tls_check(
         logger.warning("Refusing TLS check of non-public address %s:%s.", host, port)
         return False
 
+    # Pin the connect target to the address the guard validated (DNS
+    # rebinding); SNI/certificate identity still comes from server_hostname.
+    pinned = await resolve_pinned_address(host)
+    if pinned is None:
+        logger.warning("Refusing TLS check of unpinnable address %s:%s.", host, port)
+        return False
+
     server_hostname = sni or host
     try:
         ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
+        if not verify_tls:
+            # Liveness-only mode: accept any certificate and any hostname.
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
         protocols = _alpn_protocols(alpn)
         if protocols:
             ssl_context.set_alpn_protocols(protocols)
@@ -189,7 +214,7 @@ async def tls_check(
         if proxy_url:
             reader, writer = await asyncio.wait_for(
                 _open_connection_via_socks(
-                    host,
+                    pinned,
                     port,
                     ssl_context,
                     server_hostname,
@@ -199,7 +224,7 @@ async def tls_check(
             )
         else:
             reader, writer = await asyncio.wait_for(
-                _open_connection_direct(host, port, ssl_context, server_hostname),
+                _open_connection_direct(pinned, port, ssl_context, server_hostname),
                 timeout=timeout,
             )
     except (TimeoutError, ssl.SSLError, ConnectionRefusedError, OSError):
@@ -224,6 +249,7 @@ async def validate_configs_tls(
     proxy_attempts_per_config: int = 1,
     check_hostnames: bool = True,
     resolve_timeout: float = 5.0,
+    verify_tls: bool = False,
 ) -> list[Config]:
     """Filter configs by TLS handshake.
 
@@ -242,6 +268,9 @@ async def validate_configs_tls(
             config before marking it dead. ``0`` means try the whole pool.
         check_hostnames: Resolve hostnames to reject configs pointing at
             internal addresses. IP literals are rejected either way.
+        verify_tls: Require a certificate valid for the connection target in
+            the handshake probes. ``False`` (default) only checks that a
+            handshake completes — see :func:`tls_check`.
     """
     configs = await filter_public_configs(
         configs,
@@ -277,18 +306,23 @@ async def validate_configs_tls(
         async with semaphore:
             try:
                 ok = False
-                for candidate_proxy in _proxies_for(index):
-                    for server_name in _tls_server_names(cfg):
-                        ok = await tls_check(
-                            cfg.address,
-                            cfg.port,
-                            sni=server_name,
-                            alpn=cfg.alpn,
-                            timeout=timeout,
-                            proxy_url=candidate_proxy,
-                        )
-                        if ok:
-                            break
+                # Flatten proxies x SNI names and cap the total: the product
+                # used to be unbounded when the whole pool was requested.
+                combos = [
+                    (candidate_proxy, server_name)
+                    for candidate_proxy in _proxies_for(index)
+                    for server_name in _tls_server_names(cfg)
+                ][:_MAX_ATTEMPTS_PER_CONFIG]
+                for candidate_proxy, server_name in combos:
+                    ok = await tls_check(
+                        cfg.address,
+                        cfg.port,
+                        sni=server_name,
+                        alpn=cfg.alpn,
+                        timeout=timeout,
+                        proxy_url=candidate_proxy,
+                        verify_tls=verify_tls,
+                    )
                     if ok:
                         break
                 cfg.is_alive = ok

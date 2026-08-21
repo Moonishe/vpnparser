@@ -59,12 +59,11 @@ def test_record_success_resets_consecutive_failures() -> None:
 
 
 def test_record_empty_proxy_url() -> None:
-    """record() with empty proxy_url returns early (whitespace creates empty-key entry)."""
+    """record() ignores empty and whitespace-only proxy URLs entirely."""
     hist = ProxyHealthHistory()
     hist.record("", True)  # empty string → returns early
+    hist.record("   ", False)  # whitespace-only → stripped key is empty, skipped
     assert hist.records == {}
-    hist.record("   ", False)  # whitespace-only: .strip() makes empty key
-    assert "" in hist.records
 
 
 def test_record_first_time_creates_entry() -> None:

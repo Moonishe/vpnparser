@@ -133,9 +133,13 @@ class ProxyHealthHistory:
         nothing else ever dropped an entry, so it grew monotonically with every
         proxy the free lists rotated through. Everything probed during this run
         has a fresh ``last_seen`` and survives.
+
+        The write is atomic (temp file + ``os.replace``), mirroring
+        ``HealthHistory.save``: a crash mid-write would otherwise truncate the
+        file and lose the accumulated history.
         """
         self.prune()
-        from src.utils.paths import resolve_safe_output_path
+        from src.utils.paths import resolve_safe_output_path, write_text_atomic
 
         try:
             target = resolve_safe_output_path(path)
@@ -143,10 +147,13 @@ class ProxyHealthHistory:
             logger.warning("Unsafe proxy health path %r: %s", path, exc)
             return
         try:
-            if target.parent and not target.parent.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-            with target.open("w", encoding="utf-8") as fh:
-                json.dump(self.records, fh, indent=2, ensure_ascii=False)
+            # Atomic write (temp file + os.replace), mirroring
+            # HealthHistory.save: a crash mid-write would otherwise truncate the
+            # file and lose the accumulated history.
+            write_text_atomic(
+                target,
+                json.dumps(self.records, indent=2, ensure_ascii=False),
+            )
         except OSError as exc:
             logger.warning("Failed to save proxy health history to %s: %s", target, exc)
 
@@ -159,6 +166,10 @@ class ProxyHealthHistory:
         if not proxy_url:
             return
         key = proxy_url.strip()
+        if not key:
+            # Whitespace-only input would create a "" record that
+            # _sanitize_records drops on the next load — never store it.
+            return
         entry = self.records.setdefault(
             key,
             {

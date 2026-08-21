@@ -8,7 +8,10 @@ the configured base directory.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -166,3 +169,38 @@ def safe_open(
         strict=strict,
     )
     return resolved.open(mode=mode, **kwargs)
+
+
+def write_text_atomic(
+    path: str | Path, content: str, *, encoding: str = "utf-8"
+) -> None:
+    """Write *content* to *path* atomically (temp file + ``os.replace``).
+
+    A direct ``Path.write_text`` can leave a truncated file when the process
+    dies mid-write; the state files the pipeline commits to the repository
+    (run summary, health history) are read back by the next run and by CI
+    tooling, so they must never be seen half-written. The target is replaced
+    only after the full payload reached disk, mirroring
+    ``HealthHistory.save`` / ``ProxyHealthHistory.save``. Parent directories
+    are created on demand.
+
+    Raises:
+        OSError: If the write fails; the temp file is cleaned up.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding=encoding, newline="") as fh:
+            fh.write(content)
+            # os.replace only orders the rename against other processes; on a
+            # power loss / kill -9 the file data may not have hit the disk
+            # yet, leaving an empty or truncated target behind (this is how
+            # accumulated health-history bans would be silently lost).
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, str(target))
+    except Exception:
+        with contextlib.suppress(Exception):
+            os.unlink(tmp)
+        raise

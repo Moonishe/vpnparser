@@ -157,18 +157,31 @@ def test_main_publish_failure_returns_nonzero(monkeypatch) -> None:
 
 
 def test_main_publish_with_zero_configs_returns_0(monkeypatch) -> None:
-    """An empty run must not be reported as a failed publish.
+    """An empty run with a successful publish must not fail.
 
-    PipelineRunner._finish_empty_run() publishes the empty artifacts but leaves
-    ``_publish_ok`` at its initial False, so trusting the flag on a 0-config run
-    turned a successful publish into exit 3 plus a --continuous backoff.
+    PipelineRunner._finish_empty_run() publishes the empty artifacts and
+    records the outcome in ``_publish_ok``; a successful publish of an empty
+    run exits 0.
+    """
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_valid")
+    runner = _stub_main(monkeypatch, ["--run", "--publish"], _FakeRunner())
+    runner.run_return = 0
+    runner._publish_ok = True
+    assert main() == 0
+    assert runner.run_calls == [("output/subscription.txt", True)]
+
+
+def test_main_publish_with_zero_configs_failed_publish_returns_3(monkeypatch) -> None:
+    """An empty run whose publish failed must NOT exit 0.
+
+    The previous, non-empty subscription stays live in the repository, so a
+    green CI on top of a broken publish would mask the incident.
     """
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_valid")
     runner = _stub_main(monkeypatch, ["--run", "--publish"], _FakeRunner())
     runner.run_return = 0
     runner._publish_ok = False
-    assert main() == 0
-    assert runner.run_calls == [("output/subscription.txt", True)]
+    assert main() == EXIT_PUBLISH_FAILED
 
 
 def test_main_publish_with_zero_configs_logs_publish_note(monkeypatch, caplog) -> None:
@@ -177,6 +190,7 @@ def test_main_publish_with_zero_configs_logs_publish_note(monkeypatch, caplog) -
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_valid")
     runner = _stub_main(monkeypatch, ["--run", "--publish"], _FakeRunner())
     runner.run_return = 0
+    runner._publish_ok = True
     assert main() == 0
     assert "handed to the publisher" in caplog.text
 

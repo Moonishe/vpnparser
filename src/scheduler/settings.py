@@ -7,11 +7,21 @@ that stage classes do not need to duplicate the fallback logic.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
+class SettingsParseError(RuntimeError):
+    """An existing settings file exists but does not yield a usable mapping.
+
+    Raised only on the strict path (:meth:`Settings.load_strict`) used before a
+    full pipeline run: silently falling back to defaults there would publish
+    unvalidated configs with every validator disabled.
+    """
 
 
 def load_settings(path: str) -> dict[str, Any]:
@@ -33,6 +43,36 @@ def load_settings(path: str) -> dict[str, Any]:
             type(data).__name__,
         )
         return {}
+    return data
+
+
+def load_settings_strict(path: str) -> dict[str, Any]:
+    """Load an *existing* settings file, refusing broken YAML or a bad root.
+
+    Unlike :func:`load_settings` this never falls back to ``{}``: a truncated
+    commit, invalid YAML or a non-mapping root must abort the run instead of
+    quietly disabling TCP/TLS/Xray validation and the country filter.
+    """
+    if not Path(path).is_file():
+        msg = f"Settings file not found: {path}"
+        raise FileNotFoundError(msg)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+    except yaml.YAMLError as exc:
+        msg = (
+            f"Settings file {path} failed to parse — refusing to run on "
+            f"defaults: they disable TCP/TLS/Xray validation and the country "
+            f"filter. Original error: {exc}"
+        )
+        raise SettingsParseError(msg) from exc
+    if data is None or not isinstance(data, dict) or not data:
+        kind = type(data).__name__
+        msg = (
+            f"Settings file {path} did not yield a non-empty mapping (got "
+            f"{kind}) — refusing to run on defaults."
+        )
+        raise SettingsParseError(msg)
     return data
 
 

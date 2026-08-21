@@ -989,8 +989,7 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
 
             with urllib.request.urlopen(req, timeout=10) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-                ok = result.get("ok", False)
-                return bool(ok) if ok is not None else False
+                return bool(result.get("ok", False))
         except urllib.error.HTTPError as exc:
             # HTTPError is file-like — read Telegram's error description.
             try:
@@ -1014,11 +1013,12 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
             return False
         except Exception as exc:
             # Unexpected errors from urllib quote the request URL, which carries
-            # the bot token — never copy it into the log verbatim.
-            logger.warning(
-                "Telegram send failed unexpectedly: %s",
-                str(exc).replace(token, "<redacted>"),
-            )
+            # the bot token in BOTH raw and percent-encoded form — mask both.
+            message = str(exc).replace(token, "<redacted>")
+            encoded = quote(token, safe="")
+            if encoded != token:
+                message = message.replace(encoded, "<redacted>")
+            logger.warning("Telegram send failed unexpectedly: %s", message)
             return False
     return False  # pragma: no cover - the last attempt always returns above
 

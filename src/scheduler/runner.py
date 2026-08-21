@@ -24,13 +24,12 @@ import os
 import time
 from collections import Counter
 from collections.abc import Iterable
-from pathlib import Path
 from typing import Any
 
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
-from src.scheduler.settings import Settings, load_settings
+from src.scheduler.settings import Settings, load_settings, load_settings_strict
 from src.scheduler.stages.aggregate import Aggregator
 from src.scheduler.stages.fetch import SourceFetcher
 from src.scheduler.stages.filter import (
@@ -44,7 +43,7 @@ from src.scheduler.stages.parse import LinkParser
 from src.scheduler.stages.quality import QualityFilter
 from src.scheduler.stages.write import OutputWriter
 from src.sources.list_types import normalize_list_type
-from src.utils.paths import resolve_safe_output_path
+from src.utils.paths import resolve_safe_output_path, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +78,7 @@ class PipelineRunner:
         self._health_history: HealthHistory | None = None
         self._proxy_health_history: Any | None = None
         self._proxy_health_file: str | None = None
+        self._last_summary_path: str | None = None
         self._fetcher = SourceFetcher()
         self._parser = LinkParser(self._context)
         self._preprocessor = PreprocessFilter(self._context)
@@ -115,19 +115,17 @@ class PipelineRunner:
         ``tcp/tls/xray_enabled`` are false and ``allowed_countries`` is empty:
         unvalidated configs were written, published, and the process still
         exited 0. Building the runner stays tolerant — helpers and tools use it
-        without a settings file — but a full run insists on it.
+        without a settings file — but a full run insists on a settings file
+        that exists *and* parses: a truncated commit or invalid YAML would
+        otherwise silently produce the same fail-open run via ``{}``.
 
         Raises:
             FileNotFoundError: If the configured settings file does not exist.
+            SettingsParseError: If the file exists but does not parse into a
+                non-empty mapping.
         """
-        if Path(self.settings_path).is_file():
-            return
-        msg = (
-            f"Settings file not found: {self.settings_path}. Refusing to run "
-            "on built-in defaults — they disable TCP/TLS/Xray validation and "
-            "the country filter."
-        )
-        raise FileNotFoundError(msg)
+        # Strict load covers both "missing" and "exists but broken".
+        load_settings_strict(self.settings_path)
 
     def _section(self, key: str) -> dict[str, Any]:
         """Return a settings section (empty dict if missing)."""
@@ -173,9 +171,13 @@ class PipelineRunner:
         self._liveness_stats = {}
         self._output_stats = {}
         # The stage context outlives a single run: stale ``location_*`` entries
-        # would leak into this run's summary via _write_location_outputs().
+        # would leak into this run's summary via _write_location_outputs(), and
+        # stale liveness stats would leak the *previous* run's validation block
+        # into an empty run's summary when the runner object is reused.
         self._context.output_stats.clear()
+        self._context.liveness_stats.clear()
         self._publish_ok = False
+        self._last_summary_path = None
         self._liveness.reset_proxy_cache()
         logger.info("Pipeline started.")
 
@@ -330,6 +332,13 @@ class PipelineRunner:
                 output_files,
                 combined_output_file=output_file,
             )
+            if not self._publish_ok and summary_file:
+                # The local run-summary was written with "ok" before the publish
+                # result existed; with a failed publish the repo copy may hold
+                # the optimistic status until a later run refreshes it. Rewrite
+                # the local copy truthfully so local tooling and the next run
+                # see the failure.
+                self._rewrite_summary_status(summary_file, "publish_failed")
 
         elapsed = time.monotonic() - start
         logger.info("Pipeline finished in %.2fs with %d configs.", elapsed, count)
@@ -724,10 +733,14 @@ class PipelineRunner:
         consumers never see outdated "live" lists after a dead run.
         """
         self._write_empty_output(output_file)
+        # Reset the run stats BEFORE the location outputs are recorded: the
+        # secondary-output writer reports every emptied location file into
+        # _output_stats, and a reset after that (as it used to be) wiped the
+        # location_* entries from the run summary of every empty run.
+        self._output_stats = {}
         location_files = self._write_empty_secondary_outputs(output_file)
 
         # Keep run-summary outputs in sync with the empty files we just wrote.
-        self._output_stats = {}
         self._record_output_stats("combined", output_file, [])
         split_output_files = self._split_output_files(output_file)
         for list_type, split_file in split_output_files.items():
@@ -753,6 +766,8 @@ class PipelineRunner:
                 publish_paths,
                 combined_output_file=output_file,
             )
+            if not self._publish_ok and summary_file:
+                self._rewrite_summary_status(summary_file, "publish_failed")
         return 0
 
     def _write_empty_split_outputs(self, combined_output_file: str) -> None:
@@ -831,7 +846,13 @@ class PipelineRunner:
         }
 
     def _write_run_summary(self, status: str) -> str | None:
-        """Write machine-readable run metadata for Telegram and debugging."""
+        """Write machine-readable run metadata for Telegram and debugging.
+
+        On success the path is also recorded in ``self._last_summary_path`` so
+        callers can distinguish "this run wrote its summary" from "an older
+        summary file happens to exist on disk".
+        """
+        self._last_summary_path = None
         output_file = self._status_output_file()
         if not output_file:
             logger.warning(
@@ -859,14 +880,16 @@ class PipelineRunner:
             logger.exception("Unsafe run summary path %r rejected", output_file)
             return None
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
+            # Atomic write: a crash mid-write must not leave a truncated
+            # run-summary.json for CI and the Telegram reporter to read.
+            write_text_atomic(
+                path,
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-                encoding="utf-8",
             )
         except Exception as exc:
             logger.warning("Could not write run summary %s: %s", output_file, exc)
             return None
+        self._last_summary_path = output_file
         return output_file
 
     # --- stage 5: write ---
@@ -878,6 +901,34 @@ class PipelineRunner:
     def _write_empty_output(self, output_file: str) -> None:
         """Ensure the output file exists as a valid base64 subscription."""
         self._writer._write_empty_output(output_file)
+
+    def _rewrite_summary_status(self, output_file: str, status: str) -> None:
+        """Overwrite the ``status`` field of an existing run summary file.
+
+        Used after a publish failure: the summary was written with ``"ok"``
+        before the publish result was known, and the local copy should not
+        keep claiming success the repo copy is not entitled to.
+        """
+        try:
+            path = resolve_safe_output_path(output_file)
+        except ValueError:
+            logger.exception("Unsafe run summary path %r rejected", output_file)
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                payload["status"] = status
+                write_text_atomic(
+                    path,
+                    json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                )
+        except Exception as exc:
+            logger.warning("Could not rewrite run summary %s: %s", output_file, exc)
 
     @staticmethod
     def _write_plain_fallback(configs: list[Config], output_file: str) -> int:

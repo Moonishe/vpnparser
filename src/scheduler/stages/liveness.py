@@ -13,6 +13,7 @@ from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
 from src.scheduler.stages.base import PipelineStage
 from src.sources.list_types import normalize_list_type
+from src.validators.address_guard import clear_verdict_cache
 
 logger = logging.getLogger(__name__)
 
@@ -350,6 +351,10 @@ class LivenessValidator(PipelineStage):
         self,
         configs_by_list: dict[str, list[Config]],
     ) -> dict[str, list[Config]]:
+        # Verdicts from a previous run must not ride into this one: the cache
+        # is keyed by host only, and a rebinding host could keep a stale
+        # "public" verdict across run boundaries in --continuous mode.
+        clear_verdict_cache()
         vcfg = self._section("validator")
         tcp_enabled = self._as_bool(vcfg.get("tcp_enabled"), False)
         tls_enabled = self._as_bool(vcfg.get("tls_enabled"), False)
@@ -804,6 +809,10 @@ class LivenessValidator(PipelineStage):
                     ),
                     check_hostnames=check_hostnames,
                     resolve_timeout=resolve_timeout,
+                    verify_tls=self._as_bool(
+                        vcfg.get("tls_verify_certificates"),
+                        False,
+                    ),
                 )
                 probe_log.add(tls_checkable)
                 # tls_checked counts only configs that were actually probed:
@@ -1138,5 +1147,9 @@ class LivenessValidator(PipelineStage):
         from src.scheduler.stages.aggregate import Aggregator
 
         if normalize_list_type(list_type) == "whitelist":
+            # _whitelist_balance honors whitelist_ru_ratio strictly: with
+            # ratio=1.0 a shortfall of RU servers stays a shortfall and fewer
+            # candidates reach Xray. That is intentional — the operator asked
+            # for RU-only; final balancing happens later in Aggregator anyway.
             return Aggregator(self.context)._whitelist_balance(configs, max_total)
         return Aggregator(self.context)._country_balanced_limit(configs, max_total)

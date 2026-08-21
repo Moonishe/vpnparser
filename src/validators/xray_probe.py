@@ -17,6 +17,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -143,9 +144,24 @@ def _is_ip(value: str | None) -> bool:
     return True
 
 
+#: Allowed characters in a server name passed to Xray. SNI/serverName comes
+#: from an untrusted subscription link, so anything outside DNS characters is
+#: rejected instead of being handed to the probe verbatim; a weird value would
+#: otherwise just fail the probe with an opaque Xray error.
+_SERVER_NAME_RE = re.compile(r"^[A-Za-z0-9._*-]+$")
+_MAX_SERVER_NAME_LENGTH = 253
+
+
+def _valid_server_name(value: str | None) -> bool:
+    """Return ``True`` when *value* is a sane DNS-style server name."""
+    if not value or len(value) > _MAX_SERVER_NAME_LENGTH:
+        return False
+    return _SERVER_NAME_RE.match(value) is not None
+
+
 def _server_name(cfg: Config) -> str | None:
     for candidate in (_first_csv(cfg.sni), _first_csv(cfg.host), cfg.address):
-        if candidate and not _is_ip(candidate):
+        if candidate and not _is_ip(candidate) and _valid_server_name(candidate):
             return candidate
     return None
 
@@ -212,14 +228,25 @@ def _stream_settings(cfg: Config) -> dict[str, Any] | None:
 
 
 def _proxy_outbound(proxy_url: str) -> dict[str, Any] | None:
-    parsed = urlparse(proxy_url)
+    try:
+        parsed = urlparse(proxy_url)
+        # Reading .port validates it and raises ValueError on garbage like
+        # "socks5://h:notaport" — one bad operator URL must not crash the
+        # probe phase for every config.
+        port = int(
+            parsed.port
+            or (1080 if parsed.scheme.lower() in {"socks", "socks5"} else 8080)
+        )
+    except ValueError:
+        logger.warning("Skipping invalid proxy url (bad port): %r", proxy_url)
+        return None
     scheme = parsed.scheme.lower()
     if scheme not in {"socks", "socks5", "http"} or not parsed.hostname:
         return None
 
     server: dict[str, Any] = {
         "address": parsed.hostname,
-        "port": int(parsed.port or (1080 if scheme in {"socks", "socks5"} else 8080)),
+        "port": port,
     }
     if parsed.username or parsed.password:
         server["users"] = [

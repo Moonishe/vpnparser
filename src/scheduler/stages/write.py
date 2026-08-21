@@ -13,7 +13,11 @@ from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.stages.aggregate import Aggregator
 from src.scheduler.stages.base import PipelineStage
-from src.utils.paths import resolve_safe_output_path, validate_safe_output_path
+from src.utils.paths import (
+    resolve_safe_output_path,
+    validate_safe_output_path,
+    write_text_atomic,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -475,10 +479,12 @@ class OutputWriter(PipelineStage):
             logger.exception("Unsafe run summary path %r rejected", output_file)
             return None
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
+            # Atomic write — the summary is committed to the repository and
+            # read back by CI and the Telegram reporter, so a crash mid-write
+            # must not leave a truncated JSON for them to fail on.
+            write_text_atomic(
+                path,
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-                encoding="utf-8",
             )
         except Exception as exc:
             logger.warning("Could not write run summary %s: %s", output_file, exc)

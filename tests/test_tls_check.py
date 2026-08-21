@@ -132,19 +132,19 @@ class TestCleanServerName:
 
     def test_cleaned_empty_after_processing(self) -> None:
         """Value that becomes empty after cleaning -> None."""
-        assert _clean_server_name("[::1]:bad") is not None  # not empty
-        # A value like "none" stripped would be tested above
+        # Quirk pinned: strip("[]") removes the leading "[" but the trailing
+        # char is "d", so only the opening bracket disappears.
+        assert _clean_server_name("[::1]:bad") == "::1]:bad"
 
     def test_only_colon_port_valid(self) -> None:
         """host:port only when exactly 1 colon and port is digit."""
-        assert _clean_server_name("example.com:abc") is not None
+        assert _clean_server_name("example.com:abc") == "example.com:abc"
         assert _clean_server_name("example.com:443") == "example.com"
 
     def test_bracketed_host_with_port(self) -> None:
-        """Bracketed IPv6 with port."""
+        """Bracketed IPv6 with port — quirk pinned (trailing ]:443 kept)."""
         result = _clean_server_name("[2001:db8::1]:443")
-        # DNS name inside brackets, port stripped
-        assert result is not None
+        assert result == "2001:db8::1]:443"
 
     def test_multiple_colons_bare_ipv6(self) -> None:
         """Bare IPv6 (multiple colons, no brackets) -> passes through."""
@@ -561,6 +561,83 @@ class TestTlsCheck:
         assert call_kwargs["server_hostname"] == "sni.example.com"
 
 
+class TestVerifyTls:
+    """Cover the verify_tls flag — optional certificate validation."""
+
+    @pytest.mark.asyncio
+    async def test_verify_false_disables_verification(self) -> None:
+        """Default liveness mode: CERT_NONE + no hostname check."""
+        mock_writer = MagicMock()
+        real_ctx = ssl.create_default_context()
+
+        with (
+            patch(
+                "src.validators.tls_check.ssl.create_default_context",
+                return_value=real_ctx,
+            ),
+            patch(
+                "src.validators.tls_check._open_connection_direct",
+                new=AsyncMock(return_value=(MagicMock(), mock_writer)),
+            ),
+        ):
+            result = await tls_check("example.com", 443)
+        assert result is True
+        assert real_ctx.verify_mode == ssl.CERT_NONE
+        assert real_ctx.check_hostname is False
+
+    @pytest.mark.asyncio
+    async def test_verify_true_keeps_default_verification(self) -> None:
+        """verify_tls=True (opt-in) keeps certificate + hostname checks."""
+        mock_writer = MagicMock()
+        real_ctx = ssl.create_default_context()
+        assert real_ctx.verify_mode == ssl.CERT_REQUIRED
+
+        with (
+            patch(
+                "src.validators.tls_check.ssl.create_default_context",
+                return_value=real_ctx,
+            ),
+            patch(
+                "src.validators.tls_check._open_connection_direct",
+                new=AsyncMock(return_value=(MagicMock(), mock_writer)),
+            ),
+        ):
+            result = await tls_check("example.com", 443, verify_tls=True)
+        assert result is True
+        assert real_ctx.verify_mode == ssl.CERT_REQUIRED
+        assert real_ctx.check_hostname is True
+
+    @pytest.mark.asyncio
+    async def test_validate_configs_tls_forwards_verify_tls(self) -> None:
+        """validate_configs_tls passes verify_tls through to tls_check."""
+        cfg = Config(
+            protocol="vless",
+            address="example.com",
+            port=443,
+            uuid_or_password="test-uuid",
+            security="tls",
+        )
+        received: dict[str, bool] = {}
+
+        async def fake_tls_check(
+            host: str,
+            port: int,
+            sni: str | None = None,
+            alpn: str | None = None,
+            timeout: float = 5.0,
+            proxy_url: str | None = None,
+            verify_tls: bool = False,
+        ) -> bool:
+            received["verify_tls"] = verify_tls
+            return True
+
+        with patch("src.validators.tls_check.tls_check", new=fake_tls_check):
+            result = await validate_configs_tls([cfg], verify_tls=True)
+
+        assert result == [cfg]
+        assert received.get("verify_tls") is True
+
+
 # ===========================================================================
 # validate_configs_tls()
 # ===========================================================================
@@ -685,7 +762,13 @@ class TestValidateConfigsTls:
         used_proxies = []
 
         async def fake_tls_check(
-            host, port, sni=None, alpn=None, timeout=5.0, proxy_url=None
+            host,
+            port,
+            sni=None,
+            alpn=None,
+            timeout=5.0,
+            proxy_url=None,
+            verify_tls=False,
         ):
             used_proxies.append(proxy_url)
             # Fail on first two, succeed on last
@@ -709,7 +792,13 @@ class TestValidateConfigsTls:
         used = []
 
         async def fake_tls_check(
-            host, port, sni=None, alpn=None, timeout=5.0, proxy_url=None
+            host,
+            port,
+            sni=None,
+            alpn=None,
+            timeout=5.0,
+            proxy_url=None,
+            verify_tls=False,
         ):
             used.append(proxy_url)
             return proxy_url == "socks5://p1:1080"
@@ -753,7 +842,13 @@ class TestValidateConfigsTls:
         tried_names = []
 
         async def fake_tls_check(
-            host, port, sni=None, alpn=None, timeout=5.0, proxy_url=None
+            host,
+            port,
+            sni=None,
+            alpn=None,
+            timeout=5.0,
+            proxy_url=None,
+            verify_tls=False,
         ):
             tried_names.append(sni)
             # First SNI fails, second succeeds
@@ -821,3 +916,37 @@ class TestValidateConfigsTls:
         ) as mock_open:
             assert await tls_check("192.168.1.1", 8443) is False
         mock_open.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tls_check_connects_to_pinned_ip_keeps_sni(self) -> None:
+        """Socket goes to the resolved literal; SNI stays the hostname."""
+        with (
+            patch.object(
+                address_guard,
+                "resolve_host_addresses",
+                AsyncMock(return_value=["93.184.216.34"]),
+            ),
+            patch(
+                "src.validators.tls_check._open_connection_direct",
+                new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+            ) as mock_open,
+        ):
+            assert await tls_check("example.com", 443, sni="sni.example.com") is True
+        args = mock_open.call_args.args
+        assert args[:2] == ("93.184.216.34", 443)
+        # server_hostname (4th positional arg) is the SNI name, not the IP.
+        assert args[3] == "sni.example.com"
+
+    @pytest.mark.asyncio
+    async def test_tls_check_unpinnable_host_is_dead(self) -> None:
+        opener = AsyncMock()
+        with (
+            patch.object(
+                address_guard,
+                "resolve_host_addresses",
+                AsyncMock(return_value=None),
+            ),
+            patch("src.validators.tls_check._open_connection_direct", new=opener),
+        ):
+            assert await tls_check("example.com", 443) is False
+        opener.assert_not_awaited()

@@ -491,6 +491,24 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
     return None
 
 
+def normalize_country_code(value: str | None) -> str | None:
+    """Return *value* as an uppercased supported ISO code, or ``None``.
+
+    Single source of truth for validating country hints that come from
+    configuration (``sources.json`` ``default_country``) before they are
+    stamped onto a :class:`Config`.  Only a 2-letter alphabetic code from
+    :data:`_SUPPORTED_CODES` is accepted: anything else (``"USA"``,
+    ``"CURACAO"``, ``"XX"``, ``"12"``) would otherwise leak into
+    ``Config.country`` and produce bogus location files and filter verdicts.
+    """
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    if len(text) == 2 and text.isalpha() and text in _SUPPORTED_CODES:
+        return text
+    return None
+
+
 def filter_by_country(configs: list[Config], allowed: list[str]) -> list[Config]:
     """Filter configs to only those whose remark matches an allowed country.
 

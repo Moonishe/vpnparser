@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
+import src.validators.proxy_pool as proxy_pool_module
 from src.validators.proxy_health import ProxyHealthHistory
 from src.validators.proxy_pool import (
     _fetch_source,
@@ -140,23 +142,48 @@ socks5://5.6.7.8:1080
 # ---------------------------------------------------------------------------
 
 
+def _stream_client(
+    responses: list[tuple[int, bytes, dict[str, str]]],
+) -> AsyncMock:
+    """Build an httpx.AsyncClient mock whose .stream() replays *responses*."""
+    client = AsyncMock(spec=httpx.AsyncClient)
+    calls = 0
+
+    def stream(method: str, url: str, **kwargs: object) -> MagicMock:
+        nonlocal calls
+        status_code, body, headers = responses[min(calls, len(responses) - 1)]
+        calls += 1
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = status_code
+        response.headers = headers
+
+        async def aiter_bytes(chunk_size: int) -> AsyncIterator[bytes]:
+            for start in range(0, len(body), chunk_size or 1):
+                yield body[start : start + chunk_size]
+
+        response.aiter_bytes = aiter_bytes
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=response)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    client.stream = MagicMock(side_effect=stream)
+    return client
+
+
 @pytest.mark.asyncio
 async def test_fetch_source_success() -> None:
-    client = AsyncMock(spec=httpx.AsyncClient)
-    response = MagicMock(spec=httpx.Response)
-    response.status_code = 200
-    response.text = "1.2.3.4:1080"
-    client.get.return_value = response
+    client = _stream_client([(200, b"1.2.3.4:1080", {})])
 
     text = await _fetch_source(client, "https://example.com/proxies.txt")
     assert text == "1.2.3.4:1080"
-    client.get.assert_awaited_once()
+    client.stream.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_fetch_source_http_error() -> None:
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.get.side_effect = httpx.HTTPError("connection failed")
+    client.stream.side_effect = httpx.HTTPError("connection failed")
 
     text = await _fetch_source(client, "https://example.com/proxies.txt")
     assert text == ""
@@ -164,13 +191,52 @@ async def test_fetch_source_http_error() -> None:
 
 @pytest.mark.asyncio
 async def test_fetch_source_non_200() -> None:
-    client = AsyncMock(spec=httpx.AsyncClient)
-    response = MagicMock(spec=httpx.Response)
-    response.status_code = 404
-    client.get.return_value = response
+    client = _stream_client([(404, b"", {})])
 
     text = await _fetch_source(client, "https://example.com/proxies.txt")
     assert text == ""
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_follows_safe_redirect() -> None:
+    client = _stream_client(
+        [
+            (301, b"", {"location": "https://mirror.example.com/list.txt"}),
+            (200, b"1.2.3.4:1080", {}),
+        ],
+    )
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert text == "1.2.3.4:1080"
+    # Second hop went to the redirect target.
+    second_url = client.stream.call_args_list[1][0][1]
+    assert second_url == "https://mirror.example.com/list.txt"
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_refuses_private_redirect() -> None:
+    client = _stream_client(
+        [(302, b"", {"location": "http://169.254.169.254/latest/meta-data"})],
+    )
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert text == ""
+    # Only the initial request was made — the private hop was refused.
+    assert client.stream.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_truncates_oversized_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(proxy_pool_module, "_MAX_SOURCE_BODY_BYTES", 10)
+    # Two chunks of 64 KiB each: the second must never reach the output once
+    # the byte cap is exceeded by the first.
+    client = _stream_client([(200, b"a" * 65536 + b"b" * 65536, {})])
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert "b" not in text
+    assert len(text.encode("utf-8")) <= 64 * 1024
 
 
 # ---------------------------------------------------------------------------

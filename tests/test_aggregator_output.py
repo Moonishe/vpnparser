@@ -108,3 +108,36 @@ def test_write_subscription_creates_parent_dirs(tmp_path) -> None:
     assert tmp_path.joinpath("nested", "deep", "sub.txt").exists()
     content = tmp_path.joinpath("nested", "deep", "sub.txt").read_text(encoding="utf-8")
     assert cfg.raw_link in content
+
+
+def test_generate_plain_drops_raw_link_with_newline():
+    """A raw_link carrying \\n cannot inject lines into the subscription."""
+    good = Config(
+        protocol="vless",
+        address="a.com",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        raw_link="vless://u@a.com:443",
+    )
+    evil = Config(
+        protocol="vless",
+        address="b.com",
+        port=443,
+        uuid_or_password="22222222-2222-4222-8222-222222222222",
+        raw_link="vless://u@b.com:443\nevil://x@evil.com:1",
+    )
+    out = generate_plain([good, evil])
+    assert "evil://x@evil.com:1" not in out
+    assert out.count("\n") == 1  # watermark + the one safe link
+
+
+def test_generate_plain_drops_raw_link_with_control_chars():
+    cfg = Config(
+        protocol="vless",
+        address="c.com",
+        port=443,
+        uuid_or_password="33333333-3333-4333-8333-333333333333",
+        raw_link="vless://u@c.com:443\x00",
+    )
+    out = generate_plain([cfg])
+    assert "\x00" not in out

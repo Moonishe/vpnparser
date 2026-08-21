@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import time as _time
 from unittest import mock
 
@@ -574,6 +575,262 @@ class TestListRepoContents:
         result = asyncio.run(client.list_repo_contents("owner", "repo", "dir"))
         assert len(result) == 1
         assert result[0]["name"] == "good.txt"
+
+    def test_capped_listing_is_completed_via_tree(self, monkeypatch) -> None:
+        """At the 1000-entry cap the listing is re-read through the Trees API.
+
+        The Contents API has no pagination, so a directory at the cap is only
+        fully visible via the recursive tree; without the fallback the files
+        past the first 1000 would be silently dropped.
+        """
+        client = GitHubClient()
+        capped = [
+            {"name": f"f{i}.txt", "path": f"dir/f{i}.txt", "type": "file"}
+            for i in range(1000)
+        ]
+        fc = _FakeClient(
+            [
+                _FakeResponse(json_data=capped),
+                _FakeResponse(
+                    json_data={
+                        "sha": "abc",
+                        "truncated": False,
+                        "tree": [
+                            {"path": "dir", "type": "tree"},
+                            {"path": "dir/f0.txt", "type": "blob"},
+                            {"path": "dir/sub", "type": "tree"},
+                            # Deeper than one level: not a direct child.
+                            {"path": "dir/sub/nested.txt", "type": "blob"},
+                        ],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client.list_repo_contents("owner", "repo", "dir"))
+        assert {(e["name"], e["type"]) for e in result} == {
+            ("f0.txt", "file"),
+            ("sub", "dir"),
+        }
+        assert result[0]["download_url"] is None
+        # The tree request must use recursive=1.
+        assert fc._last_params == {"recursive": "1"}
+
+    def test_capped_listing_keeps_contents_when_tree_fails(self, monkeypatch) -> None:
+        """A failed tree read keeps the (possibly truncated) Contents listing."""
+        client = GitHubClient()
+        capped = [
+            {"name": f"f{i}.txt", "path": f"dir/f{i}.txt", "type": "file"}
+            for i in range(1000)
+        ]
+        fc = _FakeClient(
+            [
+                _FakeResponse(json_data=capped),
+                _FakeResponse(status_code=500),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client.list_repo_contents("owner", "repo", "dir"))
+        assert len(result) == 1000
+
+
+# ===================================================================
+# _list_repo_tree
+# ===================================================================
+
+
+class TestListRepoTree:
+    def test_returns_direct_children_mapped_to_contents_shape(
+        self, monkeypatch
+    ) -> None:
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    json_data={
+                        "tree": [
+                            {"path": "dir/a.txt", "type": "blob"},
+                            {"path": "dir/sub", "type": "tree"},
+                            {"path": "dir/sub/b.txt", "type": "blob"},
+                            {"path": "other.txt", "type": "blob"},
+                            "junk",
+                        ]
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert result is not None
+        assert {(e["name"], e["type"]) for e in result} == {
+            ("a.txt", "file"),
+            ("sub", "dir"),
+        }
+        assert all(e["download_url"] is None for e in result)
+
+    def test_root_path_lists_top_level(self, monkeypatch) -> None:
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    json_data={
+                        "tree": [
+                            {"path": "a.txt", "type": "blob"},
+                            {"path": "sub/b.txt", "type": "blob"},
+                        ]
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client._list_repo_tree("owner", "repo", "", "main"))
+        assert result is not None
+        assert [e["name"] for e in result] == ["a.txt"]
+
+    def test_request_failure_returns_none(self, monkeypatch) -> None:
+        client = GitHubClient()
+        fc = _FakeClient([_FakeResponse(status_code=500)])
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert result is None
+
+    def test_non_dict_payload_returns_none(self, monkeypatch) -> None:
+        client = GitHubClient()
+        fc = _FakeClient([_FakeResponse(json_data=[1, 2, 3])])
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert result is None
+
+    def test_tree_without_tree_key_returns_none(self, monkeypatch) -> None:
+        client = GitHubClient()
+        fc = _FakeClient([_FakeResponse(json_data={"truncated": False})])
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert result is None
+
+    def test_truncated_tree_warns(self, monkeypatch, caplog) -> None:
+        """A truncated tree still serves its entries, with a warning."""
+        caplog.set_level(logging.WARNING)
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    json_data={
+                        "truncated": True,
+                        "tree": [{"path": "f.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client._list_repo_tree("owner", "repo", "", "main"))
+        assert result is not None
+        assert [e["name"] for e in result] == ["f.txt"]
+        assert "truncated" in caplog.text
+
+    def test_tree_result_is_cached(self, monkeypatch) -> None:
+        """The whole-branch tree is fetched once, not once per directory."""
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    json_data={
+                        "tree": [{"path": "dir/a.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        first = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        second = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert first == second
+        assert fc._call_count == 1
+
+    def test_tree_failure_is_not_cached(self, monkeypatch) -> None:
+        """A transient failure must not pin the repo to a permanent 'no tree'.
+
+        The failure used to be cached alongside successes, so one rate-limit
+        or network blip disabled the Trees fallback for the whole run.
+        """
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(status_code=500),
+                _FakeResponse(
+                    json_data={
+                        "tree": [{"path": "dir/a.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        first = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert first is None
+        # The retry actually goes to the network again instead of a cached None.
+        second = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert second is not None
+        assert [e["name"] for e in second] == ["a.txt"]
+        assert fc._call_count == 2
+
+    def test_concurrent_tree_requests_share_one_fetch(self, monkeypatch) -> None:
+        """Parallel listings of the same repo must not duplicate the fetch.
+
+        fetch_directory gathers subdirectories concurrently; without a shared
+        in-flight future each of them would issue its own Trees API request,
+        burning API budget on the same whole-branch tree.
+        """
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    json_data={
+                        "tree": [{"path": "dir/a.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        async def _two_listings() -> tuple[object, object]:
+            first = client._list_repo_tree("owner", "repo", "dir", "main")
+            second = client._list_repo_tree("owner", "repo", "dir", "main")
+            return await asyncio.gather(first, second)
+
+        first, second = asyncio.run(_two_listings())
+        assert first == second
+        assert fc._call_count == 1
+
+    def test_branch_with_slash_is_one_url_segment(self, monkeypatch) -> None:
+        """A branch named ``feature/test`` is %-encoded, not split in the URL."""
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    json_data={
+                        "tree": [{"path": "dir/a.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(
+            client._list_repo_tree("owner", "repo", "dir", "feature/test")
+        )
+        assert result is not None
+        assert isinstance(fc._last_url, str)
+        assert "/git/trees/feature/test" not in fc._last_url
+        assert "feature%2Ftest" in fc._last_url
 
 
 # ===================================================================

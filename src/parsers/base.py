@@ -12,7 +12,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, ClassVar
-from urllib.parse import parse_qs, unquote
+from urllib.parse import unquote
 
 
 @dataclass
@@ -155,11 +155,25 @@ def safe_b64decode(data: str) -> str:
 
 
 def parse_qs_single(query_string: str) -> dict[str, str]:
-    """Parse query string, returning single values (first occurrence)."""
+    """Parse query string, returning single values (first occurrence).
+
+    ``+`` is kept literal: unlike :func:`urllib.parse.parse_qs` it is NOT
+    decoded as a space.  Reality ``pbk`` and other fields are base64 where a
+    literal ``+`` from a non-percent-encoded source silently corrupted the
+    key into spaces, producing a config that could never connect.
+    """
     if not query_string:
         return {}
-    raw = parse_qs(query_string, keep_blank_values=True)
-    return {k: v[0] if v else "" for k, v in raw.items()}
+    result: dict[str, str] = {}
+    for pair in query_string.split("&"):
+        if not pair:
+            continue
+        key, _, value = pair.partition("=")
+        # unquote_plus would turn "+" into a space; plain unquote keeps it.
+        # First occurrence wins, matching the previous parse_qs-based behaviour.
+        if key not in result:
+            result[unquote(key)] = unquote(value)
+    return result
 
 
 def extract_remark(fragment: str) -> str:
@@ -217,6 +231,10 @@ def split_host_port(hostport: str) -> tuple[str, int] | None:
     if not host:
         return None
 
+    if not port_str.isascii() or not port_str.isdigit():
+        # int() would happily accept unicode digits ("٤٤٣") and underscores
+        # ("4_43"); a port is ASCII digits only.
+        return None
     try:
         port = int(port_str)
     except (ValueError, TypeError):
@@ -431,9 +449,11 @@ _MAX_AD_SCAN_CHARS = 512
 # compiled once, not looked up in re's internal cache on every is_garbage_config()
 # call.  Accepts both hyphenated (b831381d-4cfa-...) and non-hyphenated
 # (b831381d4cfa...) forms — some vmess/vless sources emit 32 hex chars without
-# hyphens, which is a valid RFC 4122 representation.
+# hyphens, which is a valid RFC 4122 representation.  ``\Z`` (not ``$``) so a
+# trailing newline — e.g. from ``json.loads`` of a vmess "id" field — cannot
+# sneak past validation.
 _UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$",
+    r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}\Z",
 )
 
 
