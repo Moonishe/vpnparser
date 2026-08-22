@@ -27,6 +27,7 @@ permissions:
 
 env:
   XRAY_VERSION: "v26.3.27" # pin explicitly; update .github/xray.sha256 when bumping
+  SINGBOX_VERSION: "v1.13.19" # pin explicitly; update .github/singbox.sha256 when bumping
   # One source of truth for "which branch does this run touch": the pipeline
   # commits the output files there (GITHUB_BRANCH) and the Telegram links must
   # point at the very same branch. Publishing has no ref of its own -- the runner
@@ -87,6 +88,27 @@ jobs:
           chmod +x bin/xray/xray
           echo "${{ github.workspace }}/bin/xray" >> "$GITHUB_PATH"
           bin/xray/xray version
+
+      # QUIC protocols (hysteria2/tuic) get their L3 probe from sing-box;
+      # Xray-core cannot dial them. Checksum-pinned like the Xray binary —
+      # update .github/singbox.sha256 when bumping SINGBOX_VERSION.
+      - name: Install sing-box
+        run: |
+          set -euo pipefail
+          asset="sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz"
+          url="https://github.com/SagerNet/sing-box/releases/download/${SINGBOX_VERSION}/${asset}"
+          curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 300 -o "/tmp/${asset}" "$url"
+          if [ ! -f .github/singbox.sha256 ]; then
+            echo "::error::No checksum file .github/singbox.sha256; refusing to install an unverified sing-box binary."
+            exit 1
+          fi
+          echo "Verifying sing-box checksum..."
+          sed "s|${asset}|/tmp/${asset}|" .github/singbox.sha256 > /tmp/singbox.sha256
+          sha256sum -c /tmp/singbox.sha256
+          mkdir -p bin/singbox
+          tar -xzf "/tmp/${asset}" -C bin/singbox --strip-components=1
+          chmod +x bin/singbox/sing-box
+          bin/singbox/sing-box version
 
       - name: Run tests
         run: python -m pytest -q -p no:cacheprovider
@@ -157,6 +179,7 @@ jobs:
           VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
           XRAY_EXECUTABLE: ${{ github.workspace }}/bin/xray/xray
           XRAY_LOCATION_ASSET: ${{ github.workspace }}/bin/xray
+          SINGBOX_EXECUTABLE: ${{ github.workspace }}/bin/singbox/sing-box
 
       - name: Verify output
         id: verify

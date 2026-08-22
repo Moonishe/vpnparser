@@ -885,6 +885,11 @@ class LivenessValidator(PipelineStage):
                 )
                 current = []
         if xray_enabled and current:
+            from src.validators.singbox_probe import (
+                find_singbox_executable,
+                is_singbox_supported,
+                validate_configs_singbox,
+            )
             from src.validators.xray_probe import (
                 find_xray_executable,
                 is_xray_supported,
@@ -919,7 +924,27 @@ class LivenessValidator(PipelineStage):
             list_stats["xray_candidates"] = len(supported)
             list_stats["xray_unsupported"] = len(unsupported_configs)
             list_stats["xray_drop_unsupported"] = drop_unsupported
-            if not supported:
+
+            # QUIC protocols (hysteria2/tuic) get their L3 probe from
+            # sing-box instead of dying here as "unsupported".
+            singbox_path = None
+            if self._as_bool(vcfg.get("singbox_enabled"), False):
+                singbox_path = find_singbox_executable(
+                    str(vcfg.get("singbox_executable") or ""),
+                )
+            list_stats["singbox_available"] = bool(singbox_path)
+            singbox_configs: list[Config] = []
+            if singbox_path:
+                singbox_configs = [
+                    cfg for cfg in unsupported_configs if is_singbox_supported(cfg)
+                ]
+                unsupported_configs = [
+                    cfg for cfg in unsupported_configs if not is_singbox_supported(cfg)
+                ]
+                list_stats["xray_unsupported"] = len(unsupported_configs)
+                list_stats["singbox_candidates"] = len(singbox_configs)
+
+            if not supported and not singbox_configs:
                 list_stats["xray_checked"] = 0
                 list_stats["xray_alive"] = 0
                 list_stats["reason"] = "xray_no_supported_candidates"
@@ -1033,6 +1058,31 @@ class LivenessValidator(PipelineStage):
             list_stats["xray_proxy_checks"] = len(xray_proxy_urls)
             list_stats["xray_min_proxy_successes"] = xray_min_proxy_successes
             list_stats["xray_probe_via_proxies"] = xray_probe_via_proxies
+            # Latency baselines of the probe proxies, so the recorded
+            # config latency can shed the proxy's own dial hop (see
+            # validate_configs_xray).
+            xray_proxy_latency_ms: dict[str, float] = {}
+            if xray_probe_via_proxies and xray_proxy_urls:
+                try:
+                    from src.validators.proxy_health import ProxyHealthHistory
+
+                    pool_health_cfg = self._proxy_pool_config().get("health", {})
+                    history_file = pool_health_cfg.get("health_history_file")
+                    if history_file:
+                        proxy_history = ProxyHealthHistory.load(
+                            str(history_file),
+                            window=self._as_int(
+                                pool_health_cfg.get("latency_window"),
+                                5,
+                                minimum=1,
+                            ),
+                        )
+                        for proxy_url in xray_proxy_urls:
+                            avg = proxy_history.average_latency(str(proxy_url))
+                            if avg is not None:
+                                xray_proxy_latency_ms[str(proxy_url)] = float(avg)
+                except Exception as exc:
+                    logger.warning("Cannot load proxy latency baselines: %s", exc)
             xray_require_distinct_outbound_ip = self._as_bool(
                 vcfg.get("xray_require_distinct_outbound_ip"),
                 False,
@@ -1060,6 +1110,7 @@ class LivenessValidator(PipelineStage):
                 probe_proxy_urls=xray_proxy_urls,
                 min_proxy_successes=xray_min_proxy_successes,
                 probe_via_proxies=xray_probe_via_proxies,
+                proxy_latency_ms=xray_proxy_latency_ms,
                 require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
                 check_hostnames=check_hostnames,
                 resolve_timeout=resolve_timeout,
@@ -1079,8 +1130,61 @@ class LivenessValidator(PipelineStage):
             list_stats["checked"] = True
             list_stats["filtered"] = True
             list_stats["xray_alive"] = len(alive_xray)
+            if singbox_path and singbox_configs:
+                # QUIC configs share the list's alive budget with Xray.
+                sb_max_alive = (
+                    max(0, xray_max_alive - len(alive_xray))
+                    if xray_max_alive > 0
+                    else 0
+                )
+                alive_singbox = await validate_configs_singbox(
+                    singbox_configs,
+                    singbox_path=singbox_path,
+                    probe_urls=xray_probe_urls,
+                    min_probe_successes=xray_min_probe_successes,
+                    attempts_per_config=xray_attempts_per_config,
+                    min_attempt_successes=xray_min_attempt_successes,
+                    probe_proxy_urls=xray_proxy_urls,
+                    proxy_latency_ms=xray_proxy_latency_ms,
+                    check_hostnames=check_hostnames,
+                    resolve_timeout=resolve_timeout,
+                    timeout=self._as_float(
+                        vcfg.get("singbox_timeout_seconds"),
+                        12.0,
+                        minimum=1.0,
+                    ),
+                    startup_timeout=self._as_float(
+                        vcfg.get("xray_startup_timeout_seconds"),
+                        4.0,
+                        minimum=0.5,
+                    ),
+                    concurrency=self._as_int(
+                        vcfg.get("singbox_concurrency"),
+                        6,
+                        minimum=1,
+                    ),
+                    max_alive=sb_max_alive,
+                )
+                list_stats["singbox_checked"] = sum(
+                    1
+                    for cfg in singbox_configs
+                    if getattr(cfg, "xray_was_checked", False)
+                )
+                list_stats["singbox_alive"] = len(alive_singbox)
+                logger.info(
+                    "%s sing-box validation: %d/%d QUIC configs alive.",
+                    label,
+                    len(alive_singbox),
+                    len(singbox_configs),
+                )
+                alive_xray = alive_xray + alive_singbox
+                list_stats["xray_alive"] = len(alive_xray)
             xray_attempted = [
                 cfg for cfg in supported if getattr(cfg, "xray_was_checked", False)
+            ] + [
+                cfg
+                for cfg in singbox_configs
+                if getattr(cfg, "xray_was_checked", False)
             ]
             list_stats["xray_checked"] = len(xray_attempted)
             if self._update_health_callback:

@@ -2622,3 +2622,142 @@ class TestLivenessReportingRegressions:
         )
         stats = lv.context.liveness_stats["lists"]["blacklist"]
         assert stats["tls_skipped"] == "tcp_fail_open"
+
+
+# ============================================================================
+# sing-box integration (hysteria2/tuic L3 probe)
+# ============================================================================
+
+
+class TestSingboxIntegration:
+    async def test_hy2_probed_by_singbox(self, monkeypatch) -> None:
+        """hysteria2 configs go through sing-box instead of dying unsupported."""
+        lv = _make_liveness(
+            _xray_settings(singbox_enabled=True),
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: cfg.protocol == "vless",
+        )
+        monkeypatch.setattr(
+            "src.validators.singbox_probe.find_singbox_executable",
+            lambda p: "/usr/bin/sing-box",
+        )
+
+        async def mock_xray(configs, **kwargs):
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        async def mock_singbox(configs, **kwargs):
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        monkeypatch.setattr(
+            "src.validators.singbox_probe.validate_configs_singbox",
+            mock_singbox,
+        )
+
+        configs = [
+            _make_config("ok.com", 4000, protocol="vless"),
+            _make_config("hy.com", 4001, protocol="hysteria2", security="tls"),
+        ]
+        result = await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert [cfg.protocol for cfg in result] == ["vless", "hysteria2"]
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["singbox_alive"] == 1
+        assert stats["xray_alive"] == 2
+
+    async def test_singbox_unavailable_drops_hy2(self, monkeypatch) -> None:
+        """No sing-box binary -> hy2 keeps the old 'unsupported' fate."""
+        lv = _make_liveness(
+            _xray_settings(singbox_enabled=True),
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: cfg.protocol == "vless",
+        )
+        monkeypatch.setattr(
+            "src.validators.singbox_probe.find_singbox_executable",
+            lambda p: None,
+        )
+
+        async def mock_xray(configs, **kwargs):
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+
+        result = await lv.validate_configs(
+            [
+                _make_config("ok.com", 4000, protocol="vless"),
+                _make_config("hy.com", 4001, protocol="hysteria2", security="tls"),
+            ],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert [cfg.protocol for cfg in result] == ["vless"]
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats.get("singbox_alive") is None
+
+    async def test_singbox_disabled_by_default_drops_hy2(self, monkeypatch) -> None:
+        lv = _make_liveness(
+            _xray_settings(),
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: cfg.protocol == "vless",
+        )
+
+        async def mock_xray(configs, **kwargs):
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        monkeypatch.setattr(
+            "src.validators.singbox_probe.find_singbox_executable",
+            lambda p: "/usr/bin/sing-box",
+        )
+
+        result = await lv.validate_configs(
+            [_make_config("hy.com", 4001, protocol="hysteria2", security="tls")],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert result == []

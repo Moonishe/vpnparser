@@ -1657,3 +1657,60 @@ class TestRemainingCoverage:
         result = telegram_module._generate_fun_fact("")
         assert result in all_fallbacks
         assert result in saved
+
+
+# --- low-alive alert ---------------------------------------------------------
+
+
+def test_low_alive_alert_flags_collapsed_lists() -> None:
+    from src.notify.telegram import _format_low_alive_alert
+
+    summary = {
+        "validation": {
+            "lists": {
+                "blacklist": {"xray_checked": 300, "xray_alive": 120},
+                "whitelist": {"xray_checked": 100, "xray_alive": 3},
+            }
+        }
+    }
+    text = _format_low_alive_alert(summary)
+    assert "whitelist" in text
+    assert "3" in text
+    assert "blacklist" not in text
+
+
+def test_low_alive_alert_silent_when_healthy_or_no_checks() -> None:
+    from src.notify.telegram import _format_low_alive_alert
+
+    healthy = {
+        "validation": {
+            "lists": {
+                "blacklist": {"xray_checked": 300, "xray_alive": 120},
+                "whitelist": {"xray_checked": 50, "xray_alive": 20},
+            }
+        }
+    }
+    assert _format_low_alive_alert(healthy) == ""
+    assert _format_low_alive_alert({}) == ""
+    unchecked = {"validation": {"lists": {"whitelist": {"xray_checked": 0}}}}
+    assert _format_low_alive_alert(unchecked) == ""
+
+
+def test_low_alive_alert_threshold_from_settings(monkeypatch, tmp_path) -> None:
+    import src.notify.telegram as tg
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.yaml").write_text(
+        "telegram:\n  alert_min_alive: 25\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        tg,
+        "resolve_safe_output_path",
+        lambda _p, strict=False: tmp_path,
+    )
+    summary = {
+        "validation": {"lists": {"blacklist": {"xray_checked": 10, "xray_alive": 20}}}
+    }
+    assert "blacklist" in tg._format_low_alive_alert(summary)

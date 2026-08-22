@@ -311,6 +311,10 @@ class OutputWriter(PipelineStage):
         count = self._write_output(aggregated, combined_output_file)
         logger.info("Wrote %d configs to %s.", count, combined_output_file)
 
+        clash_output_file = self._write_clash_output(aggregated)
+        if clash_output_file:
+            output_files.append(clash_output_file)
+
         mix_configs = self._build_mix(aggregated, splits, pcfg)
         self._write_output(mix_configs, mix_output_file)
         output_files.append(mix_output_file)
@@ -324,6 +328,32 @@ class OutputWriter(PipelineStage):
         self._write_run_summary("success", summary_file)
         return output_files
 
+    def _write_clash_output(self, configs: list[Config]) -> str | None:
+        """Write the Mihomo YAML twin of the combined subscription."""
+        pcfg = self._publisher_section()
+        clash_output_file = str(pcfg.get("clash_output_file") or "")
+        if not clash_output_file:
+            return None
+        try:
+            safe_path = resolve_safe_output_path(clash_output_file)
+        except ValueError:
+            logger.exception("Unsafe Clash output path %r rejected", clash_output_file)
+            return None
+        try:
+            from src.aggregator.clash import write_clash_subscription
+
+            count = write_clash_subscription(configs, str(safe_path))
+        except Exception:
+            logger.exception("Clash subscription write failed.")
+            return None
+        logger.info("Wrote %d proxies to %s.", count, clash_output_file)
+        self.context.output_stats["clash"] = {
+            "file": clash_output_file,
+            "count": count,
+            "countries": {},
+        }
+        return clash_output_file
+
     def _write_empty_outputs(self, summary_file: str | None = None) -> list[str]:
         pcfg = self._publisher_section()
         combined_output_file = str(pcfg.get("output_file") or "output/subscription.txt")
@@ -335,10 +365,34 @@ class OutputWriter(PipelineStage):
         output_files = [combined_output_file, mix_output_file]
         self._write_empty_output(combined_output_file)
         self._write_empty_output(mix_output_file)
+        self._write_empty_clash_output()
+        clash_file = str(pcfg.get("clash_output_file") or "")
+        if clash_file:
+            output_files.append(clash_file)
         self._write_empty_split_outputs(split_output_files)
         output_files.extend(str(path) for path in split_output_files.values())
         self._write_run_summary("empty_sources", summary_file)
         return output_files
+
+    def _write_empty_clash_output(self) -> None:
+        """Leave an empty (but valid) YAML document behind on empty runs."""
+        pcfg = self._publisher_section()
+        clash_output_file = str(pcfg.get("clash_output_file") or "")
+        if not clash_output_file:
+            return
+        try:
+            safe_path = resolve_safe_output_path(clash_output_file)
+        except ValueError:
+            return
+        try:
+            with safe_path.open("w", encoding="utf-8", newline="\n") as fh:
+                fh.write("proxies: []\n")
+        except OSError as exc:
+            logger.warning(
+                "Could not write empty Clash output %s: %s",
+                clash_output_file,
+                exc,
+            )
 
     @staticmethod
     def _build_mix(

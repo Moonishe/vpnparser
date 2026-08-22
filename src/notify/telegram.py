@@ -464,6 +464,45 @@ def _fallback_subscription_line(configs_count: int, countries: str) -> str:
     return f"  {_b(_SUBSCRIPTION_LABELS['combined'])}: {configs_count}{suffix}"
 
 
+def _alert_min_alive() -> int:
+    """Per-list Xray-alive floor from settings; 10 when unreadable."""
+    try:
+        import yaml
+
+        settings_path = (
+            resolve_safe_output_path(".", strict=True) / "config" / "settings.yaml"
+        )
+        with settings_path.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        section = data.get("telegram")
+        if isinstance(section, dict):
+            return max(0, int(section.get("alert_min_alive") or 10))
+    except Exception:
+        logger.debug("settings.yaml unreadable; using default alert floor")
+    return 10
+
+
+def _format_low_alive_alert(summary: dict[str, Any]) -> str:
+    """One warning line per list whose verified-alive count collapsed."""
+    lists = (summary.get("validation") or {}).get("lists")
+    if not isinstance(lists, dict):
+        return ""
+    min_alive = _alert_min_alive()
+    alerts: list[str] = []
+    for key in ("blacklist", "whitelist"):
+        item = lists.get(key)
+        if not isinstance(item, dict):
+            continue
+        checked = int(item.get("xray_checked") or 0)
+        alive = int(item.get("xray_alive") or 0)
+        if checked > 0 and alive < min_alive:
+            alerts.append(
+                f"⚠️ {_b(_h(key))}: живых {_b(alive)}/{_h(checked)} "
+                f"(порог {_h(min_alive)}) — проверьте пул прокси и источники"
+            )
+    return "\n".join(alerts)
+
+
 def _format_validation_section(summary: dict[str, Any]) -> str:
     validation = summary.get("validation")
     if not isinstance(validation, dict) or not validation:
@@ -1058,6 +1097,9 @@ def send_notification(
     urls = _subscription_urls(summary)
 
     validation_section = _format_validation_section(summary)
+    low_alive_alert = _format_low_alive_alert(summary)
+    if low_alive_alert:
+        validation_section = f"{validation_section}\n{low_alive_alert}"
     subscriptions_section = _format_subscriptions_section(
         summary,
         subscription_file,
