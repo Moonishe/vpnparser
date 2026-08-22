@@ -2761,3 +2761,55 @@ class TestSingboxIntegration:
             xray_enabled=True,
         )
         assert result == []
+
+    async def test_singbox_skipped_when_budget_full(self, monkeypatch) -> None:
+        """A saturated Xray budget must not turn into 'unlimited' for sing-box."""
+        lv = _make_liveness(
+            _xray_settings(singbox_enabled=True, xray_max_alive=1),
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: cfg.protocol == "vless",
+        )
+        monkeypatch.setattr(
+            "src.validators.singbox_probe.find_singbox_executable",
+            lambda p: "/usr/bin/sing-box",
+        )
+
+        async def mock_xray(configs, **kwargs):
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        async def mock_singbox(configs, **kwargs):  # pragma: no cover - must not run
+            raise AssertionError("sing-box must not run with a full budget")
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        monkeypatch.setattr(
+            "src.validators.singbox_probe.validate_configs_singbox",
+            mock_singbox,
+        )
+
+        result = await lv.validate_configs(
+            [
+                _make_config("ok.com", 4000, protocol="vless"),
+                _make_config("ok2.com", 4002, protocol="vless"),
+                _make_config("hy.com", 4001, protocol="hysteria2", security="tls"),
+            ],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert all(cfg.protocol == "vless" for cfg in result)
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["singbox_skipped"] == "budget_full"

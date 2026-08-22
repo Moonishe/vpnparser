@@ -89,8 +89,10 @@ class Config:
             address_key = address.lower()
         cred = ""
         if str(self.security or "").lower() == "reality":
+            # pbk identifies the endpoint; the uuid identifies the user, and
+            # one server legitimately issues many user uuids.
             cred = hashlib.sha256(
-                str(self.uuid_or_password or self.pbk or "").encode()
+                str(self.pbk or self.uuid_or_password or "").encode()
             ).hexdigest()[:8]
         return (str(self.protocol).lower(), address_key, int(self.port), cred)
 

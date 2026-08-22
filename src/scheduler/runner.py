@@ -271,6 +271,10 @@ class PipelineRunner:
         output_files = [output_file]
         split_output_files = self._split_output_files(output_file)
 
+        clash_file = self._writer._write_clash_output(combined)
+        if clash_file:
+            output_files.append(clash_file)
+
         mix_output_file = self._mix_output_file(output_file, split_output_files)
         if mix_output_file:
             mix_configs = self._build_mixed_output(preprocessed_by_list, max_total)
@@ -742,6 +746,10 @@ class PipelineRunner:
 
         # Keep run-summary outputs in sync with the empty files we just wrote.
         self._record_output_stats("combined", output_file, [])
+        clash_output_file = self._writer._clash_output_file()
+        if clash_output_file:
+            self._writer._write_empty_clash_output()
+            self._record_output_stats("clash", clash_output_file, [])
         split_output_files = self._split_output_files(output_file)
         for list_type, split_file in split_output_files.items():
             self._record_output_stats(list_type, split_file, [])
@@ -755,6 +763,8 @@ class PipelineRunner:
         if publish:
             publish_paths = self._configured_subscription_output_paths(output_file)
             publish_paths.extend(location_files)
+            if clash_output_file:
+                publish_paths.append(clash_output_file)
             if summary_file:
                 publish_paths.append(summary_file)
             if health_file:

@@ -328,10 +328,14 @@ class OutputWriter(PipelineStage):
         self._write_run_summary("success", summary_file)
         return output_files
 
+    def _clash_output_file(self) -> str | None:
+        """Configured Clash YAML path, or ``None`` when the twin is off."""
+        pcfg = self._publisher_section()
+        return str(pcfg.get("clash_output_file") or "") or None
+
     def _write_clash_output(self, configs: list[Config]) -> str | None:
         """Write the Mihomo YAML twin of the combined subscription."""
-        pcfg = self._publisher_section()
-        clash_output_file = str(pcfg.get("clash_output_file") or "")
+        clash_output_file = self._clash_output_file()
         if not clash_output_file:
             return None
         try:
@@ -344,8 +348,11 @@ class OutputWriter(PipelineStage):
 
             count = write_clash_subscription(configs, str(safe_path))
         except Exception:
+            # An unwritten file would keep serving the previous run's
+            # proxies from the repository forever — empty it instead.
             logger.exception("Clash subscription write failed.")
-            return None
+            self._write_empty_clash_output()
+            count = 0
         logger.info("Wrote %d proxies to %s.", count, clash_output_file)
         self.context.output_stats["clash"] = {
             "file": clash_output_file,

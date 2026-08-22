@@ -372,3 +372,14 @@ def test_deduplicate_collapses_same_reality_credentials() -> None:
     result = deduplicate([one, two])
     assert len(result) == 1
     assert result[0].latency_ms == 50.0
+
+
+def test_deduplicate_reality_same_uuid_different_pbk() -> None:
+    """pbk identifies the endpoint; one server's many user uuids collapse."""
+    one = _reality("same-uuid", "pbk-one", None)
+    two = _reality("same-uuid", "pbk-two", 50.0)
+    three = _reality("same-uuid", "pbk-one", 20.0)
+    result = deduplicate([one, two, three])
+    assert len(result) == 2
+    assert {cfg.pbk for cfg in result} == {"pbk-one", "pbk-two"}
+    assert min(cfg.latency_ms for cfg in result if cfg.pbk == "pbk-one") == 20.0

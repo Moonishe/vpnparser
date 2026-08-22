@@ -147,11 +147,14 @@ class LinkParser(PipelineStage):
             all_configs = [cfg for bucket in grouped.values() for cfg in bucket]
             to_enrich = [cfg for cfg in all_configs if self._needs_geoip(cfg)]
             mmdb_file = str(vcfg.get("geoip_mmdb_file") or "")
-            if mmdb_file and await self._ensure_offline_geoip(vcfg, mmdb_file):
+            offline_path = (
+                await self._ensure_offline_geoip(vcfg, mmdb_file) if mmdb_file else None
+            )
+            if offline_path:
                 try:
                     from src.validators.geoip import enrich_configs_geoip_offline
 
-                    await enrich_configs_geoip_offline(to_enrich, mmdb_file)
+                    await enrich_configs_geoip_offline(to_enrich, offline_path)
                     enriched = sum(1 for cfg in to_enrich if cfg.country is not None)
                     logger.info(
                         "GeoIP (offline) enriched %d/%d configs.",
@@ -220,8 +223,10 @@ class LinkParser(PipelineStage):
 
         return grouped
 
-    async def _ensure_offline_geoip(self, vcfg: dict[str, Any], mmdb_file: str) -> bool:
-        """Return ``True`` when an offline mmdb database is ready to use.
+    async def _ensure_offline_geoip(
+        self, vcfg: dict[str, Any], mmdb_file: str
+    ) -> str | None:
+        """Return the resolved database path when an offline mmdb is ready.
 
         Downloads the pinned artifact once when it is missing; failures fall
         back to the (capped) API enrichment instead of failing the parse.
@@ -236,7 +241,7 @@ class LinkParser(PipelineStage):
             )
         except Exception as exc:
             logger.warning("Offline GeoIP database unavailable: %s", exc)
-            return False
+            return None
 
     @staticmethod
     def _needs_geoip(cfg: Config) -> bool:

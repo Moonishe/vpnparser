@@ -459,7 +459,7 @@ async def test_ensure_geoip_database_rejects_unpinned_download(tmp_path) -> None
     ok = await geoip.ensure_geoip_database(
         path=str(db), url="https://example/db.mmdb", sha256=None
     )
-    assert ok is False
+    assert ok is None
     assert not db.exists()
 
 
@@ -467,7 +467,7 @@ async def test_ensure_geoip_database_accepts_existing_unpinned_file(tmp_path) ->
     db = tmp_path / "db.mmdb"
     db.write_bytes(b"data")
     ok = await geoip.ensure_geoip_database(path=str(db), url="", sha256=None)
-    assert ok is True
+    assert ok is not None
 
 
 async def test_ensure_geoip_database_download_ok(tmp_path, monkeypatch) -> None:
@@ -480,7 +480,7 @@ async def test_ensure_geoip_database_download_ok(tmp_path, monkeypatch) -> None:
     ok = await geoip.ensure_geoip_database(
         path=str(db), url="https://example/db.mmdb", sha256=sha
     )
-    assert ok is True
+    assert ok is not None
     assert db.read_bytes() == payload
     assert not (tmp_path / "db.mmdb.part").exists()
 
@@ -491,7 +491,7 @@ async def test_ensure_geoip_database_checksum_mismatch(tmp_path, monkeypatch) ->
     ok = await geoip.ensure_geoip_database(
         path=str(db), url="https://example/db.mmdb", sha256="00" * 32
     )
-    assert ok is False
+    assert ok is None
     assert not db.exists()
 
 
@@ -501,7 +501,7 @@ async def test_ensure_geoip_database_rejects_oversize(tmp_path, monkeypatch) -> 
     ok = await geoip.ensure_geoip_database(
         path=str(db), url="https://example/db.mmdb", sha256="00" * 32, max_bytes=16
     )
-    assert ok is False
+    assert ok is None
     assert not db.exists()
 
 
@@ -511,7 +511,7 @@ async def test_ensure_geoip_database_http_error(tmp_path, monkeypatch) -> None:
     ok = await geoip.ensure_geoip_database(
         path=str(db), url="https://example/db.mmdb", sha256="00" * 32
     )
-    assert ok is False
+    assert ok is None
 
 
 def test_country_from_mmdb_record_shapes() -> None:

@@ -1131,54 +1131,66 @@ class LivenessValidator(PipelineStage):
             list_stats["filtered"] = True
             list_stats["xray_alive"] = len(alive_xray)
             if singbox_path and singbox_configs:
-                # QUIC configs share the list's alive budget with Xray.
-                sb_max_alive = (
-                    max(0, xray_max_alive - len(alive_xray))
-                    if xray_max_alive > 0
-                    else 0
-                )
-                alive_singbox = await validate_configs_singbox(
-                    singbox_configs,
-                    singbox_path=singbox_path,
-                    probe_urls=xray_probe_urls,
-                    min_probe_successes=xray_min_probe_successes,
-                    attempts_per_config=xray_attempts_per_config,
-                    min_attempt_successes=xray_min_attempt_successes,
-                    probe_proxy_urls=xray_proxy_urls,
-                    proxy_latency_ms=xray_proxy_latency_ms,
-                    check_hostnames=check_hostnames,
-                    resolve_timeout=resolve_timeout,
-                    timeout=self._as_float(
-                        vcfg.get("singbox_timeout_seconds"),
-                        12.0,
-                        minimum=1.0,
-                    ),
-                    startup_timeout=self._as_float(
-                        vcfg.get("xray_startup_timeout_seconds"),
-                        4.0,
-                        minimum=0.5,
-                    ),
-                    concurrency=self._as_int(
-                        vcfg.get("singbox_concurrency"),
-                        6,
-                        minimum=1,
-                    ),
-                    max_alive=sb_max_alive,
-                )
-                list_stats["singbox_checked"] = sum(
-                    1
-                    for cfg in singbox_configs
-                    if getattr(cfg, "xray_was_checked", False)
-                )
-                list_stats["singbox_alive"] = len(alive_singbox)
-                logger.info(
-                    "%s sing-box validation: %d/%d QUIC configs alive.",
-                    label,
-                    len(alive_singbox),
-                    len(singbox_configs),
-                )
-                alive_xray = alive_xray + alive_singbox
-                list_stats["xray_alive"] = len(alive_xray)
+                if xray_max_alive > 0 and len(alive_xray) >= xray_max_alive:
+                    # 0 would mean "unlimited" for the validator, not "stop"
+                    # — the budget is full, so the QUIC stage is skipped.
+                    list_stats["singbox_skipped"] = "budget_full"
+                    logger.info(
+                        "%s Xray filled the alive budget (%d); skipping "
+                        "sing-box validation.",
+                        label,
+                        xray_max_alive,
+                    )
+                    singbox_configs = []
+                else:
+                    # QUIC configs share the list's alive budget with Xray.
+                    sb_max_alive = (
+                        max(0, xray_max_alive - len(alive_xray))
+                        if xray_max_alive > 0
+                        else 0
+                    )
+                    alive_singbox = await validate_configs_singbox(
+                        singbox_configs,
+                        singbox_path=singbox_path,
+                        probe_urls=xray_probe_urls,
+                        min_probe_successes=xray_min_probe_successes,
+                        attempts_per_config=xray_attempts_per_config,
+                        min_attempt_successes=xray_min_attempt_successes,
+                        probe_proxy_urls=xray_proxy_urls,
+                        proxy_latency_ms=xray_proxy_latency_ms,
+                        check_hostnames=check_hostnames,
+                        resolve_timeout=resolve_timeout,
+                        timeout=self._as_float(
+                            vcfg.get("singbox_timeout_seconds"),
+                            12.0,
+                            minimum=1.0,
+                        ),
+                        startup_timeout=self._as_float(
+                            vcfg.get("xray_startup_timeout_seconds"),
+                            4.0,
+                            minimum=0.5,
+                        ),
+                        concurrency=self._as_int(
+                            vcfg.get("singbox_concurrency"),
+                            6,
+                            minimum=1,
+                        ),
+                        max_alive=sb_max_alive,
+                    )
+                    list_stats["singbox_checked"] = sum(
+                        1
+                        for cfg in singbox_configs
+                        if getattr(cfg, "xray_was_checked", False)
+                    )
+                    list_stats["singbox_alive"] = len(alive_singbox)
+                    logger.info(
+                        "%s sing-box validation: %d/%d QUIC configs alive.",
+                        label,
+                        len(alive_singbox),
+                        len(singbox_configs),
+                    )
+                    alive_xray = alive_xray + alive_singbox
+                    list_stats["xray_alive"] = len(alive_xray)
             xray_attempted = [
                 cfg for cfg in supported if getattr(cfg, "xray_was_checked", False)
             ] + [

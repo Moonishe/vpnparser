@@ -267,7 +267,7 @@ async def ensure_geoip_database(
     sha256: str | None = None,
     timeout: float = 120.0,
     max_bytes: int = _DEFAULT_MMDB_MAX_BYTES,
-) -> bool:
+) -> str | None:
     """Make sure a usable offline database exists at *path*.
 
     The file is validated against *sha256* when one is pinned; a mismatch (or
@@ -277,22 +277,24 @@ async def ensure_geoip_database(
     unverified GeoIP database is an operator-controlled but still external
     artifact, and the checksum is one line of settings.
 
-    Returns ``True`` when the database at *path* is usable.
+    Returns the resolved database path when it is usable, ``None`` otherwise
+    (the caller feeds that path straight to the offline enrichment, so the
+    run never depends on the working directory).
     """
     try:
         target = resolve_safe_output_path(path)
     except ValueError as exc:
         logger.warning("Unsafe GeoIP database path %r: %s", path, exc)
-        return False
+        return None
     if _file_sha256_matches(target, sha256):
-        return True
+        return str(target)
     if not url or not sha256:
         logger.warning(
             "GeoIP database %s is missing/invalid and no pinned url+sha256 "
             "is configured to fetch it.",
             path,
         )
-        return False
+        return None
 
     target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_name(target.name + ".part")
@@ -309,7 +311,7 @@ async def ensure_geoip_database(
                     "GeoIP database download returned HTTP %d.",
                     resp.status_code,
                 )
-                return False
+                return None
             with part.open("wb") as fh:
                 async for chunk in resp.aiter_bytes(64 * 1024):
                     size += len(chunk)
@@ -326,7 +328,7 @@ async def ensure_geoip_database(
             )
             with contextlib.suppress(OSError):
                 part.unlink(missing_ok=True)
-            return False
+            return None
         if digest.hexdigest() != sha256:
             logger.warning(
                 "GeoIP database checksum mismatch for %s — keeping the old "
@@ -335,15 +337,15 @@ async def ensure_geoip_database(
             )
             with contextlib.suppress(OSError):
                 part.unlink(missing_ok=True)
-            return False
+            return None
         os.replace(part, target)
         logger.info("Downloaded GeoIP database to %s (%d bytes).", path, size)
-        return True
+        return str(target)
     except Exception as exc:
         logger.warning("GeoIP database download failed: %s", exc)
         with contextlib.suppress(OSError):
             part.unlink(missing_ok=True)
-        return False
+        return None
 
 
 def _country_from_mmdb_record(record: Any) -> str | None:

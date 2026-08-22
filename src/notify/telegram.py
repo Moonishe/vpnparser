@@ -476,7 +476,9 @@ def _alert_min_alive() -> int:
             data = yaml.safe_load(fh) or {}
         section = data.get("telegram")
         if isinstance(section, dict):
-            return max(0, int(section.get("alert_min_alive") or 10))
+            value = section.get("alert_min_alive")
+            if value is not None:
+                return max(0, int(value))
     except Exception:
         logger.debug("settings.yaml unreadable; using default alert floor")
     return 10
@@ -488,6 +490,8 @@ def _format_low_alive_alert(summary: dict[str, Any]) -> str:
     if not isinstance(lists, dict):
         return ""
     min_alive = _alert_min_alive()
+    if min_alive <= 0:
+        return ""
     alerts: list[str] = []
     for key in ("blacklist", "whitelist"):
         item = lists.get(key)
