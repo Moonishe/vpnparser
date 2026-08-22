@@ -23,7 +23,7 @@ JSON field    Config field          Notes
 ``fp``        ``fp``                fingerprint
 ``flow``      ``flow``              xtls-rprx-vision etc.
 ``type``      —                     header type; not stored (no Config field)
-``aid``       ``alter_id``          alterId; legacy servers need their real value
+``aid``       ``alter_id``          alterId; Xray >= 1.8.5 ignores it (AEAD-only)
 ``scy``       —                     vmess encryption mode; ignored
 ``v``         —                     version; ignored
 ============  ====================  ==========================================
@@ -150,9 +150,10 @@ class VmessParser(BaseParser):
                 else "none"
             )
 
-            # Legacy vmess servers still require the alterId the panel sent
-            # ("aid": 64/100 is common in free lists); probing them with
-            # alterId=0 always fails the handshake.
+            # Xray-core >= 1.8.5 removed legacy vmess MD5 auth and ignores
+            # ``aid`` (the client is AEAD-only; modern servers accept AEAD
+            # for the primary UUID regardless of aid). Older cores still
+            # need the panel's real value, so it is preserved, not dropped.
             aid_raw = obj.get("aid")
             alter_id: int | None = None
             if aid_raw is not None and not isinstance(aid_raw, bool):

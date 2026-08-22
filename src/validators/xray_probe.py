@@ -34,7 +34,11 @@ from src.validators.address_guard import filter_public_configs, is_blocked_liter
 logger = logging.getLogger(__name__)
 
 _SUPPORTED_PROTOCOLS = {"vless", "trojan", "vmess", "ss"}
-_SUPPORTED_NETWORKS = {"tcp", "ws", "grpc", "h2", "httpupgrade", "xhttp"}
+_SUPPORTED_NETWORKS = {"tcp", "ws", "grpc", "httpupgrade", "xhttp"}
+#: REALITY is implemented over RAW (tcp), gRPC and XHTTP only; any other
+#: combination makes Xray refuse the whole config at load time
+#: ("REALITY only supports RAW, XHTTP and gRPC for now").
+_REALITY_NETWORKS = {"tcp", "grpc", "xhttp"}
 _DEFAULT_PROBE_URLS = ["https://www.gstatic.com/generate_204"]
 _DEFAULT_IDENTITY_PROBE_URLS = [
     "https://api.ipify.org",
@@ -177,12 +181,12 @@ def _alpn(value: str | None) -> list[str] | None:
 def _stream_settings(cfg: Config) -> dict[str, Any] | None:
     network = str(cfg.network or "tcp").lower()
     security = str(cfg.security or "none").lower()
-    # Free lists spell HTTP/2 both ways: v2rayN exports ``type=http`` while
-    # Xray itself calls the network ``h2``. ``splithttp`` is the pre-1.8.6
-    # name of xhttp and is still emitted by older panels.
-    if network == "http":
-        network = "h2"
-    elif network == "splithttp":
+    # The old H2 transport ("h2", and v2rayN's ``type=http`` alias) was
+    # removed from Xray-core in v24.12.18 — such configs cannot be probed on
+    # the pinned core at all, so they stay "unsupported" instead of dying on
+    # an Xray startup error. ``splithttp`` is the old name of xhttp; both
+    # spellings still load.
+    if network == "splithttp":
         network = "xhttp"
     if network not in _SUPPORTED_NETWORKS:
         return None
@@ -203,19 +207,6 @@ def _stream_settings(cfg: Config) -> dict[str, Any] | None:
         if cfg.host:
             grpc["authority"] = _first_csv(cfg.host) or cfg.host
         stream["grpcSettings"] = grpc
-    elif network == "h2":
-        h2: dict[str, Any] = {}
-        if cfg.path:
-            h2["path"] = cfg.path
-        if cfg.host:
-            hosts = [
-                part.strip()
-                for part in str(cfg.host).replace(";", ",").split(",")
-                if part.strip()
-            ]
-            if hosts:
-                h2["host"] = hosts
-        stream["httpSettings"] = h2
     elif network == "httpupgrade":
         upgrade: dict[str, Any] = {}
         if cfg.path:
@@ -232,6 +223,8 @@ def _stream_settings(cfg: Config) -> dict[str, Any] | None:
         stream["xhttpSettings"] = xhttp
 
     if security == "reality":
+        if network not in _REALITY_NETWORKS:
+            return None
         if not cfg.pbk:
             return None
         reality: dict[str, Any] = {
@@ -313,7 +306,9 @@ def build_xray_config(
 
     outbound: dict[str, Any] = {
         "tag": "vpn",
-        "protocol": protocol,
+        # Xray's outbound registry only knows "shadowsocks"; the link scheme
+        # and the internal protocol id stay "ss".
+        "protocol": "shadowsocks" if protocol == "ss" else protocol,
         "streamSettings": stream,
     }
     if protocol == "vless":
@@ -345,7 +340,8 @@ def build_xray_config(
     elif protocol == "vmess":
         user = {
             "id": cfg.uuid_or_password,
-            # Legacy servers (aid=64/100 in free lists) reject alterId=0.
+            # Ignored by Xray >= 1.8.5 (legacy MD5 auth removed, client is
+            # AEAD-only); older cores still need the panel's real value.
             "alterId": int(cfg.alter_id or 0),
             "security": "auto",
         }
@@ -957,6 +953,12 @@ async def validate_configs_xray(
             "probe_via_proxies requested but the proxy pool is empty; "
             "probing directly.",
         )
+    elif probe_via_proxies and min_proxy_successes > 0:
+        logger.warning(
+            "probe_via_proxies routes every attempt through the pool; "
+            "min_proxy_successes=%d is not enforced separately in this mode.",
+            min_proxy_successes,
+        )
     reject_ips: set[str] = set()
     proxy_reject_ips: dict[str, set[str]] = {}
     probe_targets = _normalize_probe_urls(probe_url, probe_urls)
@@ -982,11 +984,21 @@ async def validate_configs_xray(
             verify_tls=verify_probe_tls,
         )
         if direct_ip is None and require_distinct_outbound_ip:
-            logger.warning(
-                "require_distinct_outbound_ip is True but cannot determine "
-                "direct public IP — failing closed (no configs pass).",
-            )
-            return []
+            if probe_via_proxies and proxy_urls:
+                # In via-proxy mode broken direct egress is the expected
+                # situation and the probes never use it, so the stage must
+                # not fail closed over an unreachable identity endpoint.
+                logger.warning(
+                    "require_distinct_outbound_ip is True but the direct "
+                    "public IP is unknown; probes run through the proxy "
+                    "pool — continuing without the direct-IP reject set.",
+                )
+            else:
+                logger.warning(
+                    "require_distinct_outbound_ip is True but cannot determine "
+                    "direct public IP — failing closed (no configs pass).",
+                )
+                return []
         if direct_ip:
             reject_ips.add(direct_ip)
         if proxy_urls:
@@ -1048,7 +1060,14 @@ async def validate_configs_xray(
                     min_probe_successes=min_probe_successes,
                     dial_proxy_url=dial_proxy_url,
                     require_distinct_outbound_ip=require_distinct_outbound_ip,
-                    reject_outbound_ips=reject_ips,
+                    # A proxied attempt must also reject the proxy's own
+                    # exit IP: a "VPN" whose outbound equals the SOCKS
+                    # proxy's exit is just the proxy itself.
+                    reject_outbound_ips=(
+                        proxy_reject_ips.get(dial_proxy_url, reject_ips)
+                        if dial_proxy_url
+                        else reject_ips
+                    ),
                     verify_probe_tls=verify_probe_tls,
                     timeout=timeout,
                     startup_timeout=startup_timeout,

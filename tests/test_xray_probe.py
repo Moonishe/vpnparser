@@ -298,18 +298,22 @@ def test_stream_settings_unknown_security() -> None:
     assert _stream_settings(cfg) is None
 
 
-def test_stream_settings_h2_and_http_alias() -> None:
-    cfg = _make_cfg(network="h2", security="none", path="/h2", host="a.com,b.com")
-    result = _stream_settings(cfg)
-    assert result is not None
-    assert result["network"] == "h2"
-    assert result["httpSettings"] == {"path": "/h2", "host": ["a.com", "b.com"]}
+def test_stream_settings_h2_removed_transport() -> None:
+    """H2 was removed from Xray-core (v24.12.18): such configs must be
+    treated as unsupported instead of dying on an Xray startup error."""
+    assert _stream_settings(_make_cfg(network="h2", security="none")) is None
+    # v2rayN exports HTTP/2 as ``type=http`` — same removed transport.
+    assert _stream_settings(_make_cfg(network="http", security="none")) is None
 
-    # v2rayN exports HTTP/2 as ``type=http``.
-    assert _stream_settings(_make_cfg(network="http", security="none")) == {
-        "network": "h2",
-        "httpSettings": {},
-    }
+
+def test_stream_settings_reality_requires_tcp_grpc_xhttp() -> None:
+    """REALITY over ws/httpupgrade never loads in Xray — skip, don't probe."""
+    ws = _make_cfg(network="ws", security="reality", pbk="pbk", sni="r.example.com")
+    assert _stream_settings(ws) is None
+    upgrade = _make_cfg(
+        network="httpupgrade", security="reality", pbk="pbk", sni="r.example.com"
+    )
+    assert _stream_settings(upgrade) is None
 
 
 def test_stream_settings_httpupgrade() -> None:
@@ -438,7 +442,7 @@ def test_build_xray_config_vmess() -> None:
 
 
 def test_build_xray_config_vmess_alter_id() -> None:
-    """Legacy servers need their real alterId, not the hardcoded 0."""
+    """alterId passes through for older cores; Xray >= 1.8.5 ignores it."""
     cfg = _make_cfg(
         protocol="vmess",
         address="9.10.11.12",
@@ -473,7 +477,9 @@ def test_build_xray_config_ss() -> None:
         ss_method="aes-256-gcm",
     )
     r = build_xray_config(cfg, socks_port=10800)
-    assert r is not None and r["outbounds"][0]["protocol"] == "ss"
+    assert r is not None
+    # Xray's outbound registry only knows "shadowsocks", never "ss".
+    assert r["outbounds"][0]["protocol"] == "shadowsocks"
     assert r["outbounds"][0]["settings"]["servers"][0]["method"] == "aes-256-gcm"
 
 
@@ -1623,6 +1629,83 @@ async def test_validate_via_proxies_skips_extra_proxy_checks() -> None:
     # run on top of an attempt that already used the proxy.
     assert calls == ["socks5://p1:1080"]
     assert cfg.xray_proxy_successes == 0
+
+
+@pytest.mark.asyncio
+async def test_validate_via_proxies_rejects_proxy_exit_ip() -> None:
+    """A proxied attempt must also reject the SOCKS proxy's own exit IP."""
+    cfg = _make_cfg()
+
+    async def fake_discover(*, proxy_url=None, **_kwargs):
+        return "198.51.100.1" if proxy_url is None else "198.51.100.2"
+
+    seen_rejects: list[set[str]] = []
+
+    async def fake_check(_cfg, **kwargs):
+        seen_rejects.append(set(kwargs["reject_outbound_ips"]))
+        return 0.5
+
+    with (
+        patch("src.validators.xray_probe.discover_public_ip", fake_discover),
+        patch("src.validators.xray_probe.xray_probe_check", fake_check),
+    ):
+        result = await validate_configs_xray(
+            [cfg],
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            probe_proxy_urls=["socks5://p1:1080"],
+            probe_via_proxies=True,
+            require_distinct_outbound_ip=True,
+        )
+    assert len(result) == 1
+    assert seen_rejects == [{"198.51.100.1", "198.51.100.2"}]
+
+
+@pytest.mark.asyncio
+async def test_validate_via_proxies_survives_unknown_direct_ip() -> None:
+    """Broken direct egress must not fail-close a via-proxy stage."""
+    cfg = _make_cfg()
+
+    async def no_direct_ip(**_kwargs):
+        return None
+
+    async def fake_check(_cfg, **_kwargs):
+        return 0.5
+
+    with (
+        patch("src.validators.xray_probe.discover_public_ip", no_direct_ip),
+        patch("src.validators.xray_probe.xray_probe_check", fake_check),
+    ):
+        result = await validate_configs_xray(
+            [cfg],
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            probe_proxy_urls=["socks5://p1:1080"],
+            probe_via_proxies=True,
+            require_distinct_outbound_ip=True,
+        )
+    assert len(result) == 1
+    assert cfg.is_alive is True
+
+
+@pytest.mark.asyncio
+async def test_validate_via_proxies_warns_min_proxy_successes(caplog) -> None:
+    cfg = _make_cfg()
+    with caplog.at_level(logging.WARNING):
+        with patch(
+            "src.validators.xray_probe.xray_probe_check", new_callable=AsyncMock
+        ) as m:
+            m.return_value = 0.5
+            result = await validate_configs_xray(
+                [cfg],
+                xray_path="/usr/bin/xray",
+                timeout=5.0,
+                probe_proxy_urls=["socks5://p1:1080"],
+                probe_via_proxies=True,
+                min_proxy_successes=2,
+            )
+    assert len(result) == 1
+    assert "min_proxy_successes" in caplog.text
 
 
 @pytest.mark.asyncio
