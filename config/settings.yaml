@@ -86,7 +86,9 @@ validator:
     whitelist: 200
   xray_timeout_seconds: 15
   xray_startup_timeout_seconds: 5
-  xray_concurrency: 10
+  # 10 left the SOCKS pool under-used: each probe is mostly waiting on the
+  # network, and Xray instances themselves are cheap.
+  xray_concurrency: 15
   # Relaxed L3 gate: free SOCKS5 proxies are unstable. A single real Xray HTTPS
   # probe is enough; do not require a distinct outbound IP or a proxy-network
   # success. The real-handshake barrier still filters garbage configs.
@@ -107,6 +109,13 @@ validator:
     - "https://www.gstatic.com/generate_204"
     - "https://cp.cloudflare.com/generate_204"
 
+  # QUIC protocols (hysteria2/tuic) cannot be probed by Xray-core; sing-box
+  # provides their L3 check (binary from SINGBOX_EXECUTABLE / bin/ / PATH).
+  # Shares the SOCKS pool, the probe URLs and the per-list alive budget.
+  singbox_enabled: true
+  singbox_timeout_seconds: 15
+  singbox_concurrency: 10
+
   proxy_pool:
     enabled: true
     # If no explicit proxy and no free proxy survives self-check, skip liveness
@@ -125,9 +134,10 @@ validator:
     sources:
       - "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks5/data.txt"
       - "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/protocols/socks5/data.txt"
-      - "https://cdn.jsdelivr.net/gh/VPSLabCloud/VPSLab-Free-Proxy-List@main/socks5_all.txt"
-      - "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt"
-    max_candidates: 600
+      - "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt"
+    # 300 candidates is enough to fill max_proxies with working SOCKS5;
+    # VPSLab/gfpcom mostly served private-IP junk and only slowed the sweep.
+    max_candidates: 300
     max_candidates_per_source: 150
     min_proxies: 15
     max_proxies: 40
@@ -140,8 +150,13 @@ validator:
     probe_host: "api.github.com"
     probe_port: 443
 
-  # GeoIP (optional enrichment, disabled by default to avoid rate limits)
-  geoip_enabled: false
+  # GeoIP enrichment: offline database first (unlimited lookups, no API
+  # rate limit), ip-api.com as fallback. The mmdb artifact is pinned by
+  # checksum and auto-downloaded to data/ (gitignored) on first use.
+  geoip_enabled: true
+  geoip_mmdb_file: "data/GeoLite2-Country.mmdb"
+  geoip_mmdb_url: "https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.08.22/GeoLite2-Country.mmdb"
+  geoip_mmdb_sha256: "ba9a33b56e4c3b61a8df00757e925aac7c59afe757534cf0a32d2f9c6399c9e3"
   geoip_api_url: "https://ip-api.com/json/{ip}"
   # ip-api.com free tier allows 45 req/min; lookups share one global rate
   # limiter, so enrichment takes roughly (distinct addresses / rpm) minutes.
@@ -191,6 +206,9 @@ publisher:
   # Telegram links keep reading the env var.
   output_file: "output/subscription.txt"
   mix_output_file: "output/subscription-mix.txt"
+  # Mihomo/Clash YAML twin of the combined subscription: v2rayN eats the
+  # base64 list, Clash-family clients need YAML.
+  clash_output_file: "output/subscription-clash.yaml"
   location_outputs_enabled: true
   location_output_dir: "output/locations"
   location_output_limit: 50
@@ -199,6 +217,12 @@ publisher:
     blacklist: "output/subscription-blacklist.txt"
     whitelist: "output/subscription-whitelist.txt"
   commit_message: "auto-update configs [{timestamp}]"
+
+# --- Telegram ---
+telegram:
+  # Per-list floor for verified-alive configs; a run below it gets a warning
+  # line in the notification (early warning for dead sources / proxy pool).
+  alert_min_alive: 10
 
 # --- LLM Fallback ---
 # NOTE: LLM_API_KEY in .env is a Yandex key (AQ.A...) - none of the supported

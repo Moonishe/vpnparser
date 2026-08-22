@@ -130,6 +130,34 @@
       "max_concurrent_urls": 20,
       "enabled": true,
       "timeout": 10
+    },
+    {
+      "name": "flaafix-aetris-white-list-lite",
+      "list_type": "whitelist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/flaafix/AetrisVPN-white-list-lite/main/AetrisVPN.txt",
+      "enabled": true
+    },
+    {
+      "name": "blastvpn-freevpn",
+      "list_type": "whitelist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/BlastVPN/FreeVPN/main/BLASTVPN-CONFIGS.txt",
+      "enabled": true
+    },
+    {
+      "name": "hiztin-vless-po-gribi",
+      "list_type": "blacklist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/hiztin/VLESS-PO-GRIBI/main/deploy/sub.txt",
+      "enabled": true
+    },
+    {
+      "name": "solovyov-all-subs-final",
+      "list_type": "blacklist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/solovyov-jenya2004/all_subs/main/final_sorted",
+      "enabled": true
     }
   ]
 }
