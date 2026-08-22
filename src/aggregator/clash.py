@@ -19,8 +19,9 @@ from src.parsers.base import Config
 logger = logging.getLogger(__name__)
 
 #: Networks Mihomo expresses via <network>-opts; anything else falls back to
-#: plain TCP transport.
-_SUPPORTED_NETWORKS = {"ws", "grpc", "h2", "httpupgrade"}
+#: plain TCP transport. httpupgrade is translated to ws with
+#: ``v2ray-http-upgrade`` (Mihomo has no network of its own for it).
+_SUPPORTED_NETWORKS = {"ws", "grpc", "h2", "httpupgrade", "xhttp"}
 
 
 def _name(cfg: Config, used: set[str]) -> str:
@@ -66,11 +67,23 @@ def _tls_fields(cfg: Config, proxy: dict[str, Any]) -> None:
 
 def _transport_fields(cfg: Config, proxy: dict[str, Any]) -> None:
     network = str(cfg.network or "tcp").lower()
+    if network == "splithttp":
+        network = "xhttp"
     if network not in _SUPPORTED_NETWORKS:
+        return
+    if network == "httpupgrade":
+        # Mihomo rides httpupgrade on the ws transport behind a flag.
+        proxy["network"] = "ws"
+        opts: dict[str, Any] = {"v2ray-http-upgrade": True}
+        if cfg.path:
+            opts["path"] = cfg.path
+        if cfg.host:
+            opts["headers"] = {"Host": str(cfg.host).split(",")[0].strip()}
+        proxy["ws-opts"] = opts
         return
     proxy["network"] = network
     if network == "ws":
-        opts: dict[str, Any] = {}
+        opts = {}
         if cfg.path:
             opts["path"] = cfg.path
         if cfg.host:
@@ -94,13 +107,13 @@ def _transport_fields(cfg: Config, proxy: dict[str, Any]) -> None:
             if hosts:
                 opts["host"] = hosts
         proxy["h2-opts"] = opts
-    elif network == "httpupgrade":
+    elif network == "xhttp":
         opts = {}
         if cfg.path:
             opts["path"] = cfg.path
         if cfg.host:
             opts["host"] = str(cfg.host).split(",")[0].strip()
-        proxy["httpupgrade-opts"] = opts
+        proxy["xhttp-opts"] = opts
 
 
 def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] | None:
@@ -143,9 +156,11 @@ def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] |
     elif protocol in ("hysteria2", "hy2"):
         proxy["type"] = "hysteria2"
         proxy["password"] = cfg.uuid_or_password
-        proxy["tls"] = True
+        # Hysteria2Option/TuicOption take "sni"; they have no "tls"/
+        # "servername" fields (unknown keys are silently dropped, which
+        # used to lose the SNI for every QUIC entry).
         if cfg.sni:
-            proxy["servername"] = cfg.sni
+            proxy["sni"] = cfg.sni
         proxy["skip-cert-verify"] = True
         return proxy
     elif protocol == "tuic":
@@ -156,9 +171,8 @@ def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] |
         proxy["type"] = "tuic"
         proxy["uuid"] = uuid_part.strip()
         proxy["password"] = password_part.strip()
-        proxy["tls"] = True
         if cfg.sni:
-            proxy["servername"] = cfg.sni
+            proxy["sni"] = cfg.sni
         proxy["skip-cert-verify"] = True
         return proxy
     else:

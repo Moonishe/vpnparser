@@ -94,7 +94,6 @@ def test_hysteria2_and_tuic_shapes() -> None:
     hy2 = config_to_clash_proxy(_vless(protocol="hysteria2", sni="h.example"), set())
     assert hy2 is not None
     assert hy2["type"] == "hysteria2"
-    assert hy2["tls"] is True
     assert hy2["skip-cert-verify"] is True
 
     tuic = config_to_clash_proxy(
@@ -104,6 +103,7 @@ def test_hysteria2_and_tuic_shapes() -> None:
     assert tuic["type"] == "tuic"
     assert tuic["uuid"] == "uuid"
     assert tuic["password"] == "pass"
+    assert tuic["sni"] == "t.example"
 
     # v4 token-only tuic links are not expressible.
     assert (
@@ -119,6 +119,30 @@ def test_duplicate_names_get_suffixes() -> None:
     assert first is not None and second is not None
     assert first["name"] == "same"
     assert second["name"] == "same #2"
+
+
+def test_httpupgrade_translated_to_ws_upgrade() -> None:
+    cfg = _vless(
+        security="tls",
+        network="httpupgrade",
+        path="/up",
+        host="up.example",
+        sni="up.example",
+    )
+    proxy = config_to_clash_proxy(cfg, set())
+    assert proxy is not None
+    assert proxy["network"] == "ws"
+    assert proxy["ws-opts"]["v2ray-http-upgrade"] is True
+    assert proxy["ws-opts"]["path"] == "/up"
+    assert proxy["ws-opts"]["headers"]["Host"] == "up.example"
+
+
+def test_xhttp_transport_fields() -> None:
+    cfg = _vless(security="tls", network="xhttp", path="/x", host="x.example")
+    proxy = config_to_clash_proxy(cfg, set())
+    assert proxy is not None
+    assert proxy["network"] == "xhttp"
+    assert proxy["xhttp-opts"] == {"path": "/x", "host": "x.example"}
 
 
 def test_configs_without_raw_link_skipped() -> None:
