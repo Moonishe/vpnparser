@@ -651,3 +651,79 @@ async def test_load_proxy_pool_keeps_candidates_when_all_are_banned(caplog) -> N
     assert probed == [["socks5://1.2.3.4:1080"]]
     assert result == ["socks5://1.2.3.4:1080"]
     assert "rejects all 1 candidate(s)" in caplog.text
+
+
+# --- failover probe targets & network diversity ------------------------------
+
+
+async def test_proxy_connects_fails_over_to_extra_target(monkeypatch) -> None:
+    """A proxy that cannot reach GitHub still passes via gstatic."""
+    from src.validators import proxy_pool
+
+    attempted: list[str] = []
+
+    class _Sock:
+        def close(self) -> None:
+            return None
+
+    def _proxy_from_url(_url: str):
+        class _Proxy:
+            async def connect(self, *, dest_host, dest_port, timeout=1.0):
+                attempted.append(dest_host)
+                if dest_host == "api.github.com":
+                    raise OSError("filtered")
+                return _Sock()
+
+        return _Proxy()
+
+    import python_socks.async_.asyncio as psi
+
+    monkeypatch.setattr(
+        psi, "Proxy", type("P", (), {"from_url": staticmethod(_proxy_from_url)})
+    )
+    monkeypatch.setattr(
+        "sys.modules",
+        {**__import__("sys").modules},
+    )
+    ok = await proxy_pool.proxy_connects(
+        "socks5://1.2.3.4:1080",
+        extra_probe_targets=[("www.gstatic.com", 443)],
+    )
+    assert ok is True
+    assert attempted == ["api.github.com", "www.gstatic.com"]
+
+
+async def test_proxy_connects_all_targets_dead(monkeypatch) -> None:
+    from src.validators import proxy_pool
+
+    class _Nope:
+        async def connect(self, **_kw):
+            raise OSError("dead")
+
+    import python_socks.async_.asyncio as psi
+
+    monkeypatch.setattr(
+        psi.Proxy,
+        "from_url",
+        staticmethod(lambda _url: _Nope()),
+    )
+    ok = await proxy_pool.proxy_connects(
+        "socks5://1.2.3.4:1080",
+        extra_probe_targets=[("www.gstatic.com", 443)],
+    )
+    assert ok is False
+
+
+def test_count_proxy_networks_groups_by_prefix16() -> None:
+    from src.validators.proxy_pool import count_proxy_networks
+
+    urls = [
+        "socks5://10.1.1.1:1080",
+        "socks5://10.1.9.9:1080",  # same /16
+        "socks5://10.2.0.1:1080",  # different /16
+        "socks5://proxy.example:1080",  # hostname — its own bucket
+        "socks5://[2001:db8:1::1]:1080",
+        "socks5://[2001:db8:1::2]:1080",  # same /48
+    ]
+    assert count_proxy_networks(urls) == 4
+    assert count_proxy_networks([]) == 0

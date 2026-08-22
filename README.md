@@ -7,6 +7,11 @@
   <img src="https://img.shields.io/github/last-commit/Moonishe/vpnparser" alt="Last commit">
 </p>
 
+<p align="center">
+  <!-- Redrawn from output/stats-history.json on every run. -->
+  <img src="output/alive-trend.svg" alt="Alive configs trend">
+</p>
+
 Fetches public VPN proxy configurations from GitHub sources, parses supported
 protocol links, filters & deduplicates them, runs liveness checks (TCP/TLS/Xray
 L3 probe), then publishes Happ/v2ray-compatible base64 subscriptions.
@@ -57,8 +62,10 @@ ones back into subscriptions.
 | `output/subscription-blacklist.txt` | Blacklist pool |
 | `output/subscription-whitelist.txt` | Whitelist / restricted-network pool |
 | `output/subscription-mix.txt` | 100 black + 100 white |
+| `output/subscription-clash.yaml` | Mihomo/Clash YAML twin of the combined pool |
 | `output/locations/subscription-XX.txt` | Per-country subsets (≤50 per country) |
 | `output/run-summary.json` | Validation metadata for Telegram notifications |
+| `output/stats-history.json` | Per-run alive counts (capped history behind the trend badge and the Telegram diff-alert) |
 
 ---
 

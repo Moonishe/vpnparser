@@ -39,3 +39,92 @@ def test_run_method_applies_quality_and_returns_state(tmp_path: Path) -> None:
     state2 = PipelineState(validated={"list_b": [cfg]})
     result2 = asyncio.run(runner2._quality.run(state2))
     assert "list_b" in result2.validated
+
+
+# ---------------------------------------------------------------------------
+# Stability gate (min_consecutive_passes)
+# ---------------------------------------------------------------------------
+
+
+def _stability_runner(tmp_path: Path, quality_yaml: str) -> PipelineRunner:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(quality_yaml, encoding="utf-8")
+    return PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+
+
+def _cfg(address: str, latency_ms: float = 50.0):
+    from src.parsers.base import Config
+
+    return Config(
+        "vless",
+        address,
+        443,
+        f"id-{address}",
+        country="DE",
+        latency_ms=latency_ms,
+        is_alive=True,
+    )
+
+
+def test_stability_gate_drops_one_shot_configs(tmp_path: Path) -> None:
+    runner = _stability_runner(
+        tmp_path,
+        "quality:\n"
+        "  health_history_enabled: true\n"
+        "  health_history_file: placeholder.json\n"
+        "  min_consecutive_passes: 2\n"
+        "  stability_min_alive: 3\n",
+    )
+    configs = [_cfg(f"h{i}.example") for i in range(6)]
+    # Three configs with a two-run streak, three first-timers.
+    for cfg in configs[:3]:
+        runner._quality.health.update([cfg])
+        runner._quality.health.update([cfg])
+    for cfg in configs[3:]:
+        runner._quality.health.update([cfg])
+
+    result = runner._quality.apply({"blacklist": configs})
+    kept = result["blacklist"]
+    assert {cfg.address for cfg in kept} == {f"h{i}.example" for i in range(3)}
+    stats = runner._context.liveness_stats["quality"]
+    assert stats["blacklist"]["stability_dropped"] == 3
+    dropped = [cfg for cfg in configs if cfg.address not in {c.address for c in kept}]
+    assert all(cfg.quality_block_reason == "stability" for cfg in dropped)
+
+
+def test_stability_gate_relaxed_below_floor(tmp_path: Path) -> None:
+    runner = _stability_runner(
+        tmp_path,
+        "quality:\n"
+        "  health_history_enabled: true\n"
+        "  min_consecutive_passes: 2\n"
+        "  stability_min_alive: 10\n",
+    )
+    configs = [_cfg(f"h{i}.example") for i in range(4)]
+    for cfg in configs[:2]:
+        runner._quality.health.update([cfg])
+        runner._quality.health.update([cfg])
+    for cfg in configs[2:]:
+        runner._quality.health.update([cfg])
+
+    result = runner._quality.apply({"blacklist": configs})
+    # Only 2 stable configs — below the floor of 10 — so everything stays.
+    assert len(result["blacklist"]) == 4
+    stats = runner._context.liveness_stats["quality"]
+    assert stats["stability_relaxed"]["blacklist"] == 2
+    assert stats["blacklist"]["stability_dropped"] == 0
+
+
+def test_stability_gate_disabled_at_one(tmp_path: Path) -> None:
+    runner = _stability_runner(
+        tmp_path,
+        "quality:\n  health_history_enabled: true\n  min_consecutive_passes: 1\n",
+    )
+    configs = [_cfg(f"h{i}.example") for i in range(3)]
+    for cfg in configs:
+        runner._quality.health.update([cfg])
+    result = runner._quality.apply({"blacklist": configs})
+    assert len(result["blacklist"]) == 3

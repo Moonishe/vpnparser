@@ -327,6 +327,7 @@ class PipelineRunner:
         health_file = self._write_health_history()
         if health_file:
             output_files.append(health_file)
+        output_files.extend(self._write_stats_history("ok"))
 
         self._save_proxy_health_history()
 
@@ -760,11 +761,13 @@ class PipelineRunner:
         summary_file = self._write_run_summary(status)
         health_file = self._write_health_history()
         self._save_proxy_health_history()
+        stats_files = self._write_stats_history(status)
         if publish:
             publish_paths = self._configured_subscription_output_paths(output_file)
             publish_paths.extend(location_files)
             if clash_output_file:
                 publish_paths.append(clash_output_file)
+            publish_paths.extend(stats_files)
             if summary_file:
                 publish_paths.append(summary_file)
             if health_file:
@@ -903,6 +906,27 @@ class PipelineRunner:
         return output_file
 
     # --- stage 5: write ---
+
+    def _write_stats_history(self, status: str) -> list[str]:
+        """Append this run to the trend history and redraw the SVG badge.
+
+        Both files are published with the subscriptions, so the badge in the
+        README and the Telegram diff-alert survive run boundaries.
+        """
+        try:
+            from src.scheduler.stats_history import (
+                append_run_stats,
+                render_trend_svg,
+                run_stats_entry,
+            )
+
+            entry = run_stats_entry(self._liveness_stats, status)
+            history, history_path = append_run_stats(entry)
+            svg_path = render_trend_svg(history)
+            return [path for path in (history_path, svg_path) if path]
+        except Exception as exc:
+            logger.warning("Stats history write failed: %s", exc)
+            return []
 
     def _write_output(self, configs: list[Config], output_file: str) -> int:
         """Write the subscription file via ``write_subscription``."""

@@ -49,11 +49,24 @@ class QualityFilter(PipelineStage):
             1,
             minimum=0,
         )
+        # A config needs this many consecutive passing runs (this one
+        # included) to be published; relaxed when it would drain a list.
+        min_consecutive_passes = self.settings.as_int(
+            qcfg.get("min_consecutive_passes"),
+            1,
+            minimum=1,
+        )
+        stability_min_alive = self.settings.as_int(
+            qcfg.get("stability_min_alive"),
+            10,
+            minimum=0,
+        )
         result: dict[str, list[Config]] = {}
         quality_stats: dict[str, Any] = {
             "drop_slow": drop_slow,
             "max_latency_ms": max_latency,
             "min_alive_to_skip_slow_drop": min_alive_to_skip_slow_drop,
+            "min_consecutive_passes": min_consecutive_passes,
         }
         for list_type, configs in configs_by_list.items():
             fast: list[Config] = []
@@ -88,12 +101,33 @@ class QualityFilter(PipelineStage):
                     float(cfg.latency_ms if cfg.latency_ms is not None else 10**9),
                 ),
             )
+            stability_dropped = 0
+            if min_consecutive_passes > 1:
+                stable = [
+                    cfg
+                    for cfg in kept
+                    if self.health.consecutive_successes(cfg) >= min_consecutive_passes
+                ]
+                if len(stable) >= stability_min_alive:
+                    for cfg in kept:
+                        if cfg not in stable:
+                            cfg.quality_block_reason = "stability"
+                    stability_dropped = len(kept) - len(stable)
+                    kept = stable
+                else:
+                    # Enforcing the gate would leave the list below the floor:
+                    # a smaller-but-stable subscription is not worth an empty
+                    # one, so the run keeps every alive config.
+                    quality_stats.setdefault("stability_relaxed", {})[list_type] = len(
+                        stable,
+                    )
             if kept:
                 result[list_type] = kept
             quality_stats[list_type] = {
                 "input": len(configs),
                 "kept": len(kept),
                 "slow_dropped": slow_dropped,
+                "stability_dropped": stability_dropped,
                 "avg_score": (
                     sum(float(getattr(cfg, "quality_score", 0) or 0) for cfg in kept)
                     / len(kept)

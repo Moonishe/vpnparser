@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -278,6 +279,7 @@ class LivenessValidator(PipelineStage):
                 probe_host=str(pool_cfg.get("probe_host") or "api.github.com"),
                 probe_port=self._as_int(pool_cfg.get("probe_port"), 443, minimum=1),
                 history=self._proxy_health_history,
+                extra_probe_targets=self._extra_probe_targets(pool_cfg),
             )
             self.context.liveness_stats["proxy_search_rounds"] = round_index + 1
             self.context.liveness_stats["proxy_search"].append(
@@ -302,6 +304,22 @@ class LivenessValidator(PipelineStage):
                 search_rounds,
             )
         return pool_urls
+
+    def _extra_probe_targets(self, pool_cfg: dict[str, Any]) -> list[tuple[str, int]]:
+        """Failover self-check targets from settings ([[host, port], ...])."""
+        raw = pool_cfg.get("probe_extra_targets")
+        targets: list[tuple[str, int]] = []
+        if isinstance(raw, (list, tuple)):
+            for item in raw:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    host = str(item[0]).strip()
+                    try:
+                        port = int(item[1])
+                    except (TypeError, ValueError):
+                        continue
+                    if host and 1 <= port <= 65535:
+                        targets.append((host, port))
+        return targets
 
     async def _validator_proxy_urls(self) -> list[str]:
         """Return configured validator proxies, including optional free pool."""
@@ -350,6 +368,21 @@ class LivenessValidator(PipelineStage):
 
         self._validator_proxy_urls_cache = urls
         self.context.liveness_stats["proxy_count"] = len(urls)
+        try:
+            from src.validators.proxy_pool import count_proxy_networks
+
+            networks = count_proxy_networks(urls)
+        except Exception as exc:  # pragma: no cover - import-guard only
+            logger.warning("Cannot count proxy networks: %s", exc)
+            networks = 0
+        self.context.liveness_stats["proxy_networks"] = networks
+        if len(urls) > 1 and networks < 2:
+            logger.warning(
+                "Proxy pool: all %d working proxies sit in %d network(s) — "
+                "one network event empties the subscription.",
+                len(urls),
+                networks,
+            )
         if explicit:
             self.context.liveness_stats["proxy_urls"] = [
                 "<explicit-proxy-hidden>",
@@ -1100,33 +1133,120 @@ class LivenessValidator(PipelineStage):
                 self._as_float(vcfg.get("xray_timeout_seconds"), 12.0, minimum=1.0),
             )
 
-            alive_xray = await validate_configs_xray(
-                supported,
-                xray_path=xray_path,
-                probe_urls=xray_probe_urls,
-                min_probe_successes=xray_min_probe_successes,
-                attempts_per_config=xray_attempts_per_config,
-                min_attempt_successes=xray_min_attempt_successes,
-                probe_proxy_urls=xray_proxy_urls,
-                min_proxy_successes=xray_min_proxy_successes,
-                probe_via_proxies=xray_probe_via_proxies,
-                proxy_latency_ms=xray_proxy_latency_ms,
-                require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
-                check_hostnames=check_hostnames,
-                resolve_timeout=resolve_timeout,
-                timeout=self._as_float(
-                    vcfg.get("xray_timeout_seconds"),
-                    12.0,
-                    minimum=1.0,
-                ),
-                startup_timeout=self._as_float(
-                    vcfg.get("xray_startup_timeout_seconds"),
-                    4.0,
-                    minimum=0.5,
-                ),
-                concurrency=self._as_int(vcfg.get("xray_concurrency"), 6, minimum=1),
-                max_alive=xray_max_alive,
+            # TTL cache: configs that passed recently get one fast re-probe
+            # instead of the full attempt set, freeing probe budget for the
+            # long tail of new candidates. 0 disables the split.
+            verification_ttl = (
+                self._as_float(
+                    vcfg.get("verification_ttl_minutes"),
+                    0.0,
+                    minimum=0.0,
+                )
+                * 60.0
             )
+            fresh: list[Config] = []
+            stale: list[Config] = list(supported)
+            if verification_ttl > 0 and self.health.is_enabled():
+                now = time.time()
+                fresh_ids: set[int] = set()
+                for cfg in supported:
+                    last_pass = self.health.last_pass_ts(cfg)
+                    if last_pass and (now - last_pass) <= verification_ttl:
+                        fresh.append(cfg)
+                        fresh_ids.add(id(cfg))
+                stale = [cfg for cfg in supported if id(cfg) not in fresh_ids]
+                list_stats["xray_fresh_verified"] = len(fresh)
+                if fresh:
+                    logger.info(
+                        "%s TTL cache: %d/%d candidates passed within %.0f min "
+                        "— one fast re-probe each.",
+                        label,
+                        len(fresh),
+                        len(supported),
+                        verification_ttl / 60.0,
+                    )
+
+            alive_xray: list[Config] = []
+            if fresh:
+                alive_xray = await validate_configs_xray(
+                    fresh,
+                    xray_path=xray_path,
+                    probe_urls=xray_probe_urls,
+                    min_probe_successes=xray_min_probe_successes,
+                    attempts_per_config=1,
+                    min_attempt_successes=1,
+                    probe_proxy_urls=xray_proxy_urls,
+                    min_proxy_successes=xray_min_proxy_successes,
+                    probe_via_proxies=xray_probe_via_proxies,
+                    proxy_latency_ms=xray_proxy_latency_ms,
+                    require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
+                    check_hostnames=check_hostnames,
+                    resolve_timeout=resolve_timeout,
+                    timeout=self._as_float(
+                        vcfg.get("xray_timeout_seconds"),
+                        12.0,
+                        minimum=1.0,
+                    ),
+                    startup_timeout=self._as_float(
+                        vcfg.get("xray_startup_timeout_seconds"),
+                        4.0,
+                        minimum=0.5,
+                    ),
+                    concurrency=self._as_int(
+                        vcfg.get("xray_concurrency"),
+                        6,
+                        minimum=1,
+                    ),
+                    max_alive=xray_max_alive,
+                )
+            if stale:
+                if xray_max_alive > 0 and len(alive_xray) >= xray_max_alive:
+                    # 0 would mean "unlimited" — the budget is full.
+                    list_stats["xray_stale_skipped"] = "budget_full"
+                    logger.info(
+                        "%s fresh re-probes filled the alive budget (%d); "
+                        "skipping full validation of %d remaining candidate(s).",
+                        label,
+                        xray_max_alive,
+                        len(stale),
+                    )
+                else:
+                    stale_budget = (
+                        max(0, xray_max_alive - len(alive_xray))
+                        if xray_max_alive > 0
+                        else 0
+                    )
+                    alive_xray = alive_xray + await validate_configs_xray(
+                        stale,
+                        xray_path=xray_path,
+                        probe_urls=xray_probe_urls,
+                        min_probe_successes=xray_min_probe_successes,
+                        attempts_per_config=xray_attempts_per_config,
+                        min_attempt_successes=xray_min_attempt_successes,
+                        probe_proxy_urls=xray_proxy_urls,
+                        min_proxy_successes=xray_min_proxy_successes,
+                        probe_via_proxies=xray_probe_via_proxies,
+                        proxy_latency_ms=xray_proxy_latency_ms,
+                        require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
+                        check_hostnames=check_hostnames,
+                        resolve_timeout=resolve_timeout,
+                        timeout=self._as_float(
+                            vcfg.get("xray_timeout_seconds"),
+                            12.0,
+                            minimum=1.0,
+                        ),
+                        startup_timeout=self._as_float(
+                            vcfg.get("xray_startup_timeout_seconds"),
+                            4.0,
+                            minimum=0.5,
+                        ),
+                        concurrency=self._as_int(
+                            vcfg.get("xray_concurrency"),
+                            6,
+                            minimum=1,
+                        ),
+                        max_alive=stale_budget,
+                    )
             list_stats["checked"] = True
             list_stats["filtered"] = True
             list_stats["xray_alive"] = len(alive_xray)

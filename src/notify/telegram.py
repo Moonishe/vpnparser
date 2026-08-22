@@ -484,6 +484,63 @@ def _alert_min_alive() -> int:
     return 10
 
 
+def _stats_history_path(status_file: str) -> Path:
+    """The stats-history file lives next to the run summary it belongs to."""
+    if status_file:
+        return Path(status_file).parent / "stats-history.json"
+    return Path("output") / "stats-history.json"
+
+
+def _format_trend_alert(status_file: str = "") -> str:
+    """Warn when a run collapsed relative to the previous one.
+
+    Reads the last two entries of the published stats history: a list (or the
+    proxy pool) losing 40%+ of its alive count is the earliest visible signal
+    of a dying source or a network event, well before the absolute floor
+    fires.
+    """
+    try:
+        path = _stats_history_path(status_file)
+        if not path.exists():
+            return ""
+        entries = [
+            item
+            for item in json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(item, dict)
+        ]
+    except Exception:
+        return ""
+    if len(entries) < 2:
+        return ""
+    prev, current = entries[-2], entries[-1]
+    lines: list[str] = []
+    for key in ("blacklist", "whitelist"):
+        prev_lists = prev.get("lists")
+        cur_lists = current.get("lists")
+        prev_alive = (
+            int(prev_lists.get(key, {}).get("alive") or 0)
+            if isinstance(prev_lists, dict)
+            else 0
+        )
+        cur_alive = (
+            int(cur_lists.get(key, {}).get("alive") or 0)
+            if isinstance(cur_lists, dict)
+            else 0
+        )
+        # Small numbers wobble run to run; only meaningful drops alert.
+        if prev_alive >= 5 and cur_alive < prev_alive * 0.6:
+            drop = round(100 * (1 - cur_alive / prev_alive))
+            lines.append(
+                f"📉 {_b(_h(key))}: {_b(cur_alive)} против {_b(prev_alive)} "
+                f"в прошлом прогоне (−{_b(drop)}%)"
+            )
+    prev_pool = int(prev.get("proxy_count") or 0)
+    cur_pool = int(current.get("proxy_count") or 0)
+    if prev_pool >= 6 and cur_pool * 2 < prev_pool:
+        lines.append(f"🧦 Прокси-пул просел: {_b(cur_pool)} против {_b(prev_pool)}")
+    return "\n".join(lines)
+
+
 def _format_low_alive_alert(summary: dict[str, Any]) -> str:
     """One warning line per list whose verified-alive count collapsed."""
     lists = (summary.get("validation") or {}).get("lists")
@@ -1104,6 +1161,9 @@ def send_notification(
     low_alive_alert = _format_low_alive_alert(summary)
     if low_alive_alert:
         validation_section = f"{validation_section}\n{low_alive_alert}"
+    trend_alert = _format_trend_alert(status_file)
+    if trend_alert:
+        validation_section = f"{validation_section}\n{trend_alert}"
     subscriptions_section = _format_subscriptions_section(
         summary,
         subscription_file,
