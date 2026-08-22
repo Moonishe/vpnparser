@@ -39,7 +39,10 @@ env:
 jobs:
   update-configs:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Candidate limits are 0 (= check everything) and the Xray stage probes
+    # through the SOCKS pool: a full run is bounded by xray_max_alive early
+    # stops, not by the 45-minute default. One observed worst case: ~3h.
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
