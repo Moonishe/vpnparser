@@ -40,6 +40,8 @@ class Config:
     flow: str | None = None  # xtls-rprx-vision
     # shadowsocks specific
     ss_method: str | None = None  # aes-256-gcm, chacha20-ietf-poly1305, etc.
+    # vmess specific
+    alter_id: int | None = None  # vmess "aid"; legacy servers reject alterId=0
     # metadata
     remark: str = ""  # server display name (from # fragment or ps field)
     raw_link: str = ""  # original link for output generation

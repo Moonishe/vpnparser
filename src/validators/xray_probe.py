@@ -34,7 +34,7 @@ from src.validators.address_guard import filter_public_configs, is_blocked_liter
 logger = logging.getLogger(__name__)
 
 _SUPPORTED_PROTOCOLS = {"vless", "trojan", "vmess", "ss"}
-_SUPPORTED_NETWORKS = {"tcp", "ws", "grpc"}
+_SUPPORTED_NETWORKS = {"tcp", "ws", "grpc", "h2", "httpupgrade", "xhttp"}
 _DEFAULT_PROBE_URLS = ["https://www.gstatic.com/generate_204"]
 _DEFAULT_IDENTITY_PROBE_URLS = [
     "https://api.ipify.org",
@@ -177,6 +177,13 @@ def _alpn(value: str | None) -> list[str] | None:
 def _stream_settings(cfg: Config) -> dict[str, Any] | None:
     network = str(cfg.network or "tcp").lower()
     security = str(cfg.security or "none").lower()
+    # Free lists spell HTTP/2 both ways: v2rayN exports ``type=http`` while
+    # Xray itself calls the network ``h2``. ``splithttp`` is the pre-1.8.6
+    # name of xhttp and is still emitted by older panels.
+    if network == "http":
+        network = "h2"
+    elif network == "splithttp":
+        network = "xhttp"
     if network not in _SUPPORTED_NETWORKS:
         return None
 
@@ -196,6 +203,33 @@ def _stream_settings(cfg: Config) -> dict[str, Any] | None:
         if cfg.host:
             grpc["authority"] = _first_csv(cfg.host) or cfg.host
         stream["grpcSettings"] = grpc
+    elif network == "h2":
+        h2: dict[str, Any] = {}
+        if cfg.path:
+            h2["path"] = cfg.path
+        if cfg.host:
+            hosts = [
+                part.strip()
+                for part in str(cfg.host).replace(";", ",").split(",")
+                if part.strip()
+            ]
+            if hosts:
+                h2["host"] = hosts
+        stream["httpSettings"] = h2
+    elif network == "httpupgrade":
+        upgrade: dict[str, Any] = {}
+        if cfg.path:
+            upgrade["path"] = cfg.path
+        if cfg.host:
+            upgrade["host"] = _first_csv(cfg.host) or cfg.host
+        stream["httpupgradeSettings"] = upgrade
+    elif network == "xhttp":
+        xhttp: dict[str, Any] = {}
+        if cfg.path:
+            xhttp["path"] = cfg.path
+        if cfg.host:
+            xhttp["host"] = _first_csv(cfg.host) or cfg.host
+        stream["xhttpSettings"] = xhttp
 
     if security == "reality":
         if not cfg.pbk:
@@ -309,18 +343,18 @@ def build_xray_config(
             ],
         }
     elif protocol == "vmess":
+        user = {
+            "id": cfg.uuid_or_password,
+            # Legacy servers (aid=64/100 in free lists) reject alterId=0.
+            "alterId": int(cfg.alter_id or 0),
+            "security": "auto",
+        }
         outbound["settings"] = {
             "vnext": [
                 {
                     "address": cfg.address,
                     "port": int(cfg.port),
-                    "users": [
-                        {
-                            "id": cfg.uuid_or_password,
-                            "alterId": 0,
-                            "security": "auto",
-                        },
-                    ],
+                    "users": [user],
                 },
             ],
         }
@@ -748,21 +782,30 @@ async def xray_probe_check(
     verify_probe_tls: bool = True,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
-) -> bool:
-    """Run real HTTPS probes through one Xray outbound."""
+) -> float | None:
+    """Run real HTTPS probes through one Xray outbound.
+
+    Returns:
+        Latency in seconds of the successful probe request, or ``None``
+        when the config did not pass. Only the successful request is
+        timed: time burned on failed probe URLs before it (or on Xray
+        startup) says nothing about how fast the config serves traffic,
+        and the quality stage drops "slow" configs on exactly this
+        number.
+    """
     if is_blocked_literal(cfg.address):
         logger.warning(
             "Refusing Xray probe of non-public address %s:%s.",
             cfg.address,
             cfg.port,
         )
-        return False
+        return None
 
     try:
         socks_port = _free_local_port()
     except OSError as exc:
         logger.warning("Cannot reserve a local SOCKS port for the Xray probe: %s", exc)
-        return False
+        return None
 
     # Everything below runs under one finally: a reserved port number that is
     # never released is burnt for the lifetime of the process, and preparing the
@@ -770,7 +813,7 @@ async def xray_probe_check(
     try:
         xray_config = build_xray_config(cfg, socks_port, dial_proxy_url=dial_proxy_url)
         if xray_config is None:
-            return False
+            return None
 
         urls = _normalize_probe_urls(probe_url, probe_urls)
         required_successes = min(len(urls), max(1, min_probe_successes))
@@ -804,15 +847,17 @@ async def xray_probe_check(
                 # Deleted binary, missing permissions, antivirus lock: without
                 # this every config would silently fail with is_alive=False.
                 logger.warning("Cannot start Xray from %s: %s", xray_path, exc)
-                return False
+                return None
             try:
                 if not await _wait_for_port(socks_port, startup_timeout, proc=proc):
-                    return False
+                    return None
                 successes = 0
                 failures_allowed = len(urls) - required_successes
                 failures = 0
                 identity_ok = False
+                success_latency: float | None = None
                 for url in urls:
+                    probe_started = time.monotonic()
                     status_code, body = await _https_probe_response(
                         socks_port=socks_port,
                         probe_url=url,
@@ -821,20 +866,24 @@ async def xray_probe_check(
                     )
                     if status_code in accepted:
                         successes += 1
+                        success_latency = time.monotonic() - probe_started
                         outbound_ip = _extract_probe_ip(body)
                         if outbound_ip and outbound_ip not in rejected_ips:
                             identity_ok = True
                         if successes >= required_successes and (
                             not require_distinct_outbound_ip or identity_ok
                         ):
-                            return True
+                            return success_latency
                         continue
 
                     failures += 1
                     if failures > failures_allowed:
-                        return False
-                return successes >= required_successes and (
-                    not require_distinct_outbound_ip or identity_ok
+                        return None
+                return (
+                    success_latency
+                    if successes >= required_successes
+                    and (not require_distinct_outbound_ip or identity_ok)
+                    else None
                 )
             finally:
                 if proc.returncode is None:
@@ -860,6 +909,7 @@ async def validate_configs_xray(
     min_attempt_successes: int = 1,
     probe_proxy_urls: list[str] | tuple[str, ...] | None = None,
     min_proxy_successes: int = 0,
+    probe_via_proxies: bool = False,
     require_distinct_outbound_ip: bool = False,
     verify_probe_tls: bool = True,
     check_hostnames: bool = True,
@@ -874,6 +924,12 @@ async def validate_configs_xray(
     ``probe_urls`` is the authoritative list of probe targets; ``probe_url`` is
     a fallback used only when that list is empty — see
     :func:`_normalize_probe_urls`.
+
+    With ``probe_via_proxies`` the *primary* attempts dial the VPN server
+    through the SOCKS pool (rotated per attempt): runners in GitHub Actions
+    data centers are exactly the traffic RU servers block or drop, so a
+    direct probe from there marks living configs dead. The direct path stays
+    in use whenever the pool is empty.
     """
     if not configs:
         return []
@@ -896,6 +952,11 @@ async def validate_configs_xray(
     alive_lock = asyncio.Lock()
     done_event = asyncio.Event()
     proxy_urls = [url for url in (probe_proxy_urls or []) if str(url).strip()]
+    if probe_via_proxies and not proxy_urls:
+        logger.info(
+            "probe_via_proxies requested but the proxy pool is empty; "
+            "probing directly.",
+        )
     reject_ips: set[str] = set()
     proxy_reject_ips: dict[str, set[str]] = {}
     probe_targets = _normalize_probe_urls(probe_url, probe_urls)
@@ -959,7 +1020,14 @@ async def validate_configs_xray(
             attempt_successes = 0
             attempt_failures = 0
             successful_latencies: list[float] = []
-            for _attempt in range(attempts):
+            # In via-proxy mode each retry moves to the next rotated proxy:
+            # retrying through the same dead proxy would prove nothing.
+            attempt_proxies = (
+                _rotated_proxy_urls_for_config(cfg, proxy_urls)
+                if probe_via_proxies and proxy_urls
+                else []
+            )
+            for attempt_index in range(attempts):
                 if done_event.is_set():
                     # Enough configs are alive already. Stopping between two
                     # attempts saves a full Xray startup per remaining attempt;
@@ -967,21 +1035,26 @@ async def validate_configs_xray(
                     # history records no verdict it never earned.
                     cfg.xray_was_checked = False
                     return
-                started = time.monotonic()
-                ok = await xray_probe_check(
+                dial_proxy_url = (
+                    attempt_proxies[attempt_index % len(attempt_proxies)]
+                    if attempt_proxies
+                    else None
+                )
+                probe_latency = await xray_probe_check(
                     cfg,
                     xray_path=xray_path,
                     probe_url=None,
                     probe_urls=probe_targets,
                     min_probe_successes=min_probe_successes,
+                    dial_proxy_url=dial_proxy_url,
                     require_distinct_outbound_ip=require_distinct_outbound_ip,
                     reject_outbound_ips=reject_ips,
                     verify_probe_tls=verify_probe_tls,
                     timeout=timeout,
                     startup_timeout=startup_timeout,
                 )
-                if ok:
-                    successful_latencies.append((time.monotonic() - started) * 1000)
+                if probe_latency is not None:
+                    successful_latencies.append(float(probe_latency) * 1000.0)
                     attempt_successes += 1
                     if attempt_successes >= required_attempts:
                         break
@@ -996,21 +1069,34 @@ async def validate_configs_xray(
             required_proxy_successes = max(0, min_proxy_successes)
             # With required_proxy_successes == 0 the requirement is already met,
             # so the loop would only burn one Xray startup per dead proxy.
-            if ok and proxy_urls and required_proxy_successes > 0:
+            # In via-proxy mode the attempts above already ran through the
+            # pool, so extra direct-mode proxy checks are redundant.
+            if (
+                ok
+                and not probe_via_proxies
+                and proxy_urls
+                and required_proxy_successes > 0
+            ):
                 for proxy_url in _rotated_proxy_urls_for_config(cfg, proxy_urls):
                     proxy_url = str(proxy_url).strip()
-                    proxy_ok = await xray_probe_check(
-                        cfg,
-                        xray_path=xray_path,
-                        probe_url=None,
-                        probe_urls=probe_targets,
-                        min_probe_successes=min_probe_successes,
-                        dial_proxy_url=proxy_url,
-                        require_distinct_outbound_ip=require_distinct_outbound_ip,
-                        reject_outbound_ips=proxy_reject_ips.get(proxy_url, reject_ips),
-                        verify_probe_tls=verify_probe_tls,
-                        timeout=timeout,
-                        startup_timeout=startup_timeout,
+                    proxy_ok = (
+                        await xray_probe_check(
+                            cfg,
+                            xray_path=xray_path,
+                            probe_url=None,
+                            probe_urls=probe_targets,
+                            min_probe_successes=min_probe_successes,
+                            dial_proxy_url=proxy_url,
+                            require_distinct_outbound_ip=require_distinct_outbound_ip,
+                            reject_outbound_ips=proxy_reject_ips.get(
+                                proxy_url,
+                                reject_ips,
+                            ),
+                            verify_probe_tls=verify_probe_tls,
+                            timeout=timeout,
+                            startup_timeout=startup_timeout,
+                        )
+                        is not None
                     )
                     if proxy_ok:
                         proxy_successes += 1

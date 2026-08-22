@@ -43,6 +43,46 @@ def _vmess_link() -> str:
     return f"vmess://{encoded}"
 
 
+def _vmess_payload_link(extra: dict) -> str:
+    payload = {
+        "v": "2",
+        "ps": "RU-01",
+        "add": "ru.example.com",
+        "port": "443",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "net": "tcp",
+        "tls": "none",
+    }
+    payload.update(extra)
+    encoded = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
+    return f"vmess://{encoded}"
+
+
+def test_vmess_parse_alter_id() -> None:
+    """``aid`` must survive parsing: legacy servers reject alterId=0."""
+    cfg = VmessParser().parse(_vmess_payload_link({"aid": 64}))
+    assert cfg is not None
+    assert cfg.alter_id == 64
+
+    # Panels emit aid as string or float just as freely as int.
+    str_cfg = VmessParser().parse(_vmess_payload_link({"aid": "100"}))
+    assert str_cfg is not None
+    assert str_cfg.alter_id == 100
+
+    # Garbage aid is ignored, not fatal; a bool is not an alterId.
+    bad_cfg = VmessParser().parse(_vmess_payload_link({"aid": "soon"}))
+    assert bad_cfg is not None
+    assert bad_cfg.alter_id is None
+    bool_cfg = VmessParser().parse(_vmess_payload_link({"aid": True}))
+    assert bool_cfg is not None
+    assert bool_cfg.alter_id is None
+
+    # No aid field at all.
+    plain = VmessParser().parse(_vmess_link())
+    assert plain is not None
+    assert plain.alter_id is None
+
+
 def test_core_protocol_parsers_accept_valid_links() -> None:
     links = [
         _vmess_link(),

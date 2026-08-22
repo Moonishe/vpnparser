@@ -1243,7 +1243,7 @@ class TestValidateConfigsXray:
         mock_health.update_sources.assert_called_once()
 
     async def test_xray_health_ban_threshold(self, monkeypatch) -> None:
-        """Health bans are applied when alive > health_ban_min_alive."""
+        """A fresh Xray pass overrides stale bans even above the threshold."""
         mock_health = MagicMock(spec=HealthHistory)
         mock_health.is_banned.return_value = True
         mock_health.update.return_value = None
@@ -1295,8 +1295,67 @@ class TestValidateConfigsXray:
             tls_enabled=False,
             xray_enabled=True,
         )
-        # All 5 are banned → result empty
-        assert len(result) == 0
+        # All 5 are "banned" in the history, but each just passed its Xray
+        # probe: fresh evidence wins and nothing alive is erased.
+        assert len(result) == 5
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["output_after_health"] == 5
+
+    async def test_xray_probe_via_proxies_wiring(self, monkeypatch) -> None:
+        """xray_probe_via_proxies reaches validate_configs_xray with the pool."""
+
+        async def _pool() -> list[str]:
+            return [
+                "socks5://p1:1080",
+                "socks5://p2:1080",
+                "socks5://p3:1080",
+            ]
+
+        captured: dict = {}
+
+        async def mock_xray(configs, **kwargs):
+            captured.update(kwargs)
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_proxy_probe_count=3,
+            ),
+            proxy_url_getter=_pool,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+
+        result = await lv.validate_configs(
+            [_make_config("h1.com", 4001)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert len(result) == 1
+        assert captured["probe_via_proxies"] is True
+        assert captured["probe_proxy_urls"] == [
+            "socks5://p1:1080",
+            "socks5://p2:1080",
+            "socks5://p3:1080",
+        ]
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["xray_probe_via_proxies"] is True
 
     async def test_xray_pool_required_no_proxies(
         self,
@@ -1500,6 +1559,52 @@ class TestRemainingLines:
         # Only TLS-checked configs survive
         assert len(result) == 1
         assert result[0].security == "tls"
+
+    # ---- TLS stage must not TCP-handshake QUIC protocols ----
+
+    async def test_tls_skips_quic_protocols(self, monkeypatch) -> None:
+        """hysteria2/tuic cannot answer a TLS-over-TCP handshake — passthrough."""
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "tls_enabled": True,
+                    "tls_timeout_seconds": 5.0,
+                    "tls_concurrency": 120,
+                    "drop_unchecked_after_tls": False,
+                },
+            },
+            proxy_url_getter=_empty_proxy_list,
+        )
+
+        seen: list[list[str]] = []
+
+        async def mock_tls(configs, **kwargs):
+            seen.append([c.address for c in configs])
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.tls_check.validate_configs_tls",
+            mock_tls,
+        )
+
+        configs = [
+            _make_config("tls.com", 443, security="tls"),
+            _make_config("hy.com", 444, protocol="hysteria2", security="tls"),
+            _make_config("tuic.com", 445, protocol="tuic", security="tls"),
+        ]
+        result = await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=True,
+            xray_enabled=False,
+        )
+        # Only the TCP/TLS-capable config reaches the handshake probe; the
+        # QUIC ones survive as passthrough instead of dying there.
+        assert seen == [["tls.com"]]
+        assert [c.address for c in result] == ["tls.com", "hy.com", "tuic.com"]
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["tls_unchecked_passthrough"] == 2
 
     # ---- xray_candidate_limit_by_list (line 707) ----
 
@@ -1937,7 +2042,11 @@ class TestXrayUnsupportedHandling:
         assert stats["output_after_health"] == len(result)
 
     async def test_kept_unsupported_still_obey_source_ban(self, monkeypatch) -> None:
-        """A banned source must not slip back in via an unprobed protocol."""
+        """A banned source must not slip back in via an unprobed protocol.
+
+        A config that passed its Xray probe overrides the ban (fresh
+        evidence), but an unsupported protocol carries no such evidence.
+        """
         settings = _xray_settings(xray_drop_unsupported=False)
         settings["quality"] = {"health_ban_min_alive": 0}
         lv = _make_liveness(settings, proxy_url_getter=_empty_proxy_list)
@@ -1958,9 +2067,11 @@ class TestXrayUnsupportedHandling:
             xray_enabled=True,
         )
 
-        assert [cfg.address for cfg in result] == ["ok1.com", "hy1.com"]
+        # ok0 passed Xray right now and survives despite the source ban;
+        # hy0 was never probed and stays banned.
+        assert [cfg.address for cfg in result] == ["ok0.com", "ok1.com", "hy1.com"]
         stats = lv.context.liveness_stats["lists"]["blacklist"]
-        assert stats["output_after_health"] == 2
+        assert stats["output_after_health"] == 3
 
 
 # ============================================================================

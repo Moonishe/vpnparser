@@ -20,6 +20,20 @@ logger = logging.getLogger(__name__)
 _TCP_SKIP_PROTOCOLS = {"tuic", "hysteria2"}
 
 
+def _is_tls_checkable(cfg: Config) -> bool:
+    """Whether a TCP TLS handshake probe can say anything about the config.
+
+    QUIC-based protocols (hysteria2/tuic) answer on UDP only, so a
+    TLS-over-TCP probe fails for every living server of theirs; their
+    parsers still set ``security="tls"``, so they must be filtered out
+    here and not just at the TCP stage.
+    """
+    return (
+        str(cfg.security or "").lower() in ("tls", "reality")
+        and cfg.protocol not in _TCP_SKIP_PROTOCOLS
+    )
+
+
 @dataclass
 class _ProbeLog:
     """Configs a TCP/TLS check actually judged, plus the list's statistics.
@@ -751,20 +765,12 @@ class LivenessValidator(PipelineStage):
                 label,
             )
         if tls_enabled and not fail_open_active:
-            tls_checkable = [
-                c
-                for c in current
-                if str(c.security or "").lower() in ("tls", "reality")
-            ]
+            tls_checkable = [c for c in current if _is_tls_checkable(c)]
             if tls_checkable:
                 from src.validators.tls_check import validate_configs_tls
 
                 before_tls = list(current)
-                tls_passthrough = [
-                    c
-                    for c in current
-                    if str(c.security or "").lower() not in ("tls", "reality")
-                ]
+                tls_passthrough = [c for c in current if not _is_tls_checkable(c)]
                 list_stats["tls_unchecked_passthrough"] = len(tls_passthrough)
                 list_stats["tls_drop_unchecked"] = drop_unchecked_after_tls
                 if drop_unchecked_after_tls:
@@ -1020,8 +1026,13 @@ class LivenessValidator(PipelineStage):
                 xray_min_proxy_successes,
                 len(xray_proxy_urls),
             )
+            xray_probe_via_proxies = self._as_bool(
+                vcfg.get("xray_probe_via_proxies"),
+                False,
+            )
             list_stats["xray_proxy_checks"] = len(xray_proxy_urls)
             list_stats["xray_min_proxy_successes"] = xray_min_proxy_successes
+            list_stats["xray_probe_via_proxies"] = xray_probe_via_proxies
             xray_require_distinct_outbound_ip = self._as_bool(
                 vcfg.get("xray_require_distinct_outbound_ip"),
                 False,
@@ -1048,6 +1059,7 @@ class LivenessValidator(PipelineStage):
                 min_attempt_successes=xray_min_attempt_successes,
                 probe_proxy_urls=xray_proxy_urls,
                 min_proxy_successes=xray_min_proxy_successes,
+                probe_via_proxies=xray_probe_via_proxies,
                 require_distinct_outbound_ip=xray_require_distinct_outbound_ip,
                 check_hostnames=check_hostnames,
                 resolve_timeout=resolve_timeout,
@@ -1095,8 +1107,16 @@ class LivenessValidator(PipelineStage):
             # Bans are applied to the merged list: an Xray-unsupported config
             # skips the probe, not the health/source ban, or a banned source
             # would keep publishing every protocol Xray cannot check.
+            # A config that passed its probe right now carries fresh evidence
+            # it works — stale history (above all a source-level ban from two
+            # bad runs) must not erase it.
+            fresh_alive_ids = {id(cfg) for cfg in alive_xray}
             if len(current) > health_ban_min_alive:
-                current = [cfg for cfg in current if not self.health.is_banned(cfg)]
+                current = [
+                    cfg
+                    for cfg in current
+                    if id(cfg) in fresh_alive_ids or not self.health.is_banned(cfg)
+                ]
             else:
                 logger.info(
                     "%s Xray stage kept %d config(s) (<= %d); "

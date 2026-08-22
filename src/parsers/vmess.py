@@ -23,7 +23,7 @@ JSON field    Config field          Notes
 ``fp``        ``fp``                fingerprint
 ``flow``      ``flow``              xtls-rprx-vision etc.
 ``type``      —                     header type; not stored (no Config field)
-``aid``       —                     alterId; ignored
+``aid``       ``alter_id``          alterId; legacy servers need their real value
 ``scy``       —                     vmess encryption mode; ignored
 ``v``         —                     version; ignored
 ============  ====================  ==========================================
@@ -150,9 +150,22 @@ class VmessParser(BaseParser):
                 else "none"
             )
 
+            # Legacy vmess servers still require the alterId the panel sent
+            # ("aid": 64/100 is common in free lists); probing them with
+            # alterId=0 always fails the handshake.
+            aid_raw = obj.get("aid")
+            alter_id: int | None = None
+            if aid_raw is not None and not isinstance(aid_raw, bool):
+                try:
+                    aid_int = int(aid_raw)
+                except (TypeError, ValueError):
+                    aid_int = None
+                if aid_int is not None and 0 <= aid_int <= 65535:
+                    alter_id = aid_int
+
             # ``type`` is the transport header type ("none"/"http"). Config has
             # no header_type field, so it is intentionally not stored.
-            # ``aid``, ``scy`` and ``v`` are vmess-specific and not needed.
+            # ``scy`` and ``v`` are vmess-specific and not needed.
 
             return Config(
                 protocol=self.protocol,
@@ -167,6 +180,7 @@ class VmessParser(BaseParser):
                 alpn=_json_str_or_none(obj.get("alpn")),
                 fp=_json_str_or_none(obj.get("fp")),
                 flow=_json_str_or_none(obj.get("flow")),
+                alter_id=alter_id,
                 remark=_json_str_or_none(obj.get("ps")) or extract_remark(fragment),
                 raw_link=link,
             )
