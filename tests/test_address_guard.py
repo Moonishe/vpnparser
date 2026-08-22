@@ -647,3 +647,46 @@ async def test_resolve_pinned_address_passes_public_literal_through() -> None:
         "93.184.216.34"
     )
     assert await address_guard.resolve_pinned_address("192.168.1.1") is None
+
+
+# --- resolve_pinned_address DNS retry --------------------------------------
+
+
+async def test_resolve_pinned_address_retries_transient_failure(
+    monkeypatch,
+) -> None:
+    """One resolver timeout must not kill a living host: retry once."""
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        calls.append(host)
+        if len(calls) == 1:
+            return None  # transient transport failure
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+    assert (
+        await address_guard.resolve_pinned_address("flaky.example") == "93.184.216.34"
+    )
+    assert calls == ["flaky.example", "flaky.example"]
+
+
+async def test_resolve_pinned_address_no_retry_on_nxdomain(monkeypatch) -> None:
+    """An authoritative empty answer is not retried."""
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        calls.append(host)
+        return []  # NXDOMAIN-shaped answer
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+    assert await address_guard.resolve_pinned_address("dead.example") is None
+    assert calls == ["dead.example"]
+
+
+async def test_resolve_pinned_address_two_failures_fail_closed(monkeypatch) -> None:
+    async def _resolve(_host: str, *, timeout: float = 5.0) -> list[str] | None:
+        return None
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+    assert await address_guard.resolve_pinned_address("gone.example") is None

@@ -702,9 +702,31 @@ def test_base64_output_contains_raw_links() -> None:
 
 
 def test_config_dedup_key() -> None:
-    """line 71: dedup_key returns (address, port)."""
+    """line 71: dedup_key returns (protocol, address, port[, cred])."""
     cfg = Config(protocol="vmess", address="a.com", port=443, uuid_or_password="u")
-    assert cfg.dedup_key == ("vmess", "a.com", 443)
+    assert cfg.dedup_key == ("vmess", "a.com", 443, "")
+
+
+def test_config_dedup_key_reality_includes_credentials() -> None:
+    """Two Reality endpoints on one address:port are different servers."""
+    first = Config(
+        protocol="vless",
+        address="cdn.example",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="reality",
+        pbk="pbk-one",
+    )
+    second = Config(
+        protocol="vless",
+        address="cdn.example",
+        port=443,
+        uuid_or_password="22222222-2222-4222-8222-222222222222",
+        security="reality",
+        pbk="pbk-two",
+    )
+    assert first.dedup_key != second.dedup_key
+    assert first.dedup_key[:3] == second.dedup_key[:3]
 
 
 def test_config_to_dict_excludes_none_and_metadata() -> None:

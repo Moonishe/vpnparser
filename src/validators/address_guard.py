@@ -158,6 +158,13 @@ async def resolve_pinned_address(
     if _is_ip_literal(bare):
         return None if is_private_address(bare) else bare
     answers = await resolve_host_addresses(bare, timeout=timeout)
+    if answers is None:
+        # None is a transport failure (timeout, offline moment), not an
+        # authoritative NXDOMAIN — and the caller turns it into a dead
+        # verdict, so a living server could die on one unlucky lookup under
+        # resolver load. One retry before failing closed; NXDOMAIN comes
+        # back as [] and is NOT retried.
+        answers = await resolve_host_addresses(bare, timeout=timeout)
     if not answers:
         # Unresolvable names cannot be pinned; connecting to the name would
         # reopen the rebinding window, so fail closed.

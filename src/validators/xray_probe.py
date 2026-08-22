@@ -852,6 +852,7 @@ async def xray_probe_check(
                 failures = 0
                 identity_ok = False
                 success_latency: float | None = None
+                consecutive_full_timeouts = 0
                 for url in urls:
                     probe_started = time.monotonic()
                     status_code, body = await _https_probe_response(
@@ -860,7 +861,9 @@ async def xray_probe_check(
                         timeout=timeout,
                         verify_tls=verify_probe_tls,
                     )
+                    elapsed = time.monotonic() - probe_started
                     if status_code in accepted:
+                        consecutive_full_timeouts = 0
                         successes += 1
                         success_latency = time.monotonic() - probe_started
                         outbound_ip = _extract_probe_ip(body)
@@ -873,6 +876,15 @@ async def xray_probe_check(
                         continue
 
                     failures += 1
+                    if elapsed >= timeout * 0.9:
+                        # A probe that burned its whole timeout without any
+                        # answer means the tunnel itself is dead; the
+                        # remaining URLs share that tunnel and cannot pass.
+                        consecutive_full_timeouts += 1
+                        if consecutive_full_timeouts >= 2:
+                            return None
+                    else:
+                        consecutive_full_timeouts = 0
                     if failures > failures_allowed:
                         return None
                 return (
@@ -906,6 +918,7 @@ async def validate_configs_xray(
     probe_proxy_urls: list[str] | tuple[str, ...] | None = None,
     min_proxy_successes: int = 0,
     probe_via_proxies: bool = False,
+    proxy_latency_ms: dict[str, float] | None = None,
     require_distinct_outbound_ip: bool = False,
     verify_probe_tls: bool = True,
     check_hostnames: bool = True,
@@ -1073,7 +1086,17 @@ async def validate_configs_xray(
                     startup_timeout=startup_timeout,
                 )
                 if probe_latency is not None:
-                    successful_latencies.append(float(probe_latency) * 1000.0)
+                    raw_ms = float(probe_latency) * 1000.0
+                    # A via-proxy latency includes the proxy's own dial hop;
+                    # subtracting its health baseline keeps the quality stage
+                    # from slow-dropping configs that are only as slow as the
+                    # free proxy they were probed through.
+                    baseline = (
+                        float(proxy_latency_ms.get(str(dial_proxy_url), 0.0))
+                        if dial_proxy_url and proxy_latency_ms
+                        else 0.0
+                    )
+                    successful_latencies.append(max(raw_ms - baseline, 1.0))
                     attempt_successes += 1
                     if attempt_successes >= required_attempts:
                         break

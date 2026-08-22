@@ -339,3 +339,36 @@ def test_sort_configs_nan_goes_last() -> None:
     result = sort_configs([nan, fast])
     assert result[0] is fast
     assert result[-1] is nan
+
+
+# --- REALITY credentials keep duplicates apart -------------------------------
+
+
+def _reality(uuid_or_password: str, pbk: str, latency_ms: float | None) -> Config:
+    return Config(
+        protocol="vless",
+        address="cdn.example",
+        port=443,
+        uuid_or_password=uuid_or_password,
+        security="reality",
+        pbk=pbk,
+        latency_ms=latency_ms,
+    )
+
+
+def test_deduplicate_keeps_reality_endpoints_on_one_hostport() -> None:
+    """Independent Reality endpoints share address:port; the credential hash
+    in dedup_key keeps them apart."""
+    first = _reality("11111111-1111-4111-8111-111111111111", "pbk-one", 200.0)
+    second = _reality("22222222-2222-4222-8222-222222222222", "pbk-two", 100.0)
+    result = deduplicate([first, second])
+    assert len(result) == 2
+    assert {cfg.pbk for cfg in result} == {"pbk-one", "pbk-two"}
+
+
+def test_deduplicate_collapses_same_reality_credentials() -> None:
+    one = _reality("same-uuid", "same-pbk", None)
+    two = _reality("same-uuid", "same-pbk", 50.0)
+    result = deduplicate([one, two])
+    assert len(result) == 1
+    assert result[0].latency_ms == 50.0

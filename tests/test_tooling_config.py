@@ -530,6 +530,7 @@ def test_ruff_per_file_ignores_have_no_dead_entries(pyproject: dict[str, Any]) -
 
 #: Distribution name -> module name actually imported by src/.
 _RUNTIME_IMPORT_NAMES = {
+    "maxminddb": "maxminddb",
     "httpx": "httpx",
     "pyyaml": "yaml",
     "python-socks": "python_socks",

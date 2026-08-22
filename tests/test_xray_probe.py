@@ -2374,3 +2374,80 @@ async def test_probe_check_releases_port_for_unsupported_config(monkeypatch) -> 
     cfg.protocol = "unknown"
     assert await xray_probe_check(cfg, xray_path="/usr/bin/xray") is None
     assert xray_probe._reserved_ports == set()
+
+
+# --- early break after consecutive full timeouts -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_probe_check_breaks_after_two_full_timeouts() -> None:
+    """A dead tunnel costs two probe timeouts, not the whole URL list."""
+    cfg = _make_cfg()
+
+    async def slow_dead_probe(**_kwargs):
+        await asyncio.sleep(0.25)
+        return (None, "")
+
+    slow_dead_probe_calls = [0]
+
+    async def slow_dead_probe_counted(**_kwargs):
+        slow_dead_probe_calls[0] += 1
+        return await slow_dead_probe()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            patch("src.validators.xray_probe._free_local_port", return_value=12345),
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_sub,
+            patch(
+                "src.validators.xray_probe._wait_for_port",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "src.validators.xray_probe._https_probe_response",
+                slow_dead_probe_counted,
+            ),
+            patch("tempfile.TemporaryDirectory") as mock_tmp,
+        ):
+            proc = MagicMock()
+            proc.returncode = None
+            proc.terminate = MagicMock()
+            proc.wait = AsyncMock(return_value=0)
+            mock_sub.return_value = proc
+            mock_tmp.return_value.__enter__.return_value = tmpdir
+            result = await xray_probe_check(
+                cfg,
+                xray_path="/usr/bin/xray",
+                probe_urls=[
+                    "https://a.example/1",
+                    "https://b.example/2",
+                    "https://c.example/3",
+                ],
+                timeout=0.2,
+                startup_timeout=1.0,
+            )
+            assert result is None
+            # The third URL is never probed: two full timeouts already
+            # proved the tunnel dead.
+            assert slow_dead_probe_calls[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_validate_via_proxies_latency_compensated() -> None:
+    """The proxy's own dial hop is subtracted from the recorded latency."""
+    cfg = _make_cfg()
+
+    async def fake_check(_cfg, **_kwargs):
+        return 0.5
+
+    with patch("src.validators.xray_probe.xray_probe_check", fake_check):
+        result = await validate_configs_xray(
+            [cfg],
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            probe_proxy_urls=["socks5://p1:1080"],
+            probe_via_proxies=True,
+            proxy_latency_ms={"socks5://p1:1080": 200.0},
+        )
+    assert len(result) == 1
+    assert cfg.latency_ms == 300.0

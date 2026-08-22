@@ -7,6 +7,7 @@ Config is the unified internal representation of a proxy server.
 from __future__ import annotations
 
 import base64
+import hashlib
 import ipaddress
 import re
 from abc import ABC, abstractmethod
@@ -65,12 +66,15 @@ class Config:
     health_record: dict[str, Any] | None = None
 
     @property
-    def dedup_key(self) -> tuple[str, str, int]:
-        """Key for deduplication: (protocol, address, port).
+    def dedup_key(self) -> tuple[str, str, int, str]:
+        """Key for deduplication: (protocol, address, port, cred_hash).
 
         Different protocols or credentials on the same address:port are
         independent configs (e.g. VLESS + Trojan on one server).  The
-        protocol is included so they are not merged.
+        protocol is included so they are not merged. For REALITY configs the
+        credential hash is part of the key: several independent Reality
+        endpoints routinely share one address:port (CDN fronting with
+        different public keys), and collapsing them kept only one.
 
         Hostnames are case-insensitive and an IPv6 literal has many textual
         spellings, so the address is normalised (lowercased; IPv6 collapsed)
@@ -83,7 +87,12 @@ class Config:
             address_key = str(ipaddress.ip_address(address.strip("[]")))
         except ValueError:
             address_key = address.lower()
-        return (str(self.protocol).lower(), address_key, int(self.port))
+        cred = ""
+        if str(self.security or "").lower() == "reality":
+            cred = hashlib.sha256(
+                str(self.uuid_or_password or self.pbk or "").encode()
+            ).hexdigest()[:8]
+        return (str(self.protocol).lower(), address_key, int(self.port), cred)
 
     def to_dict(self) -> dict[str, object]:
         return {

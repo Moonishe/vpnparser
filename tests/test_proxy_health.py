@@ -469,3 +469,18 @@ def test_constructor_clamps_values() -> None:
     assert hist.window == 1
     assert hist.ban_after_consecutive_failures == 1
     assert hist.max_latency_ms == 1.0
+
+
+# --- average_latency ---------------------------------------------------------
+
+
+def test_average_latency_none_without_history() -> None:
+    history = ProxyHealthHistory()
+    assert history.average_latency("socks5://new:1080") is None
+
+
+def test_average_latency_mean_of_window() -> None:
+    history = ProxyHealthHistory()
+    history.record("socks5://p:1080", True, latency_ms=100.0)
+    history.record("socks5://p:1080", True, latency_ms=300.0)
+    assert history.average_latency("socks5://p:1080") == 200.0

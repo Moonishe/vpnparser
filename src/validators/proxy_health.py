@@ -211,6 +211,11 @@ class ProxyHealthHistory:
         total = float(sum(latencies))
         return total / len(latencies)
 
+    def average_latency(self, proxy_url: str) -> float | None:
+        """Return the proxy's mean latency in ms, or ``None`` without history."""
+        avg = self._avg_latency(proxy_url)
+        return None if avg == float("inf") else avg
+
     def _has_history(self, proxy_url: str) -> bool:
         return proxy_url.strip() in self.records
 
