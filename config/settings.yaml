@@ -189,6 +189,7 @@ quality:
   drop_slow_configs: true
   # Do not drop "slow" configs if it would leave fewer than this many alive configs
   # in a list. Keeps the pipeline from discarding the last surviving configs.
+  # 0 = never drop slow configs (a fully-slow list keeps its entries).
   min_alive_to_skip_slow_drop: 1
   # Publish only configs that passed this many consecutive runs (the current
   # one included): one-shot "blinking" servers are the main source of dead

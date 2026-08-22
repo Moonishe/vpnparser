@@ -1725,11 +1725,13 @@ def test_trend_alert_flags_drop_vs_previous_run(tmp_path) -> None:
     history = [
         {
             "ts": 1,
+            "status": "ok",
             "proxy_count": 30,
             "lists": {"blacklist": {"alive": 100}, "whitelist": {"alive": 10}},
         },
         {
             "ts": 2,
+            "status": "ok",
             "proxy_count": 12,
             "lists": {"blacklist": {"alive": 40}, "whitelist": {"alive": 9}},
         },
@@ -1743,6 +1745,37 @@ def test_trend_alert_flags_drop_vs_previous_run(tmp_path) -> None:
     assert "Прокси-пул просел" in text
     # whitelist 9 vs 10 is wobble, not a drop.
     assert "whitelist" not in text
+
+
+def test_trend_alert_ignores_non_ok_runs(tmp_path) -> None:
+    import src.notify.telegram as tg
+
+    # A partially-written failed entry between two ok runs must not be used
+    # as the diff baseline: its zeros would fake a collapse.
+    history = [
+        {
+            "ts": 1,
+            "status": "ok",
+            "proxy_count": 30,
+            "lists": {"blacklist": {"alive": 100}},
+        },
+        {
+            "ts": 2,
+            "status": "no_configs",
+            "proxy_count": 0,
+            "lists": {"blacklist": {"alive": 0}},
+        },
+        {
+            "ts": 3,
+            "status": "ok",
+            "proxy_count": 28,
+            "lists": {"blacklist": {"alive": 95}},
+        },
+    ]
+    (tmp_path / "stats-history.json").write_text(
+        __import__("json").dumps(history), encoding="utf-8"
+    )
+    assert tg._format_trend_alert(str(tmp_path / "run-summary.json")) == ""
 
 
 def test_trend_alert_silent_without_history_or_change(tmp_path) -> None:

@@ -67,7 +67,14 @@ def _sanitize_numeric_fields(record: dict[str, Any]) -> int:
             record[field] = 0.0
             replaced += 1
     recent = record.get("recent")
-    if recent is not None and not isinstance(recent, list):
+    if isinstance(recent, list):
+        # Only strict booleans are verdicts; a hand-edited "false" string is
+        # truthy and would count as a pass in consecutive_successes()/score().
+        kept = [item for item in recent if isinstance(item, bool)]
+        if len(kept) != len(recent):
+            replaced += 1
+        record["recent"] = kept[-64:]
+    elif recent is not None:
         record["recent"] = []
         replaced += 1
     return replaced

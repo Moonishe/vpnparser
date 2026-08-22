@@ -24,6 +24,7 @@ import os
 import time
 from collections import Counter
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from src.parsers.base import Config
@@ -920,14 +921,27 @@ class PipelineRunner:
             return []
         try:
             from src.scheduler.stats_history import (
+                DEFAULT_STATS_HISTORY_FILE,
+                DEFAULT_TREND_SVG_FILE,
                 append_run_stats,
                 render_trend_svg,
                 run_stats_entry,
             )
 
+            # Live next to the run summary: the Telegram diff-alert reads
+            # stats-history.json from Path(status_file).parent, so a custom
+            # output directory must not leave the trend files behind in the
+            # default output/ while the summary (and the alert) look elsewhere.
+            history_file = DEFAULT_STATS_HISTORY_FILE
+            svg_file = DEFAULT_TREND_SVG_FILE
+            status_output = self._status_output_file()
+            if status_output:
+                parent = Path(status_output).parent
+                history_file = str(parent / "stats-history.json")
+                svg_file = str(parent / "alive-trend.svg")
             entry = run_stats_entry(self._liveness_stats, status)
-            history, history_path = append_run_stats(entry)
-            svg_path = render_trend_svg(history)
+            history, history_path = append_run_stats(entry, history_file)
+            svg_path = render_trend_svg(history, svg_file)
             return [path for path in (history_path, svg_path) if path]
         except Exception as exc:
             logger.warning("Stats history write failed: %s", exc)

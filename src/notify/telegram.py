@@ -506,12 +506,15 @@ def _format_trend_alert(status_file: str = "") -> str:
         entries = [
             item
             for item in json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(item, dict)
+            if isinstance(item, dict) and item.get("status") == "ok"
         ]
     except Exception:
         return ""
     if len(entries) < 2:
         return ""
+    # Only "ok" runs carry complete liveness stats: diffing against a
+    # partially-written entry (mid-run failure, publish failure) would
+    # report a collapse that never happened.
     prev, current = entries[-2], entries[-1]
     lines: list[str] = []
 

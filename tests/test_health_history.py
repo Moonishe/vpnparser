@@ -201,6 +201,33 @@ class TestLoad:
         assert h.is_banned(cfg) is False
         assert h.score(cfg) == 0.0
 
+    def test_load_sanitizes_recent_verdicts(self, tmp_path: Path) -> None:
+        """Only strict booleans survive in ``recent``.
+
+        A hand-edited ``"false"`` string is truthy and would count as a pass
+        in ``consecutive_successes()`` — the stability gate would publish a
+        config that never actually passed.
+        """
+        cfg = _make_config(source_name="src-a")
+        f = tmp_path / "health.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "configs": {
+                        HealthHistory.config_key(cfg): {
+                            "recent": [True, "false", 1, False],
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        record = h.load()["configs"][HealthHistory.config_key(cfg)]
+        assert record["recent"] == [True, False]
+        # The string would have faked a two-pass streak; strict booleans do not.
+        assert h.consecutive_successes(cfg) == 0
+
 
 # ---------------------------------------------------------------------------
 # save()

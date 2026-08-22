@@ -128,3 +128,36 @@ def test_stability_gate_disabled_at_one(tmp_path: Path) -> None:
         runner._quality.health.update([cfg])
     result = runner._quality.apply({"blacklist": configs})
     assert len(result["blacklist"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# Slow-config dropping (min_alive_to_skip_slow_drop)
+# ---------------------------------------------------------------------------
+
+
+def test_zero_min_alive_keeps_fully_slow_list(tmp_path: Path) -> None:
+    """min_alive_to_skip_slow_drop: 0 = never drop slow configs."""
+    runner = _stability_runner(
+        tmp_path,
+        "quality:\n  max_latency_ms: 100\n  min_alive_to_skip_slow_drop: 0\n",
+    )
+    configs = [_cfg(f"h{i}.example", latency_ms=500.0) for i in range(3)]
+    result = runner._quality.apply({"blacklist": configs})
+    # Every config is slow and fast is empty — with 0 the slow ones stay.
+    assert len(result["blacklist"]) == 3
+    stats = runner._context.liveness_stats["quality"]
+    assert stats["blacklist"]["slow_dropped"] == 0
+    assert stats["slow_preserved"]["blacklist"] == 3
+
+
+def test_positive_min_alive_still_drops_slow(tmp_path: Path) -> None:
+    runner = _stability_runner(
+        tmp_path,
+        "quality:\n  max_latency_ms: 100\n  min_alive_to_skip_slow_drop: 1\n",
+    )
+    fast = _cfg("fast.example", latency_ms=50.0)
+    slow = [_cfg(f"slow{i}.example", latency_ms=500.0) for i in range(2)]
+    result = runner._quality.apply({"blacklist": [fast, *slow]})
+    assert [cfg.address for cfg in result["blacklist"]] == ["fast.example"]
+    stats = runner._context.liveness_stats["quality"]
+    assert stats["blacklist"]["slow_dropped"] == 2

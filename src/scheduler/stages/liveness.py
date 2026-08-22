@@ -1172,6 +1172,15 @@ class LivenessValidator(PipelineStage):
 
             alive_xray: list[Config] = []
             if fresh:
+                # Fresh re-probes run first, so a stable core of ~max_alive
+                # passing configs would fill the whole budget every run and
+                # the "budget_full" skip below would permanently starve
+                # first-time candidates. Reserve at least half of the budget
+                # for them; whatever fresh leaves unused flows to stale via
+                # stale_budget.
+                fresh_budget = xray_max_alive
+                if stale and xray_max_alive > 0:
+                    fresh_budget = max(1, xray_max_alive // 2)
                 alive_xray = await validate_configs_xray(
                     fresh,
                     xray_path=xray_path,
@@ -1201,7 +1210,7 @@ class LivenessValidator(PipelineStage):
                         6,
                         minimum=1,
                     ),
-                    max_alive=xray_max_alive,
+                    max_alive=fresh_budget,
                 )
             if stale:
                 if xray_max_alive > 0 and len(alive_xray) >= xray_max_alive:

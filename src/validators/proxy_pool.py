@@ -251,8 +251,21 @@ async def proxy_connects(
     """
     targets: list[tuple[str, int]] = [(probe_host, probe_port)]
     targets.extend(extra_probe_targets or [])
-    for host, port in targets:
+    for index, (host, port) in enumerate(targets):
         if await _proxy_connects_to(proxy_url, host, port, timeout):
+            if index:
+                # A proxy that only reaches Google will pass the pool
+                # self-check and then fail every GitHub-targeted L3 probe;
+                # the split is the first thing to check when the Xray stage
+                # underperforms while the pool looks healthy.
+                logger.debug(
+                    "Proxy %s passed self-check via failover target %s:%d "
+                    "(primary %s unreachable).",
+                    proxy_url,
+                    host,
+                    port,
+                    probe_host,
+                )
             return True
     return False
 

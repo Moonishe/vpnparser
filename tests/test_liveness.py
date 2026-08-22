@@ -2869,6 +2869,50 @@ class TestVerificationTtl:
         stats = lv.context.liveness_stats["lists"]["blacklist"]
         assert stats["xray_fresh_verified"] == 1
 
+    async def test_fresh_budget_reserved_for_new_candidates(self, monkeypatch) -> None:
+        """Fresh re-probes must not consume the whole alive budget."""
+        lv = _make_liveness(
+            _xray_settings(verification_ttl_minutes=60, xray_max_alive=4),
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        fresh_cfg = _make_config("fresh.com", 4000)
+        stale_cfg = _make_config("stale.com", 4001)
+        lv.health.update([fresh_cfg])
+        record = lv.health.load()["configs"][lv.health.config_key(fresh_cfg)]
+        record["last_alive"] = int(time.time())
+
+        budgets: list[int] = []
+
+        async def mock_xray(configs, **kwargs):
+            budgets.append(int(kwargs.get("max_alive", 0)))
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        await lv.validate_configs(
+            [fresh_cfg, stale_cfg],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        # Fresh gets at most half of max_alive (4 -> 2); the unused headroom
+        # plus the reserved half flows to the stale (new-candidate) call.
+        assert budgets == [2, 3]
+
     async def test_ttl_zero_disables_split(self, monkeypatch) -> None:
         lv = _make_liveness(
             _xray_settings(),

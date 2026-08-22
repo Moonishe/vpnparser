@@ -85,7 +85,12 @@ class QualityFilter(PipelineStage):
             if fast and not slow:
                 for cfg in fast:
                     cfg.quality_score = self.health.score(cfg)
-            elif len(fast) < min_alive_to_skip_slow_drop and slow:
+            elif slow and (
+                min_alive_to_skip_slow_drop <= 0
+                or len(fast) < min_alive_to_skip_slow_drop
+            ):
+                # 0 means "never drop slow configs": even a fully-slow list
+                # keeps its entries instead of publishing nothing.
                 for cfg in fast + slow:
                     cfg.quality_score = self.health.score(cfg)
                 kept = fast + slow
