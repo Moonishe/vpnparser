@@ -53,7 +53,7 @@ ones back into subscriptions.
 
 | File | Contents |
 |------|----------|
-| `output/subscription.txt` | Combined pool (country-balanced, ≤`aggregator.max_configs_in_output`, currently 100) |
+| `output/subscription.txt` | Combined pool (country-balanced, ≤`aggregator.max_configs_in_output`, currently 200) |
 | `output/subscription-blacklist.txt` | Blacklist pool |
 | `output/subscription-whitelist.txt` | Whitelist / restricted-network pool |
 | `output/subscription-mix.txt` | 100 black + 100 white |
@@ -184,7 +184,7 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 | `validator` | `min_alive_to_filter`, `fail_open_on_low_alive` | `10`, `false` | Low-live thresholds |
 | `validator` | `geoip_enabled` | `false` | IP→country enrichment via `geoip_api_url` |
 | `validator` | `geoip_requests_per_minute`, `geoip_max_lookups` | `40`, `300` | GeoIP rate limit and per-run lookup cap (extra configs keep `country=None`) |
-| `aggregator` | `max_configs_in_output` | `100` | Hard cap per file |
+| `aggregator` | `max_configs_in_output` | `200` | Hard cap per file (matches `xray_max_alive`) |
 | `aggregator` | `max_per_country` | `200` | Per-country cap in the combined output |
 | `publisher` | `output_file` | `output/subscription.txt` | Combined output path |
 | `publisher` | `location_output_limit` | `50` | Cap per `output/locations/subscription-XX.txt` |
