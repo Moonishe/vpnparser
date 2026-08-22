@@ -913,6 +913,11 @@ class PipelineRunner:
         Both files are published with the subscriptions, so the badge in the
         README and the Telegram diff-alert survive run boundaries.
         """
+        if not self._liveness_stats:
+            # Early-fail runs (no sources / no configs / no countries) never
+            # reached liveness; a zeros entry would dip the badge for a
+            # fetch hiccup without saying anything about the proxies.
+            return []
         try:
             from src.scheduler.stats_history import (
                 append_run_stats,

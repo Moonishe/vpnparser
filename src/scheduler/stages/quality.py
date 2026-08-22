@@ -102,15 +102,27 @@ class QualityFilter(PipelineStage):
                 ),
             )
             stability_dropped = 0
-            if min_consecutive_passes > 1:
+            # The streak lives in the health history; without it (or when
+            # the required streak cannot fit the recent-verdict window) the
+            # gate would silently drop everything.
+            effective_min_passes = min(
+                min_consecutive_passes,
+                self.settings.as_int(
+                    qcfg.get("health_recent_window"),
+                    5,
+                    minimum=1,
+                ),
+            )
+            if effective_min_passes > 1 and self.health.is_enabled():
                 stable = [
                     cfg
                     for cfg in kept
-                    if self.health.consecutive_successes(cfg) >= min_consecutive_passes
+                    if self.health.consecutive_successes(cfg) >= effective_min_passes
                 ]
                 if len(stable) >= stability_min_alive:
+                    stable_ids = {id(cfg) for cfg in stable}
                     for cfg in kept:
-                        if cfg not in stable:
+                        if id(cfg) not in stable_ids:
                             cfg.quality_block_reason = "stability"
                     stability_dropped = len(kept) - len(stable)
                     kept = stable

@@ -75,6 +75,9 @@ class LivenessValidator(PipelineStage):
         self._proxy_url_getter = proxy_url_getter
         self._update_health_callback = update_health_callback
         self._update_source_health_callback = update_source_health_callback
+        #: Config keys already given a health verdict in this run — see the
+        #: dedup comment where update() is called.
+        self._health_update_seen: set[str] = set()
         self._validator_proxy_urls_cache: list[str] | None = None
         self._proxy_health_history: Any | None = None
         self._proxy_health_file: str | None = None
@@ -402,6 +405,7 @@ class LivenessValidator(PipelineStage):
         # is keyed by host only, and a rebinding host could keep a stale
         # "public" verdict across run boundaries in --continuous mode.
         clear_verdict_cache()
+        self._health_update_seen = set()
         vcfg = self._section("validator")
         tcp_enabled = self._as_bool(vcfg.get("tcp_enabled"), False)
         tls_enabled = self._as_bool(vcfg.get("tls_enabled"), False)
@@ -1319,14 +1323,26 @@ class LivenessValidator(PipelineStage):
                 if getattr(cfg, "xray_was_checked", False)
             ]
             list_stats["xray_checked"] = len(xray_attempted)
+            # One verdict per config per run: the same server can ride in
+            # two lists, and update() would append two `recent` entries for
+            # a single run — halving the streak the stability gate counts
+            # (and halving the failures needed for a ban).
+            seen_keys = self._health_update_seen
+            unique_attempted: list[Config] = []
+            for cfg in xray_attempted:
+                key = HealthHistory.config_key(cfg)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                unique_attempted.append(cfg)
             if self._update_health_callback:
-                self._update_health_callback(xray_attempted)
+                self._update_health_callback(unique_attempted)
             else:
-                self.health.update(xray_attempted)
+                self.health.update(unique_attempted)
             if self._update_source_health_callback:
-                self._update_source_health_callback(xray_attempted, list_stats)
+                self._update_source_health_callback(unique_attempted, list_stats)
             else:
-                self.health.update_sources(xray_attempted, list_stats)
+                self.health.update_sources(unique_attempted, list_stats)
             current = alive_xray
             if not drop_unsupported and unsupported_configs:
                 current = self._merge_unsupported(

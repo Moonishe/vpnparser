@@ -514,19 +514,17 @@ def _format_trend_alert(status_file: str = "") -> str:
         return ""
     prev, current = entries[-2], entries[-1]
     lines: list[str] = []
+
+    def _alive(entry: dict[str, Any], key: str) -> int:
+        lists = entry.get("lists")
+        if not isinstance(lists, dict):
+            return 0
+        item = lists.get(key)
+        return int(item.get("alive") or 0) if isinstance(item, dict) else 0
+
     for key in ("blacklist", "whitelist"):
-        prev_lists = prev.get("lists")
-        cur_lists = current.get("lists")
-        prev_alive = (
-            int(prev_lists.get(key, {}).get("alive") or 0)
-            if isinstance(prev_lists, dict)
-            else 0
-        )
-        cur_alive = (
-            int(cur_lists.get(key, {}).get("alive") or 0)
-            if isinstance(cur_lists, dict)
-            else 0
-        )
+        prev_alive = _alive(prev, key)
+        cur_alive = _alive(current, key)
         # Small numbers wobble run to run; only meaningful drops alert.
         if prev_alive >= 5 and cur_alive < prev_alive * 0.6:
             drop = round(100 * (1 - cur_alive / prev_alive))
