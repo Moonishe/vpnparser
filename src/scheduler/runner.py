@@ -25,8 +25,10 @@ import time
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+from src.aggregator.output import _watermark_link
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
@@ -168,6 +170,41 @@ class PipelineRunner:
                 configs and still look successful.
         """
         self._require_settings_file()
+        results = await self._fetch_sources()
+        return await self._pipeline(results, output_file, publish)
+
+    async def rerun_published(
+        self,
+        output_file: str = "output/subscription.txt",
+        publish: bool = False,
+    ) -> int:
+        """Re-validate the currently published set without refetching sources.
+
+        A full run takes ~2h while published keys die within hours. This mode
+        re-probes just the last published split files (committed to the repo),
+        so an hourly fast-track job can refresh the subscription in minutes
+        between full discovery runs.
+
+        Raises:
+            FileNotFoundError: Same contract as :meth:`run`, plus when neither
+                published split file is readable — revalidating "nothing" must
+                not fall through to an empty-run publish that would wipe the
+                live subscription.
+        """
+        self._require_settings_file()
+        results = self._published_source_results(output_file)
+        if not results:
+            # Revalidating "nothing" must not fall through to an empty-run
+            # publish that would wipe the live subscription.
+            msg = (
+                "rerun_published found no readable published split files "
+                f"next to {output_file} — nothing to revalidate."
+            )
+            raise FileNotFoundError(msg)
+        return await self._pipeline(results, output_file, publish)
+
+    def _prepare_run_state(self) -> float:
+        """Reset per-run state shared by full and fast-track runs."""
         start = time.monotonic()
         self._liveness_stats = {}
         self._output_stats = {}
@@ -181,9 +218,17 @@ class PipelineRunner:
         self._last_summary_path = None
         self._liveness.reset_proxy_cache()
         logger.info("Pipeline started.")
+        return start
 
-        # 1. Fetch all sources.
-        results = await self._fetch_sources()
+    async def _pipeline(
+        self,
+        results: list[Any],
+        output_file: str,
+        publish: bool,
+    ) -> int:
+        """Shared body for full and fast-track runs, from parse to publish."""
+        start = self._prepare_run_state()
+
         if not results:
             logger.warning("No source results fetched — pipeline produced nothing.")
             return await self._finish_empty_run(
@@ -351,6 +396,50 @@ class PipelineRunner:
         return count
 
     # --- stage 1: fetch ---
+
+    def _published_source_results(self, output_file: str) -> list[Any]:
+        """Build parse-stage inputs from the last published split files.
+
+        Each split file becomes one synthetic source result, so the regular
+        parse stage (link extraction, per-link parsing) runs unchanged. The
+        watermark vmess line is dropped: it is display-only and would otherwise
+        be re-validated and republished as a fake config.
+        """
+        import base64
+
+        splits = self._split_output_files(output_file)
+        watermark = _watermark_link()
+        results: list[Any] = []
+        for list_type, path in splits.items():
+            if list_type not in ("blacklist", "whitelist"):
+                continue
+            try:
+                raw = resolve_safe_output_path(path).read_text(
+                    encoding="utf-8",
+                )
+            except Exception as exc:
+                logger.warning("Published %s file unreadable: %s", list_type, exc)
+                continue
+            text = raw.strip()
+            with contextlib.suppress(Exception):
+                text = base64.b64decode(text).decode("utf-8")
+            links = [
+                line.strip()
+                for line in text.splitlines()
+                if "://" in line.strip() and line.strip() != watermark
+            ]
+            if not links:
+                logger.warning("Published %s file has no links: %s", list_type, path)
+                continue
+            results.append(
+                SimpleNamespace(
+                    name=f"published-{list_type}",
+                    list_type=list_type,
+                    files=[(path, "\n".join(links))],
+                    default_country=None,
+                )
+            )
+        return results
 
     async def _fetch_sources(self) -> list[Any]:
         """Fetch all sources via the SourceFetcher stage."""

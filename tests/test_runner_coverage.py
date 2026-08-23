@@ -14,6 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.aggregator.output import _watermark_link
 from src.parsers.base import Config
 from src.scheduler.runner import PipelineRunner
 from src.utils.paths import resolve_safe_output_path
@@ -1394,3 +1395,116 @@ async def test_publish_files_falls_back_when_publisher_cannot_open(
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s", "--tb=short"])
+
+
+# ===================================================================
+# rerun_published() — fast-track revalidation mode
+# ===================================================================
+
+
+def _ss_link(host: str, remark: str) -> str:
+    import base64
+
+    # A literal "password" credential is filtered as a placeholder by
+    # is_garbage_config, so the fixture uses a realistic one.
+    userinfo = base64.b64encode(b"aes-256-gcm:S3cure-Credential-9x7").decode("ascii")
+    return f"ss://{userinfo}@{host}:443#{remark}"
+
+
+def _write_b64_subscription(path: Path, links: list[str]) -> None:
+    path.write_text(
+        base64.b64encode("\n".join(links).encode("utf-8")).decode("ascii"),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.asyncio
+async def test_rerun_published_raises_without_split_files(tmp_path: Path) -> None:
+    """Nothing published yet -> refuse instead of wiping the subscription."""
+    r = _make_runner(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        await r.rerun_published(output_file=str(tmp_path / "out.txt"))
+
+
+@pytest.mark.asyncio
+async def test_rerun_published_revalidates_and_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Published split files are re-parsed, re-validated and rewritten."""
+    bl = tmp_path / "bl-published.txt"
+    wl = tmp_path / "wl-published.txt"
+    _write_b64_subscription(
+        bl,
+        [
+            _watermark_link(),  # display-only marker must be dropped
+            _ss_link("1.2.3.4", "DE-01"),
+            _ss_link("5.6.7.8", "NL-02"),
+        ],
+    )
+    _write_b64_subscription(wl, [_ss_link("9.9.9.9", "RU-03")])
+
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "validator:\n"
+        "  allowed_countries: []\n"
+        "aggregator:\n"
+        "  max_configs_in_output: 100\n"
+        "publisher:\n"
+        f"  split_output_files:\n    blacklist: {bl}\n    whitelist: {wl}\n",
+        encoding="utf-8",
+    )
+    src = tmp_path / "sources.json"
+    src.write_text('{"sources": []}', encoding="utf-8")
+    r = PipelineRunner(settings_path=str(settings), sources_path=str(src))
+
+    seen_lists: dict[str, list[Config]] = {}
+
+    async def fake_validate(
+        data: dict[str, list[Config]],
+    ) -> dict[str, list[Config]]:
+        seen_lists.update(data)
+        return data
+
+    monkeypatch.setattr(r, "_validate_liveness_by_list", fake_validate)
+    monkeypatch.setattr(r, "_apply_quality_filters", lambda data: data)
+
+    out = tmp_path / "out.txt"
+    count = await r.rerun_published(output_file=str(out), publish=False)
+
+    assert count == 3
+    assert set(seen_lists) == {"blacklist", "whitelist"}
+    # The synthetic sources carry the published list types, so per-list
+    # country rules and stats stay intact.
+    assert all(c.source_name == "published-blacklist" for c in seen_lists["blacklist"])
+    assert all(c.source_name == "published-whitelist" for c in seen_lists["whitelist"])
+    # count == 3 already proves the input watermark was dropped as a config;
+    # the writer legitimately prepends its own fresh watermark to the output.
+
+
+@pytest.mark.asyncio
+async def test_published_source_results_skips_unusable_splits(tmp_path: Path) -> None:
+    """Unreadable / linkless / non-list splits are skipped, not fatal."""
+    import base64 as _b64
+
+    linkless = tmp_path / "bl.txt"
+    linkless.write_text(
+        _b64.b64encode(b"no proxy links in this blob").decode("ascii"),
+        encoding="utf-8",
+    )
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "validator:\n"
+        "  allowed_countries: []\n"
+        "publisher:\n"
+        f"  split_output_files:\n    blacklist: {linkless}\n"
+        f"    whitelist: {tmp_path / 'missing.txt'}\n"
+        f"    mix: {tmp_path / 'mix.txt'}\n",
+        encoding="utf-8",
+    )
+    src = tmp_path / "sources.json"
+    src.write_text('{"sources": []}', encoding="utf-8")
+    r = PipelineRunner(settings_path=str(settings), sources_path=str(src))
+
+    results = r._published_source_results(str(tmp_path / "out.txt"))
+
+    assert results == []

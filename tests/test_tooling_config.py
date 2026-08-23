@@ -418,9 +418,25 @@ def test_skip_publish_run_sends_no_notification(
     notify = _named_step(update_workflow, "Telegram notify")
     script = str(pipeline["run"])
     assert 'echo "published=' in script, "the pipeline step exports no publish flag"
-    skipped, _, published = script.partition("else")
-    assert "published=false" in skipped and "--publish" not in skipped
-    assert "published=true" in published and "--publish" in published
+    # Three branches now: fast-track (always publishes), skip_publish (never
+    # publishes) and the full-run default (publishes). Check each explicitly.
+    fast = script[
+        script.index('inputs.mode }}" = "fast"') : script.index(
+            'inputs.skip_publish }}" = "true"'
+        )
+    ]
+    assert "--revalidate-published" in fast
+    assert "--publish" in fast
+    assert "published=true" in fast
+
+    skipped = script[script.index('skip_publish }}" = "true"') : script.index("\nelse")]
+    assert "python -m src.main --run" in skipped
+    assert "--publish" not in skipped
+    assert "published=false" in skipped
+
+    default_branch = script[script.index("\nelse") :]
+    assert "python -m src.main --run --publish" in default_branch
+    assert "published=true" in default_branch
     condition = str(notify.get("if", ""))
     assert f"steps.{pipeline['id']}.outputs.published" in condition
 

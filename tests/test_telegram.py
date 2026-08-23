@@ -1713,3 +1713,77 @@ def test_previous_published_lines_reads_git_show(monkeypatch) -> None:
         "abc123def4567890:output/subscription.txt",
     ]
     assert lines == {"ss://abc"}
+
+
+# --- coverage: watermark fallback, current-lines read, git failure, wiring ----
+
+
+def test_is_watermark_line_false_for_undecodable_body() -> None:
+    """A vmess link with a non-base64 body is not the watermark."""
+    assert telegram_module._is_watermark_line("vmess://@@@ not base64") is False
+
+
+def test_current_subscription_lines_reads_and_decodes(tmp_path, monkeypatch) -> None:
+    import base64 as _b64
+
+    sub = tmp_path / "sub.txt"
+    sub.write_text(_b64.b64encode(b"ss://abc\n").decode("ascii"), encoding="utf-8")
+    monkeypatch.setattr(telegram_module, "resolve_safe_output_path", lambda p: sub)
+    assert telegram_module._current_subscription_lines("output/subscription.txt") == {
+        "ss://abc"
+    }
+
+
+def test_previous_published_lines_git_failure_returns_empty(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_SHA", "abc123def4567890")
+
+    def boom(*args, **kwargs):
+        raise OSError("git unavailable")
+
+    monkeypatch.setattr(telegram_module.subprocess, "run", boom)
+    assert telegram_module._previous_published_lines("output/subscription.txt") == set()
+
+
+def test_send_notification_includes_alerts_and_delta(monkeypatch) -> None:
+    """Alerts and the publish delta all land in the outgoing message."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+    summary = {
+        "validation": {
+            "lists": {
+                "blacklist": {"xray_checked": 300, "xray_alive": 3},
+                "whitelist": {"xray_checked": 100, "xray_alive": 3},
+            }
+        },
+        "sources": {"errors": [{"source": "src-x", "error": "empty or not found"}]},
+    }
+    monkeypatch.setattr(telegram_module, "_load_run_summary", lambda p: summary)
+    monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda: "факт")
+    monkeypatch.setattr(telegram_module, "_format_trend_alert", lambda p: "")
+    monkeypatch.setattr(
+        telegram_module,
+        "_current_subscription_lines",
+        lambda p: {"a://1", "b://2"},
+    )
+    monkeypatch.setattr(
+        telegram_module,
+        "_previous_published_lines",
+        lambda p: {"b://2", "c://3"},
+    )
+    sent = {}
+
+    def fake_send(token, chat_id, text):
+        sent["text"] = text
+        return True
+
+    monkeypatch.setattr(telegram_module, "_send_telegram", fake_send)
+
+    assert telegram_module.send_notification(configs_count=2)
+
+    text = sent["text"]
+    # Delta section rendered from the patched sets.
+    assert "новых 1" in text
+    assert "убрано 1" in text
+    # Source degradation alert present.
+    assert "Проблемные источники" in text
+    assert "src-x" in text
