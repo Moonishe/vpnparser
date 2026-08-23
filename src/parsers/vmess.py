@@ -23,7 +23,7 @@ JSON field    Config field          Notes
 ``fp``        ``fp``                fingerprint
 ``flow``      ``flow``              xtls-rprx-vision etc.
 ``type``      —                     header type; not stored (no Config field)
-``aid``       —                     alterId; ignored
+``aid``       ``alter_id``          alterId; Xray >= 1.8.5 ignores it (AEAD-only)
 ``scy``       —                     vmess encryption mode; ignored
 ``v``         —                     version; ignored
 ============  ====================  ==========================================
@@ -38,6 +38,7 @@ from src.parsers.base import (
     _UUID_RE,
     BaseParser,
     Config,
+    cap_remark,
     extract_remark,
     safe_b64decode,
 )
@@ -150,9 +151,23 @@ class VmessParser(BaseParser):
                 else "none"
             )
 
+            # Xray-core >= 1.8.5 removed legacy vmess MD5 auth and ignores
+            # ``aid`` (the client is AEAD-only; modern servers accept AEAD
+            # for the primary UUID regardless of aid). Older cores still
+            # need the panel's real value, so it is preserved, not dropped.
+            aid_raw = obj.get("aid")
+            alter_id: int | None = None
+            if aid_raw is not None and not isinstance(aid_raw, bool):
+                try:
+                    aid_int = int(aid_raw)
+                except (TypeError, ValueError):
+                    aid_int = None
+                if aid_int is not None and 0 <= aid_int <= 65535:
+                    alter_id = aid_int
+
             # ``type`` is the transport header type ("none"/"http"). Config has
             # no header_type field, so it is intentionally not stored.
-            # ``aid``, ``scy`` and ``v`` are vmess-specific and not needed.
+            # ``scy`` and ``v`` are vmess-specific and not needed.
 
             return Config(
                 protocol=self.protocol,
@@ -167,7 +182,9 @@ class VmessParser(BaseParser):
                 alpn=_json_str_or_none(obj.get("alpn")),
                 fp=_json_str_or_none(obj.get("fp")),
                 flow=_json_str_or_none(obj.get("flow")),
-                remark=_json_str_or_none(obj.get("ps")) or extract_remark(fragment),
+                alter_id=alter_id,
+                remark=cap_remark(_json_str_or_none(obj.get("ps")))
+                or extract_remark(fragment),
                 raw_link=link,
             )
         except Exception:

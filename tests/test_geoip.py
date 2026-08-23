@@ -398,3 +398,168 @@ async def test_enrich_configs_geoip_survives_a_failing_lookup(
 
     assert configs[0].country is None
     assert "GeoIP country lookup failed for 1/1" in caplog.text
+
+
+# --- offline (mmdb) backend -------------------------------------------------
+
+
+class _MMReader:
+    def __init__(self, table: dict[str, dict] | None = None) -> None:
+        self.table = table or {}
+        self.closed = False
+
+    def get(self, ip: str):
+        return self.table.get(ip)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _MMResp:
+    def __init__(self, status_code: int = 200, chunks: list[bytes] | None = None):
+        self.status_code = status_code
+        self._chunks = list(chunks or [])
+
+    async def aiter_bytes(self, _n: int):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _MMRespCM:
+    def __init__(self, resp: _FakeResp) -> None:
+        self._resp = resp
+
+    async def __aenter__(self) -> _FakeResp:
+        return self._resp
+
+    async def __aexit__(self, *_exc) -> None:
+        return None
+
+
+class _MMClient:
+    def __init__(self, resp: _FakeResp) -> None:
+        self._resp = resp
+
+    async def __aenter__(self) -> _MMClient:
+        return self
+
+    async def __aexit__(self, *_exc) -> None:
+        return None
+
+    def stream(self, _method: str, _url: str) -> _MMRespCM:
+        return _MMRespCM(self._resp)
+
+
+def _patch_mm_httpx(monkeypatch, resp: _FakeResp) -> None:
+    monkeypatch.setattr(geoip.httpx, "AsyncClient", lambda **_kw: _MMClient(resp))
+
+
+async def test_ensure_geoip_database_rejects_unpinned_download(tmp_path) -> None:
+    db = tmp_path / "db.mmdb"
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="https://example/db.mmdb", sha256=None
+    )
+    assert ok is None
+    assert not db.exists()
+
+
+async def test_ensure_geoip_database_accepts_existing_unpinned_file(tmp_path) -> None:
+    db = tmp_path / "db.mmdb"
+    db.write_bytes(b"data")
+    ok = await geoip.ensure_geoip_database(path=str(db), url="", sha256=None)
+    assert ok is not None
+
+
+async def test_ensure_geoip_database_download_ok(tmp_path, monkeypatch) -> None:
+    import hashlib
+
+    payload = b"database-bytes"
+    sha = hashlib.sha256(payload).hexdigest()
+    db = tmp_path / "db.mmdb"
+    _patch_mm_httpx(monkeypatch, _MMResp(chunks=[payload[:5], payload[5:]]))
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="https://example/db.mmdb", sha256=sha
+    )
+    assert ok is not None
+    assert db.read_bytes() == payload
+    assert not (tmp_path / "db.mmdb.part").exists()
+
+
+async def test_ensure_geoip_database_checksum_mismatch(tmp_path, monkeypatch) -> None:
+    db = tmp_path / "db.mmdb"
+    _patch_mm_httpx(monkeypatch, _MMResp(chunks=[b"not-the-pinned-bytes"]))
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="https://example/db.mmdb", sha256="00" * 32
+    )
+    assert ok is None
+    assert not db.exists()
+
+
+async def test_ensure_geoip_database_rejects_oversize(tmp_path, monkeypatch) -> None:
+    db = tmp_path / "db.mmdb"
+    _patch_mm_httpx(monkeypatch, _MMResp(chunks=[b"x" * 64]))
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="https://example/db.mmdb", sha256="00" * 32, max_bytes=16
+    )
+    assert ok is None
+    assert not db.exists()
+
+
+async def test_ensure_geoip_database_http_error(tmp_path, monkeypatch) -> None:
+    db = tmp_path / "db.mmdb"
+    _patch_mm_httpx(monkeypatch, _MMResp(status_code=404, chunks=[]))
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="https://example/db.mmdb", sha256="00" * 32
+    )
+    assert ok is None
+
+
+def test_country_from_mmdb_record_shapes() -> None:
+    assert geoip._country_from_mmdb_record({"country": {"iso_code": "de"}}) == "DE"
+    assert (
+        geoip._country_from_mmdb_record({"registered_country": {"iso_code": "US"}})
+        == "US"
+    )
+    assert geoip._country_from_mmdb_record({"country": {"iso_code": "DEU"}}) is None
+    assert geoip._country_from_mmdb_record(None) is None
+    assert geoip._country_from_mmdb_record("junk") is None
+
+
+async def test_enrich_configs_geoip_offline_groups_by_ip() -> None:
+    first = Config("vless", "one.example", 443, "u")
+    second = Config("vless", "two.example", 443, "u")
+    third = Config("vless", "no-dns.example", 443, "u")
+
+    async def fake_resolve(host):
+        return {
+            "one.example": "93.184.216.34",
+            "two.example": "93.184.216.34",
+            "no-dns.example": None,
+        }.get(host)
+
+    reader = _MMReader({"93.184.216.34": {"country": {"iso_code": "DE"}}})
+    from unittest import mock
+
+    with mock.patch.object(geoip, "_resolve_to_ip", fake_resolve):
+        await geoip.enrich_configs_geoip_offline(
+            [first, second, third],
+            "unused.mmdb",
+            reader_factory=lambda _path: reader,
+        )
+
+    assert first.country == "DE"
+    assert second.country == "DE"
+    assert third.country is None
+    assert reader.closed
+
+
+async def test_enrich_configs_geoip_offline_survives_bad_reader(tmp_path) -> None:
+    cfg = Config("vless", "one.example", 443, "u")
+
+    def _boom(_path: str):
+        raise OSError("not an mmdb")
+
+    await geoip.enrich_configs_geoip_offline(
+        [cfg], str(tmp_path / "x.mmdb"), reader_factory=_boom
+    )
+    assert cfg.country is None

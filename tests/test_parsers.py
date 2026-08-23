@@ -43,6 +43,46 @@ def _vmess_link() -> str:
     return f"vmess://{encoded}"
 
 
+def _vmess_payload_link(extra: dict) -> str:
+    payload = {
+        "v": "2",
+        "ps": "RU-01",
+        "add": "ru.example.com",
+        "port": "443",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "net": "tcp",
+        "tls": "none",
+    }
+    payload.update(extra)
+    encoded = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
+    return f"vmess://{encoded}"
+
+
+def test_vmess_parse_alter_id() -> None:
+    """``aid`` must survive parsing: legacy servers reject alterId=0."""
+    cfg = VmessParser().parse(_vmess_payload_link({"aid": 64}))
+    assert cfg is not None
+    assert cfg.alter_id == 64
+
+    # Panels emit aid as string or float just as freely as int.
+    str_cfg = VmessParser().parse(_vmess_payload_link({"aid": "100"}))
+    assert str_cfg is not None
+    assert str_cfg.alter_id == 100
+
+    # Garbage aid is ignored, not fatal; a bool is not an alterId.
+    bad_cfg = VmessParser().parse(_vmess_payload_link({"aid": "soon"}))
+    assert bad_cfg is not None
+    assert bad_cfg.alter_id is None
+    bool_cfg = VmessParser().parse(_vmess_payload_link({"aid": True}))
+    assert bool_cfg is not None
+    assert bool_cfg.alter_id is None
+
+    # No aid field at all.
+    plain = VmessParser().parse(_vmess_link())
+    assert plain is not None
+    assert plain.alter_id is None
+
+
 def test_core_protocol_parsers_accept_valid_links() -> None:
     links = [
         _vmess_link(),
@@ -662,9 +702,31 @@ def test_base64_output_contains_raw_links() -> None:
 
 
 def test_config_dedup_key() -> None:
-    """line 71: dedup_key returns (address, port)."""
+    """line 71: dedup_key returns (protocol, address, port[, cred])."""
     cfg = Config(protocol="vmess", address="a.com", port=443, uuid_or_password="u")
-    assert cfg.dedup_key == ("vmess", "a.com", 443)
+    assert cfg.dedup_key == ("vmess", "a.com", 443, "")
+
+
+def test_config_dedup_key_reality_includes_credentials() -> None:
+    """Two Reality endpoints on one address:port are different servers."""
+    first = Config(
+        protocol="vless",
+        address="cdn.example",
+        port=443,
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        security="reality",
+        pbk="pbk-one",
+    )
+    second = Config(
+        protocol="vless",
+        address="cdn.example",
+        port=443,
+        uuid_or_password="22222222-2222-4222-8222-222222222222",
+        security="reality",
+        pbk="pbk-two",
+    )
+    assert first.dedup_key != second.dedup_key
+    assert first.dedup_key[:3] == second.dedup_key[:3]
 
 
 def test_config_to_dict_excludes_none_and_metadata() -> None:

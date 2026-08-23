@@ -1173,7 +1173,7 @@ def test_xray_probe_rejects_unsupported_network() -> None:
         address="example.com",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
-        network="xhttp",
+        network="kcp",
         security="tls",
     )
 
@@ -1348,8 +1348,8 @@ def test_xray_validation_requires_repeated_successful_attempts(monkeypatch) -> N
         security="tls",
     )
     outcomes = {
-        "stable.example": [True, True, True],
-        "flaky.example": [True, False],
+        "stable.example": [0.5, 0.5, 0.5],
+        "flaky.example": [0.5, None],
     }
 
     async def fake_xray_probe_check(cfg, **_kwargs):

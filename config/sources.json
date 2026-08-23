@@ -4,7 +4,7 @@
       "name": "igareck-black-vless-mobile",
       "list_type": "blacklist",
       "type": "url",
-      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
+      "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
       "enabled": true
     },
     {
@@ -39,7 +39,7 @@
       "name": "igareck-white-vless-reality-mobile",
       "list_type": "whitelist",
       "type": "url",
-      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+      "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
       "default_country": "RU",
       "enabled": true
     },
@@ -47,7 +47,7 @@
       "name": "igareck-white-vless-reality-mobile-2",
       "list_type": "whitelist",
       "type": "url",
-      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
+      "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
       "default_country": "RU",
       "enabled": true
     },
@@ -55,25 +55,25 @@
       "name": "igareck-white-cidr-checked",
       "list_type": "whitelist",
       "type": "url",
-      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-checked.txt",
+      "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-checked.txt",
       "default_country": "RU",
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "igareck-white-cidr-all",
       "list_type": "whitelist",
       "type": "url",
-      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-all.txt",
+      "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-all.txt",
       "default_country": "RU",
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "igareck-white-sni-all",
       "list_type": "whitelist",
       "type": "url",
-      "url": "https://raw.githack.com/igareck/vpn-configs-for-russia/main/WHITE-SNI-RU-all.txt",
+      "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-SNI-RU-all.txt",
       "default_country": "RU",
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "jsxta-whitelist-russia-subscription",
@@ -81,7 +81,7 @@
       "type": "url",
       "url": "https://gbr.mydan.online/configs",
       "default_country": "RU",
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "darkroyalty-shnajder-githubmirror-26",
@@ -130,6 +130,34 @@
       "max_concurrent_urls": 20,
       "enabled": true,
       "timeout": 10
+    },
+    {
+      "name": "flaafix-aetris-white-list-lite",
+      "list_type": "whitelist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/flaafix/AetrisVPN-white-list-lite/main/AetrisVPN.txt",
+      "enabled": true
+    },
+    {
+      "name": "blastvpn-freevpn",
+      "list_type": "whitelist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/BlastVPN/FreeVPN/main/BLASTVPN-CONFIGS.txt",
+      "enabled": true
+    },
+    {
+      "name": "hiztin-vless-po-gribi",
+      "list_type": "blacklist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/hiztin/VLESS-PO-GRIBI/main/deploy/sub.txt",
+      "enabled": true
+    },
+    {
+      "name": "solovyov-all-subs-final",
+      "list_type": "blacklist",
+      "type": "url",
+      "url": "https://raw.githubusercontent.com/solovyov-jenya2004/all_subs/main/final_sorted",
+      "enabled": true
     }
   ]
 }

@@ -215,29 +215,81 @@ async def fetch_proxy_candidates(
     return proxies
 
 
-async def proxy_connects(
+async def _proxy_connects_to(
     proxy_url: str,
-    *,
-    probe_host: str = "api.github.com",
-    probe_port: int = 443,
-    timeout: float = 5.0,
+    host: str,
+    port: int,
+    timeout: float,
 ) -> bool:
-    """Return True when a SOCKS5 proxy can open a TCP connection to a probe."""
+    """One SOCKS5 connect attempt; a failure just means "this target"."""
     try:
         from python_socks.async_.asyncio import Proxy
 
         proxy = Proxy.from_url(proxy_url)
-        sock = await proxy.connect(
-            dest_host=probe_host,
-            dest_port=probe_port,
-            timeout=timeout,
-        )
+        sock = await proxy.connect(dest_host=host, dest_port=port, timeout=timeout)
     except Exception:
         return False
 
     with contextlib.suppress(Exception):
         sock.close()
     return True
+
+
+async def proxy_connects(
+    proxy_url: str,
+    *,
+    probe_host: str = "api.github.com",
+    probe_port: int = 443,
+    timeout: float = 5.0,
+    extra_probe_targets: list[tuple[str, int]] | None = None,
+) -> bool:
+    """Return True when a SOCKS5 proxy can open a TCP connection to a probe.
+
+    Targets are tried in order until one connects: a network that filters
+    GitHub but not Google would otherwise reject every living proxy during
+    the self-check and leave the pool empty.
+    """
+    targets: list[tuple[str, int]] = [(probe_host, probe_port)]
+    targets.extend(extra_probe_targets or [])
+    for index, (host, port) in enumerate(targets):
+        if await _proxy_connects_to(proxy_url, host, port, timeout):
+            if index:
+                # A proxy that only reaches Google will pass the pool
+                # self-check and then fail every GitHub-targeted L3 probe;
+                # the split is the first thing to check when the Xray stage
+                # underperforms while the pool looks healthy.
+                logger.debug(
+                    "Proxy %s passed self-check via failover target %s:%d "
+                    "(primary %s unreachable).",
+                    proxy_url,
+                    host,
+                    port,
+                    probe_host,
+                )
+            return True
+    return False
+
+
+def count_proxy_networks(proxy_urls: list[str]) -> int:
+    """Count distinct networks behind the pool (IPv4 /16, per-host otherwise).
+
+    The whole L3 stage rides on this pool; when every proxy lives in one
+    /16, a single network event empties the subscription. Hostnames count
+    as one network each (their addresses are unknown here).
+    """
+    networks: set[str] = set()
+    for url in proxy_urls:
+        host = (urlparse(str(url)).hostname or "").strip().lower()
+        if not host:
+            continue
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            networks.add(host)
+            continue
+        prefix = 16 if ip.version == 4 else 48
+        networks.add(str(ipaddress.ip_network(f"{ip}/{prefix}", strict=False)))
+    return len(networks)
 
 
 async def validate_proxy_candidates(
@@ -249,6 +301,7 @@ async def validate_proxy_candidates(
     probe_host: str = "api.github.com",
     probe_port: int = 443,
     history: ProxyHealthHistory | None = None,
+    extra_probe_targets: list[tuple[str, int]] | None = None,
 ) -> list[str]:
     """Self-check proxy candidates and return the first working proxies.
 
@@ -275,6 +328,7 @@ async def validate_proxy_candidates(
                 probe_host=probe_host,
                 probe_port=probe_port,
                 timeout=timeout,
+                extra_probe_targets=extra_probe_targets,
             )
             latency_ms = (time.monotonic() - start) * 1000.0 if ok else None
             if history is not None:
@@ -321,6 +375,7 @@ async def load_proxy_pool(
     probe_host: str = "api.github.com",
     probe_port: int = 443,
     history: ProxyHealthHistory | None = None,
+    extra_probe_targets: list[tuple[str, int]] | None = None,
 ) -> list[str]:
     """Load a SOCKS5 proxy pool from GitHub-hosted text lists."""
     candidates = await fetch_proxy_candidates(
@@ -367,6 +422,7 @@ async def load_proxy_pool(
         probe_host=probe_host,
         probe_port=probe_port,
         history=history,
+        extra_probe_targets=extra_probe_targets,
     )
     if history is not None:
         pool = history.rank(pool)

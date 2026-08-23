@@ -1657,3 +1657,141 @@ class TestRemainingCoverage:
         result = telegram_module._generate_fun_fact("")
         assert result in all_fallbacks
         assert result in saved
+
+
+# --- low-alive alert ---------------------------------------------------------
+
+
+def test_low_alive_alert_flags_collapsed_lists() -> None:
+    from src.notify.telegram import _format_low_alive_alert
+
+    summary = {
+        "validation": {
+            "lists": {
+                "blacklist": {"xray_checked": 300, "xray_alive": 120},
+                "whitelist": {"xray_checked": 100, "xray_alive": 3},
+            }
+        }
+    }
+    text = _format_low_alive_alert(summary)
+    assert "whitelist" in text
+    assert "3" in text
+    assert "blacklist" not in text
+
+
+def test_low_alive_alert_silent_when_healthy_or_no_checks() -> None:
+    from src.notify.telegram import _format_low_alive_alert
+
+    healthy = {
+        "validation": {
+            "lists": {
+                "blacklist": {"xray_checked": 300, "xray_alive": 120},
+                "whitelist": {"xray_checked": 50, "xray_alive": 20},
+            }
+        }
+    }
+    assert _format_low_alive_alert(healthy) == ""
+    assert _format_low_alive_alert({}) == ""
+    unchecked = {"validation": {"lists": {"whitelist": {"xray_checked": 0}}}}
+    assert _format_low_alive_alert(unchecked) == ""
+
+
+def test_low_alive_alert_threshold_from_settings(monkeypatch, tmp_path) -> None:
+    import src.notify.telegram as tg
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.yaml").write_text(
+        "telegram:\n  alert_min_alive: 25\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        tg,
+        "resolve_safe_output_path",
+        lambda _p, strict=False: tmp_path,
+    )
+    summary = {
+        "validation": {"lists": {"blacklist": {"xray_checked": 10, "xray_alive": 20}}}
+    }
+    assert "blacklist" in tg._format_low_alive_alert(summary)
+
+
+# --- trend diff alert ---------------------------------------------------------
+
+
+def test_trend_alert_flags_drop_vs_previous_run(tmp_path) -> None:
+    import src.notify.telegram as tg
+
+    history = [
+        {
+            "ts": 1,
+            "status": "ok",
+            "proxy_count": 30,
+            "lists": {"blacklist": {"alive": 100}, "whitelist": {"alive": 10}},
+        },
+        {
+            "ts": 2,
+            "status": "ok",
+            "proxy_count": 12,
+            "lists": {"blacklist": {"alive": 40}, "whitelist": {"alive": 9}},
+        },
+    ]
+    (tmp_path / "stats-history.json").write_text(
+        __import__("json").dumps(history), encoding="utf-8"
+    )
+    text = tg._format_trend_alert(str(tmp_path / "run-summary.json"))
+    assert "blacklist" in text and "40" in text and "100" in text
+    assert "<b>60</b>%" in text  # minus-60%, typographic minus + bold number
+    assert "Прокси-пул просел" in text
+    # whitelist 9 vs 10 is wobble, not a drop.
+    assert "whitelist" not in text
+
+
+def test_trend_alert_ignores_non_ok_runs(tmp_path) -> None:
+    import src.notify.telegram as tg
+
+    # A partially-written failed entry between two ok runs must not be used
+    # as the diff baseline: its zeros would fake a collapse.
+    history = [
+        {
+            "ts": 1,
+            "status": "ok",
+            "proxy_count": 30,
+            "lists": {"blacklist": {"alive": 100}},
+        },
+        {
+            "ts": 2,
+            "status": "no_configs",
+            "proxy_count": 0,
+            "lists": {"blacklist": {"alive": 0}},
+        },
+        {
+            "ts": 3,
+            "status": "ok",
+            "proxy_count": 28,
+            "lists": {"blacklist": {"alive": 95}},
+        },
+    ]
+    (tmp_path / "stats-history.json").write_text(
+        __import__("json").dumps(history), encoding="utf-8"
+    )
+    assert tg._format_trend_alert(str(tmp_path / "run-summary.json")) == ""
+
+
+def test_trend_alert_silent_without_history_or_change(tmp_path) -> None:
+    import src.notify.telegram as tg
+
+    assert tg._format_trend_alert(str(tmp_path / "run-summary.json")) == ""
+    stable = [
+        {"ts": 1, "proxy_count": 30, "lists": {"blacklist": {"alive": 100}}},
+        {"ts": 2, "proxy_count": 28, "lists": {"blacklist": {"alive": 95}}},
+    ]
+    (tmp_path / "stats-history.json").write_text(
+        __import__("json").dumps(stable), encoding="utf-8"
+    )
+    assert tg._format_trend_alert(str(tmp_path / "run-summary.json")) == ""
+    only_one = [{"ts": 1, "proxy_count": 30}]
+    (tmp_path / "stats-history.json").write_text(
+        __import__("json").dumps(only_one), encoding="utf-8"
+    )
+    assert tg._format_trend_alert(str(tmp_path / "run-summary.json")) == ""

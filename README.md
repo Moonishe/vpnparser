@@ -7,6 +7,11 @@
   <img src="https://img.shields.io/github/last-commit/Moonishe/vpnparser" alt="Last commit">
 </p>
 
+<p align="center">
+  <!-- Redrawn from output/stats-history.json on every run. -->
+  <img src="output/alive-trend.svg" alt="Alive configs trend">
+</p>
+
 Fetches public VPN proxy configurations from GitHub sources, parses supported
 protocol links, filters & deduplicates them, runs liveness checks (TCP/TLS/Xray
 L3 probe), then publishes Happ/v2ray-compatible base64 subscriptions.
@@ -53,12 +58,14 @@ ones back into subscriptions.
 
 | File | Contents |
 |------|----------|
-| `output/subscription.txt` | Combined pool (country-balanced, ≤`aggregator.max_configs_in_output`, currently 100) |
+| `output/subscription.txt` | Combined pool (country-balanced, ≤`aggregator.max_configs_in_output`, currently 200) |
 | `output/subscription-blacklist.txt` | Blacklist pool |
 | `output/subscription-whitelist.txt` | Whitelist / restricted-network pool |
 | `output/subscription-mix.txt` | 100 black + 100 white |
+| `output/subscription-clash.yaml` | Mihomo/Clash YAML twin of the combined pool |
 | `output/locations/subscription-XX.txt` | Per-country subsets (≤50 per country) |
 | `output/run-summary.json` | Validation metadata for Telegram notifications |
+| `output/stats-history.json` | Per-run alive counts (capped history behind the trend badge and the Telegram diff-alert) |
 
 ---
 
@@ -178,13 +185,13 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 | `validator` | `max_configs_to_validate` | `0` | Cap on parsed configs (0 = unlimited) |
 | `validator` | `tcp_enabled`, `tls_enabled`, `xray_enabled` | `true` | Liveness check toggles |
 | `validator` | `proxy_attempts_per_config`, `tls_proxy_attempts_per_config` | `3` | SOCKS5 proxy retries |
-| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `200`, `10` | Xray probe limits |
+| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `200`, `15` | Xray probe limits |
 | `validator` | `xray_required` | `true` | Drop everything when Xray cannot run (see `XRAY_EXECUTABLE`) |
 | `validator` | `xray_require_distinct_outbound_ip` | `false` | Fail-closed when direct IP unknown |
 | `validator` | `min_alive_to_filter`, `fail_open_on_low_alive` | `10`, `false` | Low-live thresholds |
-| `validator` | `geoip_enabled` | `false` | IP→country enrichment via `geoip_api_url` |
+| `validator` | `geoip_enabled` | `true` | IP→country enrichment (offline `geoip_mmdb_file` first, `geoip_api_url` fallback) |
 | `validator` | `geoip_requests_per_minute`, `geoip_max_lookups` | `40`, `300` | GeoIP rate limit and per-run lookup cap (extra configs keep `country=None`) |
-| `aggregator` | `max_configs_in_output` | `100` | Hard cap per file |
+| `aggregator` | `max_configs_in_output` | `200` | Hard cap per file (matches `xray_max_alive`) |
 | `aggregator` | `max_per_country` | `200` | Per-country cap in the combined output |
 | `publisher` | `output_file` | `output/subscription.txt` | Combined output path |
 | `publisher` | `location_output_limit` | `50` | Cap per `output/locations/subscription-XX.txt` |

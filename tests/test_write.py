@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 
 import pytest
+import yaml
 
 from src.parsers.base import Config
 from src.scheduler.context import PipelineState
@@ -1237,3 +1238,98 @@ def test_reserved_output_paths_ignores_unsafe_entries(tmp_path: Path) -> None:
     )
     reserved = r._writer._reserved_output_paths()
     assert reserved == {resolve_safe_output_path("output/subscription-mix.txt")}
+
+
+# ---------------------------------------------------------------------------
+# Clash YAML twin output
+# ---------------------------------------------------------------------------
+
+
+def test_write_outputs_includes_clash_yaml(
+    runner: PipelineRunner, tmp_path: Path
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  output_file: {tmp_path / "combined.txt"}
+  mix_output_file: {tmp_path / "mix.txt"}
+  clash_output_file: {tmp_path / "clash.yaml"}
+  split_output_files:
+    blacklist: {tmp_path / "blacklist.txt"}
+  location_outputs_enabled: false
+aggregator:
+  max_per_country: 20
+  max_configs_in_output: 50
+""",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    configs = [
+        Config(
+            "vless",
+            f"a-{i}.example",
+            443,
+            f"id{i}",
+            raw_link=f"vless://id{i}@a-{i}.example:443",
+            country="DE",
+            security="tls",
+        )
+        for i in range(2)
+    ]
+    files = r._writer._write_outputs(configs, {"blacklist": configs})
+    clash = tmp_path / "clash.yaml"
+    assert str(clash) in files
+    assert clash.exists()
+    data = yaml.safe_load(clash.read_text(encoding="utf-8"))
+    assert [p["type"] for p in data["proxies"]] == ["vless", "vless"]
+    assert r._writer.context.output_stats["clash"]["count"] == 2
+
+
+def test_write_empty_outputs_empties_clash_yaml(
+    runner: PipelineRunner, tmp_path: Path
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  output_file: {tmp_path / "combined.txt"}
+  mix_output_file: {tmp_path / "mix.txt"}
+  clash_output_file: {tmp_path / "clash.yaml"}
+""",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    files = r._writer._write_empty_outputs()
+    clash = tmp_path / "clash.yaml"
+    assert str(clash) in files
+    assert yaml.safe_load(clash.read_text(encoding="utf-8")) == {"proxies": []}
+
+
+def test_write_outputs_without_clash_key_skips_yaml(
+    runner: PipelineRunner, tmp_path: Path
+) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  output_file: {tmp_path / "combined.txt"}
+  mix_output_file: {tmp_path / "mix.txt"}
+  location_outputs_enabled: false
+aggregator:
+  max_configs_in_output: 5
+""",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    files = r._writer._write_outputs([], {})
+    assert not any(f.endswith(".yaml") for f in files)

@@ -7,6 +7,7 @@ Config is the unified internal representation of a proxy server.
 from __future__ import annotations
 
 import base64
+import hashlib
 import ipaddress
 import re
 from abc import ABC, abstractmethod
@@ -40,6 +41,8 @@ class Config:
     flow: str | None = None  # xtls-rprx-vision
     # shadowsocks specific
     ss_method: str | None = None  # aes-256-gcm, chacha20-ietf-poly1305, etc.
+    # vmess specific
+    alter_id: int | None = None  # vmess "aid"; ignored by Xray >= 1.8.5
     # metadata
     remark: str = ""  # server display name (from # fragment or ps field)
     raw_link: str = ""  # original link for output generation
@@ -63,12 +66,15 @@ class Config:
     health_record: dict[str, Any] | None = None
 
     @property
-    def dedup_key(self) -> tuple[str, str, int]:
-        """Key for deduplication: (protocol, address, port).
+    def dedup_key(self) -> tuple[str, str, int, str]:
+        """Key for deduplication: (protocol, address, port, cred_hash).
 
         Different protocols or credentials on the same address:port are
         independent configs (e.g. VLESS + Trojan on one server).  The
-        protocol is included so they are not merged.
+        protocol is included so they are not merged. For REALITY configs the
+        credential hash is part of the key: several independent Reality
+        endpoints routinely share one address:port (CDN fronting with
+        different public keys), and collapsing them kept only one.
 
         Hostnames are case-insensitive and an IPv6 literal has many textual
         spellings, so the address is normalised (lowercased; IPv6 collapsed)
@@ -81,7 +87,14 @@ class Config:
             address_key = str(ipaddress.ip_address(address.strip("[]")))
         except ValueError:
             address_key = address.lower()
-        return (str(self.protocol).lower(), address_key, int(self.port))
+        cred = ""
+        if str(self.security or "").lower() == "reality":
+            # pbk identifies the endpoint; the uuid identifies the user, and
+            # one server legitimately issues many user uuids.
+            cred = hashlib.sha256(
+                str(self.pbk or self.uuid_or_password or "").encode()
+            ).hexdigest()[:8]
+        return (str(self.protocol).lower(), address_key, int(self.port), cred)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -176,11 +189,27 @@ def parse_qs_single(query_string: str) -> dict[str, str]:
     return result
 
 
+#: A remark is a display name; real ones are a few dozen characters. The
+#: ``#fragment`` is unbounded external input, so a megabyte-long fragment
+#: would ride into every published artifact (Clash name, base64 subscription)
+#: unchanged — capped here once, at the single extraction point.
+_MAX_REMARK_CHARS = 256
+
+
 def extract_remark(fragment: str) -> str:
     """Extract display name from URL fragment (#remark)."""
     if not fragment:
         return ""
-    return unquote(fragment)
+    return unquote(fragment)[:_MAX_REMARK_CHARS]
+
+
+def cap_remark(remark: str | None) -> str:
+    """Cap an externally-sourced remark to :data:`_MAX_REMARK_CHARS`.
+
+    For remarks that do not come from a URL fragment (the vmess ``ps`` JSON
+    field): same bound, no decoding.
+    """
+    return (remark or "")[:_MAX_REMARK_CHARS]
 
 
 def split_host_port(hostport: str) -> tuple[str, int] | None:

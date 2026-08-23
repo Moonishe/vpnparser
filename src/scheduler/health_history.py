@@ -67,7 +67,14 @@ def _sanitize_numeric_fields(record: dict[str, Any]) -> int:
             record[field] = 0.0
             replaced += 1
     recent = record.get("recent")
-    if recent is not None and not isinstance(recent, list):
+    if isinstance(recent, list):
+        # Only strict booleans are verdicts; a hand-edited "false" string is
+        # truthy and would count as a pass in consecutive_successes()/score().
+        kept = [item for item in recent if isinstance(item, bool)]
+        if len(kept) != len(recent):
+            replaced += 1
+        record["recent"] = kept[-64:]
+    elif recent is not None:
         record["recent"] = []
         replaced += 1
     return replaced
@@ -303,6 +310,29 @@ class HealthHistory:
             cfg.quality_block_reason = "source_ban"
             return True
         return False
+
+    def _config_record(self, cfg: Config) -> dict[str, Any]:
+        record = self.load().get("configs", {}).get(self.config_key(cfg), {})
+        return record if isinstance(record, dict) else {}
+
+    def consecutive_successes(self, cfg: Config) -> int:
+        """Trailing run of passes in the recent-verdict window.
+
+        ``update()`` has already recorded the current run by the time the
+        quality stage asks, so this counts the passes ending with *this*
+        run — 1 for a config that just passed for the first time.
+        """
+        recent = list(self._config_record(cfg).get("recent") or [])
+        streak = 0
+        for verdict in reversed(recent):
+            if not verdict:
+                break
+            streak += 1
+        return streak
+
+    def last_pass_ts(self, cfg: Config) -> int:
+        """Unix time of the config's last success (0 when it never passed)."""
+        return int(self._config_record(cfg).get("last_alive") or 0)
 
     def update(self, checked_configs: list[Config]) -> None:
         if not self.is_enabled():

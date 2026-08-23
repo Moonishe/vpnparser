@@ -157,8 +157,8 @@ validator:
     assert stats["output_after_health"] == 1
 
 
-def test_health_ban_applied_when_many_xray_alive(tmp_path, monkeypatch) -> None:
-    """Health/source bans are applied when Xray finds more than the threshold."""
+def test_health_ban_overridden_by_fresh_xray_pass(tmp_path, monkeypatch) -> None:
+    """A banned config that passes Xray right now is not erased by the ban."""
     settings = tmp_path / "settings.yaml"
     health_file = tmp_path / "health-history.json"
     settings.write_text(
@@ -216,9 +216,10 @@ validator:
         )
     )
 
-    # 4 alive configs > health_ban_min_alive=3, so the banned config is removed.
-    assert len(result) == 3
-    assert cfg not in result
+    # 4 alive configs > health_ban_min_alive=3, but the banned one carries a
+    # fresh probe pass: stale history must not erase living configs.
+    assert len(result) == 4
+    assert cfg in result
 
 
 if __name__ == "__main__":

@@ -29,6 +29,8 @@ dependencies = [
     "PyYAML>=6.0",
     "python-socks[asyncio]>=2.5",
     "python-dotenv>=1.0",
+    # Offline GeoIP enrichment (GeoLite2-Country.mmdb reader).
+    "maxminddb>=2.0",
 ]
 
 [project.optional-dependencies]

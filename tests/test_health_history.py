@@ -201,6 +201,33 @@ class TestLoad:
         assert h.is_banned(cfg) is False
         assert h.score(cfg) == 0.0
 
+    def test_load_sanitizes_recent_verdicts(self, tmp_path: Path) -> None:
+        """Only strict booleans survive in ``recent``.
+
+        A hand-edited ``"false"`` string is truthy and would count as a pass
+        in ``consecutive_successes()`` — the stability gate would publish a
+        config that never actually passed.
+        """
+        cfg = _make_config(source_name="src-a")
+        f = tmp_path / "health.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "configs": {
+                        HealthHistory.config_key(cfg): {
+                            "recent": [True, "false", 1, False],
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        record = h.load()["configs"][HealthHistory.config_key(cfg)]
+        assert record["recent"] == [True, False]
+        # The string would have faked a two-pass streak; strict booleans do not.
+        assert h.consecutive_successes(cfg) == 0
+
 
 # ---------------------------------------------------------------------------
 # save()
@@ -644,3 +671,44 @@ class TestLoadReportsUnreadableFile:
 
         assert h.load() == {"configs": {}, "sources": {}}
         assert "health history" not in caplog.text
+
+
+# --- consecutive_successes / last_pass_ts ------------------------------------
+
+
+def test_consecutive_successes_trailing_streak(tmp_path) -> None:
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "quality:\n  health_history_file: placeholder\n", encoding="utf-8"
+    )
+    from src.parsers.base import Config
+    from src.scheduler.runner import PipelineRunner
+
+    runner = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    health = runner._liveness.health if hasattr(runner, "_liveness") else None
+    if health is None:
+        from src.scheduler.health_history import HealthHistory
+        from src.scheduler.settings import Settings
+
+        health = HealthHistory(Settings(str(settings)))
+
+    cfg = Config("vless", "a.example", 443, "u", is_alive=True)
+    assert health.consecutive_successes(cfg) == 0
+    assert health.last_pass_ts(cfg) == 0
+
+    health.update([cfg])
+    assert health.consecutive_successes(cfg) == 1
+    first_pass = health.last_pass_ts(cfg)
+    assert first_pass > 0
+
+    dead = Config("vless", "a.example", 443, "u", is_alive=False)
+    health.update([dead])
+    assert health.consecutive_successes(cfg) == 0
+
+    health.update([cfg])
+    health.update([cfg])
+    assert health.consecutive_successes(cfg) == 2
+    assert health.last_pass_ts(cfg) >= first_pass

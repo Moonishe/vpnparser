@@ -24,6 +24,7 @@ import os
 import time
 from collections import Counter
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from src.parsers.base import Config
@@ -271,6 +272,10 @@ class PipelineRunner:
         output_files = [output_file]
         split_output_files = self._split_output_files(output_file)
 
+        clash_file = self._writer._write_clash_output(combined)
+        if clash_file:
+            output_files.append(clash_file)
+
         mix_output_file = self._mix_output_file(output_file, split_output_files)
         if mix_output_file:
             mix_configs = self._build_mixed_output(preprocessed_by_list, max_total)
@@ -323,6 +328,7 @@ class PipelineRunner:
         health_file = self._write_health_history()
         if health_file:
             output_files.append(health_file)
+        output_files.extend(self._write_stats_history("ok"))
 
         self._save_proxy_health_history()
 
@@ -742,6 +748,10 @@ class PipelineRunner:
 
         # Keep run-summary outputs in sync with the empty files we just wrote.
         self._record_output_stats("combined", output_file, [])
+        clash_output_file = self._writer._clash_output_file()
+        if clash_output_file:
+            self._writer._write_empty_clash_output()
+            self._record_output_stats("clash", clash_output_file, [])
         split_output_files = self._split_output_files(output_file)
         for list_type, split_file in split_output_files.items():
             self._record_output_stats(list_type, split_file, [])
@@ -752,9 +762,13 @@ class PipelineRunner:
         summary_file = self._write_run_summary(status)
         health_file = self._write_health_history()
         self._save_proxy_health_history()
+        stats_files = self._write_stats_history(status)
         if publish:
             publish_paths = self._configured_subscription_output_paths(output_file)
             publish_paths.extend(location_files)
+            if clash_output_file:
+                publish_paths.append(clash_output_file)
+            publish_paths.extend(stats_files)
             if summary_file:
                 publish_paths.append(summary_file)
             if health_file:
@@ -893,6 +907,45 @@ class PipelineRunner:
         return output_file
 
     # --- stage 5: write ---
+
+    def _write_stats_history(self, status: str) -> list[str]:
+        """Append this run to the trend history and redraw the SVG badge.
+
+        Both files are published with the subscriptions, so the badge in the
+        README and the Telegram diff-alert survive run boundaries.
+        """
+        if not self._liveness_stats:
+            # Early-fail runs (no sources / no configs / no countries) never
+            # reached liveness; a zeros entry would dip the badge for a
+            # fetch hiccup without saying anything about the proxies.
+            return []
+        try:
+            from src.scheduler.stats_history import (
+                DEFAULT_STATS_HISTORY_FILE,
+                DEFAULT_TREND_SVG_FILE,
+                append_run_stats,
+                render_trend_svg,
+                run_stats_entry,
+            )
+
+            # Live next to the run summary: the Telegram diff-alert reads
+            # stats-history.json from Path(status_file).parent, so a custom
+            # output directory must not leave the trend files behind in the
+            # default output/ while the summary (and the alert) look elsewhere.
+            history_file = DEFAULT_STATS_HISTORY_FILE
+            svg_file = DEFAULT_TREND_SVG_FILE
+            status_output = self._status_output_file()
+            if status_output:
+                parent = Path(status_output).parent
+                history_file = str(parent / "stats-history.json")
+                svg_file = str(parent / "alive-trend.svg")
+            entry = run_stats_entry(self._liveness_stats, status)
+            history, history_path = append_run_stats(entry, history_file)
+            svg_path = render_trend_svg(history, svg_file)
+            return [path for path in (history_path, svg_path) if path]
+        except Exception as exc:
+            logger.warning("Stats history write failed: %s", exc)
+            return []
 
     def _write_output(self, configs: list[Config], output_file: str) -> int:
         """Write the subscription file via ``write_subscription``."""
