@@ -80,10 +80,13 @@ validator:
     blacklist: 0
     whitelist: 0
   # Same rule as tcp_max_alive: the per-list values below override this one.
-  xray_max_alive: 200
+  # 300 instead of the former 200: both lists hit the cap every run with ~3000
+  # candidates left unprobed, and a bigger verified pool decays slower for
+  # subscribers because configs die unevenly. Costs ~20-30 min of Xray stage.
+  xray_max_alive: 300
   xray_max_alive_by_list:
-    blacklist: 200
-    whitelist: 200
+    blacklist: 300
+    whitelist: 300
   xray_timeout_seconds: 15
   xray_startup_timeout_seconds: 5
   # 10 left the SOCKS pool under-used: each probe is mostly waiting on the
@@ -209,9 +212,9 @@ quality:
 
 # --- Aggregator ---
 aggregator:
-  # Match xray_max_alive: throwing away half of the proven-alive configs
-  # (200 alive -> 100 published) only shrinks the subscription.
-  max_configs_in_output: 200
+  # Match xray_max_alive (300): throwing away half of the proven-alive configs
+  # only shrinks the subscription.
+  max_configs_in_output: 300
   sort_by: "country"
   max_per_country: 200
 
