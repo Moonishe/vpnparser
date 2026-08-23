@@ -38,6 +38,7 @@ from src.parsers.base import (
     _UUID_RE,
     BaseParser,
     Config,
+    cap_remark,
     extract_remark,
     safe_b64decode,
 )
@@ -182,7 +183,8 @@ class VmessParser(BaseParser):
                 fp=_json_str_or_none(obj.get("fp")),
                 flow=_json_str_or_none(obj.get("flow")),
                 alter_id=alter_id,
-                remark=_json_str_or_none(obj.get("ps")) or extract_remark(fragment),
+                remark=cap_remark(_json_str_or_none(obj.get("ps")))
+                or extract_remark(fragment),
                 raw_link=link,
             )
         except Exception:

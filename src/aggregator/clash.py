@@ -35,10 +35,18 @@ def _name(cfg: Config, used: set[str]) -> str:
     return name
 
 
-def _tls_fields(cfg: Config, proxy: dict[str, Any]) -> None:
+def _tls_fields(cfg: Config, proxy: dict[str, Any]) -> bool:
+    """Fill TLS/Reality fields; ``False`` = not expressible (skip the config).
+
+    Reality without a public key cannot be expressed in Mihomo: publishing
+    it as plain TLS would hand out an entry that can never handshake, while
+    the Xray probe fail-closes the same case.
+    """
     security = str(cfg.security or "").lower()
     if security not in ("tls", "reality"):
-        return
+        return True
+    if security == "reality" and not cfg.pbk:
+        return False
     proxy["tls"] = True
     if cfg.sni:
         proxy["servername"] = cfg.sni
@@ -56,13 +64,12 @@ def _tls_fields(cfg: Config, proxy: dict[str, Any]) -> None:
     # TLS stage is equally non-verifying.
     proxy["skip-cert-verify"] = True
     if security == "reality":
-        if not cfg.pbk:
-            return
         reality: dict[str, Any] = {"public-key": cfg.pbk}
         if cfg.sid:
             reality["short-id"] = cfg.sid
         proxy["reality-opts"] = reality
         proxy["client-fingerprint"] = cfg.fp or "chrome"
+    return True
 
 
 def _transport_fields(cfg: Config, proxy: dict[str, Any]) -> None:
@@ -142,6 +149,10 @@ def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] |
         proxy["uuid"] = cfg.uuid_or_password
         proxy["alterId"] = int(cfg.alter_id or 0)
         proxy["cipher"] = "auto"
+        if cfg.fp:
+            # The probe validated the config with this uTLS fingerprint;
+            # dropping it would change the JA3 handshake for picky servers.
+            proxy["client-fingerprint"] = cfg.fp
     elif protocol == "trojan":
         proxy["type"] = "trojan"
         proxy["password"] = cfg.uuid_or_password
@@ -178,7 +189,8 @@ def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] |
     else:
         return None
 
-    _tls_fields(cfg, proxy)
+    if not _tls_fields(cfg, proxy):
+        return None
     _transport_fields(cfg, proxy)
     return proxy
 

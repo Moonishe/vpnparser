@@ -375,7 +375,17 @@ class GitHubClient:
             self._tree_cache[key] = future
         else:
             future = self._tree_cache[key]
-        tree = await future
+        try:
+            tree = await future
+        except BaseException:
+            # A failed or cancelled future must never stay cached: the first
+            # waiter's timeout/shutdown would otherwise cancel the shared
+            # future and poison it for every later caller, turning one
+            # source's hiccup into a run-wide CancelledError. Successful
+            # trees stay cached (see below); anything else is retried fresh.
+            if self._tree_cache.get(key) is future:
+                self._tree_cache.pop(key, None)
+            raise
         if tree is None:
             # Only *successful* trees are retained: a transient failure (rate
             # limit wait exceeded, network blip) must not pin this repo to an

@@ -19,6 +19,7 @@ import base64
 import contextlib
 import logging
 import time
+from datetime import UTC
 from typing import Any
 from urllib.parse import quote
 
@@ -202,8 +203,14 @@ class GitHubPublisher:
                     from email.utils import parsedate_to_datetime
 
                     retry_dt = parsedate_to_datetime(retry_after)
+                    if retry_dt.tzinfo is None:
+                        # HTTP-dates are GMT; a naive datetime would otherwise
+                        # be interpreted in the runner's local timezone.
+
+                        retry_dt = retry_dt.replace(tzinfo=UTC)
                     wait = max(1.0, retry_dt.timestamp() - time.time())
-                except (TypeError, ValueError, OSError):
+                # OverflowError: a date far beyond datetime's range.
+                except (TypeError, ValueError, OSError, OverflowError):
                     pass
         else:
             reset = response.headers.get("X-RateLimit-Reset")
@@ -314,7 +321,12 @@ class GitHubPublisher:
                 except Exception:
                     logger.exception("Failed to GET %s for SHA after conflict", path)
                     break
-                body["sha"] = sha
+                if sha:
+                    body["sha"] = sha
+                else:
+                    # The file was deleted by a competing commit: PUT without
+                    # a "sha" key creates it — "sha": null would 422 forever.
+                    body.pop("sha", None)
                 try:
                     response = await client.put(url, json=body)
                 except httpx.RequestError:
@@ -332,13 +344,19 @@ class GitHubPublisher:
                         self.repo,
                     )
                     return True
+                if response.status_code == 422:
+                    # A create-vs-create race surfaced mid-retry: the shared
+                    # 422 recovery below can still fix this — don't abort.
+                    break
                 if response.status_code != 409:
                     break
-            logger.error(
-                "GitHub 409 conflict publishing %s (race or empty repo). Aborting this publish.",  # noqa: E501
-                path,
-            )
-            return False
+            else:
+                # Loop exhausted with the conflict still unresolved.
+                logger.error(
+                    "GitHub 409 conflict publishing %s (race or empty repo). Aborting this publish.",  # noqa: E501
+                    path,
+                )
+                return False
 
         if response.status_code == 422:
             # Create-vs-create race: our GET saw no file (or a stale SHA) but

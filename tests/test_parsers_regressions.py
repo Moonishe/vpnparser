@@ -488,7 +488,11 @@ def test_ad_filter_stays_linear_on_a_hostile_remark() -> None:
     assert find_all_links(link) == [link]
     cfg = PARSER_BY_SCHEME["vless"].parse(link)
     assert cfg is not None
-    assert len(cfg.remark) == len(remark)
+    # The remark is capped at extraction: a megabyte fragment must not ride
+    # into published artifacts (Clash name, base64 subscription) verbatim.
+    from src.parsers.base import _MAX_REMARK_CHARS
+
+    assert len(cfg.remark) == min(len(remark), _MAX_REMARK_CHARS)
 
     started = time.perf_counter()
     assert is_garbage_config(cfg) is False

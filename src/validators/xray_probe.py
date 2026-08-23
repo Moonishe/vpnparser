@@ -902,6 +902,14 @@ async def xray_probe_check(
                         proc.kill()
                         with contextlib.suppress(Exception):
                             await proc.wait()
+                    except asyncio.CancelledError:
+                        # A second cancellation (stage shutdown) arriving
+                        # during the grace wait must not skip the kill:
+                        # Xray ignoring SIGTERM would outlive the pipeline.
+                        proc.kill()
+                        with contextlib.suppress(Exception):
+                            await proc.wait()
+                        raise
     finally:
         _release_local_port(socks_port)
 

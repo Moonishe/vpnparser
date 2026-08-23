@@ -189,11 +189,27 @@ def parse_qs_single(query_string: str) -> dict[str, str]:
     return result
 
 
+#: A remark is a display name; real ones are a few dozen characters. The
+#: ``#fragment`` is unbounded external input, so a megabyte-long fragment
+#: would ride into every published artifact (Clash name, base64 subscription)
+#: unchanged — capped here once, at the single extraction point.
+_MAX_REMARK_CHARS = 256
+
+
 def extract_remark(fragment: str) -> str:
     """Extract display name from URL fragment (#remark)."""
     if not fragment:
         return ""
-    return unquote(fragment)
+    return unquote(fragment)[:_MAX_REMARK_CHARS]
+
+
+def cap_remark(remark: str | None) -> str:
+    """Cap an externally-sourced remark to :data:`_MAX_REMARK_CHARS`.
+
+    For remarks that do not come from a URL fragment (the vmess ``ps`` JSON
+    field): same bound, no decoding.
+    """
+    return (remark or "")[:_MAX_REMARK_CHARS]
 
 
 def split_host_port(hostport: str) -> tuple[str, int] | None:
