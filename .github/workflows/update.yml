@@ -5,8 +5,11 @@ name: Update Configs
 
 on:
   schedule:
-    # Every hour, at minute 0 (UTC)
-    - cron: "0 * * * *"
+    # Hourly, at minute 11. Minute-0 crons hit GitHub Actions' congestion
+    # window and regularly start 15-30+ min late (observed: scheduled 09:00,
+    # started 09:19). An off-minute slot starts within a couple of minutes,
+    # which is the cheapest way to publish earlier without extra runners.
+    - cron: "11 * * * *"
   workflow_dispatch:
     inputs:
       skip_publish:

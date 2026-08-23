@@ -25,6 +25,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
@@ -369,8 +370,37 @@ _SUBSCRIPTION_LABELS = {
     "combined": "Общая",
     "blacklist": "Blacklist",
     "whitelist": "Whitelist",
-    "mix": "Mix 100/100",
+    # Fallback when the run summary carries no per-list counts; the dynamic
+    # variant comes from _mix_label().
+    "mix": "Mix",
 }
+
+
+def _mix_label(summary: dict[str, Any]) -> str:
+    """Build a dynamic "Mix <blacklist>/<whitelist>" label from real counts.
+
+    The old static "Mix 100/100" kept advertising round numbers while both
+    lists were capped by xray_max_alive (200 each) or filtered down to far
+    less; the numbers next to the label must match the per-list lines above.
+    """
+    outputs = summary.get("outputs")
+    if not isinstance(outputs, dict):
+        return _SUBSCRIPTION_LABELS["mix"]
+
+    def _count(key: str) -> int | None:
+        item = outputs.get(key)
+        if not isinstance(item, dict):
+            return None
+        try:
+            return int(item.get("count") or 0)
+        except (TypeError, ValueError):
+            return None
+
+    blacklist_count = _count("blacklist")
+    whitelist_count = _count("whitelist")
+    if blacklist_count is None or whitelist_count is None:
+        return _SUBSCRIPTION_LABELS["mix"]
+    return f"Mix {blacklist_count}/{whitelist_count}"
 
 
 def _load_run_summary(filepath: str) -> dict[str, Any]:
@@ -762,7 +792,11 @@ def _format_subscriptions_section(
             item = outputs.get(key)
             if not isinstance(item, dict):
                 continue
-            label = _SUBSCRIPTION_LABELS.get(key, key)
+            label = (
+                _mix_label(summary)
+                if key == "mix"
+                else _SUBSCRIPTION_LABELS.get(key, key)
+            )
             try:
                 count = int(item.get("count") or 0)
             except (TypeError, ValueError):
@@ -1175,10 +1209,15 @@ def send_notification(
     # Build message.
     repo_slug = _repo_slug()
     repo_url = f"https://github.com/{repo_slug}"
+    # The message is sent seconds after publish, so send time == data
+    # freshness; subscribers decide by the clock whether to re-import.
+    updated_at = datetime.now(UTC).strftime("%d.%m %H:%M UTC")
+    mix_label = _mix_label(summary)
     message = (
         f"{_bot_intro()}\n"
         f"\n"
         f"{_b('Конфиг обновился')}, обновите конфигурацию.\n"
+        f"🕒 {_b('Обновлено')}: {_h(updated_at)}\n"
         f"{validation_section}\n"
         f"\n"
         f"{subscriptions_section}\n"
@@ -1189,7 +1228,7 @@ def send_notification(
         f"  🔗 {_link('Общая', urls['combined'])}\n"
         f"  ⚫ {_link('Рабочий blacklist', urls['blacklist'])}\n"
         f"  ⚪ {_link('Рабочий whitelist', urls['whitelist'])}\n"
-        f"  🧩 {_link('Mix 100/100', urls['mix'])}"
+        f"  🧩 {_link(mix_label, urls['mix'])}"
     )
 
     return _send_telegram(token, chat_id, message)
