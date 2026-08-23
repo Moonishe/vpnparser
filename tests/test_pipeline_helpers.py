@@ -133,6 +133,10 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
             },
         },
         "outputs": {
+            "blacklist": {
+                "count": 169,
+                "countries": {"NL": 68, "US": 53},
+            },
             "whitelist": {
                 "count": 150,
                 "countries": {"RU": 120, "DE": 30},
@@ -174,7 +178,7 @@ def test_telegram_formats_validation_and_per_subscription_countries() -> None:
     assert "<b>Whitelist TLS/REALITY</b>: проверено 200, живых 184" in validation
     assert "<b>Whitelist</b>: 150" in subscriptions
     assert "Россия 120" in subscriptions
-    assert "<b>Mix 100/100</b>: 200" in subscriptions
+    assert "<b>Mix 169/150</b>: 200" in subscriptions
     assert "<b>Локации</b>: 2 файлов, до 50 серверов" in subscriptions
     assert "Россия 60" in subscriptions
 
