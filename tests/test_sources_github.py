@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import time as _time
 from unittest import mock
@@ -781,6 +782,42 @@ class TestListRepoTree:
         assert second is not None
         assert [e["name"] for e in second] == ["a.txt"]
         assert fc._call_count == 2
+
+    def test_cancelled_tree_waiter_does_not_poison_cache(self, monkeypatch) -> None:
+        """A cancelled waiter must evict the shared future it killed.
+
+        Cancelling the task awaiting the shared future delivers the cancel to
+        that future; if it stayed cached, every later caller of this repo
+        would get CancelledError for the rest of the run.
+        """
+        client = GitHubClient()
+        real_fetch = client._fetch_repo_tree
+
+        async def scenario() -> None:
+            started = asyncio.Event()
+
+            async def slow_fetch(
+                owner: str, repo: str, branch: str
+            ) -> list[dict[str, object]] | None:
+                started.set()
+                await asyncio.sleep(3600)
+                return None
+
+            client._fetch_repo_tree = slow_fetch  # type: ignore[method-assign]
+            first = asyncio.ensure_future(
+                client._list_repo_tree("owner", "repo", "dir", "main")
+            )
+            await started.wait()
+            first.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await first
+
+            # Restore the real fetch: the retry below must hit it instead of
+            # joining the cancelled future still parked in the cache.
+            client._fetch_repo_tree = real_fetch  # type: ignore[method-assign]
+            result = await client._list_repo_tree("owner", "repo", "dir", "main")
+
+        asyncio.run(scenario())
 
     def test_concurrent_tree_requests_share_one_fetch(self, monkeypatch) -> None:
         """Parallel listings of the same repo must not duplicate the fetch.

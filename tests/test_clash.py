@@ -64,6 +64,28 @@ def test_vless_reality_fields() -> None:
     assert proxy["grpc-opts"]["grpc-service-name"] == "grpc-svc"
 
 
+def test_vless_reality_without_pbk_is_inexpressible() -> None:
+    """Reality without a public key cannot be expressed in Mihomo.
+
+    Publishing it as plain TLS would hand out an entry that can never
+    handshake, while the Xray probe fail-closes the same case.
+    """
+    cfg = _vless(security="reality", fp="firefox", sid="abcd")
+    assert config_to_clash_proxy(cfg, set()) is None
+
+
+def test_vmess_carries_client_fingerprint() -> None:
+    """The probe-validated uTLS fingerprint must survive into Clash vmess."""
+    cfg = _vless(
+        protocol="vmess",
+        uuid_or_password="11111111-1111-4111-8111-111111111111",
+        fp="chrome",
+    )
+    proxy = config_to_clash_proxy(cfg, set())
+    assert proxy is not None
+    assert proxy["client-fingerprint"] == "chrome"
+
+
 def test_vmess_alter_id_passthrough() -> None:
     cfg = _vless(protocol="vmess", alter_id=64)
     proxy = config_to_clash_proxy(cfg, set())

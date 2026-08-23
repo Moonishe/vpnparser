@@ -501,6 +501,99 @@ async def test_publish_file_conflict_409_then_succeeds(monkeypatch) -> None:
     assert fake.put_shas[1] == "fresh-sha"  # SHA re-fetched after 409
 
 
+async def test_publish_file_conflict_deleted_file_puts_without_sha(
+    monkeypatch,
+) -> None:
+    """A competing delete during a 409 retry must not PUT ``"sha": null``.
+
+    The re-fetched SHA is None (the file is gone): the retry PUT has to drop
+    the key entirely — GitHub answers 422 to an explicit null forever.
+    """
+    get_count = 0
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.put_shas: list[object] = []
+            self.put_missing_key = 0
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            nonlocal get_count
+            get_count += 1
+            # First GET sees the old file; after the conflict the file was
+            # deleted by a manual commit, so the re-fetch sees nothing.
+            if get_count == 1:
+                return _FakeResp(200, json_data={"sha": "abc"})
+            return _FakeResp(404, text="Not Found")
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            body = kw.get("json")
+            assert isinstance(body, dict)
+            if "sha" in body:
+                self.put_shas.append(body["sha"])
+            else:
+                self.put_missing_key += 1
+                self.put_shas.append(None)
+            if len(self.put_shas) == 1:
+                return _FakeResp(409, text="Conflict")
+            return _FakeResp(201, json_data={"content": {"sha": "x"}})
+
+        async def aclose(self) -> None:
+            return None
+
+    fake = _FakeClient()
+    pub = _make_publisher(monkeypatch, fake)
+    result = await pub.publish_file("f.txt", "data", "msg")
+
+    assert result is True
+    # The conflict-retry PUT created the file instead of sending sha=null.
+    assert fake.put_missing_key == 1
+    assert fake.put_shas == ["abc", None]
+
+
+async def test_publish_file_conflict_422_hands_off_to_recovery(monkeypatch) -> None:
+    """A 422 surfacing mid-409-retry must reach the 422 recovery, not abort."""
+    put_count = 0
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.put_calls = 0
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kw: object) -> _FakeResp:
+            return _FakeResp(200, json_data={"sha": "fresh-sha"})
+
+        async def put(self, url: str, **kw: object) -> _FakeResp:
+            nonlocal put_count
+            put_count += 1
+            if put_count == 1:
+                return _FakeResp(409, text="Conflict")
+            if put_count == 2:
+                # The create-vs-create race surfaces on the conflict retry.
+                return _FakeResp(422, text="Unprocessable")
+            return _FakeResp(201, json_data={"content": {"sha": "x"}})
+
+        async def aclose(self) -> None:
+            return None
+
+    pub = _make_publisher(monkeypatch, _FakeClient())
+    result = await pub.publish_file("f.txt", "data", "msg")
+
+    assert result is True
+    # Initial PUT + conflict retry + one recovery PUT.
+    assert put_count == 3
+
+
 # ---------------------------------------------------------------------------
 # publish_file: 422 unprocessable
 # ---------------------------------------------------------------------------

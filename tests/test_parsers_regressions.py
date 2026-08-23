@@ -489,7 +489,10 @@ def test_ad_filter_stays_linear_on_a_hostile_remark() -> None:
     cfg = PARSER_BY_SCHEME["vless"].parse(link)
     assert cfg is not None
     # The remark is capped at extraction: a megabyte fragment must not ride
-    # into published artifacts (Clash name, base64 subscription) verbatim.
+    # into Clash proxy names or downstream reports verbatim. (The raw base64
+    # subscription still carries cfg.raw_link whole, which is bounded by the
+    # per-source download limit and dedup; capping the display remark is the
+    # part that protects the structured outputs.)
     from src.parsers.base import _MAX_REMARK_CHARS
 
     assert len(cfg.remark) == min(len(remark), _MAX_REMARK_CHARS)
