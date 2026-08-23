@@ -192,7 +192,7 @@ def test_telegram_message_uses_html_links_and_escapes_dynamic_text(monkeypatch) 
     monkeypatch.setenv("GITHUB_REPO", "repo")
     monkeypatch.setenv("GITHUB_BRANCH", "main")
     monkeypatch.setattr(
-        telegram_module, "_generate_fun_fact", lambda _api_key: "опасный <tag> & факт"
+        telegram_module, "_generate_fun_fact", lambda: "опасный <tag> & факт"
     )
 
     def fake_send(token: str, chat_id: str, text: str) -> bool:
