@@ -199,6 +199,7 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 | `publisher` | `batch_commits` | `true` | One atomic commit for all outputs via the Git Data API |
 | `validator.proxy_pool.health` | `ban_seconds` | `3600` | Proxy ban is time-boxed; after it a passing self-check revives the proxy |
 | `quality` | `stability_enforce_fraction` | `0.3` | Stability gate enforces only when stable core ≥ this share of the list |
+| `quality` | `source_sample_window_days` | `7` | Cumulative source-judgment window (0 = no time box) |
 | `llm` | `enabled` | `false` | LLM fallback when regex finds no links |
 
 ---

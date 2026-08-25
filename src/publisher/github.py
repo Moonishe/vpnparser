@@ -355,8 +355,17 @@ class GitHubPublisher:
                     )
                     return False
                 parent_tree = (commit_resp.json().get("tree") or {}).get("sha")
-                if isinstance(parent_tree, str) and parent_tree:
-                    tree_payload["base_tree"] = parent_tree
+                if not (isinstance(parent_tree, str) and parent_tree):
+                    # Fail-closed: without base_tree the new tree would contain
+                    # ONLY our files — GitHub would render every other file in
+                    # the repo as deleted in this commit's diff.
+                    logger.error(
+                        "Base commit %s has no readable tree SHA — refusing "
+                        "to build an incremental tree.",
+                        base_commit,
+                    )
+                    return False
+                tree_payload["base_tree"] = parent_tree
 
             try:
                 tree_resp = await self._send(

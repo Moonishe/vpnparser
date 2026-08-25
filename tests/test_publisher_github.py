@@ -1520,3 +1520,24 @@ async def test_batch_network_error_on_commit_creation(monkeypatch) -> None:
     )
     pub = _make_publisher(monkeypatch, client)
     assert await pub.publish_files_batch([("a.txt", "A")], "msg") is False
+
+
+@pytest.mark.asyncio
+async def test_batch_malformed_parent_tree_fails_closed(monkeypatch) -> None:
+    """A base commit without a readable tree aborts instead of nuking files.
+
+    Without base_tree the new tree would contain ONLY our files, so GitHub
+    would render every other file in the repo as deleted in the diff.
+    """
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(
+                200,
+                json_data={"object": {"sha": "base0"}},
+            ),
+            # 200, но без tree.sha — неожиданная форма ответа.
+            "GET git/commits/base0": _FakeResp(200, json_data={"tree": {}}),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+    assert await pub.publish_files_batch([("a.txt", "A")], "msg") is False

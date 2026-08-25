@@ -152,7 +152,12 @@ async def _fetch_source(
         async with asyncio.timeout(timeout * _DOWNLOAD_BUDGET_FACTOR):
             for attempt in range(1, _MAX_SOURCE_ATTEMPTS + 1):
                 try:
-                    text, retry_after = await _fetch_source_once(client, url, headers)
+                    text, retry_after = await _fetch_source_once(
+                        client,
+                        url,
+                        headers,
+                        attempt=attempt,
+                    )
                 except httpx.HTTPError as exc:
                     if attempt >= _MAX_SOURCE_ATTEMPTS:
                         logger.warning("Proxy source fetch failed for %s: %s", url, exc)
@@ -194,6 +199,8 @@ async def _fetch_source_once(
     client: httpx.AsyncClient,
     url: str,
     headers: dict[str, str],
+    *,
+    attempt: int = 1,
 ) -> tuple[str | None, float | None]:
     """One redirect-chain walk of :func:`_fetch_source`.
 
@@ -204,7 +211,6 @@ async def _fetch_source_once(
     from src.sources.github import _retry_after_delay
 
     target = url
-    backoff = 1.0
     for _hop in range(_MAX_REDIRECT_HOPS + 1):
         if not _is_safe_public_http_url(target):
             logger.warning(
@@ -231,9 +237,8 @@ async def _fetch_source_once(
             if response.status_code in _RETRIABLE_STATUSES:
                 delay = _retry_after_delay(
                     response.headers.get("Retry-After"),
-                    backoff,
+                    float(attempt),
                 )
-                backoff += 1.0
                 return "", delay
             if response.status_code != 200:
                 logger.warning(

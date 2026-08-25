@@ -887,3 +887,38 @@ def test_fetch_proxy_candidates_swallows_base_exception_source(
         ),
     )
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_retries_retriable_status(monkeypatch) -> None:
+    """503 with a tiny Retry-After succeeds on the next attempt."""
+    monkeypatch.setattr(
+        "src.sources.github._retry_after_delay",
+        lambda header, fallback: 0.0,
+    )
+    calls = {"n": 0}
+    client = _stream_client([(503, b"", {})])
+    orig_stream = client.stream
+
+    def stream(*a: object, **kw: object):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            return _stream_client([(200, b"1.2.3.4:1080", {})]).stream(*a, **kw)
+        return orig_stream(*a, **kw)
+
+    client.stream = stream
+    text = await _fetch_source(client, "https://example.com/list.txt")
+    assert text == "1.2.3.4:1080"
+    assert calls["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_retriable_exhausts_attempts(monkeypatch) -> None:
+    """A source stuck on 500 gives up after three attempts (empty string)."""
+    monkeypatch.setattr(
+        "src.sources.github._retry_after_delay",
+        lambda header, fallback: 0.0,
+    )
+    client = _stream_client([(500, b"", {})])
+    text = await _fetch_source(client, "https://example.com/list.txt")
+    assert text == ""

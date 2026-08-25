@@ -41,10 +41,12 @@ notification goes out.
 1. Confirm the split: `Verify output` shows a healthy local count, while
    `git log -1 --format=%cI -- output/subscription.txt` on `main` is older than
    the run.
-2. Find the publisher error in the `Run pipeline` step log -- usually one of:
-   - expired/insufficient `GITHUB_TOKEN` (401/403),
-   - `409` conflict because another run committed in between,
-   - rate limit exhausted.
+ 2. Find the publisher error in the `Run pipeline` step log -- usually one of:
+    - expired/insufficient `GITHUB_TOKEN` (401/403),
+    - ref update conflict (422 on the batch ref PATCH — another run committed
+      in between; the publisher rebases and retries automatically, so a
+      persistent 422 means three races in a row),
+    - rate limit exhausted.
 3. Re-running is safe: the pipeline is idempotent, it rewrites the same files
    and republishes them. Re-run the workflow (`Run workflow`) once the cause is
    fixed.
@@ -76,18 +78,32 @@ was empty, not that the published subscription was destroyed.
 
 ## Rolling back a bad publish
 
-The publisher writes each output file with its own Contents API call, so **one
-run produces one commit per file** -- 13+ commits in a normal run
-(`subscription.txt`, `-mix`, `-blacklist`, `-whitelist`, every
-`locations/subscription-XX.txt`, `run-summary.json`, `health-history.json`).
-Reverting a single commit therefore restores a single file and leaves the rest
-of the bad run in place.
+With `publisher.batch_commits: true` (default) **one run produces exactly one
+atomic commit** carrying every output file (`subscription.txt`, `-mix`,
+`-blacklist`, `-whitelist`, every `locations/subscription-XX.txt`,
+`run-summary.json`, health/stats history). A single `git revert <commit>`
+therefore restores the whole run; a failure mid-batch never touches the ref,
+so half-published states cannot happen. With `batch_commits: false` the old
+per-file Contents API loop applies — one commit per file, and reverting a
+single commit restores only that file.
 
-Find the whole range first -- all commits of a run share the timestamp in their
-`auto-update configs [...]` message:
+Find the bad run's commit first:
 
 ```bash
-git log --oneline -40 -- output/
+git log --oneline -10 -- output/
+```
+
+Then revert it (the default batch mode needs just this one line):
+
+```bash
+git revert --no-edit <bad-commit>
+git push origin main
+```
+
+For legacy per-file history, find the whole range -- all commits of one run
+share the timestamp in their `auto-update configs [...]` message:
+
+```bash
 git log --format='%h %ad %s' --date=iso -40 -- output/
 ```
 
