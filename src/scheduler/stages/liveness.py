@@ -78,6 +78,8 @@ class LivenessValidator(PipelineStage):
         #: Config keys already given a health verdict in this run — see the
         #: dedup comment where update() is called.
         self._health_update_seen: set[str] = set()
+        #: One full pool rebuild per run, max — see _pool_died_after_empty_list.
+        self._pool_refetch_used: bool = False
         self._validator_proxy_urls_cache: list[str] | None = None
         self._proxy_health_history: Any | None = None
         self._proxy_health_file: str | None = None
@@ -141,6 +143,7 @@ class LivenessValidator(PipelineStage):
             "health_enabled": True,
             "health_history_file": "output/proxy-health-history.json",
             "ban_after_consecutive_failures": 3,
+            "ban_seconds": 3600.0,
             "latency_window": 5,
             "max_latency_ms": 8000.0,
             "refresh_if_below_min": True,
@@ -173,6 +176,11 @@ class LivenessValidator(PipelineStage):
                 hcfg.get("max_latency_ms"),
                 8000.0,
                 minimum=1.0,
+            ),
+            ban_seconds=self._as_float(
+                hcfg.get("ban_seconds"),
+                3600.0,
+                minimum=0.0,
             ),
         )
 
@@ -406,6 +414,7 @@ class LivenessValidator(PipelineStage):
         # "public" verdict across run boundaries in --continuous mode.
         clear_verdict_cache()
         self._health_update_seen = set()
+        self._pool_refetch_used = False
         vcfg = self._section("validator")
         tcp_enabled = self._as_bool(vcfg.get("tcp_enabled"), False)
         tls_enabled = self._as_bool(vcfg.get("tls_enabled"), False)
@@ -461,7 +470,91 @@ class LivenessValidator(PipelineStage):
             )
             if alive:
                 validated[list_type] = alive
+            else:
+                await self._pool_died_after_empty_list(list_type)
         return validated
+
+    async def _pool_died_after_empty_list(self, label: str) -> None:
+        """React to a list validating to zero alive under a free proxy pool.
+
+        A pool that dies mid-run used to go unnoticed: every remaining config
+        was then "validated" through dead proxies, recorded dead in the health
+        history and banned for hours — an infrastructure failure poisoning
+        config verdicts run over run. When a whole list comes back empty,
+        cheaply re-probe the cached pool proxies; dead ones are recorded and
+        dropped, and (with ``refresh_if_below_min``, once per run) the cache
+        is invalidated so the next list rebuilds the pool from fresh sources.
+        """
+        import os
+
+        pool_cfg = self._proxy_pool_config()
+        if not self._as_bool(pool_cfg.get("enabled"), False):
+            return
+        if not self._as_bool(
+            self._proxy_health_config().get("refresh_if_below_min"),
+            True,
+        ):
+            return
+        urls = list(self._validator_proxy_urls_cache or [])
+        explicit = str(
+            self._section("validator").get("proxy_url")
+            or os.environ.get("VALIDATOR_PROXY")
+            or "",
+        ).strip()
+        pool_only = [u for u in urls if u != explicit]
+        if not pool_only:
+            return
+
+        from src.validators.proxy_pool import proxy_connects
+
+        results = await asyncio.gather(
+            *(proxy_connects(proxy_url) for proxy_url in pool_only),
+            return_exceptions=True,
+        )
+        alive: list[str] = []
+        for proxy_url, ok in zip(pool_only, results, strict=False):
+            success = bool(ok)
+            # The self-check is real evidence either way: record it so the
+            # persisted history reflects what just happened.
+            if self._proxy_health_history is not None:
+                try:
+                    self._proxy_health_history.record(proxy_url, success)
+                except Exception as exc:  # pragma: no cover - defensive only
+                    logger.warning("Proxy pool self-check bookkeeping failed: %s", exc)
+            if success:
+                alive.append(proxy_url)
+
+        responding = len(alive)
+        logger.warning(
+            "%s validated to 0 alive — proxy pool self-check: %d/%d proxies respond.",
+            label,
+            responding,
+            len(pool_only),
+        )
+        if responding == len(pool_only):
+            return  # pool is fine; the lists themselves are dead
+
+        if alive:
+            kept = [u for u in urls if u == explicit or u in set(alive)]
+            self._validator_proxy_urls_cache = kept
+            self.context.liveness_stats["proxy_count"] = len(kept)
+            logger.warning(
+                "Proxy pool: keeping %d responsive proxie(s) for the next lists.",
+                len(alive),
+            )
+            return
+        if self._pool_refetch_used:
+            logger.warning(
+                "Proxy pool is fully dead and was already rebuilt once this "
+                "run — keeping the cache rather than re-fetching again.",
+            )
+            return
+        self._pool_refetch_used = True
+        self._validator_proxy_urls_cache = None
+        logger.warning(
+            "Proxy pool is fully dead mid-run: cache invalidated — the next "
+            "list will rebuild the pool from fresh sources.",
+        )
 
     async def validate_configs(
         self,
@@ -675,6 +768,18 @@ class LivenessValidator(PipelineStage):
                 tcp_checked_actual = 0
                 offset = 0
                 round_count = 0
+                # Latency baselines of the pool proxies, so the recorded
+                # config latency can shed the proxy's own dial hop (mirrors
+                # the Xray stage; without it a fast server behind a congested
+                # free proxy is ranked — and bounced — as slow).
+                tcp_proxy_latency_ms: dict[str, float] = {}
+                if self._proxy_health_history is not None and proxy_urls:
+                    for pool_proxy in proxy_urls:
+                        avg = self._proxy_health_history.average_latency(
+                            str(pool_proxy),
+                        )
+                        if avg is not None:
+                            tcp_proxy_latency_ms[str(pool_proxy)] = float(avg)
                 while offset < len(checkable) and round_count < tcp_search_rounds:
                     batch = checkable[offset : offset + candidate_limit]
                     if not batch:  # pragma: no cover
@@ -717,6 +822,7 @@ class LivenessValidator(PipelineStage):
                         ),
                         check_hostnames=check_hostnames,
                         resolve_timeout=resolve_timeout,
+                        proxy_latency_ms=tcp_proxy_latency_ms,
                     )
                     probe_log.add(batch)
                     actually_checked = sum(1 for c in batch if c.is_alive is not None)
@@ -1212,6 +1318,15 @@ class LivenessValidator(PipelineStage):
                     ),
                     max_alive=fresh_budget,
                 )
+                # A single fast re-probe is cheap evidence, not proof: hand
+                # TTL-fresh configs that just failed it to the standard
+                # validation below before the verdict counts toward the
+                # multi-hour health ban. Without this, two unlucky single-probe
+                # runs in a row banned exactly the servers that recently passed.
+                failed_fresh = [cfg for cfg in fresh if cfg not in alive_xray]
+                if failed_fresh:
+                    stale = stale + failed_fresh
+                    list_stats["xray_fresh_retried"] = len(failed_fresh)
             if stale:
                 if xray_max_alive > 0 and len(alive_xray) >= xray_max_alive:
                     # 0 would mean "unlimited" — the budget is full.

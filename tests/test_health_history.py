@@ -530,6 +530,88 @@ class TestUpdateSources:
         assert record["bad_runs"] == 0
         assert record["banned_until"] == 0
 
+    def test_small_source_accumulates_sample_across_runs(self) -> None:
+        """A 48-config source is judged once its cumulative sample hits the floor.
+
+        Per-run counting meant a source publishing fewer than
+        ``source_min_checked`` configs was never judged — nor re-banned after
+        an old ban expired — so a fully dead small source lived forever.
+        """
+        h = HealthHistory(
+            _make_settings(
+                {
+                    "source_min_checked": 50,
+                    "source_bad_alive_rate": 0.02,
+                    "source_bad_runs_to_ban": 1,
+                },
+            ),
+        )
+        configs = [
+            _make_config(f"h{i}.example", 5000 + i, is_alive=False, source_name="small")
+            for i in range(48)
+        ]
+        list_stats: dict = {}
+        h.update_sources(configs, list_stats)
+        record = h.load()["sources"]["small"]
+        # Run 1: below the floor, only accumulated.
+        assert record["bad_runs"] == 0
+        assert record["sample_checked"] == 48
+
+        h.update_sources(configs, list_stats)
+        record = h.load()["sources"]["small"]
+        # Run 2: cumulative 96 >= 50 → judged (0/96 alive) → banned.
+        assert record["sample_checked"] == 0
+        assert record["bad_runs"] == 1
+        assert record["banned_until"] > 0
+
+
+# ---------------------------------------------------------------------------
+# config_key() — remark independence
+# ---------------------------------------------------------------------------
+
+
+class TestConfigKey:
+    def test_key_ignores_rotating_remark(self) -> None:
+        """Free lists rotate remarks ("US-01" → "5777"); keys must not rotate.
+
+        sha256(raw_link) included the remark, so every run minted fresh keys:
+        dead servers were never banned and stability streaks never built.
+        """
+        a = Config(
+            protocol="vless",
+            address="host.example.com",
+            port=443,
+            uuid_or_password="u",
+            network="ws",
+            security="tls",
+            path="/p",
+            remark="US-01",
+            raw_link="vless://u@host.example.com:443?path=/p#US-01",
+        )
+        b = Config(
+            protocol="vless",
+            address="HOST.EXAMPLE.COM",
+            port=443,
+            uuid_or_password="u",
+            network="ws",
+            security="tls",
+            path="/p",
+            remark="5777",
+            raw_link="vless://u@HOST.EXAMPLE.COM:443?path=%2Fp#5777",
+        )
+        assert HealthHistory.config_key(a) == HealthHistory.config_key(b)
+
+    def test_key_distinguishes_transport_params(self) -> None:
+        base_kwargs = {
+            "protocol": "vless",
+            "address": "h.example",
+            "port": 443,
+            "uuid_or_password": "u",
+        }
+        plain = HealthHistory.config_key(Config(**base_kwargs))
+        with_path = HealthHistory.config_key(Config(**base_kwargs, path="/ws"))
+        assert plain != with_path
+
 
 # ---------------------------------------------------------------------------
 # score()

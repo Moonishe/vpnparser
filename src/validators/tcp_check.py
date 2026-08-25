@@ -125,6 +125,7 @@ async def validate_configs_tcp(
     proxy_attempts_per_config: int = 1,
     check_hostnames: bool = True,
     resolve_timeout: float = 5.0,
+    proxy_latency_ms: dict[str, float] | None = None,
 ) -> list[Config]:
     """Check configs via TCP with optional early termination and SOCKS5 proxy.
 
@@ -142,6 +143,11 @@ async def validate_configs_tcp(
             config before marking it dead. ``0`` means try the whole pool.
         check_hostnames: Resolve hostnames to reject configs pointing at
             internal addresses. IP literals are rejected either way.
+        proxy_latency_ms: Mean dial latency of each pool proxy (ms). A
+            through-proxy measurement includes the proxy's own hop; without
+            subtracting that baseline a fast server behind a congested free
+            proxy is ranked as slow (and can bounce out of the subscription
+            run over run) purely because of the proxy it happened to ride.
 
     Returns alive configs sorted by latency_ms ascending.
     """
@@ -187,6 +193,7 @@ async def validate_configs_tcp(
                 return
             is_alive = False
             latency_ms: float | None = None
+            candidate_proxy: str | None = None
             candidates = _proxies_for(index)[:_MAX_ATTEMPTS_PER_CONFIG]
             for candidate_proxy in candidates:
                 is_alive, latency_ms = await tcp_check(
@@ -198,7 +205,18 @@ async def validate_configs_tcp(
                 if is_alive:
                     break
             cfg.is_alive = is_alive
-            cfg.latency_ms = latency_ms
+            if latency_ms is not None:
+                # Shed the proxy's own dial hop (mirrors validate_configs_xray):
+                # the recorded latency must describe the SERVER, not whichever
+                # congested free proxy carried the probe.
+                baseline = (
+                    float((proxy_latency_ms or {}).get(str(candidate_proxy), 0.0))
+                    if candidate_proxy
+                    else 0.0
+                )
+                cfg.latency_ms = max(latency_ms - baseline, 1.0)
+            else:
+                cfg.latency_ms = None
             if is_alive:
                 async with alive_lock:
                     alive_list.append(cfg)

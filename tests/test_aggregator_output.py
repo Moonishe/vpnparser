@@ -5,9 +5,11 @@ from __future__ import annotations
 import base64
 
 from src.aggregator.output import (
+    _watermark_link,
     _with_country_fragment,
     generate_output,
     generate_plain,
+    is_watermark_vmess,
     write_subscription,
 )
 from src.parsers.base import Config, extract_remark
@@ -218,3 +220,32 @@ def test_generate_plain_uses_stamped_links() -> None:
     cfg = _cfg("vless://u@a.com:443", "DE")
     out = generate_plain([cfg])
     assert "vless://u@a.com:443#DE" in out
+
+
+# ---------------------------------------------------------------------------
+# is_watermark_vmess — structural detection, slug-independent
+# ---------------------------------------------------------------------------
+
+
+def test_watermark_detected_regardless_of_slug(monkeypatch) -> None:
+    """The remark embeds the publishing environment's repo slug.
+
+    A fast-track run elsewhere (fork, local clone) used to compare against
+    its OWN slug and miss the watermark — revalidating the 0.0.0.0 dummy as
+    a real config. Detection must be structural.
+    """
+    monkeypatch.setenv("GITHUB_OWNER", "someone-else")
+    monkeypatch.setenv("GITHUB_REPO", "some-fork")
+    foreign = _watermark_link()
+    assert is_watermark_vmess(foreign)
+
+
+def test_watermark_detection_rejects_real_configs() -> None:
+    assert not is_watermark_vmess("vless://u@a.com:443#DE")
+    payload = base64.b64encode(
+        b'{"v":"2","ps":"x","add":"1.2.3.4","port":"443"}'
+    ).decode()
+    assert not is_watermark_vmess(f"vmess://{payload}")
+    assert not is_watermark_vmess("vmess://!!!not-base64!!!")
+    assert not is_watermark_vmess("")
+    assert not is_watermark_vmess("ss://YWVz@a.com:443")

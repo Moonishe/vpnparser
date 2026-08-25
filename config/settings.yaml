@@ -137,6 +137,9 @@ validator:
       health_enabled: true
       health_history_file: "output/proxy-health-history.json"
       ban_after_consecutive_failures: 3
+      # A proxy ban is time-boxed: after this many seconds the proxy re-enters
+      # the pool and a passing self-check resets the counter (0 disables bans).
+      ban_seconds: 3600
       latency_window: 5
       max_latency_ms: 8000
     sources:
@@ -200,6 +203,12 @@ quality:
   # stability_min_alive configs in a list, so the subscription never runs dry.
   min_consecutive_passes: 2
   stability_min_alive: 10
+  # The stability gate enforces "stable only" when the stable core reaches
+  # BOTH the absolute floor above AND this share of the kept list. Without
+  # the relative floor, 10 stable configs out of 500 pruned the other 490
+  # down to a stub; with it, pruning only happens when what remains is still
+  # a working subscription. 0 restores the purely absolute behavior.
+  stability_enforce_fraction: 0.3
   # Skip health/source bans when Xray found no more than this many alive configs,
   # so a small set of proven-working configs is not erased by stale history.
   health_ban_min_alive: 3
@@ -236,6 +245,12 @@ publisher:
     blacklist: "output/subscription-blacklist.txt"
     whitelist: "output/subscription-whitelist.txt"
   commit_message: "auto-update configs [{timestamp}]"
+  # Empty-run floor, enforced IN CODE (the workflow's "<10" check runs only
+  # after publication): an empty run writes watermark-only placeholders
+  # locally but does NOT publish them, so a network failure cannot wipe the
+  # live subscription. Metadata (run summary / stats / health) still goes
+  # out. 0 restores publish-everything behavior.
+  min_publish_configs: 10
 
 # --- Telegram ---
 telegram:

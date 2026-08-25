@@ -583,6 +583,47 @@ class TestWhitelistBalance:
         assert sum(1 for c in result if c.country == "RU") >= 5
         assert len(result) == 10
 
+    def test_ru_share_ignores_max_per_country_cap(self) -> None:
+        """The whitelist ratio must not fight the combined-output country quota.
+
+        With max_per_country=200 and 500 RU candidates, routing the RU bucket
+        through _country_balanced_limit capped it at 200: an 80/20 target
+        silently became ~67/33 (200 RU + 100 EU after shortfall padding).
+        """
+        context = _make_context(
+            {
+                "aggregator": {"max_per_country": 200},
+                "validator": {
+                    "whitelist_ru_ratio": 0.8,
+                    "whitelist_eu_countries": ["DE", "FI"],
+                },
+            }
+        )
+        agg = Aggregator(context)
+        ru_configs = [
+            _make_config(
+                f"ru-{i}.com", 4000 + i, country="RU", quality_score=0.9, latency_ms=10
+            )
+            for i in range(500)
+        ]
+        eu_configs = [
+            _make_config(
+                f"de-{i}.com", 9000 + i, country="DE", quality_score=0.8, latency_ms=20
+            )
+            for i in range(100)
+        ] + [
+            _make_config(
+                f"fi-{i}.com", 9500 + i, country="FI", quality_score=0.7, latency_ms=30
+            )
+            for i in range(50)
+        ]
+        result = agg._whitelist_balance(ru_configs + eu_configs, 300)
+        from collections import Counter
+
+        counts = Counter(c.country for c in result)
+        assert counts["RU"] == 240  # exactly the configured 80% of 300
+        assert counts["DE"] + counts["FI"] == 60
+
 
 # ---------------------------------------------------------------------------
 # _build_mixed_output

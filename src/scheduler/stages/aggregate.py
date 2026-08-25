@@ -58,8 +58,17 @@ class Aggregator(PipelineStage):
         self,
         configs: list[Config],
         max_total: int,
+        *,
+        apply_per_country_cap: bool = True,
     ) -> list[Config]:
-        """Limit configs by taking one server per country in repeated rounds."""
+        """Limit configs by taking one server per country in repeated rounds.
+
+        ``apply_per_country_cap=False`` skips the ``max_per_country`` quota.
+        The whitelist balance needs that: its ru_ratio *is* the per-country
+        intent for that output, and letting the combined-output quota cap the
+        RU bucket silently shrank the share to ~67/33 instead of the
+        configured 80/20.
+        """
         if max_total <= 0 or not configs:
             return []
 
@@ -68,6 +77,8 @@ class Aggregator(PipelineStage):
         try:
             max_per_country = int(acfg.get("max_per_country", 0))
         except (TypeError, ValueError):
+            max_per_country = 0
+        if not apply_per_country_cap:
             max_per_country = 0
 
         try:
@@ -162,8 +173,16 @@ class Aggregator(PipelineStage):
         ru_target = int(max_total * ru_ratio)
         eu_target = max_total - ru_target
 
-        ru_sorted = self._country_balanced_limit(ru, max_total)
-        eu_sorted = self._country_balanced_limit(eu, max_total)
+        ru_sorted = self._country_balanced_limit(
+            ru,
+            max_total,
+            apply_per_country_cap=False,
+        )
+        eu_sorted = self._country_balanced_limit(
+            eu,
+            max_total,
+            apply_per_country_cap=False,
+        )
 
         ru_result = ru_sorted[:ru_target]
         eu_result = eu_sorted[:eu_target]

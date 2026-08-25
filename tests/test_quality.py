@@ -131,6 +131,76 @@ def test_stability_gate_disabled_at_one(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Stability gate — relative enforcement floor (stability_enforce_fraction)
+# ---------------------------------------------------------------------------
+
+
+def _big_list_runner(tmp_path: Path, extra: str) -> PipelineRunner:
+    return _stability_runner(
+        tmp_path,
+        "quality:\n"
+        "  health_history_enabled: true\n"
+        "  min_consecutive_passes: 2\n"
+        "  stability_min_alive: 10\n" + extra,
+    )
+
+
+def test_stability_gate_tiny_stable_core_relaxes_at_scale(tmp_path: Path) -> None:
+    """10 stable of 50 must NOT prune the other 40 down to a stub.
+
+    The absolute floor alone let a tiny stable core pass the gate and gut a
+    working list; the relative floor (30% default) relaxes instead.
+    """
+    runner = _big_list_runner(tmp_path, "")
+    configs = [_cfg(f"h{i}.example") for i in range(50)]
+    for cfg in configs[:10]:
+        runner._quality.health.update([cfg])
+        runner._quality.health.update([cfg])
+    for cfg in configs[10:]:
+        runner._quality.health.update([cfg])
+
+    result = runner._quality.apply({"blacklist": configs})
+    # enforce_floor = max(10, int(50*0.3)=15) = 15 > 10 stable → relaxed.
+    assert len(result["blacklist"]) == 50
+    stats = runner._context.liveness_stats["quality"]
+    assert stats["stability_enforce_floor"]["blacklist"] == 15
+    assert stats["blacklist"]["stability_dropped"] == 0
+
+
+def test_stability_gate_enforces_with_sizable_stable_core(tmp_path: Path) -> None:
+    """20 stable of 50 (>=30%) enforces the gate and prunes the unstable."""
+    runner = _big_list_runner(tmp_path, "")
+    configs = [_cfg(f"h{i}.example") for i in range(50)]
+    for cfg in configs[:20]:
+        runner._quality.health.update([cfg])
+        runner._quality.health.update([cfg])
+    for cfg in configs[20:]:
+        runner._quality.health.update([cfg])
+
+    result = runner._quality.apply({"blacklist": configs})
+    assert len(result["blacklist"]) == 20
+    stats = runner._context.liveness_stats["quality"]
+    assert stats["blacklist"]["stability_dropped"] == 30
+
+
+def test_zero_fraction_restores_absolute_floor(tmp_path: Path) -> None:
+    runner = _big_list_runner(
+        tmp_path,
+        "  stability_enforce_fraction: 0\n",
+    )
+    configs = [_cfg(f"h{i}.example") for i in range(50)]
+    for cfg in configs[:10]:
+        runner._quality.health.update([cfg])
+        runner._quality.health.update([cfg])
+    for cfg in configs[10:]:
+        runner._quality.health.update([cfg])
+
+    result = runner._quality.apply({"blacklist": configs})
+    # Absolute behavior: floor is exactly stability_min_alive=10 → enforced.
+    assert len(result["blacklist"]) == 10
+
+
+# ---------------------------------------------------------------------------
 # Slow-config dropping (min_alive_to_skip_slow_drop)
 # ---------------------------------------------------------------------------
 

@@ -59,6 +59,28 @@ def _watermark_link() -> str:
     ).decode("utf-8")
 
 
+def is_watermark_vmess(line: str) -> bool:
+    """True for the display-only vmess watermark line.
+
+    Detection is structural (the decoded payload's ``add`` equals 0.0.0.0)
+    rather than an exact string match against :func:`_watermark_link`: the
+    watermark's remark embeds the repo slug of whichever environment wrote
+    the file, so a fast-track run elsewhere used to miss it, re-validate the
+    dummy server as a real config and publish it.
+    """
+    if not line.startswith("vmess://"):
+        return False
+    body = line[len("vmess://") :].split("#", 1)[0].split("?", 1)[0].strip()
+    padded = body + "=" * (-len(body) % 4)
+    try:
+        payload = json.loads(base64.b64decode(padded).decode("utf-8"))
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return str(payload.get("add", "")) == "0.0.0.0"
+
+
 def _safe_raw_link(raw_link: str) -> str | None:
     """Return *raw_link* only when it is a single clean line.
 

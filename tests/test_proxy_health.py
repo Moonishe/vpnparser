@@ -484,3 +484,48 @@ def test_average_latency_mean_of_window() -> None:
     history.record("socks5://p:1080", True, latency_ms=100.0)
     history.record("socks5://p:1080", True, latency_ms=300.0)
     assert history.average_latency("socks5://p:1080") == 200.0
+
+
+# --- time-boxed bans (revival) ------------------------------------------------
+
+
+def test_ban_expires_after_deadline_and_revives() -> None:
+    """A ban is a deadline, not a life sentence.
+
+    The counter alone excluded a proxy hit by one transient event until its
+    whole record aged out of retention (~24h) with no success path in between.
+    """
+    hist = ProxyHealthHistory(
+        ban_after_consecutive_failures=3,
+        ban_seconds=1.0,
+    )
+    for _ in range(3):
+        hist.record("socks5://p:1080", False)
+    assert hist.is_banned("socks5://p:1080")
+    # Simulate the deadline passing.
+    hist.records["socks5://p:1080"]["banned_until"] = 0.0
+    assert not hist.is_banned("socks5://p:1080")
+    # A success after revival resets the counter entirely.
+    hist.record("socks5://p:1080", True)
+    assert hist.records["socks5://p:1080"]["consecutive_failures"] == 0
+    assert not hist.is_banned("socks5://p:1080")
+
+
+def test_legacy_record_without_deadline_counts_as_expired() -> None:
+    """Pre-ban_seconds records revive instead of staying frozen out."""
+    hist = ProxyHealthHistory(ban_after_consecutive_failures=2, ban_seconds=3600)
+    hist.records["socks5://old:1080"] = {
+        "attempts": 9,
+        "successes": 0,
+        "consecutive_failures": 9,
+        "latency_ms": [],
+        "last_seen": 1_000.0,
+    }
+    assert not hist.is_banned("socks5://old:1080")
+
+
+def test_fresh_failure_within_threshold_not_banned() -> None:
+    hist = ProxyHealthHistory(ban_after_consecutive_failures=3, ban_seconds=3600)
+    for _ in range(2):
+        hist.record("socks5://p:1080", False)
+    assert not hist.is_banned("socks5://p:1080")

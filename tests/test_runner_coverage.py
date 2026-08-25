@@ -1046,11 +1046,12 @@ async def test_finish_empty_run_publishes_emptied_location_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A dead run must republish per-country files instead of orphaning them."""
+    """Opt-out (min_publish_configs: 0) restores full-set placeholder publishing."""
     r = _make_runner(
         tmp_path,
         "publisher:\n"
         "  output_file: output/combined.txt\n"
+        "  min_publish_configs: 0\n"
         "  location_output_dir: output/locations\n"
         "  location_output_limit: 5\n"
         "  location_outputs_enabled: true\n",
@@ -1076,6 +1077,56 @@ async def test_finish_empty_run_publishes_emptied_location_files(
 
     assert count == 0
     assert any("subscription-DE.txt" in path for path in published)
+    assert stale.exists()
+    assert stale.read_text(encoding="utf-8") != "stale-live-list"
+
+
+@pytest.mark.asyncio
+async def test_finish_empty_run_keeps_remote_subscription_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default empty-run floor keeps the previous remote subscription intact.
+
+    The old behavior published watermark-only placeholders for every file,
+    wiping the live subscription on what is usually an infrastructure
+    failure; the workflow's "<10" check ran only after that publication.
+    """
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n"
+        "  output_file: output/combined.txt\n"
+        "  status_output_file: output/status.json\n"
+        "  location_output_dir: output/locations\n"
+        "  location_output_limit: 5\n"
+        "  location_outputs_enabled: true\n",
+    )
+    loc_dir = resolve_safe_output_path("output/locations")
+    loc_dir.mkdir(parents=True)
+    stale = loc_dir / "subscription-DE.txt"
+    stale.write_text("stale-live-list", encoding="utf-8")
+
+    published: list[str] = []
+
+    async def fake_publish(paths: list[str], **_kwargs: object) -> bool:
+        published.extend(paths)
+        return True
+
+    monkeypatch.setattr(r, "_publish_files", fake_publish)
+
+    count = await r._finish_empty_run(
+        "output/combined.txt",
+        status="no_sources",
+        publish=True,
+    )
+
+    assert count == 0
+    # Subscription artifacts stay unpublished...
+    assert not any("combined.txt" in path for path in published)
+    assert not any("subscription-DE.txt" in path for path in published)
+    # ...but metadata still goes out so tooling sees the empty status.
+    assert any(path.endswith("status.json") for path in published)
+    # The local placeholders were still written (workflow verify step reads them).
     assert stale.exists()
     assert stale.read_text(encoding="utf-8") != "stale-live-list"
 
@@ -1483,7 +1534,13 @@ async def test_rerun_published_revalidates_and_writes(
 
 @pytest.mark.asyncio
 async def test_published_source_results_skips_unusable_splits(tmp_path: Path) -> None:
-    """Unreadable / linkless / non-list splits are skipped, not fatal."""
+    """Unreadable / linkless splits are FATAL: partial republish wipes half the subscription.
+
+    The old behavior skipped unusable splits with a warning, so one dead file
+    let rerun_published revalidate just the other list and overwrite the
+    healthy subscription with half of it. Non-list entries (mix) are still
+    skipped — only blacklist+whitelist participate in fast-track.
+    """
     import base64 as _b64
 
     linkless = tmp_path / "bl.txt"
@@ -1505,6 +1562,5 @@ async def test_published_source_results_skips_unusable_splits(tmp_path: Path) ->
     src.write_text('{"sources": []}', encoding="utf-8")
     r = PipelineRunner(settings_path=str(settings), sources_path=str(src))
 
-    results = r._published_source_results(str(tmp_path / "out.txt"))
-
-    assert results == []
+    with pytest.raises(FileNotFoundError, match="unreadable or link-less"):
+        r._published_source_results(str(tmp_path / "out.txt"))

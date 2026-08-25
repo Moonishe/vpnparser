@@ -28,7 +28,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from src.aggregator.output import _watermark_link
+from src.aggregator.output import is_watermark_vmess
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
@@ -408,7 +408,6 @@ class PipelineRunner:
         import base64
 
         splits = self._split_output_files(output_file)
-        watermark = _watermark_link()
         results: list[Any] = []
         for list_type, path in splits.items():
             if list_type not in ("blacklist", "whitelist"):
@@ -426,7 +425,7 @@ class PipelineRunner:
             links = [
                 line.strip()
                 for line in text.splitlines()
-                if "://" in line.strip() and line.strip() != watermark
+                if "://" in line.strip() and not is_watermark_vmess(line.strip())
             ]
             if not links:
                 logger.warning("Published %s file has no links: %s", list_type, path)
@@ -439,6 +438,24 @@ class PipelineRunner:
                     default_country=None,
                 )
             )
+        # Every published split must be revalidated, or not at all: the guard
+        # above ("no results at all") fired only when BOTH files were
+        # unreadable, so one dead file let the run republish just the other
+        # list — silently erasing half the live subscription.
+        found_types = {str(getattr(result, "list_type", "")) for result in results}
+        missing = [
+            list_type
+            for list_type in ("blacklist", "whitelist")
+            if list_type not in found_types
+        ]
+        if missing:
+            msg = (
+                "rerun_published requires every published split file to be "
+                f"readable next to {output_file}; unreadable or link-less: "
+                f"{', '.join(missing)}. Revalidating a partial set would "
+                "overwrite the healthy subscription with part of it."
+            )
+            raise FileNotFoundError(msg)
         return results
 
     async def _fetch_sources(self) -> list[Any]:
@@ -820,12 +837,17 @@ class PipelineRunner:
         status: str,
         publish: bool,
     ) -> int:
-        """Write empty subscription artifacts and optionally publish all of them.
+        """Write empty subscription artifacts and optionally publish.
 
-        Previously failed runs often published only ``run-summary.json`` +
-        health history, leaving remote ``subscription*.txt`` stale while the
-        summary reported zero live configs. Always publish the full set so
-        consumers never see outdated "live" lists after a dead run.
+        Subscription artifacts become watermark-only placeholders on an empty
+        run.  With ``publisher.min_publish_configs`` > 0 (default 10) those
+        placeholders are written *locally* but are NOT published: the floor
+        must live in code because the workflow's "<10" check runs in a later
+        step, after publication — a network-failure run used to wipe the live
+        subscription while CI could only mourn it.  Metadata (run summary,
+        stats history, health history) still goes out so tooling sees the
+        empty status; the previously published subscription stays untouched
+        until a run with real content replaces it.
         """
         self._write_empty_output(output_file)
         # Reset the run stats BEFORE the location outputs are recorded: the
@@ -853,18 +875,46 @@ class PipelineRunner:
         self._save_proxy_health_history()
         stats_files = self._write_stats_history(status)
         if publish:
-            publish_paths = self._configured_subscription_output_paths(output_file)
-            publish_paths.extend(location_files)
+            subscription_paths = self._configured_subscription_output_paths(
+                output_file,
+            )
+            subscription_paths.extend(location_files)
             if clash_output_file:
-                publish_paths.append(clash_output_file)
+                subscription_paths.append(clash_output_file)
+            publish_paths = list(subscription_paths)
             publish_paths.extend(stats_files)
             if summary_file:
                 publish_paths.append(summary_file)
             if health_file:
                 publish_paths.append(health_file)
+
+            # Same parsing style as _max_configs: the runner holds the raw
+            # mapping, not a Settings facade.
+            raw_min_publish = self._section("publisher").get("min_publish_configs")
+            try:
+                min_publish = (
+                    int(raw_min_publish) if raw_min_publish is not None else 10
+                )
+            except (TypeError, ValueError):
+                min_publish = 10
+            min_publish = max(0, min_publish)
+            if min_publish > 0:
+                logger.warning(
+                    "Empty run (%s): keeping the previously published "
+                    "subscription files in the repository — %d watermark-only "
+                    "placeholder(s) were written locally but must not wipe a "
+                    "working subscription on what is usually an "
+                    "infrastructure failure.",
+                    status,
+                    len(subscription_paths),
+                )
+                publish_paths = [
+                    path for path in publish_paths if path not in subscription_paths
+                ]
+
             # Record the outcome like the main path does: an empty run whose
-            # publish failed leaves the previous, non-empty subscription live in
-            # the repository, which is the one case that must never look green.
+            # publish failed leaves the previous, non-empty subscription live
+            # in the repository, which is the one case that must never look green.
             self._publish_ok = await self._publish_files(
                 publish_paths,
                 combined_output_file=output_file,

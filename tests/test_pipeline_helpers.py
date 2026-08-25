@@ -1559,7 +1559,7 @@ def test_proxy_pool_parses_public_socks5_candidates() -> None:
 def test_proxy_pool_fetch_stops_after_candidate_limit(monkeypatch) -> None:
     fetched_urls = []
 
-    async def fake_fetch_source(_client, url):
+    async def fake_fetch_source(_client, url, **kwargs):
         fetched_urls.append(url)
         return "socks5://8.8.8.8:1080 socks5://1.1.1.1:9050"
 
@@ -1577,7 +1577,7 @@ def test_proxy_pool_fetch_stops_after_candidate_limit(monkeypatch) -> None:
 
 
 def test_proxy_pool_limits_candidates_per_source(monkeypatch) -> None:
-    async def fake_fetch_source(_client, url):
+    async def fake_fetch_source(_client, url, **kwargs):
         if "first" in url:
             return " ".join(f"socks5://8.8.8.{i}:1080" for i in range(1, 5))
         return " ".join(f"socks5://1.1.1.{i}:9050" for i in range(1, 5))

@@ -33,7 +33,7 @@ from typing import Any
 from urllib.parse import quote
 
 from src.repo_info import github_branch, github_repo_slug
-from src.utils.paths import resolve_safe_output_path
+from src.utils.paths import resolve_safe_output_path, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -924,11 +924,13 @@ def _save_fact(fact: str) -> None:
     history.append(fact)
     history = history[-_FACT_HISTORY_MAX:]
     try:
-        with resolve_safe_output_path(_FACT_HISTORY_FILE).open(
-            "w",
-            encoding="utf-8",
-        ) as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
+        # Atomic like every other state file: a crash mid-write used to be
+        # able to truncate the only non-atomic state artifact, silently
+        # resetting the rotation.
+        write_text_atomic(
+            resolve_safe_output_path(_FACT_HISTORY_FILE),
+            json.dumps(history, ensure_ascii=False, indent=2),
+        )
     except Exception as exc:
         logger.warning("Could not save fact history: %s", exc)
 
@@ -956,20 +958,10 @@ def _generate_fun_fact() -> str:
 
 
 def _is_watermark_line(line: str) -> bool:
-    """Detect the display-only vmess watermark (``add`` is 0.0.0.0).
+    """Detect the display-only vmess watermark (``add`` is 0.0.0.0)."""
+    from src.aggregator.output import is_watermark_vmess
 
-    The payload is itself base64, so a substring check on the link text never
-    matches; the JSON body needs one lenient decode first.
-    """
-    import base64
-
-    if not line.startswith("vmess://"):
-        return False
-    body = line[len("vmess://") :].split("#", 1)[0].split("?", 1)[0]
-    padded = body + "=" * (-len(body) % 4)
-    with contextlib.suppress(Exception):
-        return "0.0.0.0" in base64.b64decode(padded).decode("utf-8", errors="ignore")
-    return False
+    return is_watermark_vmess(line)
 
 
 def _decode_subscription_lines(raw: str) -> set[str]:

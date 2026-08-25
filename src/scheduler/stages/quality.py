@@ -61,6 +61,23 @@ class QualityFilter(PipelineStage):
             10,
             minimum=0,
         )
+        # The absolute ``stability_min_alive`` floor alone mis-scales both
+        # ways on large lists: 10 stable configs out of 500 passed the gate
+        # and pruned the other 490 down to a stub, while 9 stable kept all
+        # 500 untouched.  Enforcement therefore additionally requires the
+        # stable core to be this share of the kept list, so the gate prunes
+        # only when what remains is still a working subscription.
+        stability_enforce_fraction = min(
+            1.0,
+            max(
+                0.0,
+                self.settings.as_float(
+                    qcfg.get("stability_enforce_fraction"),
+                    0.3,
+                    minimum=0.0,
+                ),
+            ),
+        )
         result: dict[str, list[Config]] = {}
         quality_stats: dict[str, Any] = {
             "drop_slow": drop_slow,
@@ -124,7 +141,14 @@ class QualityFilter(PipelineStage):
                     for cfg in kept
                     if self.health.consecutive_successes(cfg) >= effective_min_passes
                 ]
-                if len(stable) >= stability_min_alive:
+                enforce_floor = max(
+                    stability_min_alive,
+                    int(len(kept) * stability_enforce_fraction),
+                )
+                quality_stats.setdefault("stability_enforce_floor", {})[list_type] = (
+                    enforce_floor
+                )
+                if len(stable) >= enforce_floor:
                     stable_ids = {id(cfg) for cfg in stable}
                     for cfg in kept:
                         if id(cfg) not in stable_ids:

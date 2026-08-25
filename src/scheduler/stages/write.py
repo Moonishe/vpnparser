@@ -354,10 +354,18 @@ class OutputWriter(PipelineStage):
             self._write_empty_clash_output()
             count = 0
         logger.info("Wrote %d proxies to %s.", count, clash_output_file)
+        # Same shape the other outputs get via _record_output_stats: an empty
+        # run's clash entry used to differ from a success run's (count source
+        # and countries), making run-summary comparisons asymmetric.
+        country_counts = Counter(
+            str(cfg.country).upper()
+            for cfg in configs
+            if cfg.raw_link and getattr(cfg, "country", None)
+        )
         self.context.output_stats["clash"] = {
             "file": clash_output_file,
             "count": count,
-            "countries": {},
+            "countries": dict(country_counts.most_common()),
         }
         return clash_output_file
 

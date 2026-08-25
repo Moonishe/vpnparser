@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import logging
 import time
@@ -280,20 +281,47 @@ class HealthHistory:
 
     @staticmethod
     def config_key(cfg: Config) -> str:
-        raw = cfg.raw_link or "|".join(
-            [
-                str(cfg.protocol),
-                str(cfg.address),
-                str(cfg.port),
-                str(cfg.uuid_or_password),
-                str(cfg.network),
-                str(cfg.security),
-            ],
-        )
-        hashed = hashlib.sha256(
-            raw.encode("utf-8", errors="ignore"),
+        """Remark-independent identity of a config.
+
+        The key used to be ``sha256(raw_link)`` — the full link *including*
+        the remark.  Free-list sources rotate remarks every run ("US-01" one
+        run, "5777" the next), which rotated the key with them: dead servers
+        were never banned (each failure landed on a fresh record) and the
+        stability streak could never build for exactly the sources this
+        pipeline exists for.
+
+        The structural identity below covers everything that changes how the
+        server is reached — protocol, endpoint, credential, transport,
+        security and the parameters that select among configs sharing one
+        address:port (ws path/host, SNI, ALPN, REALITY keys, flow, cipher).
+        vmess remarks ride inside the base64 JSON body, so stripping the URL
+        fragment alone would not be enough; no link text is hashed at all.
+        """
+        address = str(cfg.address or "")
+        try:
+            address = str(ipaddress.ip_address(address.strip("[]")))
+        except ValueError:
+            address = address.lower()
+        parts = [
+            str(cfg.protocol).lower(),
+            address,
+            str(cfg.port),
+            str(cfg.uuid_or_password),
+            str(cfg.network or "").lower(),
+            str(cfg.security or "").lower(),
+            str(cfg.path or ""),
+            str(cfg.host or "").lower(),
+            str(cfg.sni or "").lower(),
+            str(cfg.alpn or ""),
+            str(cfg.fp or ""),
+            str(cfg.pbk or ""),
+            str(cfg.sid or ""),
+            str(cfg.flow or ""),
+            str(cfg.ss_method or "").lower(),
+        ]
+        return hashlib.sha256(
+            "|".join(parts).encode("utf-8", errors="ignore"),
         ).hexdigest()
-        return hashed
 
     def is_banned(self, cfg: Config, *, now: int | None = None) -> bool:
         if not self.is_enabled():
@@ -451,11 +479,20 @@ class HealthHistory:
             record["last_alive"] = alive
             record["last_alive_rate"] = rate
             record["updated_at"] = now
-            if checked < min_checked:
-                # Too small a sample to judge: neither punish nor forgive, or a
-                # single preselected run would lift every source ban.
+            # ``source_min_checked`` is judged over a *cumulative* sample,
+            # not a single run: a source publishing 48 configs never reached
+            # the floor within one run and was therefore never judged — nor
+            # re-banned after its old ban expired, so it lived forever.
+            # Accumulate until the floor is met, judge once, start fresh.
+            cum_checked = int(record.get("sample_checked") or 0) + checked
+            cum_alive = int(record.get("sample_alive") or 0) + alive
+            if cum_checked < min_checked:
+                record["sample_checked"] = cum_checked
+                record["sample_alive"] = cum_alive
                 continue
-            if rate <= bad_rate:
+            record["sample_checked"] = 0
+            record["sample_alive"] = 0
+            if cum_alive / cum_checked <= bad_rate:
                 record["bad_runs"] = int(record.get("bad_runs") or 0) + 1
                 if int(record["bad_runs"]) >= bad_runs:
                     record["banned_until"] = now + cooldown_seconds
