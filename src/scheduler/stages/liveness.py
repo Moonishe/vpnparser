@@ -513,7 +513,9 @@ class LivenessValidator(PipelineStage):
         )
         alive: list[str] = []
         for proxy_url, ok in zip(pool_only, results, strict=False):
-            success = bool(ok)
+            # gather(return_exceptions=True) delivers exception objects here;
+            # only a literal True counts as success.
+            success = ok is True
             # The self-check is real evidence either way: record it so the
             # persisted history reflects what just happened.
             if self._proxy_health_history is not None:

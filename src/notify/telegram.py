@@ -881,8 +881,12 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
 
     countries: Counter[str] = Counter()
     for line in lines:
-        # Skip watermark
-        if "0.0.0.0" in line and "vmess://" in line:
+        # Skip watermark — structural detection (decoded ``add``), same as
+        # everywhere else; the old substring check could never match because
+        # base64 cannot contain dots.
+        from src.aggregator.output import is_watermark_vmess
+
+        if is_watermark_vmess(line):
             continue
         # Extract remark from fragment
         remark = ""
