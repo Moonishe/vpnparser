@@ -1160,6 +1160,14 @@ class PipelineRunner:
             return True
 
         all_ok = True
+        pcfg = self._section("publisher")
+        raw_batch = pcfg.get("batch_commits")
+        batch_enabled = (
+            str(raw_batch).strip().lower() in ("", "1", "true", "yes", "on")
+            if raw_batch is not None
+            else True
+        )
+
         # One publisher (and therefore one HTTPS connection to the API) for the
         # whole batch: a fresh httpx.AsyncClient per file re-parses the CA
         # bundle and re-handshakes, which costs ~0.2s of blocked event loop per
@@ -1167,6 +1175,11 @@ class PipelineRunner:
         async with contextlib.AsyncExitStack() as stack:
             self._shared_publisher = await self._enter_shared_publisher(stack)
             try:
+                if batch_enabled and self._shared_publisher is not None:
+                    return await self._publish_batch(
+                        targets,
+                        combined_output_file=combined_output_file,
+                    )
                 for output_file in targets:
                     repo_path = output_file
                     if (
@@ -1179,6 +1192,73 @@ class PipelineRunner:
             finally:
                 self._shared_publisher = None
         return all_ok
+
+    async def _publish_batch(
+        self,
+        targets: list[str],
+        *,
+        combined_output_file: str | None,
+    ) -> bool:
+        """Publish every target as ONE atomic commit via the Git Data API.
+
+        The per-file Contents loop produced 13+ commits per run (one per
+        file), turning the repository history into noise; a mid-loop failure
+        also left a half-published run behind. A single tree/commit/ref call
+        is both quieter and all-or-nothing: on failure the ref stays where it
+        was, so the previous subscription survives intact.
+        """
+        configured_combined_path = self._section("publisher").get("output_file")
+        commit_tpl = str(
+            self._section("publisher").get(
+                "commit_message",
+                "auto-update configs [{timestamp}]",
+            ),
+        )
+        commit_message = commit_tpl.replace(
+            "{timestamp}",
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        payloads: list[tuple[str, str]] = []
+        for output_file in targets:
+            repo_path = output_file
+            if combined_output_file is not None and output_file == combined_output_file:
+                repo_path = str(configured_combined_path or output_file)
+            content = await self._read_output_text(output_file)
+            if content is None:
+                return False
+            payloads.append((repo_path, content))
+        publisher = self._shared_publisher
+        if publisher is None:  # pragma: no cover - guarded by the caller
+            return False
+        try:
+            ok = bool(await publisher.publish_files_batch(payloads, commit_message))
+        except Exception:
+            logger.exception("Batch publish failed")
+            return False
+        if not ok:
+            logger.error(
+                "Batch publish reported failure for %d file(s).", len(payloads)
+            )
+        return ok
+
+    async def _read_output_text(self, output_file: str) -> str | None:
+        """Read an output file for publishing; None (logged) on any failure."""
+        try:
+            safe_path = resolve_safe_output_path(output_file)
+        except ValueError:
+            logger.exception("Unsafe output path for publish %r", output_file)
+            return None
+        try:
+            return await asyncio.to_thread(safe_path.read_text, encoding="utf-8")
+        except FileNotFoundError:
+            logger.exception(
+                "Cannot publish: output file %s does not exist.",
+                output_file,
+            )
+            return None
+        except Exception:
+            logger.exception("Cannot read output file %s for publish", output_file)
+            return None
 
     @staticmethod
     def _unique_publish_paths(output_files: list[str]) -> list[str]:

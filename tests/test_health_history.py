@@ -564,6 +564,48 @@ class TestUpdateSources:
         assert record["bad_runs"] == 1
         assert record["banned_until"] > 0
 
+    def test_stale_sample_window_resets_before_judging(self) -> None:
+        """A sample older than ``source_sample_window_days`` judges only new data.
+
+        Without the time box a source that accumulated junk over months was
+        judged on the ancient mixture instead of its current behaviour.
+        """
+        h = HealthHistory(
+            _make_settings(
+                {
+                    "source_min_checked": 10,
+                    "source_bad_alive_rate": 0.02,
+                    "source_bad_runs_to_ban": 1,
+                    "source_sample_window_days": 7,
+                },
+            ),
+        )
+        seeded = (
+            h.load()
+            .setdefault("sources", {})
+            .setdefault("old_src", {"runs": 0, "bad_runs": 0, "banned_until": 0})
+        )
+        seeded.update(
+            {
+                "runs": 5,
+                "sample_checked": 100,
+                "sample_alive": 100,  # ancient window looked great
+                "sample_started_at": int(time.time()) - 8 * 86400,  # 8 days ago
+            },
+        )
+        now_configs = [
+            _make_config(
+                f"n{i}.example", 6000 + i, is_alive=False, source_name="old_src"
+            )
+            for i in range(12)
+        ]
+        h.update_sources(now_configs, {})
+
+        record = h.load()["sources"]["old_src"]
+        # The stale 100/100 was discarded; judgment used only this run's 0/12.
+        assert record["bad_runs"] == 1
+        assert record["banned_until"] > 0
+
 
 # ---------------------------------------------------------------------------
 # config_key() — remark independence

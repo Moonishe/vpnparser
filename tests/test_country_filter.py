@@ -261,6 +261,36 @@ def test_server_id_label_is_not_indonesia() -> None:
     assert detect_country("[ID]-07") == "ID"
 
 
+def test_hyphen_letter_after_ambiguous_code_rejected() -> None:
+    """A hyphen followed by a LETTER is not a structural delimiter.
+
+    'IN-ADDR-01' (reverse-DNS style) and 'ID-jakarta' must not read the code;
+    jakarta still resolves — via the city table, which is correct.
+    """
+    assert detect_country("IN-ADDR-01") is None
+    assert detect_country("ID-jakarta") == "ID"
+
+
+def test_lowercase_code_fallback_digit_anchored() -> None:
+    """Fully-lowercase remarks ('us-01') are detected; prose never is.
+
+    The fallback requires a digit after the code (optionally behind -/_), so
+    words like 'in transit' or the 'id' in 'covid19' cannot match.
+    """
+    assert detect_country("us-01") == "US"
+    assert detect_country("ru-1") == "RU"
+    assert detect_country("my-9") == "MY"
+    # Prose / identifier guards stay closed.
+    assert detect_country("us east") is None
+    assert detect_country("covid19 info") is None
+    assert detect_country("in transit") is None
+    assert detect_country("server-id-07") is None
+    # Codes with strong conflicting lowercase readings stay neutral
+    # (US states / identifier), mirroring the short-city neutrality rule.
+    assert detect_country("ca-01") is None
+    assert detect_country("de03") is None
+
+
 def test_hostname_dot_suffix_stamps_country() -> None:
     """Domain-style stamps like 'ru.store.x.com' are detected via the dot."""
     assert detect_country("", "ru.store.x.com") == "RU"

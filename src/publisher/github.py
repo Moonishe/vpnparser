@@ -230,6 +230,227 @@ class GitHubPublisher:
 
     # --- public API ---
 
+    async def _send(
+        self,
+        client: httpx.AsyncClient,
+        method: str,
+        url: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        """One API call with a single rate-limit wait+retry on 403."""
+        response = await client.request(method, url, json=json_body)
+        if response.status_code == 403 and self._is_rate_limited(response):
+            await self._wait_for_rate_limit(response)
+            response = await client.request(method, url, json=json_body)
+        return response
+
+    async def _get_branch_head(self, client: httpx.AsyncClient) -> str | None:
+        """HEAD commit SHA of the branch, or None for an empty/missing repo."""
+        from urllib.parse import quote as _quote
+
+        url = (
+            f"/repos/{_quote(self.owner, safe='')}/"
+            f"{_quote(self.repo, safe='')}/git/ref/heads/"
+            f"{_quote(self.branch, safe='')}"
+        )
+        response = await self._send(client, "GET", url)
+        if response.status_code in (404, 409):
+            # 409: empty repository — GitHub answers 409 on git refs there.
+            logger.info(
+                "Branch %s has no commits yet in %s/%s — first commit will create it.",
+                self.branch,
+                self.owner,
+                self.repo,
+            )
+            return None
+        if response.status_code != 200:
+            logger.error(
+                "Cannot read ref heads/%s of %s/%s: HTTP %s",
+                self.branch,
+                self.owner,
+                self.repo,
+                response.status_code,
+            )
+            raise GitHubPublishError(
+                f"Cannot read branch ref: HTTP {response.status_code}",
+            )
+        data = response.json()
+        obj = data.get("object") if isinstance(data, dict) else None
+        sha = obj.get("sha") if isinstance(obj, dict) else None
+        if not isinstance(sha, str):
+            raise GitHubPublishError("Unexpected ref response shape")
+        return sha
+
+    async def publish_files_batch(
+        self,
+        files: list[tuple[str, str]],
+        commit_message: str,
+    ) -> bool:
+        """Commit many files as ONE atomic commit via the Git Data API.
+
+        Flow: read branch head → create a tree carrying every file's inline
+        content → create a commit on that tree → fast-forward the branch ref.
+        A failure at any step leaves the ref untouched, so the repository
+        keeps its previous state instead of the half-published mix the
+        per-file Contents API loop produced.
+
+        Args:
+            files: ``(repo_path, utf-8 text content)`` pairs.
+            commit_message: Message for the single commit.
+
+        Returns:
+            True on success; False on a recoverable failure (conflict retries
+            exhausted, network error). Raises ``GitHubPublishError`` on
+            non-recoverable ones (rate limit beyond cap).
+        """
+        cleaned: list[tuple[str, str]] = []
+        seen_paths: set[str] = set()
+        for path, content in files:
+            clean = _clean_repo_path(path)
+            key = clean.lower()
+            if key in seen_paths:
+                continue
+            seen_paths.add(key)
+            try:
+                content.encode("utf-8")
+            except Exception:
+                logger.exception("Failed to encode content for %s", clean)
+                return False
+            cleaned.append((clean, content))
+        if not cleaned:
+            return True
+
+        from urllib.parse import quote as _quote
+
+        base = f"/repos/{_quote(self.owner, safe='')}/{_quote(self.repo, safe='')}/git"
+        client = await self._get_client()
+
+        for attempt in range(1, _CONFLICT_RETRIES + 2):
+            try:
+                base_commit = await self._get_branch_head(client)
+            except httpx.RequestError:
+                logger.exception("Network error reading branch head")
+                return False
+            tree_entries = [
+                {"path": path, "mode": "100644", "type": "blob", "content": content}
+                for path, content in cleaned
+            ]
+            tree_payload: dict[str, Any] = {"tree": tree_entries}
+            if base_commit:
+                try:
+                    commit_resp = await self._send(
+                        client,
+                        "GET",
+                        f"{base}/commits/{base_commit}",
+                    )
+                except httpx.RequestError:
+                    logger.exception("Network error reading base commit")
+                    return False
+                if commit_resp.status_code != 200:
+                    logger.error(
+                        "Cannot read base commit %s: HTTP %s",
+                        base_commit,
+                        commit_resp.status_code,
+                    )
+                    return False
+                parent_tree = (commit_resp.json().get("tree") or {}).get("sha")
+                if isinstance(parent_tree, str) and parent_tree:
+                    tree_payload["base_tree"] = parent_tree
+
+            try:
+                tree_resp = await self._send(
+                    client,
+                    "POST",
+                    f"{base}/trees",
+                    json_body=tree_payload,
+                )
+            except httpx.RequestError:
+                logger.exception("Network error creating tree")
+                return False
+            if tree_resp.status_code not in (200, 201):
+                logger.error(
+                    "Git Data trees call failed: HTTP %s: %s",
+                    tree_resp.status_code,
+                    tree_resp.text[:300],
+                )
+                return False
+            new_tree = tree_resp.json().get("sha")
+
+            commit_payload: dict[str, Any] = {
+                "message": commit_message,
+                "tree": new_tree,
+            }
+            if base_commit:
+                commit_payload["parents"] = [base_commit]
+            try:
+                new_commit_resp = await self._send(
+                    client,
+                    "POST",
+                    f"{base}/commits",
+                    json_body=commit_payload,
+                )
+            except httpx.RequestError:
+                logger.exception("Network error creating commit")
+                return False
+            if new_commit_resp.status_code not in (200, 201):
+                logger.error(
+                    "Git Data commit call failed: HTTP %s: %s",
+                    new_commit_resp.status_code,
+                    new_commit_resp.text[:300],
+                )
+                return False
+            new_commit = new_commit_resp.json().get("sha")
+
+            if base_commit is None:
+                # Empty repository: the first push must CREATE the ref.
+                ref_resp = await self._send(
+                    client,
+                    "POST",
+                    f"{base}/refs",
+                    json_body={
+                        "ref": f"refs/heads/{self.branch}",
+                        "sha": new_commit,
+                    },
+                )
+            else:
+                ref_resp = await self._send(
+                    client,
+                    "PATCH",
+                    f"{base}/refs/heads/{self.branch}",
+                    json_body={"sha": new_commit, "force": False},
+                )
+            if ref_resp.status_code in (200, 201):
+                logger.info(
+                    "Batch-published %d file(s) to %s/%s@%s as one commit %s.",
+                    len(cleaned),
+                    self.owner,
+                    self.repo,
+                    self.branch,
+                    str(new_commit)[:12],
+                )
+                return True
+            if ref_resp.status_code == 422 and attempt <= _CONFLICT_RETRIES:
+                # Not-fast-forward: a competing run/manual commit moved the
+                # ref between our read and update. Rebuild on the fresh head.
+                logger.warning(
+                    "Branch %s moved during batch publish (attempt %d); "
+                    "rebasing onto the new head.",
+                    self.branch,
+                    attempt,
+                )
+                continue
+            logger.error(
+                "Ref update failed for %s/%s@%s: HTTP %s: %s",
+                self.owner,
+                self.repo,
+                self.branch,
+                ref_resp.status_code,
+                ref_resp.text[:300],
+            )
+            return False
+        return False
+
     async def publish_file(self, path: str, content: str, commit_message: str) -> bool:
         """Create or update ``path`` in the repo with ``content``.
 

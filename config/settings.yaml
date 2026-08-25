@@ -214,6 +214,10 @@ quality:
   health_ban_min_alive: 3
   source_health_enabled: true
   source_min_checked: 50
+  # Cumulative judgment sample expires after this many days: a source is
+  # judged on how it performs NOW, not on a mixture accumulated over months.
+  # 0 disables the time box.
+  source_sample_window_days: 7
   source_bad_alive_rate: 0.02
   source_good_alive_rate: 0.2
   source_bad_runs_to_ban: 2
@@ -245,6 +249,11 @@ publisher:
     blacklist: "output/subscription-blacklist.txt"
     whitelist: "output/subscription-whitelist.txt"
   commit_message: "auto-update configs [{timestamp}]"
+  # Publish all outputs as ONE atomic commit via the Git Data API instead of
+  # one Contents-API commit per file (13+ commits per run): quieter history
+  # and all-or-nothing — on failure the branch ref stays untouched, so the
+  # previous subscription survives intact. false restores per-file commits.
+  batch_commits: true
   # Empty-run floor, enforced IN CODE (the workflow's "<10" check runs only
   # after publication): an empty run writes watermark-only placeholders
   # locally but does NOT publish them, so a network failure cannot wipe the

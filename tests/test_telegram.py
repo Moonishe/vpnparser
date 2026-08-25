@@ -591,6 +591,27 @@ class TestCountCountriesFromFile:
         result = telegram_module._count_countries_from_file(str(f))
         assert isinstance(result, dict)
 
+    def test_real_watermark_detected_structurally(self, tmp_path, monkeypatch) -> None:
+        """The genuine watermark (add=0.0.0.0) is skipped via structural detect.
+
+        The old substring check could never match (base64 has no dots), so the
+        watermark's country counting relied on its empty remark by accident.
+        """
+        import base64
+
+        from src.aggregator.output import _watermark_link
+
+        monkeypatch.delenv("GITHUB_OWNER", raising=False)
+        monkeypatch.delenv("GITHUB_REPO", raising=False)
+        content = (
+            f"{_watermark_link()}\n"
+            "vless://11111111-1111-4111-8111-111111111111@nl.example.com:443#NL-1\n"
+        )
+        f = tmp_path / "sub.txt"
+        f.write_text(base64.b64encode(content.encode()).decode(), encoding="utf-8")
+        result = telegram_module._count_countries_from_file(str(f))
+        assert set(result) == {"NL"}
+
     def test_remark_with_url_encoding(self, tmp_path) -> None:
         f = tmp_path / "sub.txt"
         import base64

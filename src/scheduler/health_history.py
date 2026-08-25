@@ -484,6 +484,27 @@ class HealthHistory:
             # the floor within one run and was therefore never judged — nor
             # re-banned after its old ban expired, so it lived forever.
             # Accumulate until the floor is met, judge once, start fresh.
+            # The window is also time-boxed (``source_sample_window_days``):
+            # without it a source accumulating over months was judged on an
+            # ancient mixture, not on how it performs now.
+            window_days = self.settings.as_float(
+                qcfg.get("source_sample_window_days"),
+                7.0,
+                minimum=0.0,
+            )
+            window_seconds = int(window_days * 86400)
+            started_at = int(record.get("sample_started_at") or 0)
+            stale_window = (
+                window_seconds > 0
+                and started_at > 0
+                and now - started_at > window_seconds
+            )
+            if stale_window:
+                record["sample_checked"] = 0
+                record["sample_alive"] = 0
+                started_at = 0
+            if not started_at:
+                record["sample_started_at"] = now
             cum_checked = int(record.get("sample_checked") or 0) + checked
             cum_alive = int(record.get("sample_alive") or 0) + alive
             if cum_checked < min_checked:
@@ -492,6 +513,7 @@ class HealthHistory:
                 continue
             record["sample_checked"] = 0
             record["sample_alive"] = 0
+            record["sample_started_at"] = 0
             if cum_alive / cum_checked <= bad_rate:
                 record["bad_runs"] = int(record.get("bad_runs") or 0) + 1
                 if int(record["bad_runs"]) >= bad_runs:

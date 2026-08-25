@@ -767,3 +767,123 @@ def test_count_proxy_networks_groups_by_prefix16() -> None:
     ]
     assert count_proxy_networks(urls) == 4
     assert count_proxy_networks([]) == 0
+
+
+# ---------------------------------------------------------------------------
+# _fetch_source: transient network errors and redirect-loop cap
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_retries_network_error_then_succeeds() -> None:
+    """A transient network error retries instead of dropping the source."""
+    import httpx as _httpx
+
+    calls = {"n": 0}
+
+    class _FlakyClient:
+        async def __aenter__(self) -> _FlakyClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        def stream(self, *a: object, **kw: object):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise _httpx.ConnectError("blip")
+
+            class _Resp:
+                status_code = 200
+                headers = {}
+
+                @staticmethod
+                async def aiter_bytes(size: int):
+                    yield b"1.2.3.4:1080"
+
+            ctx = MagicMock()
+            ctx.__aenter__ = AsyncMock(return_value=_Resp())
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            return ctx
+
+    text = await _fetch_source(_FlakyClient(), "https://example.com/list.txt")
+    assert text == "1.2.3.4:1080"
+    assert calls["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_network_error_exhausts_attempts() -> None:
+    """Every attempt failing leaves the source skipped (empty string)."""
+    import httpx as _httpx
+
+    calls = {"n": 0}
+
+    class _DeadClient:
+        async def __aenter__(self) -> _DeadClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        def stream(self, *a: object, **kw: object):
+            calls["n"] += 1
+            raise _httpx.ConnectError("down")
+
+    text = await _fetch_source(
+        _DeadClient(),
+        "https://example.com/list.txt",
+        timeout=10.0,
+    )
+    assert text == ""
+    assert calls["n"] == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_redirect_hops_exhausted() -> None:
+    """An endless same-host redirect chain gives up after the hop budget."""
+    client = _stream_client([(301, b"", {"location": "https://example.com/next"})])
+
+    text = await _fetch_source(client, "https://example.com/list.txt")
+    assert text == ""
+
+
+def test_fetch_proxy_candidates_swallows_raising_source(monkeypatch) -> None:
+    """A raising source is skipped without killing the concurrent gather."""
+    import httpx as _httpx
+
+    async def raiser(_client, url, **kwargs):
+        raise _httpx.ConnectError("nope")
+
+    async def ok(_client, url, **kwargs):
+        return "9.9.9.9:1080"
+
+    monkeypatch.setattr(
+        proxy_pool_module,
+        "_fetch_source",
+        lambda c, u, **k: raiser(c, u) if "bad" in u else ok(c, u),
+    )
+    result = asyncio.run(
+        proxy_pool_module.fetch_proxy_candidates(
+            ["https://bad.example/x", "https://ok.example/x"],
+            max_candidates=10,
+        ),
+    )
+    assert result == ["socks5://9.9.9.9:1080"]
+
+
+def test_fetch_proxy_candidates_swallows_base_exception_source(
+    monkeypatch,
+) -> None:
+    """gather(return_exceptions=True) results are type-checked, not truthy."""
+
+    async def raiser(_client, url, **kwargs):
+        raise ValueError("unexpected")
+
+    monkeypatch.setattr(proxy_pool_module, "_fetch_source", raiser)
+    result = asyncio.run(
+        proxy_pool_module.fetch_proxy_candidates(
+            ["https://bad.example/x"],
+            max_candidates=5,
+        ),
+    )
+    assert result == []

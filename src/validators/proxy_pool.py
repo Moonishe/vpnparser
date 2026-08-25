@@ -25,13 +25,24 @@ logger = logging.getLogger(__name__)
 #: parties; an endless stream must not buffer into memory unbounded.
 _MAX_SOURCE_BODY_BYTES = 8 * 1024 * 1024
 
-#: Wall-clock budget for one source fetch (the whole redirect chain included)
-#: as a multiple of the per-operation ``timeout``.  httpx restarts its read
-#: timer on every chunk, so a slow-drip host holds one stream open far past
-#: any single timeout while staying under the byte cap — and sources are
-#: fetched sequentially, so pool building inherited that stall.  Mirrors
+#: Wall-clock budget for one source fetch (the whole redirect chain and every
+#: transient retry included) as a multiple of the per-operation ``timeout``.
+#: httpx restarts its read timer on every chunk, so a slow-drip host holds one
+#: stream open far past any single timeout while staying under the byte cap —
+#: sources are fetched concurrently now, but an unbudgeted stream still pins
+#: its worker and delays pool readiness. Mirrors
 #: ``sources.manager.DOWNLOAD_TIMEOUT_FACTOR``.
 _DOWNLOAD_BUDGET_FACTOR = 4.0
+
+#: Transient statuses worth a retry (the raw-GitHub path retries these too):
+#: CDNs throttle bursts with 429, 5xx are transient by definition.
+_RETRIABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+_MAX_SOURCE_ATTEMPTS = 3
+
+#: How many passing candidates to collect relative to ``max_proxies`` so the
+#: final selection can prefer distinct /16 networks instead of the first N
+#: completions, which routinely come from one busy CIDR range.
+_NETWORK_OVERSAMPLE = 3
 
 #: Maximum redirect hops followed for one proxy source. Every hop is
 #: re-validated: a client with ``follow_redirects=True`` would otherwise be
@@ -125,63 +136,51 @@ async def _fetch_source(
 ) -> str | None:
     """Fetch one proxy-list source under SSRF, byte and wall-clock budgets.
 
+    Transient statuses (429/5xx) and network errors are retried up to
+    ``_MAX_SOURCE_ATTEMPTS`` times honouring ``Retry-After`` — the raw-GitHub
+    path already did this, and without it one CDN hiccup skipped a source for
+    the whole run. The wall-clock budget covers every attempt of the chain.
+
     Returns:
         The body text, ``None`` when the body exceeded the byte cap or the
         wall-clock budget (a truncated body must not be parsed — the missing
         tail silently skews the pool towards whatever happened to fit), or
-        ``""`` on refusals/HTTP/network errors.
+        ``""`` on refusals/non-retriable HTTP/network errors.
     """
     headers = {"User-Agent": _USER_AGENT, "Accept": "text/plain,*/*"}
-    target = url
     try:
         async with asyncio.timeout(timeout * _DOWNLOAD_BUDGET_FACTOR):
-            for _hop in range(_MAX_REDIRECT_HOPS + 1):
-                if not _is_safe_public_http_url(target):
-                    logger.warning(
-                        "Proxy source %s redirects to unsafe URL — refusing.",
-                        url,
-                    )
-                    return ""
-                async with client.stream(
-                    "GET",
-                    target,
-                    headers=headers,
-                ) as response:
-                    if response.status_code in (301, 302, 303, 307, 308):
-                        location = response.headers.get("location")
-                        if not location:
-                            logger.warning(
-                                "Proxy source %s redirected without "
-                                "Location — skipping.",
-                                target,
-                            )
-                            return ""
-                        # Resolve against the *logical* URL of this hop.
-                        target = urljoin(target, location.strip())
-                        continue
-                    if response.status_code != 200:
-                        logger.warning(
-                            "Proxy source %s returned HTTP %d",
-                            url,
-                            response.status_code,
-                        )
+            for attempt in range(1, _MAX_SOURCE_ATTEMPTS + 1):
+                try:
+                    text, retry_after = await _fetch_source_once(client, url, headers)
+                except httpx.HTTPError as exc:
+                    if attempt >= _MAX_SOURCE_ATTEMPTS:
+                        logger.warning("Proxy source fetch failed for %s: %s", url, exc)
                         return ""
-                    # Stream with a byte cap: response.text would buffer any size.
-                    body = bytearray()
-                    overflow = False
-                    async for chunk in response.aiter_bytes(64 * 1024):
-                        body.extend(chunk)
-                        if len(body) > _MAX_SOURCE_BODY_BYTES:
-                            logger.warning(
-                                "Proxy source %s exceeded %d bytes — discarded.",
-                                url,
-                                _MAX_SOURCE_BODY_BYTES,
-                            )
-                            overflow = True
-                            break
-                    if overflow:
-                        return None
-                    return body.decode("utf-8", errors="replace")
+                    delay = 0.5 * attempt
+                    logger.warning(
+                        "Proxy source %s network error (attempt %d/%d) — "
+                        "retrying in %.1fs.",
+                        url,
+                        attempt,
+                        _MAX_SOURCE_ATTEMPTS,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                if retry_after is not None and attempt < _MAX_SOURCE_ATTEMPTS:
+                    logger.warning(
+                        "Proxy source %s got a retriable failure "
+                        "(attempt %d/%d) — retrying in %.1fs.",
+                        url,
+                        attempt,
+                        _MAX_SOURCE_ATTEMPTS,
+                        retry_after,
+                    )
+                    await asyncio.sleep(retry_after)
+                    continue
+                return text
+            return ""
     except TimeoutError:
         logger.warning(
             "Proxy source %s exceeded its %.0fs wall-clock budget.",
@@ -189,13 +188,80 @@ async def _fetch_source(
             timeout * _DOWNLOAD_BUDGET_FACTOR,
         )
         return None
-    except httpx.HTTPError as exc:
-        logger.warning("Proxy source fetch failed for %s: %s", url, exc)
-        return ""
+
+
+async def _fetch_source_once(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+) -> tuple[str | None, float | None]:
+    """One redirect-chain walk of :func:`_fetch_source`.
+
+    Returns ``(text, retry_after)``.  A non-None ``retry_after`` marks a
+    transient failure worth another attempt; ``text`` is then ignored.
+    Network errors propagate to the caller's retry loop.
+    """
+    from src.sources.github import _retry_after_delay
+
+    target = url
+    backoff = 1.0
+    for _hop in range(_MAX_REDIRECT_HOPS + 1):
+        if not _is_safe_public_http_url(target):
+            logger.warning(
+                "Proxy source %s redirects to unsafe URL — refusing.",
+                url,
+            )
+            return "", None
+        async with client.stream(
+            "GET",
+            target,
+            headers=headers,
+        ) as response:
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("location")
+                if not location:
+                    logger.warning(
+                        "Proxy source %s redirected without Location — skipping.",
+                        target,
+                    )
+                    return "", None
+                # Resolve against the *logical* URL of this hop.
+                target = urljoin(target, location.strip())
+                continue
+            if response.status_code in _RETRIABLE_STATUSES:
+                delay = _retry_after_delay(
+                    response.headers.get("Retry-After"),
+                    backoff,
+                )
+                backoff += 1.0
+                return "", delay
+            if response.status_code != 200:
+                logger.warning(
+                    "Proxy source %s returned HTTP %d",
+                    url,
+                    response.status_code,
+                )
+                return "", None
+            # Stream with a byte cap: response.text would buffer any size.
+            body = bytearray()
+            overflow = False
+            async for chunk in response.aiter_bytes(64 * 1024):
+                body.extend(chunk)
+                if len(body) > _MAX_SOURCE_BODY_BYTES:
+                    logger.warning(
+                        "Proxy source %s exceeded %d bytes — discarded.",
+                        url,
+                        _MAX_SOURCE_BODY_BYTES,
+                    )
+                    overflow = True
+                    break
+            if overflow:
+                return None, None
+            return body.decode("utf-8", errors="replace"), None
     logger.warning(
         "Proxy source %s exceeded %d redirect hops.", url, _MAX_REDIRECT_HOPS
     )
-    return ""
+    return "", None
 
 
 async def fetch_proxy_candidates(
@@ -207,8 +273,10 @@ async def fetch_proxy_candidates(
 ) -> list[str]:
     """Fetch proxy source files and return unique candidates, capped by count.
 
-    Sources are fetched in order and stop once enough unique candidates are
-    collected. ``max_candidates_per_source`` keeps one large source from
+    Sources are fetched **concurrently** (each under its own wall-clock
+    budget), then parsed in the configured source order so earlier sources
+    keep their priority; collection stops once enough unique candidates are
+    gathered. ``max_candidates_per_source`` keeps one large source from
     monopolising the pool, so later sources still contribute candidates.
     """
     source_urls = [
@@ -225,12 +293,15 @@ async def fetch_proxy_candidates(
     # follow_redirects=False: _fetch_source walks hops manually and
     # re-validates each one against the SSRF stance above.
     async with httpx.AsyncClient(timeout=timeout_cfg, follow_redirects=False) as client:
-        for url in source_urls:
-            try:
-                text = await _fetch_source(client, url, timeout=timeout)
-            except Exception as exc:
-                logger.warning("Proxy source fetch raised for %s: %s", url, exc)
+        outcomes = await asyncio.gather(
+            *(_fetch_source(client, url, timeout=timeout) for url in source_urls),
+            return_exceptions=True,
+        )
+        for url, outcome in zip(source_urls, outcomes, strict=False):
+            if isinstance(outcome, BaseException):
+                logger.warning("Proxy source fetch raised for %s: %s", url, outcome)
                 continue
+            text = outcome
             if not text:
                 continue
             added_from_source = 0
@@ -306,25 +377,62 @@ async def proxy_connects(
     return False
 
 
-def count_proxy_networks(proxy_urls: list[str]) -> int:
-    """Count distinct networks behind the pool (IPv4 /16, per-host otherwise).
+def _proxy_network_key(proxy_url: str) -> str | None:
+    """Return the network identity of a proxy: IPv4 /16, IPv6 /48, or host.
 
-    The whole L3 stage rides on this pool; when every proxy lives in one
-    /16, a single network event empties the subscription. Hostnames count
-    as one network each (their addresses are unknown here).
+    A whole /16 is one network event away from dying together (one provider,
+    one datacenter), so selection treats the prefix — not the address — as
+    the diversity unit. Hostnames count as one network each (their addresses
+    are unknown here).
     """
+    host = (urlparse(str(proxy_url)).hostname or "").strip().lower()
+    if not host:
+        return None
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    prefix = 16 if ip.version == 4 else 48
+    return str(ipaddress.ip_network(f"{ip}/{prefix}", strict=False))
+
+
+def select_diverse_proxies(proxies: list[str], limit: int) -> list[str]:
+    """Pick up to *limit* proxies preferring distinct networks (greedy).
+
+    The first pass takes every proxy whose /16 has not been seen yet; only
+    when all represented networks are exhausted do same-network leftovers
+    fill the remaining slots, preserving input order. Without this the pool
+    was ``alive[:max_proxies]`` — completion order, which routinely put all
+    working proxies inside one busy provider CIDR.
+    """
+    if limit <= 0:
+        return []
+    picked: list[str] = []
+    deferred: list[str] = []
+    seen_networks: set[str] = set()
+    for proxy in proxies:
+        key = _proxy_network_key(proxy)
+        if key is not None and key not in seen_networks:
+            seen_networks.add(key)
+            picked.append(proxy)
+            if len(picked) >= limit:
+                return picked
+        else:
+            deferred.append(proxy)
+    for proxy in deferred:
+        if len(picked) >= limit:
+            break
+        picked.append(proxy)
+    return picked
+
+
+def count_proxy_networks(proxy_urls: list[str]) -> int:
+    """Count distinct networks behind the pool (IPv4 /16, per-host otherwise)."""
     networks: set[str] = set()
     for url in proxy_urls:
-        host = (urlparse(str(url)).hostname or "").strip().lower()
-        if not host:
-            continue
-        try:
-            ip = ipaddress.ip_address(host)
-        except ValueError:
-            networks.add(host)
-            continue
-        prefix = 16 if ip.version == 4 else 48
-        networks.add(str(ipaddress.ip_network(f"{ip}/{prefix}", strict=False)))
+        key = _proxy_network_key(url)
+        if key is not None:
+            networks.add(key)
     return len(networks)
 
 
@@ -342,11 +450,15 @@ async def validate_proxy_candidates(
     """Self-check proxy candidates and return the first working proxies.
 
     Records latency and success/failure in ``history`` when provided, and
-    prefers proxies with a good recent track record.
+    prefers proxies with a good recent track record. Collection oversamples
+    to ``max_proxies * _NETWORK_OVERSAMPLE`` completions so
+    :func:`select_diverse_proxies` can hand back a pool spread across
+    distinct /16 networks instead of whichever CIDR answered first.
     """
     if not proxies or max_proxies <= 0:
         return []
 
+    collect_target = max_proxies * _NETWORK_OVERSAMPLE
     semaphore = asyncio.Semaphore(max(1, concurrency))
     alive: list[str] = []
     alive_lock = asyncio.Lock()
@@ -374,7 +486,7 @@ async def validate_proxy_candidates(
             async with alive_lock:
                 if proxy_url not in alive:
                     alive.append(proxy_url)
-                if len(alive) >= max_proxies:
+                if len(alive) >= collect_target:
                     done_event.set()
 
     tasks = [asyncio.create_task(_check(proxy)) for proxy in proxies]
@@ -395,7 +507,7 @@ async def validate_proxy_candidates(
     if not done_task.done():
         done_task.cancel()
         await asyncio.gather(done_task, return_exceptions=True)
-    return alive[:max_proxies]
+    return select_diverse_proxies(alive, max_proxies)
 
 
 async def load_proxy_pool(

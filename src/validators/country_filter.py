@@ -341,12 +341,13 @@ _CODE_RE = re.compile(
 )
 
 # Ambiguous codes: same case-sensitive boundaries, but the code MUST be
-# immediately followed by a structural delimiter — hyphen, digit, closing
-# bracket/paren, pipe, or slash.  Accepts "US-01", "ID01", "[US]", "US|DE",
-# "US/01" and rejects "CONTACT US", "SERVER ID", "SIGN IN", "5TH FLOOR",
-# "MY SERVER", "DO IT" (code followed by space or end-of-string).
+# immediately followed by a structural delimiter: a digit, a closing
+# bracket/paren, pipe, slash, or hyphen-then-DIGIT.  A bare hyphen after the
+# code is NOT enough any more: "IN-ADDR-01" (reverse-DNS style) and
+# "ID-jakarta" used to read as India / Indonesia at remark level, where no
+# hostname-side guard exists.
 _AMBIGUOUS_CODE_RE = re.compile(
-    r"(?:^|[^A-Za-z])(" + "|".join(_AMBIGUOUS_CODES) + r")(?=[-\d\]/|)])",
+    r"(?:^|[^A-Za-z])(" + "|".join(_AMBIGUOUS_CODES) + r")(?=\d|[\]/)|]|-\d)",
 )
 
 # An ambiguous code that reads as a common word collides with its word
@@ -357,6 +358,26 @@ _AMBIGUOUS_CODE_RE = re.compile(
 # and dropping it would cost far more than the rare misread costs.
 _PRECEDING_WORD_TAIL_RE = re.compile(r"[A-Za-z]{2,}\Z")
 _ID_DELIMITER_CHARS = " -_[|(/"
+
+# Case-insensitive fallback for remarks published entirely in lowercase
+# ("us-01 backup", "ru-1"): the case-sensitive pass above deliberately
+# ignores them.  Both sides are digit-anchored — the code must be preceded
+# by a non-alphanumeric boundary and followed by a digit (optionally behind
+# a hyphen/underscore) — so ordinary words ("us east", "in transit", the
+# "id" inside "covid19") can never match.  The ID-as-identifier guard from
+# step 2 applies here as well.
+#
+# Codes with a strong conflicting lowercase reading are excluded outright,
+# mirroring the short-city table's neutrality rule: CA/DE read as US states,
+# IN as Indiana, ID as an identifier ("server id 7").  Their UPPERCASE forms
+# are still detected by the primary passes above.
+_LOWER_FALLBACK_CODES = tuple(
+    code for code in _SUPPORTED_CODES if code not in {"CA", "DE", "IN", "ID"}
+)
+_LOWER_CODE_RE = re.compile(
+    r"(?:^|[^A-Za-z0-9])(" + "|".join(_LOWER_FALLBACK_CODES) + r")(?=\d|[-_]\d)",
+    re.IGNORECASE,
+)
 
 # Hostname prefix patterns: de01.vpn.com, nl-ams.vpn.net, us-east.server.net
 # Matches a 2-letter country code at the start of a hostname segment.
@@ -479,6 +500,14 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
         if m:
             return m.group(1).upper()
         for m in _AMBIGUOUS_CODE_RE.finditer(remark):
+            if m.group(1).upper() == "ID":
+                head = remark[: m.start()].rstrip(_ID_DELIMITER_CHARS)
+                if head and _PRECEDING_WORD_TAIL_RE.search(head):
+                    continue
+            return m.group(1).upper()
+        # 2b. Lowercase fallback ("us-01", "de03"): digit-anchored both sides,
+        #     so prose never matches; same ID-as-identifier guard.
+        for m in _LOWER_CODE_RE.finditer(remark):
             if m.group(1).upper() == "ID":
                 head = remark[: m.start()].rstrip(_ID_DELIMITER_CHARS)
                 if head and _PRECEDING_WORD_TAIL_RE.search(head):

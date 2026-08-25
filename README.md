@@ -195,6 +195,10 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 | `aggregator` | `max_per_country` | `200` | Per-country cap in the combined output |
 | `publisher` | `output_file` | `output/subscription.txt` | Combined output path |
 | `publisher` | `location_output_limit` | `50` | Cap per `output/locations/subscription-XX.txt` |
+| `publisher` | `min_publish_configs` | `10` | Empty-run floor: placeholders stay local, remote subscription untouched |
+| `publisher` | `batch_commits` | `true` | One atomic commit for all outputs via the Git Data API |
+| `validator.proxy_pool.health` | `ban_seconds` | `3600` | Proxy ban is time-boxed; after it a passing self-check revives the proxy |
+| `quality` | `stability_enforce_fraction` | `0.3` | Stability gate enforces only when stable core ≥ this share of the list |
 | `llm` | `enabled` | `false` | LLM fallback when regex finds no links |
 
 ---
@@ -236,7 +240,7 @@ pushes to `main`:
 - Fetch failures are isolated per source -- one dead upstream does not fail
   the whole run.
 - Blacklist output keeps only `DE`, `FI`, `NL`, `US`, `GB`, `FR`, `JP`, `CA`.
-- Whitelist targets 200 checked configs with an 80% RU / 20% EU split.
+- Whitelist targets 300 checked configs with an 80% RU / 20% EU split.
 - LLM fallback ([DashScope Qwen](https://dashscope.aliyun.com)) can extract
   links from pages where regex parsing fails. Disabled by default
   (`llm.enabled: false`); the key in `LLM_API_KEY` must match `llm.provider`.

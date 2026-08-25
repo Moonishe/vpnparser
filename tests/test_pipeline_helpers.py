@@ -1573,7 +1573,13 @@ def test_proxy_pool_fetch_stops_after_candidate_limit(monkeypatch) -> None:
     )
 
     assert result == ["socks5://8.8.8.8:1080"]
-    assert fetched_urls == ["https://first.example/list.txt"]
+    # Sources are fetched concurrently, so both downloads happen; the cap
+    # applies to PARSING — the first source's candidates fill the budget and
+    # the rest are discarded without entering the pool.
+    assert sorted(fetched_urls) == [
+        "https://first.example/list.txt",
+        "https://second.example/list.txt",
+    ]
 
 
 def test_proxy_pool_limits_candidates_per_source(monkeypatch) -> None:

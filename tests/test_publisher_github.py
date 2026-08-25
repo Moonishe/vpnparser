@@ -1192,3 +1192,331 @@ async def test_publish_file_2xx_non_200_201(monkeypatch) -> None:
     pub = _make_publisher(monkeypatch, _FakeClient())
     result = await pub.publish_file("f.txt", "data", "msg")
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# publish_files_batch — one atomic commit via the Git Data API
+# ---------------------------------------------------------------------------
+
+
+class _BatchClient:
+    """Fake httpx client dispatching by (method, url substring)."""
+
+    def __init__(self, responses: dict[str, Any]) -> None:
+        # key: "METHOD url-substring" -> _FakeResp or callable(payload) -> resp
+        self.responses = responses
+        self.calls: list[tuple[str, str]] = []
+
+    async def __aenter__(self) -> _BatchClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    def _match(self, method: str, url: str) -> Any:
+        for key, handler in self.responses.items():
+            m, _, sub = key.partition(" ")
+            if m == method and sub in url:
+                return handler
+        raise AssertionError(f"unexpected call {method} {url}")
+
+    async def request(self, method: str, url: str, **kw: object) -> _FakeResp:
+        self.calls.append((method, url))
+        handler = self._match(method, url)
+        if callable(handler):
+            return handler(kw.get("json"))
+        return handler
+
+    async def aclose(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_publish_files_batch_happy_path(monkeypatch) -> None:
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(
+                200,
+                json_data={"object": {"sha": "base0"}},
+            ),
+            "GET git/commits/base0": _FakeResp(
+                200,
+                json_data={"tree": {"sha": "tree0"}},
+            ),
+            "POST git/trees": _FakeResp(201, json_data={"sha": "tree1"}),
+            "POST git/commits": _FakeResp(201, json_data={"sha": "commit1"}),
+            "PATCH git/refs/heads": _FakeResp(200),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+
+    ok = await pub.publish_files_batch(
+        [("output/a.txt", "A"), ("output/b.txt", "B")],
+        "batch msg",
+    )
+
+    assert ok is True
+    methods = [(m, u) for m, u in client.calls]
+    assert sum(1 for m, _ in methods if m == "PATCH") == 1
+
+
+@pytest.mark.asyncio
+async def test_publish_files_batch_payload_shape(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def on_trees(payload: Any) -> _FakeResp:
+        captured["trees"] = payload
+        return _FakeResp(201, json_data={"sha": "tree1"})
+
+    def on_commit(payload: Any) -> _FakeResp:
+        captured["commit"] = payload
+        return _FakeResp(201, json_data={"sha": "commit1"})
+
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(
+                200,
+                json_data={"object": {"sha": "base0"}},
+            ),
+            "GET git/commits/base0": _FakeResp(
+                200,
+                json_data={"tree": {"sha": "tree0"}},
+            ),
+            "POST git/trees": on_trees,
+            "POST git/commits": on_commit,
+            "PATCH git/refs/heads": _FakeResp(200),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+
+    ok = await pub.publish_files_batch([("output/a.txt", "A")], "msg")
+
+    assert ok is True
+    tree_entry = captured["trees"]["tree"][0]
+    assert tree_entry["path"] == "output/a.txt"
+    assert tree_entry["content"] == "A"
+    assert captured["trees"]["base_tree"] == "tree0"
+    assert captured["commit"]["parents"] == ["base0"]
+
+
+@pytest.mark.asyncio
+async def test_publish_files_batch_empty_repo_creates_ref(monkeypatch) -> None:
+    created_ref: dict[str, Any] = {}
+
+    def on_create_ref(payload: Any) -> _FakeResp:
+        created_ref.update(payload)
+        return _FakeResp(201)
+
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(409),  # empty repo
+            "POST git/trees": _FakeResp(201, json_data={"sha": "tree1"}),
+            "POST git/commits": _FakeResp(201, json_data={"sha": "c1"}),
+            "POST git/refs": on_create_ref,
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+
+    ok = await pub.publish_files_batch([("output/a.txt", "A")], "first")
+
+    assert ok is True
+    assert created_ref["ref"] == "refs/heads/main"
+    assert created_ref["sha"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_publish_files_batch_rebases_on_422(monkeypatch) -> None:
+    state = {"round": 0}
+
+    def on_patch_ref(payload: Any) -> _FakeResp:
+        state["round"] += 1
+        return _FakeResp(422) if state["round"] == 1 else _FakeResp(200)
+
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(
+                200,
+                json_data={"object": {"sha": "baseX"}},
+            ),
+            "GET git/commits/baseX": _FakeResp(
+                200,
+                json_data={"tree": {"sha": "treeX"}},
+            ),
+            "POST git/trees": _FakeResp(201, json_data={"sha": "t"}),
+            "POST git/commits": _FakeResp(201, json_data={"sha": "c"}),
+            "PATCH git/refs/heads": on_patch_ref,
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+
+    ok = await pub.publish_files_batch([("a.txt", "A")], "msg")
+
+    assert ok is True
+    patch_calls = [1 for m, _ in client.calls if m == "PATCH"]
+    assert len(patch_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_publish_files_batch_dedupes_paths(monkeypatch) -> None:
+    seen_paths: list[str] = []
+
+    def on_trees(payload: Any) -> _FakeResp:
+        seen_paths.extend(entry["path"] for entry in payload["tree"])
+        return _FakeResp(201, json_data={"sha": "t"})
+
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(409),
+            "POST git/trees": on_trees,
+            "POST git/commits": _FakeResp(201, json_data={"sha": "c"}),
+            "POST git/refs": _FakeResp(201),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+
+    ok = await pub.publish_files_batch(
+        [("output/a.txt", "1"), ("output\\a.txt", "2"), ("b.txt", "3")],
+        "msg",
+    )
+
+    assert ok is True
+    assert sorted(seen_paths) == ["b.txt", "output/a.txt"]
+
+
+# ---------------------------------------------------------------------------
+# publish_files_batch: failure branches
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_batch_empty_files_is_success(monkeypatch) -> None:
+    client = _BatchClient({})
+    pub = _make_publisher(monkeypatch, client)
+    assert await pub.publish_files_batch([], "msg") is True
+
+
+@pytest.mark.asyncio
+async def test_batch_unencodable_content_fails(monkeypatch) -> None:
+    client = _BatchClient({})
+    pub = _make_publisher(monkeypatch, client)
+
+    class BadStr(str):
+        def encode(self, *a: object, **kw: object) -> bytes:
+            raise ValueError("bad")
+
+    ok = await pub.publish_files_batch([("a.txt", BadStr("x"))], "msg")
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_batch_unreadable_branch_ref_raises(monkeypatch) -> None:
+    import pytest as _pytest
+
+    from src.publisher.github import GitHubPublishError
+
+    client = _BatchClient(
+        {"GET git/ref/heads": _FakeResp(500, text="boom")},
+    )
+    pub = _make_publisher(monkeypatch, client)
+    with _pytest.raises(GitHubPublishError):
+        await pub.publish_files_batch([("a.txt", "A")], "msg")
+
+
+@pytest.mark.asyncio
+async def test_batch_trees_failure_returns_false(monkeypatch) -> None:
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(409),
+            "POST git/trees": _FakeResp(422, text="invalid"),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+    assert await pub.publish_files_batch([("a.txt", "A")], "msg") is False
+
+
+@pytest.mark.asyncio
+async def test_batch_commit_failure_returns_false(monkeypatch) -> None:
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(409),
+            "POST git/trees": _FakeResp(201, json_data={"sha": "t"}),
+            "POST git/commits": _FakeResp(422, text="nope"),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+    assert await pub.publish_files_batch([("a.txt", "A")], "msg") is False
+
+
+@pytest.mark.asyncio
+async def test_batch_non_422_ref_failure_returns_false(monkeypatch) -> None:
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(
+                200,
+                json_data={"object": {"sha": "b"}},
+            ),
+            "GET git/commits/b": _FakeResp(200, json_data={"tree": {"sha": "t0"}}),
+            "POST git/trees": _FakeResp(201, json_data={"sha": "t"}),
+            "POST git/commits": _FakeResp(201, json_data={"sha": "c"}),
+            "PATCH git/refs/heads": _FakeResp(403, text="forbidden"),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+    assert await pub.publish_files_batch([("a.txt", "A")], "msg") is False
+
+
+@pytest.mark.asyncio
+async def test_batch_conflict_retries_exhausted(monkeypatch) -> None:
+    """Every ref update keeps failing 422 — after the retries, False."""
+    client = _BatchClient(
+        {
+            "GET git/ref/heads": _FakeResp(
+                200,
+                json_data={"object": {"sha": "b"}},
+            ),
+            "GET git/commits/b": _FakeResp(200, json_data={"tree": {"sha": "t0"}}),
+            "POST git/trees": _FakeResp(201, json_data={"sha": "t"}),
+            "POST git/commits": _FakeResp(201, json_data={"sha": "c"}),
+            "PATCH git/refs/heads": _FakeResp(422),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+    assert await pub.publish_files_batch([("a.txt", "A")], "msg") is False
+    patch_calls = [1 for m, _ in client.calls if m == "PATCH"]
+    # initial attempt + _CONFLICT_RETRIES rebases
+    assert len(patch_calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_batch_network_error_on_head_returns_false(
+    monkeypatch,
+) -> None:
+    import httpx as _httpx
+
+    class _DeadClient(_BatchClient):
+        async def request(self, method: str, url: str, **kw: object) -> _FakeResp:
+            raise _httpx.ConnectError("network down")
+
+    pub = _make_publisher(monkeypatch, _DeadClient({}))
+    assert await pub.publish_files_batch([("a.txt", "A")], "msg") is False
+
+
+@pytest.mark.asyncio
+async def test_batch_network_error_on_commit_creation(monkeypatch) -> None:
+    """A network drop at commit creation returns False (ref untouched)."""
+    import httpx as _httpx
+
+    class _CommitDropClient(_BatchClient):
+        async def request(self, method: str, url: str, **kw: object):
+            if method == "POST" and "git/commits" in url and "refs" not in url:
+                raise _httpx.ConnectError("dropped")
+            return await super().request(method, url, **kw)
+
+    client = _CommitDropClient(
+        {
+            "GET git/ref/heads": _FakeResp(409),
+            "POST git/trees": _FakeResp(201, json_data={"sha": "t"}),
+        },
+    )
+    pub = _make_publisher(monkeypatch, client)
+    assert await pub.publish_files_batch([("a.txt", "A")], "msg") is False

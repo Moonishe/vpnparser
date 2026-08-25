@@ -8,6 +8,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1261,11 +1262,12 @@ async def test_publish_files_reuses_one_publisher(
 
     A publisher per file meant a fresh ``httpx.AsyncClient`` (CA bundle parse
     plus TLS handshake) for every output — tens of seconds of blocked event
-    loop on a run with per-country files.
+    loop on a run with per-country files. Uses the legacy per-file loop
+    (``batch_commits: false``); the batch path has its own test below.
     """
     r = _make_runner(
         tmp_path,
-        "publisher:\n  owner: o\n  repo: rp\n",
+        "publisher:\n  owner: o\n  repo: rp\n  batch_commits: false\n",
         github_token="t",
     )
     created: list[MagicMock] = []
@@ -1290,6 +1292,52 @@ async def test_publish_files_reuses_one_publisher(
     assert ok is True
     assert len(created) == 1
     assert created[0].publish_file.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_publish_files_single_batch_commit_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default mode publishes every output as ONE atomic commit."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  owner: o\n  repo: rp\n  output_file: output/combined.txt\n",
+        github_token="t",
+    )
+    combined = tmp_path / "combined.txt"
+    combined.write_text("c", encoding="utf-8")
+    extra = tmp_path / "extra.txt"
+    extra.write_text("e", encoding="utf-8")
+
+    created: list[MagicMock] = []
+
+    def _factory(**_kwargs: object) -> MagicMock:
+        publisher = MagicMock()
+        publisher.publish_files_batch = AsyncMock(return_value=True)
+        publisher.publish_file = AsyncMock(return_value=True)
+        publisher.__aenter__ = AsyncMock(return_value=publisher)
+        publisher.__aexit__ = AsyncMock(return_value=False)
+        created.append(publisher)
+        return publisher
+
+    module = MagicMock()
+    module.GitHubPublisher = _factory
+    monkeypatch.setitem(sys.modules, "src.publisher.github", module)
+
+    ok = await r._publish_files(
+        [str(combined), str(extra)],
+        combined_output_file=str(combined),
+    )
+    assert ok is True
+    assert len(created) == 1
+    # One batch call, no per-file Contents calls.
+    assert created[0].publish_files_batch.await_count == 1
+    assert created[0].publish_file.await_count == 0
+    args = created[0].publish_files_batch.await_args
+    files = [tuple(x) for x in args.args[0]]
+    assert ("output/combined.txt", "c") in files
+    assert (str(extra), "e") in files
 
 
 @pytest.mark.asyncio
@@ -1564,3 +1612,126 @@ async def test_published_source_results_skips_unusable_splits(tmp_path: Path) ->
 
     with pytest.raises(FileNotFoundError, match="unreadable or link-less"):
         r._published_source_results(str(tmp_path / "out.txt"))
+
+
+@pytest.mark.asyncio
+async def test_publish_batch_publisher_raises_returns_false(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exception inside the batch call is a publish failure, not a crash."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  owner: o\n  repo: rp\n",
+        github_token="t",
+    )
+    target = tmp_path / "out.txt"
+    target.write_text("data", encoding="utf-8")
+
+    def _factory(**_kwargs: object) -> MagicMock:
+        publisher = MagicMock()
+        publisher.publish_files_batch = AsyncMock(side_effect=RuntimeError("boom"))
+        publisher.publish_file = AsyncMock(return_value=True)
+        publisher.__aenter__ = AsyncMock(return_value=publisher)
+        publisher.__aexit__ = AsyncMock(return_value=False)
+        return publisher
+
+    module = MagicMock()
+    module.GitHubPublisher = _factory
+    monkeypatch.setitem(sys.modules, "src.publisher.github", module)
+
+    ok = await r._publish_files([str(target)])
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_publish_batch_missing_file_fails_before_any_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing output file aborts the batch before touching the network."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  owner: o\n  repo: rp\n",
+        github_token="t",
+    )
+    present = tmp_path / "present.txt"
+    present.write_text("x", encoding="utf-8")
+    missing = tmp_path / "missing.txt"
+
+    created: list[MagicMock] = []
+
+    def _factory(**_kwargs: object) -> MagicMock:
+        publisher = MagicMock()
+        publisher.publish_files_batch = AsyncMock(return_value=True)
+        publisher.__aenter__ = AsyncMock(return_value=publisher)
+        publisher.__aexit__ = AsyncMock(return_value=False)
+        created.append(publisher)
+        return publisher
+
+    module = MagicMock()
+    module.GitHubPublisher = _factory
+    monkeypatch.setitem(sys.modules, "src.publisher.github", module)
+
+    ok = await r._publish_files([str(present), str(missing)])
+    assert ok is False
+    assert not created or created[0].publish_files_batch.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_read_output_text_missing_file_returns_none(tmp_path: Path) -> None:
+    r = _make_runner(tmp_path, "publisher:\n  owner: o\n  repo: rp\n")
+    assert await r._read_output_text(str(tmp_path / "nope.txt")) is None
+
+
+@pytest.mark.asyncio
+async def test_read_output_text_unsafe_path_returns_none(tmp_path: Path) -> None:
+    r = _make_runner(tmp_path, "publisher:\n  owner: o\n  repo: rp\n")
+    assert await r._read_output_text("Z:/unsafe/outside-base.txt") is None
+
+
+@pytest.mark.asyncio
+async def test_publish_legacy_missing_and_unsafe_file_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy per-file loop reports False for missing and unsafe paths."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  owner: o\n  repo: rp\n  batch_commits: false\n",
+        github_token="t",
+    )
+    missing = tmp_path / "absent.txt"
+
+    def _factory(**_kwargs: object) -> MagicMock:
+        publisher = MagicMock()
+        publisher.publish_file = AsyncMock(return_value=True)
+        publisher.__aenter__ = AsyncMock(return_value=publisher)
+        publisher.__aexit__ = AsyncMock(return_value=False)
+        return publisher
+
+    module = MagicMock()
+    module.GitHubPublisher = _factory
+    monkeypatch.setitem(sys.modules, "src.publisher.github", module)
+
+    ok_missing = await r._publish(str(missing))
+    assert ok_missing is False
+
+    # A path outside the output base is rejected before any IO.
+    r2 = _make_runner(
+        tmp_path,
+        "publisher:\n  owner: o\n  repo: rp\n  batch_commits: false\n",
+        github_token="t",
+    )
+    monkeypatch.setitem(sys.modules, "src.publisher.github", module)
+    created: list[MagicMock] = []
+
+    async def spy_enter(stack: Any) -> MagicMock | None:
+        pub = await r2._enter_shared_publisher(stack)
+        if pub is not None:
+            created.append(pub)
+        return pub
+
+    monkeypatch.setattr(r2, "_enter_shared_publisher", spy_enter)
+    ok_unsafe = await r2._publish("Z:/definitely/outside.txt")
+    assert ok_unsafe is False
