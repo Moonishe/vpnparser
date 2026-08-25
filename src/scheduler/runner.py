@@ -25,8 +25,10 @@ import time
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+from src.aggregator.output import is_watermark_vmess
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
@@ -168,6 +170,41 @@ class PipelineRunner:
                 configs and still look successful.
         """
         self._require_settings_file()
+        results = await self._fetch_sources()
+        return await self._pipeline(results, output_file, publish)
+
+    async def rerun_published(
+        self,
+        output_file: str = "output/subscription.txt",
+        publish: bool = False,
+    ) -> int:
+        """Re-validate the currently published set without refetching sources.
+
+        A full run takes ~2h while published keys die within hours. This mode
+        re-probes just the last published split files (committed to the repo),
+        so an hourly fast-track job can refresh the subscription in minutes
+        between full discovery runs.
+
+        Raises:
+            FileNotFoundError: Same contract as :meth:`run`, plus when neither
+                published split file is readable — revalidating "nothing" must
+                not fall through to an empty-run publish that would wipe the
+                live subscription.
+        """
+        self._require_settings_file()
+        results = self._published_source_results(output_file)
+        if not results:
+            # Revalidating "nothing" must not fall through to an empty-run
+            # publish that would wipe the live subscription.
+            msg = (
+                "rerun_published found no readable published split files "
+                f"next to {output_file} — nothing to revalidate."
+            )
+            raise FileNotFoundError(msg)
+        return await self._pipeline(results, output_file, publish)
+
+    def _prepare_run_state(self) -> float:
+        """Reset per-run state shared by full and fast-track runs."""
         start = time.monotonic()
         self._liveness_stats = {}
         self._output_stats = {}
@@ -181,9 +218,17 @@ class PipelineRunner:
         self._last_summary_path = None
         self._liveness.reset_proxy_cache()
         logger.info("Pipeline started.")
+        return start
 
-        # 1. Fetch all sources.
-        results = await self._fetch_sources()
+    async def _pipeline(
+        self,
+        results: list[Any],
+        output_file: str,
+        publish: bool,
+    ) -> int:
+        """Shared body for full and fast-track runs, from parse to publish."""
+        start = self._prepare_run_state()
+
         if not results:
             logger.warning("No source results fetched — pipeline produced nothing.")
             return await self._finish_empty_run(
@@ -351,6 +396,67 @@ class PipelineRunner:
         return count
 
     # --- stage 1: fetch ---
+
+    def _published_source_results(self, output_file: str) -> list[Any]:
+        """Build parse-stage inputs from the last published split files.
+
+        Each split file becomes one synthetic source result, so the regular
+        parse stage (link extraction, per-link parsing) runs unchanged. The
+        watermark vmess line is dropped: it is display-only and would otherwise
+        be re-validated and republished as a fake config.
+        """
+        import base64
+
+        splits = self._split_output_files(output_file)
+        results: list[Any] = []
+        for list_type, path in splits.items():
+            if list_type not in ("blacklist", "whitelist"):
+                continue
+            try:
+                raw = resolve_safe_output_path(path).read_text(
+                    encoding="utf-8",
+                )
+            except Exception as exc:
+                logger.warning("Published %s file unreadable: %s", list_type, exc)
+                continue
+            text = raw.strip()
+            with contextlib.suppress(Exception):
+                text = base64.b64decode(text).decode("utf-8")
+            links = [
+                line.strip()
+                for line in text.splitlines()
+                if "://" in line.strip() and not is_watermark_vmess(line.strip())
+            ]
+            if not links:
+                logger.warning("Published %s file has no links: %s", list_type, path)
+                continue
+            results.append(
+                SimpleNamespace(
+                    name=f"published-{list_type}",
+                    list_type=list_type,
+                    files=[(path, "\n".join(links))],
+                    default_country=None,
+                )
+            )
+        # Every published split must be revalidated, or not at all: the guard
+        # above ("no results at all") fired only when BOTH files were
+        # unreadable, so one dead file let the run republish just the other
+        # list — silently erasing half the live subscription.
+        found_types = {str(getattr(result, "list_type", "")) for result in results}
+        missing = [
+            list_type
+            for list_type in ("blacklist", "whitelist")
+            if list_type not in found_types
+        ]
+        if missing:
+            msg = (
+                "rerun_published requires every published split file to be "
+                f"readable next to {output_file}; unreadable or link-less: "
+                f"{', '.join(missing)}. Revalidating a partial set would "
+                "overwrite the healthy subscription with part of it."
+            )
+            raise FileNotFoundError(msg)
+        return results
 
     async def _fetch_sources(self) -> list[Any]:
         """Fetch all sources via the SourceFetcher stage."""
@@ -731,12 +837,17 @@ class PipelineRunner:
         status: str,
         publish: bool,
     ) -> int:
-        """Write empty subscription artifacts and optionally publish all of them.
+        """Write empty subscription artifacts and optionally publish.
 
-        Previously failed runs often published only ``run-summary.json`` +
-        health history, leaving remote ``subscription*.txt`` stale while the
-        summary reported zero live configs. Always publish the full set so
-        consumers never see outdated "live" lists after a dead run.
+        Subscription artifacts become watermark-only placeholders on an empty
+        run.  With ``publisher.min_publish_configs`` > 0 (default 10) those
+        placeholders are written *locally* but are NOT published: the floor
+        must live in code because the workflow's "<10" check runs in a later
+        step, after publication — a network-failure run used to wipe the live
+        subscription while CI could only mourn it.  Metadata (run summary,
+        stats history, health history) still goes out so tooling sees the
+        empty status; the previously published subscription stays untouched
+        until a run with real content replaces it.
         """
         self._write_empty_output(output_file)
         # Reset the run stats BEFORE the location outputs are recorded: the
@@ -764,18 +875,46 @@ class PipelineRunner:
         self._save_proxy_health_history()
         stats_files = self._write_stats_history(status)
         if publish:
-            publish_paths = self._configured_subscription_output_paths(output_file)
-            publish_paths.extend(location_files)
+            subscription_paths = self._configured_subscription_output_paths(
+                output_file,
+            )
+            subscription_paths.extend(location_files)
             if clash_output_file:
-                publish_paths.append(clash_output_file)
+                subscription_paths.append(clash_output_file)
+            publish_paths = list(subscription_paths)
             publish_paths.extend(stats_files)
             if summary_file:
                 publish_paths.append(summary_file)
             if health_file:
                 publish_paths.append(health_file)
+
+            # Same parsing style as _max_configs: the runner holds the raw
+            # mapping, not a Settings facade.
+            raw_min_publish = self._section("publisher").get("min_publish_configs")
+            try:
+                min_publish = (
+                    int(raw_min_publish) if raw_min_publish is not None else 10
+                )
+            except (TypeError, ValueError):
+                min_publish = 10
+            min_publish = max(0, min_publish)
+            if min_publish > 0:
+                logger.warning(
+                    "Empty run (%s): keeping the previously published "
+                    "subscription files in the repository — %d watermark-only "
+                    "placeholder(s) were written locally but must not wipe a "
+                    "working subscription on what is usually an "
+                    "infrastructure failure.",
+                    status,
+                    len(subscription_paths),
+                )
+                publish_paths = [
+                    path for path in publish_paths if path not in subscription_paths
+                ]
+
             # Record the outcome like the main path does: an empty run whose
-            # publish failed leaves the previous, non-empty subscription live in
-            # the repository, which is the one case that must never look green.
+            # publish failed leaves the previous, non-empty subscription live
+            # in the repository, which is the one case that must never look green.
             self._publish_ok = await self._publish_files(
                 publish_paths,
                 combined_output_file=output_file,

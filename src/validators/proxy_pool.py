@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 #: parties; an endless stream must not buffer into memory unbounded.
 _MAX_SOURCE_BODY_BYTES = 8 * 1024 * 1024
 
+#: Wall-clock budget for one source fetch (the whole redirect chain included)
+#: as a multiple of the per-operation ``timeout``.  httpx restarts its read
+#: timer on every chunk, so a slow-drip host holds one stream open far past
+#: any single timeout while staying under the byte cap — and sources are
+#: fetched sequentially, so pool building inherited that stall.  Mirrors
+#: ``sources.manager.DOWNLOAD_TIMEOUT_FACTOR``.
+_DOWNLOAD_BUDGET_FACTOR = 4.0
+
 #: Maximum redirect hops followed for one proxy source. Every hop is
 #: re-validated: a client with ``follow_redirects=True`` would otherwise be
 #: sent to an internal address without any SSRF check.
@@ -109,52 +117,78 @@ def _is_safe_public_http_url(url: str) -> bool:
     return addr.is_global
 
 
-async def _fetch_source(client: httpx.AsyncClient, url: str) -> str:
+async def _fetch_source(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    timeout: float = 10.0,
+) -> str | None:
+    """Fetch one proxy-list source under SSRF, byte and wall-clock budgets.
+
+    Returns:
+        The body text, ``None`` when the body exceeded the byte cap or the
+        wall-clock budget (a truncated body must not be parsed — the missing
+        tail silently skews the pool towards whatever happened to fit), or
+        ``""`` on refusals/HTTP/network errors.
+    """
     headers = {"User-Agent": _USER_AGENT, "Accept": "text/plain,*/*"}
     target = url
     try:
-        for _hop in range(_MAX_REDIRECT_HOPS + 1):
-            if not _is_safe_public_http_url(target):
-                logger.warning(
-                    "Proxy source %s redirects to unsafe URL — refusing.",
-                    url,
-                )
-                return ""
-            async with client.stream(
-                "GET",
-                target,
-                headers=headers,
-            ) as response:
-                if response.status_code in (301, 302, 303, 307, 308):
-                    location = response.headers.get("location")
-                    if not location:
-                        logger.warning(
-                            "Proxy source %s redirected without Location — skipping.",
-                            target,
-                        )
-                        return ""
-                    # Resolve against the *logical* URL of this hop.
-                    target = urljoin(target, location.strip())
-                    continue
-                if response.status_code != 200:
+        async with asyncio.timeout(timeout * _DOWNLOAD_BUDGET_FACTOR):
+            for _hop in range(_MAX_REDIRECT_HOPS + 1):
+                if not _is_safe_public_http_url(target):
                     logger.warning(
-                        "Proxy source %s returned HTTP %d",
+                        "Proxy source %s redirects to unsafe URL — refusing.",
                         url,
-                        response.status_code,
                     )
                     return ""
-                # Stream with a byte cap: response.text would buffer any size.
-                body = bytearray()
-                async for chunk in response.aiter_bytes(64 * 1024):
-                    body.extend(chunk)
-                    if len(body) > _MAX_SOURCE_BODY_BYTES:
+                async with client.stream(
+                    "GET",
+                    target,
+                    headers=headers,
+                ) as response:
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        location = response.headers.get("location")
+                        if not location:
+                            logger.warning(
+                                "Proxy source %s redirected without "
+                                "Location — skipping.",
+                                target,
+                            )
+                            return ""
+                        # Resolve against the *logical* URL of this hop.
+                        target = urljoin(target, location.strip())
+                        continue
+                    if response.status_code != 200:
                         logger.warning(
-                            "Proxy source %s exceeded %d bytes — truncated.",
+                            "Proxy source %s returned HTTP %d",
                             url,
-                            _MAX_SOURCE_BODY_BYTES,
+                            response.status_code,
                         )
-                        break
-                return body.decode("utf-8", errors="replace")
+                        return ""
+                    # Stream with a byte cap: response.text would buffer any size.
+                    body = bytearray()
+                    overflow = False
+                    async for chunk in response.aiter_bytes(64 * 1024):
+                        body.extend(chunk)
+                        if len(body) > _MAX_SOURCE_BODY_BYTES:
+                            logger.warning(
+                                "Proxy source %s exceeded %d bytes — discarded.",
+                                url,
+                                _MAX_SOURCE_BODY_BYTES,
+                            )
+                            overflow = True
+                            break
+                    if overflow:
+                        return None
+                    return body.decode("utf-8", errors="replace")
+    except TimeoutError:
+        logger.warning(
+            "Proxy source %s exceeded its %.0fs wall-clock budget.",
+            url,
+            timeout * _DOWNLOAD_BUDGET_FACTOR,
+        )
+        return None
     except httpx.HTTPError as exc:
         logger.warning("Proxy source fetch failed for %s: %s", url, exc)
         return ""
@@ -193,9 +227,11 @@ async def fetch_proxy_candidates(
     async with httpx.AsyncClient(timeout=timeout_cfg, follow_redirects=False) as client:
         for url in source_urls:
             try:
-                text = await _fetch_source(client, url)
+                text = await _fetch_source(client, url, timeout=timeout)
             except Exception as exc:
                 logger.warning("Proxy source fetch raised for %s: %s", url, exc)
+                continue
+            if not text:
                 continue
             added_from_source = 0
             for proxy in parse_proxy_candidates(text):

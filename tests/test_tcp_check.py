@@ -240,6 +240,28 @@ class TestValidateConfigsTcp:
         assert all(c.latency_ms == 10.0 for c in result)
 
     @pytest.mark.asyncio
+    async def test_proxy_baseline_subtracted_from_latency(self) -> None:
+        """Recorded latency describes the server, not the proxy's dial hop.
+
+        Without the subtraction a fast server behind a congested free proxy
+        was ranked slow (and bounced out of the subscription) on proxy noise.
+        """
+        configs = [Config("vless", "fast.example", 443, "uuid")]
+
+        with patch(
+            "src.validators.tcp_check.tcp_check",
+            new=AsyncMock(return_value=(True, 3000.0)),
+        ):
+            result = await validate_configs_tcp(
+                configs,
+                proxy_urls=["socks5://proxy:1080"],
+                proxy_latency_ms={"socks5://proxy:1080": 2900.0},
+            )
+        assert len(result) == 1
+        # 3000ms measured through the proxy minus its 2900ms dial baseline.
+        assert result[0].latency_ms == 100.0
+
+    @pytest.mark.asyncio
     async def test_some_configs_alive(self) -> None:
         """Mix of alive/dead configs."""
         configs = [

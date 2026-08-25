@@ -8,6 +8,7 @@ Happ (and most VPN clients) consume subscriptions in two formats:
 from __future__ import annotations
 
 import base64
+import binascii
 import contextlib
 import json
 import logging
@@ -17,6 +18,7 @@ import tempfile
 from src.parsers.base import Config
 from src.repo_info import github_repo_slug
 from src.utils.paths import resolve_safe_output_path
+from src.validators.country_filter import detect_country
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,28 @@ def _watermark_link() -> str:
     ).decode("utf-8")
 
 
+def is_watermark_vmess(line: str) -> bool:
+    """True for the display-only vmess watermark line.
+
+    Detection is structural (the decoded payload's ``add`` equals 0.0.0.0)
+    rather than an exact string match against :func:`_watermark_link`: the
+    watermark's remark embeds the repo slug of whichever environment wrote
+    the file, so a fast-track run elsewhere used to miss it, re-validate the
+    dummy server as a real config and publish it.
+    """
+    if not line.startswith("vmess://"):
+        return False
+    body = line[len("vmess://") :].split("#", 1)[0].split("?", 1)[0].strip()
+    padded = body + "=" * (-len(body) % 4)
+    try:
+        payload = json.loads(base64.b64decode(padded).decode("utf-8"))
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return str(payload.get("add", "")) == "0.0.0.0"
+
+
 def _safe_raw_link(raw_link: str) -> str | None:
     """Return *raw_link* only when it is a single clean line.
 
@@ -76,6 +100,67 @@ def _safe_raw_link(raw_link: str) -> str | None:
     return raw_link
 
 
+def _vmess_with_country(link: str, code: str) -> str:
+    """Stamp *code* into a vmess link's ``ps`` field, best effort.
+
+    Vmess carries its display name in the base64 JSON payload rather than a
+    URL fragment; some clients ignore fragments on vmess:// links entirely.
+    Any payload that does not decode cleanly is returned unchanged — a lost
+    country label is better than a corrupted subscription entry.
+    """
+    try:
+        payload = link[len("vmess://") :].partition("#")[0]
+        # The wild mixes standard and URL-safe alphabets and drops padding.
+        normalized = payload.replace("-", "+").replace("_", "/")
+        obj = json.loads(
+            base64.b64decode(normalized + "=" * (-len(normalized) % 4)).decode(
+                "utf-8",
+                errors="replace",
+            )
+        )
+        if not isinstance(obj, dict):
+            return link
+        ps = str(obj.get("ps") or "")
+        if detect_country(ps) is not None:
+            return link
+        obj["ps"] = f"{ps}-{code}" if ps else code
+        encoded = base64.b64encode(
+            json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        ).decode("ascii")
+        return "vmess://" + encoded
+    except (binascii.Error, UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return link
+
+
+def _with_country_fragment(config: Config) -> str:
+    """Return the config's raw_link with an explicit country label appended.
+
+    The hourly fast-track revalidation reparses the published subscription,
+    where the source's ``default_country`` hint no longer exists and remarks
+    are often opaque numbers ("5777") that carry no country. Without a
+    country the country filter drops the config before it is even probed,
+    so every fast-track run shrank the published set (observed: 167 → 33
+    within hours). Stamping the ISO code into the link makes the label
+    survive the publish → reparse round-trip for clients as well.
+    """
+    link = config.raw_link
+    country = config.country
+    if not link or not country:
+        return link
+    code = str(country).upper()
+    if detect_country(config.remark) is not None:
+        return link
+    scheme = link.split("://", 1)[0].lower()
+    if scheme == "vmess":
+        return _vmess_with_country(link, code)
+    head, sep, frag = link.partition("#")
+    if not sep or not frag:
+        return f"{head}#{code}"
+    # Append to the still-encoded fragment: an ASCII "-XX" suffix survives
+    # any percent-encoding in front of it and extract_remark() unquotes after.
+    return f"{head}#{frag}-{code}"
+
+
 def generate_plain(configs: list[Config]) -> str:
     """Generate plain text subscription (one link per line).
 
@@ -86,7 +171,7 @@ def generate_plain(configs: list[Config]) -> str:
     """
     links = [_watermark_link()]
     for config in configs:
-        safe = _safe_raw_link(config.raw_link)
+        safe = _safe_raw_link(_with_country_fragment(config))
         if safe:
             links.append(safe)
     return "\n".join(links)

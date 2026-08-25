@@ -62,6 +62,11 @@ def _sanitize_entry(raw: Any) -> dict[str, Any] | None:
     if isinstance(last_seen, bool) or not isinstance(last_seen, int | float):
         return None
     entry["last_seen"] = float(last_seen)
+
+    banned_until = raw.get("banned_until", 0.0)
+    if isinstance(banned_until, bool) or not isinstance(banned_until, int | float):
+        return None
+    entry["banned_until"] = float(banned_until)
     return entry
 
 
@@ -94,11 +99,18 @@ class ProxyHealthHistory:
         window: int = 5,
         ban_after_consecutive_failures: int = 3,
         max_latency_ms: float = 8000.0,
+        ban_seconds: float = 3600.0,
     ) -> None:
         self.records: dict[str, dict[str, Any]] = records or {}
         self.window = max(1, window)
         self.ban_after_consecutive_failures = max(1, ban_after_consecutive_failures)
         self.max_latency_ms = max(1.0, max_latency_ms)
+        # A proxy ban is time-boxed, not permanent: the counter alone excluded
+        # a proxy hit by one transient network event until its whole record
+        # aged out of retention (24h), with no success path in between. After
+        # ``ban_seconds`` the proxy re-enters the pool and a passing probe
+        # resets the counter. 0 disables banning entirely.
+        self.ban_seconds = max(0.0, float(ban_seconds))
 
     @classmethod
     def load(cls, path: str | Path, **kwargs: Any) -> ProxyHealthHistory:
@@ -178,6 +190,7 @@ class ProxyHealthHistory:
                 "consecutive_failures": 0,
                 "latency_ms": [],
                 "last_seen": 0.0,
+                "banned_until": 0.0,
             },
         )
         entry["attempts"] += 1
@@ -185,8 +198,14 @@ class ProxyHealthHistory:
         if success:
             entry["successes"] += 1
             entry["consecutive_failures"] = 0
+            entry["banned_until"] = 0.0
         else:
             entry["consecutive_failures"] += 1
+            if (
+                self.ban_seconds > 0
+                and entry["consecutive_failures"] >= self.ban_after_consecutive_failures
+            ):
+                entry["banned_until"] = time.time() + self.ban_seconds
         if latency_ms is not None and latency_ms > 0:
             entry["latency_ms"].append(latency_ms)
             entry["latency_ms"] = entry["latency_ms"][-self.window :]
@@ -196,10 +215,17 @@ class ProxyHealthHistory:
         entry = self.records.get(key)
         if not entry:
             return False
-        return (
+        if (
             int(entry.get("consecutive_failures", 0))
-            >= self.ban_after_consecutive_failures
-        )
+            < self.ban_after_consecutive_failures
+        ):
+            return False
+        # The counter alone is not the ban — it only marks the proxy as
+        # ban-worthy.  The deadline decides: records predating the deadline
+        # field (``banned_until`` missing/0) count as expired, so a proxy
+        # banned under the old scheme is re-probed instead of frozen out
+        # until retention forgets it a day later.
+        return time.time() < float(entry.get("banned_until") or 0.0)
 
     def _avg_latency(self, proxy_url: str) -> float:
         entry = self.records.get(proxy_url.strip())

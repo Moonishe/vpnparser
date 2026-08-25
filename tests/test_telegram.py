@@ -740,235 +740,45 @@ class FakeResponse:
         return None
 
 
-class TestCallLlm:
-    """Cover lines 575-613."""
-
-    def test_success_returns_content(self, monkeypatch) -> None:
-        response_data = {"choices": [{"message": {"content": "  Interesting fact  "}}]}
-        monkeypatch.setattr(
-            telegram_module.urllib.request,
-            "urlopen",
-            lambda req, timeout=15: FakeResponse(
-                json.dumps(response_data).encode("utf-8")
-            ),
-        )
-        result = telegram_module._call_llm("fake-key", "prompt")
-        assert result == "Interesting fact"
-
-    def test_no_choices_returns_none(self, monkeypatch) -> None:
-        response_data = {"choices": []}
-        monkeypatch.setattr(
-            telegram_module.urllib.request,
-            "urlopen",
-            lambda req, timeout=15: FakeResponse(
-                json.dumps(response_data).encode("utf-8")
-            ),
-        )
-        assert telegram_module._call_llm("fake-key", "prompt") is None
-
-    def test_empty_content_returns_none(self, monkeypatch) -> None:
-        response_data = {"choices": [{"message": {"content": ""}}]}
-        monkeypatch.setattr(
-            telegram_module.urllib.request,
-            "urlopen",
-            lambda req, timeout=15: FakeResponse(
-                json.dumps(response_data).encode("utf-8")
-            ),
-        )
-        assert telegram_module._call_llm("fake-key", "prompt") is None
-
-    def test_exception_returns_none(self, monkeypatch, caplog) -> None:
-        def fake_urlopen(req, timeout=15):
-            raise OSError("network error")
-
-        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
-        caplog.set_level("WARNING")
-        result = telegram_module._call_llm("fake-key", "prompt")
-        assert result is None
-        assert "LLM API call failed" in caplog.text
-
-    def test_no_valid_choices_key(self, monkeypatch) -> None:
-        response_data = {"not_choices": []}
-        monkeypatch.setattr(
-            telegram_module.urllib.request,
-            "urlopen",
-            lambda req, timeout=15: FakeResponse(
-                json.dumps(response_data).encode("utf-8")
-            ),
-        )
-        assert telegram_module._call_llm("fake-key", "prompt") is None
-
-    def test_content_not_string(self, monkeypatch) -> None:
-        response_data = {"choices": [{"message": {"content": 123}}]}
-        monkeypatch.setattr(
-            telegram_module.urllib.request,
-            "urlopen",
-            lambda req, timeout=15: FakeResponse(
-                json.dumps(response_data).encode("utf-8")
-            ),
-        )
-        assert telegram_module._call_llm("fake-key", "prompt") is None
-
-    # --- the key must never reach the log (regression) -------------------
-
-    def test_key_with_newline_is_rejected_before_the_request(
-        self, monkeypatch, caplog
-    ) -> None:
-        """A CR/LF in LLM_API_KEY used to print the whole key at WARNING.
-
-        http.client rejects the header with ``ValueError("Invalid header value
-        %r" % value)`` — and that value is ``Bearer <key>``, which the catch-all
-        logged verbatim. The bot token is screened for control characters the
-        same way; the LLM key was not.
-        """
-        secret = "sk-SUPERSECRET-abcdef123456\nX-Injected: 1"
-
-        def fake_urlopen(req, timeout=15):  # pragma: no cover - must not run
-            raise AssertionError("request must not be attempted")
-
-        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
-        caplog.set_level("WARNING")
-        assert telegram_module._call_llm(secret, "prompt") is None
-        assert "SUPERSECRET" not in caplog.text
-        assert "control characters" in caplog.text
-
-    def test_key_is_redacted_from_unexpected_errors(self, monkeypatch, caplog) -> None:
-        """Any error quoting the Authorization header is masked before logging."""
-        secret = "sk-SUPERSECRET-abcdef123456"
-
-        def fake_urlopen(req, timeout=15):
-            raise ValueError(f"Invalid header value b'Bearer {secret}'")
-
-        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
-        caplog.set_level("WARNING")
-        assert telegram_module._call_llm(secret, "prompt") is None
-        assert "SUPERSECRET" not in caplog.text
-        assert "<redacted>" in caplog.text
-
-
-class TestRedactSecret:
-    """Cover the masking helper used for the LLM key."""
-
-    def test_empty_secret_returns_text_unchanged(self) -> None:
-        clean = "nothing to hide"
-        assert telegram_module._redact_secret(clean, "") == clean
-
-    def test_escaped_spelling_is_masked_too(self) -> None:
-        """``%r`` renders control characters escaped, not verbatim."""
-        secret = "top\nsecret"
-        message = repr(f"Bearer {secret}")
-        assert "top" not in telegram_module._redact_secret(message, secret)
-
-
 # ── _generate_fun_fact ──────────────────────────────────────────────────
 
 
 class TestGenerateFunFact:
-    """Cover lines 624-684."""
+    """Rotation over static facts, deduplicated against saved history."""
 
-    def test_no_api_key_uses_fallback(self, monkeypatch) -> None:
+    def test_returns_fact_and_saves_it(self, monkeypatch) -> None:
         monkeypatch.setattr(telegram_module, "_load_facts_history", lambda: [])
-        monkeypatch.setattr(telegram_module, "_save_fact", lambda f: None)
-        result = telegram_module._generate_fun_fact("")
+        saved = []
+        monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
+        result = telegram_module._generate_fun_fact()
         assert isinstance(result, str)
         assert len(result) > 0
-
-    def test_no_api_key_with_history(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            telegram_module,
-            "_load_facts_history",
-            lambda: [telegram_module._FACT_FALLBACK_NO_KEY],
-        )
-        saved = []
-
-        def fake_save(fact: str) -> None:
-            saved.append(fact)
-
-        monkeypatch.setattr(telegram_module, "_save_fact", fake_save)
-        result = telegram_module._generate_fun_fact("")
         assert result in saved
 
-    def test_api_key_success(self, monkeypatch) -> None:
-        monkeypatch.setattr(telegram_module, "_load_facts_history", lambda: [])
-        monkeypatch.setattr(
-            telegram_module,
-            "_call_llm",
-            lambda key, prompt: "unique llm fact",
-        )
-        saved = []
-
-        def fake_save(fact: str) -> None:
-            saved.append(fact)
-
-        monkeypatch.setattr(telegram_module, "_save_fact", fake_save)
-        result = telegram_module._generate_fun_fact("real-key")
-        assert result == "unique llm fact"
-        assert "unique llm fact" in saved
-
-    def test_api_key_duplicate_retries_then_fallback(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            telegram_module,
-            "_load_facts_history",
-            lambda: ["existing fact"],
-        )
-        call_count = [0]
-
-        def fake_call_llm(key, prompt):
-            call_count[0] += 1
-            return "existing fact"  # Always returns duplicate
-
-        monkeypatch.setattr(telegram_module, "_call_llm", fake_call_llm)
-
-        saved = []
-        monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
-
-        result = telegram_module._generate_fun_fact("real-key")
-        # All retries failed, should return a fallback
-        assert result in telegram_module._FACT_FALLBACKS
-        assert result in saved
-
-    def test_api_key_all_fallbacks_used(self, monkeypatch) -> None:
-        all_fallbacks_set = {f.lower().strip() for f in telegram_module._FACT_FALLBACKS}
-        monkeypatch.setattr(
-            telegram_module,
-            "_load_facts_history",
-            lambda: list(telegram_module._FACT_FALLBACKS),
-        )
-        monkeypatch.setattr(telegram_module, "_call_llm", lambda key, prompt: None)
-
-        saved = []
-        monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
-
-        result = telegram_module._generate_fun_fact("real-key")
-        assert result in telegram_module._FACT_FALLBACKS
-        assert result in saved
-
-    def test_api_key_api_fails_uses_fallback(self, monkeypatch) -> None:
-        monkeypatch.setattr(telegram_module, "_load_facts_history", lambda: [])
-        monkeypatch.setattr(telegram_module, "_call_llm", lambda key, prompt: None)
-        saved = []
-        monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
-
-        result = telegram_module._generate_fun_fact("real-key")
-        assert result in telegram_module._FACT_FALLBACKS
-        assert result in saved
-
-    def test_api_key_with_recent_history(self, monkeypatch) -> None:
-        history = ["old fact 1", "old fact 2"]
+    def test_skips_facts_already_in_history(self, monkeypatch) -> None:
+        history = [telegram_module._FACT_FALLBACK_NO_KEY]
+        history.extend(telegram_module._FACT_FALLBACKS[:-1])
         monkeypatch.setattr(telegram_module, "_load_facts_history", lambda: history)
-        seen_prompts = []
+        saved = []
+        monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
+        result = telegram_module._generate_fun_fact()
+        # The only unseen fact left is the last fallback.
+        assert result == telegram_module._FACT_FALLBACKS[-1]
+        assert result in saved
 
-        def fake_call_llm(key, prompt):
-            seen_prompts.append(prompt)
-            return "brand new fact"
-
-        monkeypatch.setattr(telegram_module, "_call_llm", fake_call_llm)
-        monkeypatch.setattr(telegram_module, "_save_fact", lambda f: None)
-
-        result = telegram_module._generate_fun_fact("real-key")
-        assert result == "brand new fact"
-        assert "old fact 1" in seen_prompts[0]
-        assert "old fact 2" in seen_prompts[0]
+    def test_all_used_restarts_rotation(self, monkeypatch) -> None:
+        all_facts = [telegram_module._FACT_FALLBACK_NO_KEY]
+        all_facts.extend(telegram_module._FACT_FALLBACKS)
+        monkeypatch.setattr(
+            telegram_module,
+            "_load_facts_history",
+            lambda: list(all_facts),
+        )
+        saved = []
+        monkeypatch.setattr(telegram_module, "_save_fact", lambda f: saved.append(f))
+        result = telegram_module._generate_fun_fact()
+        assert result in all_facts
+        assert result in saved
 
 
 # ── _send_telegram ──────────────────────────────────────────────────────
@@ -1331,14 +1141,14 @@ class TestSendNotification:
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
         monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
         monkeypatch.setattr(telegram_module, "_send_telegram", lambda t, c, text: True)
-        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda k: "fact")
+        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda: "fact")
         assert telegram_module.send_notification(configs_count="42")  # type: ignore[arg-type]
 
     def test_configs_count_conversion_failure_defaults_zero(self, monkeypatch) -> None:
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
         monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
         monkeypatch.setattr(telegram_module, "_send_telegram", lambda t, c, text: True)
-        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda k: "fact")
+        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda: "fact")
         assert telegram_module.send_notification(configs_count="invalid")  # type: ignore[arg-type]
 
     def test_configs_count_and_countries_reach_the_message(self, monkeypatch) -> None:
@@ -1350,7 +1160,7 @@ class TestSendNotification:
         """
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
         monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
-        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda k: "fact")
+        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda: "fact")
         sent: dict[str, str] = {}
 
         def fake_send(_token, _chat_id, text) -> bool:
@@ -1372,7 +1182,7 @@ class TestSendNotification:
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
         monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
         monkeypatch.setattr(telegram_module, "_send_telegram", lambda t, c, text: True)
-        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda k: "fact")
+        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda: "fact")
         monkeypatch.setenv("GITHUB_OWNER", "owner")
         monkeypatch.setenv("GITHUB_REPO", "repo")
         monkeypatch.setenv("GITHUB_BRANCH", "main")
@@ -1654,7 +1464,7 @@ class TestRemainingCoverage:
             saved.append(fact)
 
         monkeypatch.setattr(telegram_module, "_save_fact", fake_save)
-        result = telegram_module._generate_fun_fact("")
+        result = telegram_module._generate_fun_fact()
         assert result in all_fallbacks
         assert result in saved
 
@@ -1795,3 +1605,185 @@ def test_trend_alert_silent_without_history_or_change(tmp_path) -> None:
         __import__("json").dumps(only_one), encoding="utf-8"
     )
     assert tg._format_trend_alert(str(tmp_path / "run-summary.json")) == ""
+
+
+# --- source degradation alerts ------------------------------------------------
+
+
+def test_source_alerts_lists_failed_sources() -> None:
+    summary = {
+        "sources": {
+            "ok": 15,
+            "failed": 1,
+            "total": 16,
+            "errors": [
+                {
+                    "source": "igareck-white-vless-reality-mobile-2",
+                    "error": "url source 'https://example.invalid/x.txt' is empty",
+                }
+            ],
+        }
+    }
+    result = telegram_module._format_source_alerts(summary)
+    assert "<b>Проблемные источники</b>:" in result
+    assert "igareck-white-vless-reality-mobile-2" in result
+    assert "is empty" in result
+
+
+def test_source_alerts_empty_when_no_errors() -> None:
+    assert telegram_module._format_source_alerts({}) == ""
+    assert telegram_module._format_source_alerts({"sources": {}}) == ""
+    assert telegram_module._format_source_alerts({"sources": {"errors": []}}) == ""
+
+
+def test_source_alerts_truncates_errors_and_caps_lines() -> None:
+    errors = [{"source": f"src-{i}", "error": "x" * 200} for i in range(8)]
+    result = telegram_module._format_source_alerts({"sources": {"errors": errors}})
+    assert "… и ещё 3" in result
+    assert "x" * 200 not in result
+    assert "x" * 97 + "…" in result
+
+
+# --- publish delta ------------------------------------------------------------
+
+
+def test_format_delta_section_counts_added_and_removed() -> None:
+    current = {"a://1", "b://2"}
+    previous = {"b://2", "c://3"}
+    result = telegram_module._format_delta_section(current, previous)
+    assert result.startswith("🔄")
+    assert "новых 1" in result
+    assert "убрано 1" in result
+
+
+def test_format_delta_section_only_additions() -> None:
+    result = telegram_module._format_delta_section({"a://1", "b://2"}, {"a://1"})
+    assert "новых 1" in result
+    assert "убрано" not in result
+
+
+def test_format_delta_section_silent_without_previous() -> None:
+    assert telegram_module._format_delta_section({"a://1"}, set()) == ""
+
+
+def test_format_delta_section_silent_when_identical() -> None:
+    lines = {"a://1", "b://2"}
+    assert telegram_module._format_delta_section(lines, lines) == ""
+
+
+def test_decode_subscription_lines_decodes_base64_and_skips_watermark() -> None:
+    import base64 as _b64
+
+    watermark = "vmess://" + _b64.b64encode(b'{"add":"0.0.0.0"}').decode()
+    body = "\n".join(["ss://YWJj", watermark, "vless://xyz"])
+    raw = _b64.b64encode(body.encode("utf-8")).decode("ascii")
+    assert telegram_module._decode_subscription_lines(raw) == {
+        "ss://YWJj",
+        "vless://xyz",
+    }
+
+
+def test_previous_published_lines_requires_github_sha(monkeypatch) -> None:
+    monkeypatch.delenv("GITHUB_SHA", raising=False)
+    assert telegram_module._previous_published_lines("output/subscription.txt") == set()
+
+
+def test_previous_published_lines_rejects_bad_sha(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_SHA", "../main;rm -rf /")
+    assert telegram_module._previous_published_lines("output/subscription.txt") == set()
+
+
+def test_previous_published_lines_reads_git_show(monkeypatch) -> None:
+    import base64 as _b64
+    import subprocess as _sp
+
+    monkeypatch.setenv("GITHUB_SHA", "abc123def4567890")
+    seen_argv = []
+
+    def fake_run(argv, **kwargs):
+        seen_argv.append(argv)
+        payload = _b64.b64encode(b"ss://abc\n").decode("ascii")
+        return _sp.CompletedProcess(argv, 0, stdout=payload, stderr="")
+
+    monkeypatch.setattr(telegram_module.subprocess, "run", fake_run)
+    lines = telegram_module._previous_published_lines("output/subscription.txt")
+    assert seen_argv[0] == [
+        "git",
+        "show",
+        "abc123def4567890:output/subscription.txt",
+    ]
+    assert lines == {"ss://abc"}
+
+
+# --- coverage: watermark fallback, current-lines read, git failure, wiring ----
+
+
+def test_is_watermark_line_false_for_undecodable_body() -> None:
+    """A vmess link with a non-base64 body is not the watermark."""
+    assert telegram_module._is_watermark_line("vmess://@@@ not base64") is False
+
+
+def test_current_subscription_lines_reads_and_decodes(tmp_path, monkeypatch) -> None:
+    import base64 as _b64
+
+    sub = tmp_path / "sub.txt"
+    sub.write_text(_b64.b64encode(b"ss://abc\n").decode("ascii"), encoding="utf-8")
+    monkeypatch.setattr(telegram_module, "resolve_safe_output_path", lambda p: sub)
+    assert telegram_module._current_subscription_lines("output/subscription.txt") == {
+        "ss://abc"
+    }
+
+
+def test_previous_published_lines_git_failure_returns_empty(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_SHA", "abc123def4567890")
+
+    def boom(*args, **kwargs):
+        raise OSError("git unavailable")
+
+    monkeypatch.setattr(telegram_module.subprocess, "run", boom)
+    assert telegram_module._previous_published_lines("output/subscription.txt") == set()
+
+
+def test_send_notification_includes_alerts_and_delta(monkeypatch) -> None:
+    """Alerts and the publish delta all land in the outgoing message."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+    summary = {
+        "validation": {
+            "lists": {
+                "blacklist": {"xray_checked": 300, "xray_alive": 3},
+                "whitelist": {"xray_checked": 100, "xray_alive": 3},
+            }
+        },
+        "sources": {"errors": [{"source": "src-x", "error": "empty or not found"}]},
+    }
+    monkeypatch.setattr(telegram_module, "_load_run_summary", lambda p: summary)
+    monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda: "факт")
+    monkeypatch.setattr(telegram_module, "_format_trend_alert", lambda p: "")
+    monkeypatch.setattr(
+        telegram_module,
+        "_current_subscription_lines",
+        lambda p: {"a://1", "b://2"},
+    )
+    monkeypatch.setattr(
+        telegram_module,
+        "_previous_published_lines",
+        lambda p: {"b://2", "c://3"},
+    )
+    sent = {}
+
+    def fake_send(token, chat_id, text):
+        sent["text"] = text
+        return True
+
+    monkeypatch.setattr(telegram_module, "_send_telegram", fake_send)
+
+    assert telegram_module.send_notification(configs_count=2)
+
+    text = sent["text"]
+    # Delta section rendered from the patched sets.
+    assert "новых 1" in text
+    assert "убрано 1" in text
+    # Source degradation alert present.
+    assert "Проблемные источники" in text
+    assert "src-x" in text

@@ -53,14 +53,22 @@ notification goes out.
 
 ## When pipeline publishes 0 configs
 
+An empty run no longer wipes the subscription: with
+`publisher.min_publish_configs` (default 10) the watermark-only placeholders
+are written locally but NOT published — only metadata (`run-summary.json`,
+stats/health history) goes out, and the previous live files stay untouched in
+the repository. A red "Verify output" CI step after such a run means the run
+was empty, not that the published subscription was destroyed.
+
 1. Open `output/run-summary.json` and read `status` and failure reasons.
 2. Check `pipeline.log` / GitHub Actions logs for:
    - Proxy pool empty (no free SOCKS5 proxies survived self-check)
    - Xray failures (binary missing, timeout, unsupported configs)
    - All sources dead (fetch failures)
-3. If the previous run was healthy, **roll back** to the last known-good commit --
-   see [Rolling back a bad publish](#rolling-back-a-bad-publish); a run spans
-   several commits, so reverting one of them is not enough.
+3. The repository keeps serving the last healthy subscription until a run
+   with real content publishes; no rollback is needed for the empty run
+   itself. Roll back only if a *published bad* set needs undoing -- see
+   [Rolling back a bad publish](#rolling-back-a-bad-publish).
 4. If zero output persists > 2 runs, disable automatic publish and investigate manually:
    ```bash
    python -m src.main --run -v
@@ -110,7 +118,9 @@ git push --force-with-lease origin main
 
 ## Source health
 
-A source may be banned automatically after consecutive bad runs. To inspect:
+A source may be banned automatically once its cumulative checked sample (across
+runs, until `quality.source_min_checked` is met) shows a persistently bad alive
+rate. To inspect:
 
 - `output/health-history.json` -- per-config health.
 - `output/proxy-health-history.json` -- free proxy health.
@@ -135,8 +145,9 @@ Locally the binary comes from `XRAY_EXECUTABLE` (see `.env.example`). A relative
 value is resolved from the project root, not the working directory, and a bare
 name falls back to `PATH`. With `xray_required: true` in `config/settings.yaml`
 a missing binary is fail-closed: the liveness stage drops every config and the
-run publishes empty files, so check this first when output is empty locally but
-fine in CI.
+run ends empty (placeholders written locally, remote subscription untouched —
+see `publisher.min_publish_configs`), so check this first when output is empty
+locally but fine in CI.
 
 ### Suspicious binary
 

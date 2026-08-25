@@ -349,15 +349,26 @@ _AMBIGUOUS_CODE_RE = re.compile(
     r"(?:^|[^A-Za-z])(" + "|".join(_AMBIGUOUS_CODES) + r")(?=[-\d\]/|)])",
 )
 
-# Hostname prefix patterns: de01.vpn.com, nl-ams.vpn.net, us01.server.net
+# An ambiguous code that reads as a common word collides with its word
+# meaning even behind a delimiter: "SERVER-ID-07" is *identifier #7*, not
+# Indonesia.  When "ID" directly follows another bare word (separated by a
+# delimiter), it is an ordinal label — skip that occurrence and keep looking.
+# Only "ID" gets this treatment: "server-US-01" genuinely means a US server,
+# and dropping it would cost far more than the rare misread costs.
+_PRECEDING_WORD_TAIL_RE = re.compile(r"[A-Za-z]{2,}\Z")
+_ID_DELIMITER_CHARS = " -_[|(/"
+
+# Hostname prefix patterns: de01.vpn.com, nl-ams.vpn.net, us-east.server.net
 # Matches a 2-letter country code at the start of a hostname segment.
 # Case-insensitive — hostnames are case-insensitive.
-# Safe codes accept hyphen-or-digit after (nl-ams, de01); ambiguous codes
-# require a DIGIT after, so reverse DNS "in-addr.arpa", "my-server.",
-# "it-support." don't false-positive as IN / MY / IT.  Ambiguous codes
-# with a hyphen (e.g. "id-jakarta") are still detected via the city regex.
+# Safe codes accept hyphen-or-digit-or-dot after (nl-ams, de01, ru.) — the dot
+# covers domain-style stamps like "ru.store.x.com" where nothing follows the
+# code but another label; ambiguous codes require a DIGIT after, so reverse
+# DNS "in-addr.arpa", "my-server.", "it-support." don't false-positive as
+# IN / MY / IT.  Ambiguous codes with a hyphen (e.g. "id-jakarta") are still
+# detected via the city regex.
 _HOST_COUNTRY_RE = re.compile(
-    r"(?:^|\.|[-_])(" + "|".join(_SAFE_CODES) + r")[-\d]",
+    r"(?:^|\.|[-_])(" + "|".join(_SAFE_CODES) + r")[-\d.]",
     re.IGNORECASE,
 )
 _HOST_AMBIGUOUS_RE = re.compile(
@@ -420,11 +431,16 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
 
     Tries in order:
     1. Flag emoji (🇩🇪 → DE)
-    2. City names of 3+ characters (frankfurt, amsterdam, tokyo...)
-    3. Full country names (germany, usa, russia...)
-    4. Standalone 2-letter code (DE, US-01, [FI])
+    2. Explicit 2-letter code in the remark (DE, US-01, [FI])
+    3. City names of 3+ characters (frankfurt, amsterdam, tokyo...)
+    4. Full country names (germany, usa, russia...)
     5. Two-letter city/state abbreviation in the remark (LA-01, [TX])
-    6. Hostname country prefix (de01.vpn.com, us-east.server.net)
+    6. Hostname country prefix (de01.vpn.com, ru.store.x.com)
+
+    The explicit remark code outranks city/name matches: hostings routinely
+    embed their POP city into hostnames ("de01.frankfurt.hoster.net" fronting
+    a Dutch server), so a city match in address/sni must never override an
+    operator-stamped code in the remark.
 
     All non-empty text fields (remark + extra_fields) are combined into a
     single string so each regex runs **once** instead of once per field.
@@ -452,24 +468,32 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
         if emoji in combined:
             return code
 
-    # 2. City names (3+ chars) — single regex search on combined text.
+    # 2. Explicit 2-letter codes in the remark — most reliable signal.
+    #    Safe codes (DE, JP, NL ...) use the loose boundary rule; ambiguous
+    #    codes (US, IN, ID, AT, BE, IT, MY, TH, ES) require a structural
+    #    delimiter after, to avoid "CONTACT US" / "SERVER ID" / "5TH FLOOR".
+    #    An "ID" directly following another word ("SERVER-ID-07") is an
+    #    ordinal identifier, not Indonesia: skip that occurrence.
+    if remark:
+        m = _CODE_RE.search(remark)
+        if m:
+            return m.group(1).upper()
+        for m in _AMBIGUOUS_CODE_RE.finditer(remark):
+            if m.group(1).upper() == "ID":
+                head = remark[: m.start()].rstrip(_ID_DELIMITER_CHARS)
+                if head and _PRECEDING_WORD_TAIL_RE.search(head):
+                    continue
+            return m.group(1).upper()
+
+    # 3. City names (3+ chars) — single regex search on combined text.
     m = _CITY_PATTERN.search(combined)
     if m:
         return _CITY_TO_CODE[m.group(1).lower()]
 
-    # 3. Full country names — single regex search on combined text.
+    # 4. Full country names — single regex search on combined text.
     m = _NAME_PATTERN.search(combined)
     if m:
         return _NAME_TO_CODE[m.group(1).lower()]
-
-    # 4. Standalone 2-letter codes — check remark first (most reliable).
-    #    Safe codes (DE, JP, NL ...) use the loose boundary rule; ambiguous
-    #    codes (US, IN, ID, AT, BE, IT, MY, TH, ES) require a structural
-    #    delimiter after, to avoid "CONTACT US" / "SERVER ID" / "5TH FLOOR".
-    if remark:
-        m = _CODE_RE.search(remark) or _AMBIGUOUS_CODE_RE.search(remark)
-        if m:
-            return m.group(1).upper()
 
     # 5. Two-letter city/state abbreviations — remark only, uppercase, and
     #    delimiter-anchored.  Runs after the country codes so "CA-01" is read

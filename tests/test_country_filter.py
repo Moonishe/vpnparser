@@ -236,6 +236,36 @@ def test_long_city_names_still_match_anywhere() -> None:
     assert detect_country("", "frankfurt.example.net") == "DE"
 
 
+# ---------------------------------------------------------------------------
+# Remark priority: an explicit code must outrank cities in address/sni
+# ---------------------------------------------------------------------------
+
+
+def test_remark_code_outranks_city_in_address() -> None:
+    """Hostings embed POP cities into hostnames ("de01.frankfurt...").
+
+    The city match used to run before the remark code, mislabeling a Dutch
+    server as DE — and the country filter then silently dropped it.
+    """
+    assert detect_country("NL-01", "de01.frankfurt.hoster.net") == "NL"
+    assert detect_country("RU-01", "washington.cloud.ruvds.net") == "RU"
+
+
+def test_server_id_label_is_not_indonesia() -> None:
+    """'SERVER-ID-07' is identifier #7, not Indonesia."""
+    assert detect_country("SERVER-ID-07") is None
+    assert detect_country("server-id-07") is None
+    assert detect_country("NODE ID-07") is None
+    # ...while a genuine Indonesian remark still detects.
+    assert detect_country("ID-07") == "ID"
+    assert detect_country("[ID]-07") == "ID"
+
+
+def test_hostname_dot_suffix_stamps_country() -> None:
+    """Domain-style stamps like 'ru.store.x.com' are detected via the dot."""
+    assert detect_country("", "ru.store.x.com") == "RU"
+
+
 def test_filter_by_country_detects_country_when_none() -> None:
     """Line 491: detect_country called when cfg.country is None."""
     cfg = Config(

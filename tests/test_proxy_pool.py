@@ -226,17 +226,57 @@ async def test_fetch_source_refuses_private_redirect() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_source_truncates_oversized_body(
+async def test_fetch_source_discards_oversized_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(proxy_pool_module, "_MAX_SOURCE_BODY_BYTES", 10)
-    # Two chunks of 64 KiB each: the second must never reach the output once
-    # the byte cap is exceeded by the first.
+    # Two chunks of 64 KiB each: once the byte cap is exceeded the whole body
+    # is discarded (None) — a truncated list would silently skew the pool.
     client = _stream_client([(200, b"a" * 65536 + b"b" * 65536, {})])
 
     text = await _fetch_source(client, "https://example.com/proxies.txt")
-    assert "b" not in text
-    assert len(text.encode("utf-8")) <= 64 * 1024
+    assert text is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_wall_clock_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slow-drip stream must hit the overall deadline, not read-timeout forever.
+
+    httpx restarts its read timer on every chunk; without a wall-clock budget
+    one dripping source stalled sequential pool construction indefinitely.
+    """
+    import asyncio as _asyncio
+
+    monkeypatch.setattr(proxy_pool_module, "_DOWNLOAD_BUDGET_FACTOR", 0.0)
+
+    async def drip_forever(chunk_size: int):
+        while True:
+            yield b"x"
+            await _asyncio.sleep(0.01)
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = 200
+    response.headers = {}
+    response.aiter_bytes = drip_forever
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=response)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    client.stream = MagicMock(return_value=ctx)
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert text is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_redirect_without_location() -> None:
+    client = _stream_client([(301, b"", {})])
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert text == ""
+    assert client.stream.call_count == 1
 
 
 # ---------------------------------------------------------------------------

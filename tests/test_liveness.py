@@ -2952,3 +2952,236 @@ class TestVerificationTtl:
         assert len(calls) == 1
         stats = lv.context.liveness_stats["lists"]["blacklist"]
         assert "xray_fresh_verified" not in stats
+
+    async def test_ttl_fresh_failure_gets_standard_retry(self, monkeypatch) -> None:
+        """A failed fast re-probe must be retried before it counts toward a ban.
+
+        The TTL path probes with attempts_per_config=1; without the retry,
+        two unlucky single-probe runs in a row banned exactly the servers
+        that had recently passed (2 consecutive failures -> 12h ban).
+        """
+        lv = _make_liveness(
+            _xray_settings(
+                verification_ttl_minutes=60,
+                xray_attempts_per_config=2,
+            ),
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        fresh_cfg = _make_config("fresh.com", 4000)
+        lv.health.update([fresh_cfg])
+        record = lv.health.load()["configs"][lv.health.config_key(fresh_cfg)]
+        record["last_alive"] = int(time.time())
+
+        calls: list[tuple[list[str], int | None]] = []
+
+        async def mock_xray(configs, **kwargs):
+            calls.append(
+                ([c.address for c in configs], kwargs.get("attempts_per_config"))
+            )
+            if len(calls) == 1:
+                # The cheap single re-probe transiently fails.
+                return []
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        result = await lv.validate_configs(
+            [fresh_cfg],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        # Second call happened, with standard attempts, and the config survived.
+        assert [addr for addr, _ in calls] == [["fresh.com"], ["fresh.com"]]
+        assert calls[0][1] == 1
+        assert calls[1][1] == 2
+        assert [cfg.address for cfg in result] == ["fresh.com"]
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["xray_fresh_retried"] == 1
+
+
+# ============================================================================
+# Mid-run pool death check (_pool_died_after_empty_list)
+# ============================================================================
+
+
+class TestPoolDiedAfterEmptyList:
+    async def test_partial_death_prunes_dead_proxies(self, monkeypatch) -> None:
+        lv = _make_liveness(
+            {"validator": {"proxy_pool": {"enabled": True}}},
+        )
+        lv._validator_proxy_urls_cache = [
+            "socks5://10.0.0.1:1080",
+            "socks5://10.0.0.2:1080",
+        ]
+        recorded: list[tuple[str, bool]] = []
+
+        class FakeHistory:
+            def record(self, proxy_url: str, success: bool, latency_ms=None):
+                recorded.append((proxy_url, success))
+
+        lv._proxy_health_history = FakeHistory()
+
+        async def fake_connects(proxy_url, **kwargs):
+            return proxy_url == "socks5://10.0.0.2:1080"
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.proxy_connects",
+            fake_connects,
+        )
+
+        await lv._pool_died_after_empty_list("blacklist")
+
+        assert lv._validator_proxy_urls_cache == ["socks5://10.0.0.2:1080"]
+        assert sorted(recorded) == [
+            ("socks5://10.0.0.1:1080", False),
+            ("socks5://10.0.0.2:1080", True),
+        ]
+
+    async def test_total_death_invalidates_cache_once(self, monkeypatch) -> None:
+        lv = _make_liveness(
+            {"validator": {"proxy_pool": {"enabled": True}}},
+        )
+        lv._validator_proxy_urls_cache = ["socks5://10.0.0.1:1080"]
+
+        connect_calls: list[str] = []
+
+        async def fake_connects(proxy_url, **kwargs):
+            connect_calls.append(proxy_url)
+            return False
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.proxy_connects",
+            fake_connects,
+        )
+
+        await lv._pool_died_after_empty_list("blacklist")
+        assert lv._validator_proxy_urls_cache is None
+        assert lv._pool_refetch_used is True
+
+        # A second zero-alive list in the same run does not re-fetch again.
+        await lv._pool_died_after_empty_list("whitelist")
+        assert len(connect_calls) == 1
+
+    async def test_disabled_pool_is_a_noop(self, monkeypatch) -> None:
+        lv = _make_liveness({"validator": {"proxy_pool": {"enabled": False}}})
+        called = False
+
+        async def fake_connects(proxy_url, **kwargs):
+            nonlocal called
+            called = True
+            return False
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.proxy_connects",
+            fake_connects,
+        )
+        lv._pool_refetch_used = False
+        lv._validator_proxy_urls_cache = None
+        await lv._pool_died_after_empty_list("blacklist")
+        assert not called
+
+    async def test_refresh_knob_disabled_is_a_noop(self, monkeypatch) -> None:
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "proxy_pool": {
+                        "enabled": True,
+                        "health": {"refresh_if_below_min": False},
+                    },
+                },
+            },
+        )
+        called = False
+
+        async def fake_connects(proxy_url, **kwargs):
+            nonlocal called
+            called = True
+            return False
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.proxy_connects",
+            fake_connects,
+        )
+        lv._validator_proxy_urls_cache = ["socks5://10.0.0.1:1080"]
+        await lv._pool_died_after_empty_list("blacklist")
+        assert not called
+        assert lv._validator_proxy_urls_cache == ["socks5://10.0.0.1:1080"]
+
+    async def test_explicit_only_cache_is_a_noop(self, monkeypatch) -> None:
+        import os
+
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "proxy_pool": {"enabled": True},
+                    "proxy_url": "socks5://exp:1",
+                }
+            },
+        )
+        called = False
+
+        async def fake_connects(proxy_url, **kwargs):
+            nonlocal called
+            called = True
+            return False
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.proxy_connects",
+            fake_connects,
+        )
+        monkeypatch.setattr(os, "environ", {**os.environ})
+        lv._validator_proxy_urls_cache = ["socks5://exp:1"]
+        await lv._pool_died_after_empty_list("blacklist")
+        assert not called
+
+    async def test_healthy_pool_untouched(self, monkeypatch) -> None:
+        """All proxies respond → the zero-alive verdict is the lists', cache stays."""
+        lv = _make_liveness(
+            {"validator": {"proxy_pool": {"enabled": True}}},
+        )
+        lv._validator_proxy_urls_cache = ["socks5://10.0.0.1:1080"]
+
+        async def fake_connects(proxy_url, **kwargs):
+            return True
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.proxy_connects",
+            fake_connects,
+        )
+        await lv._pool_died_after_empty_list("blacklist")
+        assert lv._validator_proxy_urls_cache == ["socks5://10.0.0.1:1080"]
+
+    async def test_selfcheck_without_history_still_prunes(self, monkeypatch) -> None:
+        lv = _make_liveness(
+            {"validator": {"proxy_pool": {"enabled": True}}},
+        )
+        lv._proxy_health_history = None
+        lv._validator_proxy_urls_cache = [
+            "socks5://10.0.0.1:1080",
+            "socks5://10.0.0.2:1080",
+        ]
+
+        async def fake_connects(proxy_url, **kwargs):
+            return proxy_url.endswith(":1080") and "10.0.0.2" in proxy_url
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.proxy_connects",
+            fake_connects,
+        )
+        await lv._pool_died_after_empty_list("blacklist")
+        assert lv._validator_proxy_urls_cache == ["socks5://10.0.0.2:1080"]

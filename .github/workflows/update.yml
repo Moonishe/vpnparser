@@ -10,6 +10,11 @@ on:
     # started 09:19). An off-minute slot starts within a couple of minutes,
     # which is the cheapest way to publish earlier without extra runners.
     - cron: "11 * * * *"
+    # Fast-track revalidation of the already published set, half an hour
+    # after the full run. A full run takes ~2h while published keys die
+    # within hours; this re-probes only the current subscription and
+    # republishes the survivors in minutes.
+    - cron: "41 * * * *"
   workflow_dispatch:
     inputs:
       skip_publish:
@@ -17,6 +22,14 @@ on:
         required: false
         default: "false"
         type: boolean
+      mode:
+        description: "full = fetch all sources, fast = revalidate published set"
+        required: false
+        default: "full"
+        type: choice
+        options:
+          - full
+          - fast
 
 # Queue runs on the same ref instead of cancelling them: publishing walks the
 # output files one Contents API commit at a time, so a cancelled run can leave
@@ -150,12 +163,20 @@ jobs:
         id: pipeline
         run: |
           set +e
-          if [ "${{ inputs.skip_publish }}" = "true" ]; then
-            published=false
-            python -m src.main --run
-          else
+          # Fast-track mode re-probes the published set (minutes) instead of a
+          # full ~2h discovery run; scheduled via the minute-41 cron or by
+          # choosing mode=fast on workflow_dispatch. skip_publish only makes
+          # sense for the full run — a fast-track that publishes nothing has
+          # no reason to exist.
+          if [ "${{ inputs.mode }}" = "fast" ]; then
+            python -m src.main --revalidate-published --publish
             published=true
+          elif [ "${{ inputs.skip_publish }}" = "true" ]; then
+            python -m src.main --run
+            published=false
+          else
             python -m src.main --run --publish
+            published=true
           fi
           code=$?
           set -e
@@ -228,7 +249,6 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
           GITHUB_BRANCH: ${{ env.PUBLISH_BRANCH }}

@@ -357,10 +357,11 @@ def test_edge7_publish_files_dedup(monkeypatch):
 
 
 def test_empty_run_publishes_all_subscription_outputs(tmp_path, monkeypatch):
-    """Failed runs must publish empty subscription*.txt, not only summary.
+    """With min_publish_configs: 0 an empty run publishes the full artifact set.
 
-    Previously no_live_configs / empty-source paths published summary + health
-    only, leaving remote subscription files stale.
+    Default behavior keeps remote subscription files untouched (see
+    test_finish_empty_run_keeps_remote_subscription_by_default); the opt-out
+    preserves the historical publish-everything contract.
     """
     sources = tmp_path / "sources.json"
     sources.write_text('{"sources": []}', encoding="utf-8")
@@ -382,6 +383,7 @@ publisher:
   output_file: {combined}
   mix_output_file: {mix}
   status_output_file: {summary}
+  min_publish_configs: 0
   split_output_files:
     blacklist: {bl}
     whitelist: {wl}

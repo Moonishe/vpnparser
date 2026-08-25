@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import base64
 
-from src.aggregator.output import generate_output, generate_plain, write_subscription
-from src.parsers.base import Config
+from src.aggregator.output import (
+    _watermark_link,
+    _with_country_fragment,
+    generate_output,
+    generate_plain,
+    is_watermark_vmess,
+    write_subscription,
+)
+from src.parsers.base import Config, extract_remark
+from src.validators.country_filter import detect_country
 
 
 def test_generate_output_default_is_base64() -> None:
@@ -141,3 +149,103 @@ def test_generate_plain_drops_raw_link_with_control_chars():
     )
     out = generate_plain([cfg])
     assert "\x00" not in out
+
+
+# --- country stamping (_with_country_fragment) ---
+# The hourly fast-track revalidation reparses the published subscription,
+# where remarks are often opaque numbers. Without a country label in the
+# link, the country filter drops the config before it is even probed and
+# every fast-track run shrank the published set (observed: 167 → 33).
+
+
+def _cfg(raw_link: str, country: str | None, remark: str = "") -> Config:
+    return Config(
+        protocol="vless",
+        address="a.com",
+        port=443,
+        uuid_or_password="uuid",
+        remark=remark,
+        raw_link=raw_link,
+        country=country,
+    )
+
+
+def test_country_stamped_into_link_without_fragment() -> None:
+    link = _with_country_fragment(_cfg("vless://u@a.com:443", "RU"))
+    assert link == "vless://u@a.com:443#RU"
+
+
+def test_country_appended_to_opaque_numeric_fragment() -> None:
+    """The observed real-world case: published remarks like '5777'."""
+    link = _with_country_fragment(_cfg("ss://YWVz@a.com:443#5777", "NL"))
+    assert link == "ss://YWVz@a.com:443#5777-NL"
+    # The stamped label must be detectable after a publish → reparse cycle.
+    assert detect_country(extract_remark(link.split("#", 1)[1])) == "NL"
+
+
+def test_country_not_duplicated_when_remark_already_detectable() -> None:
+    link = _with_country_fragment(
+        _cfg("vless://u@a.com:443#Frankfurt-01", "DE", remark="Frankfurt-01")
+    )
+    assert link == "vless://u@a.com:443#Frankfurt-01"
+
+
+def test_no_country_keeps_raw_link_untouched() -> None:
+    raw = "vless://u@a.com:443#5777"
+    assert _with_country_fragment(_cfg(raw, None)) == raw
+
+
+def test_encoded_fragment_keeps_encoding_before_suffix() -> None:
+    raw = "ss://YWVz@a.com:443#%D0%A4%D0%BB%D0%B0%D0%B3"
+    link = _with_country_fragment(_cfg(raw, "FI"))
+    assert link == raw + "-FI"
+
+
+def test_vmess_ps_field_stamped_with_country() -> None:
+    payload = base64.b64encode(
+        b'{"v":"2","ps":"5777","add":"a.com","port":"443"}'
+    ).decode()
+    link = _with_country_fragment(_cfg(f"vmess://{payload}", "RU"))
+    body = link[len("vmess://") :]
+    obj = __import__("json").loads(base64.b64decode(body + "=" * (-len(body) % 4)))
+    assert obj["ps"] == "5777-RU"
+
+
+def test_vmess_garbage_payload_returned_unchanged() -> None:
+    raw = "vmess://!!!not-base64!!!"
+    assert _with_country_fragment(_cfg(raw, "RU")) == raw
+
+
+def test_generate_plain_uses_stamped_links() -> None:
+    cfg = _cfg("vless://u@a.com:443", "DE")
+    out = generate_plain([cfg])
+    assert "vless://u@a.com:443#DE" in out
+
+
+# ---------------------------------------------------------------------------
+# is_watermark_vmess — structural detection, slug-independent
+# ---------------------------------------------------------------------------
+
+
+def test_watermark_detected_regardless_of_slug(monkeypatch) -> None:
+    """The remark embeds the publishing environment's repo slug.
+
+    A fast-track run elsewhere (fork, local clone) used to compare against
+    its OWN slug and miss the watermark — revalidating the 0.0.0.0 dummy as
+    a real config. Detection must be structural.
+    """
+    monkeypatch.setenv("GITHUB_OWNER", "someone-else")
+    monkeypatch.setenv("GITHUB_REPO", "some-fork")
+    foreign = _watermark_link()
+    assert is_watermark_vmess(foreign)
+
+
+def test_watermark_detection_rejects_real_configs() -> None:
+    assert not is_watermark_vmess("vless://u@a.com:443#DE")
+    payload = base64.b64encode(
+        b'{"v":"2","ps":"x","add":"1.2.3.4","port":"443"}'
+    ).decode()
+    assert not is_watermark_vmess(f"vmess://{payload}")
+    assert not is_watermark_vmess("vmess://!!!not-base64!!!")
+    assert not is_watermark_vmess("")
+    assert not is_watermark_vmess("ss://YWVz@a.com:443")

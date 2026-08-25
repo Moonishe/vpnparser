@@ -9,6 +9,8 @@ Usage::
 
 Flags:
     --run        Run the full pipeline (fetch -> parse -> validate -> write).
+    --revalidate-published   Fast-track: re-validate only the last published
+                 configs (no source fetching).
     --publish    Also publish the result to a GitHub repo (needs GITHUB_TOKEN).
     --settings   Path to settings.yaml (default: config/settings.yaml).
     --sources    Path to sources.json (default: config/sources.json).
@@ -128,6 +130,15 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--revalidate-published",
+        action="store_true",
+        help=(
+            "Fast-track mode: re-validate only the last published configs "
+            "(output/subscription-{blacklist,whitelist}.txt) instead of "
+            "refetching every source. Refreshes the subscription in minutes."
+        ),
+    )
+    parser.add_argument(
         "--publish",
         action="store_true",
         help="Publish the result to a GitHub repo (requires GITHUB_TOKEN).",
@@ -241,7 +252,12 @@ def _run_once(
         sources_path=args.sources,
         github_token=github_token,
     )
-    count = asyncio.run(runner.run(output_file=args.output, publish=args.publish))
+    if getattr(args, "revalidate_published", False):
+        count = asyncio.run(
+            runner.rerun_published(output_file=args.output, publish=args.publish)
+        )
+    else:
+        count = asyncio.run(runner.run(output_file=args.output, publish=args.publish))
     # The runner records the publish outcome in ``_publish_ok`` for both full
     # and empty runs (see PipelineRunner._publish_files / _finish_empty_run),
     # so the exit code can trust it. A failed publish of an empty run must
@@ -276,14 +292,15 @@ def main() -> int:
     _setup_logging(args.verbose)
     logger = logging.getLogger("src.main")
 
-    if not args.run:
+    if not args.run and not args.revalidate_published:
         if args.publish:
             logger.error(
-                "--publish requires --run — it only publishes the result of "
-                "a pipeline run, it does not run the pipeline itself.",
+                "--publish requires --run (or --revalidate-published) — it only "
+                "publishes the result of a pipeline run, it does not run the "
+                "pipeline itself.",
             )
         else:
-            logger.error("No action specified. Use --run to execute the pipeline.")
+            logger.error("No action specified. Use --run or --revalidate-published.")
         logger.info(
             "Example: python -m src.main --run [--publish] [--output path] [-v]",
         )

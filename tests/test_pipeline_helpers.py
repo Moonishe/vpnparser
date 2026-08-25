@@ -192,7 +192,7 @@ def test_telegram_message_uses_html_links_and_escapes_dynamic_text(monkeypatch) 
     monkeypatch.setenv("GITHUB_REPO", "repo")
     monkeypatch.setenv("GITHUB_BRANCH", "main")
     monkeypatch.setattr(
-        telegram_module, "_generate_fun_fact", lambda _api_key: "опасный <tag> & факт"
+        telegram_module, "_generate_fun_fact", lambda: "опасный <tag> & факт"
     )
 
     def fake_send(token: str, chat_id: str, text: str) -> bool:
@@ -1559,7 +1559,7 @@ def test_proxy_pool_parses_public_socks5_candidates() -> None:
 def test_proxy_pool_fetch_stops_after_candidate_limit(monkeypatch) -> None:
     fetched_urls = []
 
-    async def fake_fetch_source(_client, url):
+    async def fake_fetch_source(_client, url, **kwargs):
         fetched_urls.append(url)
         return "socks5://8.8.8.8:1080 socks5://1.1.1.1:9050"
 
@@ -1577,7 +1577,7 @@ def test_proxy_pool_fetch_stops_after_candidate_limit(monkeypatch) -> None:
 
 
 def test_proxy_pool_limits_candidates_per_source(monkeypatch) -> None:
-    async def fake_fetch_source(_client, url):
+    async def fake_fetch_source(_client, url, **kwargs):
         if "first" in url:
             return " ".join(f"socks5://8.8.8.{i}:1080" for i in range(1, 5))
         return " ".join(f"socks5://1.1.1.{i}:9050" for i in range(1, 5))
