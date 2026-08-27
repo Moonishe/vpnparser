@@ -1,29 +1,29 @@
 {
   "outputs": {
     "blacklist": {
-      "count": 87,
+      "count": 122,
       "countries": {
-        "CA": 4,
-        "DE": 6,
-        "FR": 3,
-        "GB": 4,
-        "JP": 4,
-        "NL": 50,
-        "US": 16
+        "CA": 5,
+        "DE": 8,
+        "FR": 2,
+        "GB": 6,
+        "JP": 6,
+        "NL": 65,
+        "US": 30
       },
       "file": "output/subscription-blacklist.txt"
     },
     "combined": {
-      "count": 126,
+      "count": 176,
       "countries": {
         "CA": 2,
-        "DE": 6,
-        "FR": 1,
+        "DE": 5,
+        "FR": 2,
         "GB": 4,
         "JP": 3,
-        "NL": 37,
-        "RU": 60,
-        "US": 13
+        "NL": 41,
+        "RU": 95,
+        "US": 24
       },
       "file": "output/subscription.txt"
     },
@@ -35,9 +35,9 @@
       "file": "output/locations/subscription-CA.txt"
     },
     "location_de": {
-      "count": 6,
+      "count": 5,
       "countries": {
-        "DE": 6
+        "DE": 5
       },
       "file": "output/locations/subscription-DE.txt"
     },
@@ -47,9 +47,9 @@
       "file": "output/locations/subscription-FI.txt"
     },
     "location_fr": {
-      "count": 1,
+      "count": 2,
       "countries": {
-        "FR": 1
+        "FR": 2
       },
       "file": "output/locations/subscription-FR.txt"
     },
@@ -68,9 +68,9 @@
       "file": "output/locations/subscription-JP.txt"
     },
     "location_nl": {
-      "count": 37,
+      "count": 41,
       "countries": {
-        "NL": 37
+        "NL": 41
       },
       "file": "output/locations/subscription-NL.txt"
     },
@@ -82,30 +82,30 @@
       "file": "output/locations/subscription-RU.txt"
     },
     "location_us": {
-      "count": 13,
+      "count": 24,
       "countries": {
-        "US": 13
+        "US": 24
       },
       "file": "output/locations/subscription-US.txt"
     },
     "mix": {
-      "count": 126,
+      "count": 176,
       "countries": {
-        "CA": 4,
-        "DE": 6,
-        "FR": 3,
-        "GB": 4,
-        "JP": 4,
-        "NL": 50,
-        "RU": 39,
-        "US": 16
+        "CA": 5,
+        "DE": 8,
+        "FR": 2,
+        "GB": 6,
+        "JP": 6,
+        "NL": 65,
+        "RU": 54,
+        "US": 30
       },
       "file": "output/subscription-mix.txt"
     },
     "whitelist": {
-      "count": 81,
+      "count": 134,
       "countries": {
-        "RU": 81
+        "RU": 134
       },
       "file": "output/subscription-whitelist.txt"
     }
@@ -132,149 +132,149 @@
         "checked": true,
         "fail_open": false,
         "filtered": true,
-        "input": 5102,
+        "input": 5198,
         "min_alive_to_filter": 10,
-        "output_after_health": 137,
-        "output_after_tcp": 2997,
-        "output_after_tls": 2493,
-        "output_after_xray": 137,
+        "output_after_health": 147,
+        "output_after_tcp": 3026,
+        "output_after_tls": 2566,
+        "output_after_xray": 147,
         "proxy_count": 40,
         "reason": "",
         "singbox_alive": 0,
         "singbox_available": true,
-        "singbox_candidates": 123,
-        "singbox_checked": 123,
+        "singbox_candidates": 121,
+        "singbox_checked": 121,
         "sources": {
           "hiztin-vless-po-gribi": {
-            "alive": 3,
-            "checked": 151
+            "alive": 8,
+            "checked": 152
           },
           "igareck-black-vless-mobile": {
-            "alive": 1,
-            "checked": 2
+            "alive": 2,
+            "checked": 22
           },
           "kort0881-mermeroo-only-new": {
-            "alive": 45,
-            "checked": 828
+            "alive": 51,
+            "checked": 871
           },
           "kort0881-proxy-collect-only-new": {
             "alive": 0,
-            "checked": 3
+            "checked": 5
           },
           "luxxuria-harvester-top-600": {
             "alive": 0,
-            "checked": 41
+            "checked": 35
           },
           "sakha1370-openray-valid": {
-            "alive": 86,
-            "checked": 1341
+            "alive": 82,
+            "checked": 1316
           },
           "solovyov-all-subs-final": {
-            "alive": 2,
-            "checked": 28
+            "alive": 4,
+            "checked": 63
           },
           "v2rayroot-vless": {
             "alive": 0,
-            "checked": 50
+            "checked": 47
           }
         },
-        "tcp_alive": 2874,
-        "tcp_candidates": 4979,
-        "tcp_checked": 4979,
+        "tcp_alive": 2905,
+        "tcp_candidates": 5077,
+        "tcp_checked": 5077,
         "tcp_max_alive": 0,
         "tcp_search_round_limit": 1,
         "tcp_search_rounds": 1,
-        "tcp_skipped_protocol": 123,
-        "tls_alive": 1414,
-        "tls_candidates": 1918,
-        "tls_checked": 1918,
+        "tcp_skipped_protocol": 121,
+        "tls_alive": 1447,
+        "tls_candidates": 1907,
+        "tls_checked": 1907,
         "tls_drop_unchecked": false,
-        "tls_unchecked_passthrough": 1079,
-        "xray_alive": 137,
+        "tls_unchecked_passthrough": 1119,
+        "xray_alive": 147,
         "xray_attempts_per_config": 2,
         "xray_available": true,
-        "xray_candidates": 2321,
-        "xray_checked": 2444,
+        "xray_candidates": 2390,
+        "xray_checked": 2511,
         "xray_drop_unsupported": true,
-        "xray_fresh_retried": 35,
-        "xray_fresh_verified": 110,
+        "xray_fresh_retried": 31,
+        "xray_fresh_verified": 120,
         "xray_max_alive": 300,
         "xray_min_attempt_successes": 1,
         "xray_min_probe_successes": 1,
         "xray_min_proxy_successes": 0,
-        "xray_preselected": 2321,
+        "xray_preselected": 2390,
         "xray_probe_count": 2,
         "xray_probe_via_proxies": true,
         "xray_proxy_checks": 3,
         "xray_require_distinct_outbound_ip": false,
         "xray_required": true,
-        "xray_unsupported": 49
+        "xray_unsupported": 55
       },
       "whitelist": {
         "checked": true,
         "fail_open": false,
         "filtered": true,
-        "input": 7074,
+        "input": 7214,
         "min_alive_to_filter": 10,
-        "output_after_health": 134,
-        "output_after_tcp": 4231,
-        "output_after_tls": 3067,
-        "output_after_xray": 134,
+        "output_after_health": 161,
+        "output_after_tcp": 4238,
+        "output_after_tls": 3172,
+        "output_after_xray": 161,
         "proxy_count": 40,
         "reason": "",
         "singbox_alive": 0,
         "singbox_available": true,
-        "singbox_candidates": 264,
-        "singbox_checked": 264,
+        "singbox_candidates": 271,
+        "singbox_checked": 271,
         "sources": {
           "blastvpn-freevpn": {
             "alive": 0,
-            "checked": 5
+            "checked": 6
           },
           "darkroyalty-shnajder-githubmirror-26": {
-            "alive": 65,
-            "checked": 2595
+            "alive": 72,
+            "checked": 2618
           },
           "flaafix-aetris-white-list-lite": {
             "alive": 0,
             "checked": 10
           },
           "igareck-white-vless-reality-mobile": {
-            "alive": 0,
-            "checked": 4
+            "alive": 1,
+            "checked": 17
           }
         },
         "tcp_alive": 3967,
-        "tcp_candidates": 6810,
-        "tcp_checked": 6808,
+        "tcp_candidates": 6943,
+        "tcp_checked": 6941,
         "tcp_max_alive": 0,
         "tcp_search_round_limit": 1,
         "tcp_search_rounds": 1,
-        "tcp_skipped_protocol": 264,
-        "tls_alive": 1870,
-        "tls_candidates": 3034,
-        "tls_checked": 3034,
+        "tcp_skipped_protocol": 271,
+        "tls_alive": 1964,
+        "tls_candidates": 3030,
+        "tls_checked": 3030,
         "tls_drop_unchecked": false,
-        "tls_unchecked_passthrough": 1197,
-        "xray_alive": 134,
+        "tls_unchecked_passthrough": 1208,
+        "xray_alive": 161,
         "xray_attempts_per_config": 2,
         "xray_available": true,
-        "xray_candidates": 2631,
-        "xray_checked": 2895,
+        "xray_candidates": 2704,
+        "xray_checked": 2975,
         "xray_drop_unsupported": true,
-        "xray_fresh_retried": 46,
-        "xray_fresh_verified": 146,
+        "xray_fresh_retried": 51,
+        "xray_fresh_verified": 142,
         "xray_max_alive": 300,
         "xray_min_attempt_successes": 1,
         "xray_min_probe_successes": 1,
         "xray_min_proxy_successes": 0,
-        "xray_preselected": 2631,
+        "xray_preselected": 2704,
         "xray_probe_count": 2,
         "xray_probe_via_proxies": true,
         "xray_proxy_checks": 3,
         "xray_require_distinct_outbound_ip": false,
         "xray_required": true,
-        "xray_unsupported": 172
+        "xray_unsupported": 197
       }
     },
     "proxy_attempts_per_config": 3,
@@ -296,26 +296,26 @@
     "proxy_search_rounds": 1,
     "quality": {
       "blacklist": {
-        "avg_score": 92.0682809185793,
-        "input": 137,
-        "kept": 87,
-        "slow_dropped": 6,
-        "stability_dropped": 44
+        "avg_score": 91.96984491111694,
+        "input": 147,
+        "kept": 122,
+        "slow_dropped": 7,
+        "stability_dropped": 18
       },
       "drop_slow": true,
       "max_latency_ms": 10000.0,
       "min_alive_to_skip_slow_drop": 1,
       "min_consecutive_passes": 2,
       "stability_enforce_floor": {
-        "blacklist": 39,
-        "whitelist": 37
+        "blacklist": 42,
+        "whitelist": 46
       },
       "whitelist": {
-        "avg_score": 91.38235678848396,
-        "input": 134,
-        "kept": 81,
-        "slow_dropped": 10,
-        "stability_dropped": 43
+        "avg_score": 91.69147746148904,
+        "input": 161,
+        "kept": 134,
+        "slow_dropped": 6,
+        "stability_dropped": 21
       }
     },
     "resolve_timeout": 5.0,
