@@ -584,14 +584,29 @@ def test_filter_files_skips_none_items_in_list() -> None:
     assert result == files  # None item is skipped, no filtering applied
 
 
-def test_load_dotenv_if_available_calls_installed_dotenv(monkeypatch) -> None:
+def test_load_dotenv_if_available_calls_installed_dotenv(
+    monkeypatch, tmp_path: Path
+) -> None:
     calls = []
     fake_dotenv = types.SimpleNamespace(load_dotenv=lambda: calls.append("loaded"))
 
     monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+    # Point the .env lookup at a file that EXISTS in the isolated tmp root:
+    # a checkout without a real (gitignored) .env has none, and the function
+    # skips the loader call in that case.
+    dotenv_file = tmp_path / ".env"
+    dotenv_file.write_text("K=V\n", encoding="utf-8")
+    monkeypatch.setattr("src.env._dotenv_path", lambda: dotenv_file)
 
     assert load_dotenv_if_available() is True
     assert calls == ["loaded"]
+
+    # Without the file the loader is not called at all (CI checkouts have no
+    # gitignored .env): still "available", just a no-op.
+    calls.clear()
+    monkeypatch.setattr("src.env._dotenv_path", lambda: tmp_path / "nope.env")
+    assert load_dotenv_if_available() is True
+    assert calls == []
 
 
 def test_load_dotenv_if_available_returns_false_without_dependency(monkeypatch) -> None:

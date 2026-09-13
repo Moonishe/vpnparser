@@ -559,6 +559,11 @@ def test_publish_no_owner_repo(
     """_publish skips when owner/repo not configured (lines 843-847)."""
     caplog.set_level(logging.WARNING)
     r = _make_runner(tmp_path, github_token="gh_test")
+    # The output file must EXIST for _publish to reach the owner/repo check:
+    # a missing file is rejected earlier ("does not exist") and the
+    # owner/repo branch would never fire (a checkout has no stray dummy.txt).
+    out = resolve_safe_output_path("dummy.txt")
+    out.write_text("x", encoding="utf-8")
     asyncio.run(r._publish("dummy.txt"))
     assert "owner/repo not configured" in caplog.text
 
@@ -1435,7 +1440,9 @@ async def test_publish_files_dedups_separator_variants(
         ["output/subscription-mix.txt", "output\\subscription-mix.txt"],
     )
     assert ok is True
-    assert published == ["output/subscription-mix.txt"]
+    # Separator-normalised: the spelling that survives the dedup depends on
+    # the platform's path semantics, but it is one publish, not two.
+    assert [p.replace("\\", "/") for p in published] == ["output/subscription-mix.txt"]
 
 
 @pytest.mark.asyncio
