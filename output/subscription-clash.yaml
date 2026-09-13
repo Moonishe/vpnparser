@@ -1,46 +1,4 @@
 proxies:
-- name: '[OpenRay] 🇨🇦 CA-29083'
-  server: 51.222.200.165
-  port: 5000
-  type: ss
-  cipher: aes-256-gcm
-  password: Y6R9pAtvxxzmGC
-- name: 🇩🇪63Mb
-  server: 46.224.111.17
-  port: 443
-  type: vless
-  uuid: deee2828-ad68-4637-8e2e-64db7a36ad25
-- name: '[OpenRay] 🇫🇷 FR-4217'
-  server: 51.255.13.232
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: BqnqToih0PbU
-- name: 🇬🇧GB_22|500KB/s|A004-260618 01
-  server: 149.102.149.207
-  port: 80
-  type: ss
-  cipher: aes-256-gcm
-  password: LXchLsIwtCeUAUgu
-- name: '[OpenRay] 🇯🇵 JP-4446'
-  server: 155.248.176.44
-  port: 55216
-  type: vmess
-  uuid: 154dbc39-0921-cf11-29bd-156c5000d763
-  alterId: 0
-  cipher: auto
-- name: 🇳🇱NL_37|5.3MB/s 01
-  server: 82.38.31.35
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇺🇸 US-13160'
-  server: 108.181.0.177
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: G5p6ww4o67HB
 - name: '[OpenRay] 🇨🇦 CA-26562'
   server: 134.195.196.211
   port: 18000
@@ -48,54 +6,56 @@ proxies:
   uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
   alterId: 0
   cipher: auto
-- name: 🇩🇪DE_98|1.5MB/s|S001-260618 01
-  server: 185.164.175.81
-  port: 19999
+- name: '[OpenRay] 🇩🇪 DE-22149'
+  server: 51.195.126.38
+  port: 8388
   type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: 🇫🇷 France, Aubervilliers | [BL]
-  server: kama1.api3-max.ru
-  port: 443
-  type: vless
-  uuid: 97ecaad4-452c-45ec-b591-d68d3308aad4
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: kama1.api3-max.ru
-  skip-cert-verify: true
-- name: 🇬🇧GB_24|1.1MB/s|B007-260618 01
-  server: 149.102.149.207
+  cipher: chacha20-ietf-poly1305
+  password: 2YdE4lFOid5a
+- name: '[OpenRay] 🇫🇷 FR-4791'
+  server: 20.111.9.76
+  port: 59380
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: DdhrBvEX2dHRjaakWHBZUa
+- name: 🇬🇧GB_26|1.9MB/s|A004-260618 01
+  server: 149.102.132.184
   port: 443
   type: ss
   cipher: aes-256-gcm
-  password: LXchLsIwtCeUAUgu
-- name: '[OpenRay] 🇯🇵 JP-4577'
-  server: oc.imfun.fun
-  port: 18112
+  password: g5h5jleTRSyO3Rk4
+- name: '[OpenRay] 🇯🇵 JP-4446'
+  server: 155.248.176.44
+  port: 55216
   type: vmess
-  uuid: ad45f8f6-0f0a-4cc4-b907-c4582407dc94
+  uuid: 154dbc39-0921-cf11-29bd-156c5000d763
   alterId: 0
   cipher: auto
-- name: 🇳🇱NL_62|852KB/s 01
-  server: 82.38.31.39
+- name: 🇳🇱NL_115|866KB/s|B007-260618 01
+  server: 82.38.31.42
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: 🇺🇸
-  server: 15.204.233.41
-  port: 8882
-  type: ss
-  cipher: aes-256-gcm
-  password: kDWvXYZoTBcGkC4
-- name: '[OpenRay] 🇨🇦 CA-24619'
-  server: 23.162.200.198
-  port: 18000
+- name: '[OpenRay] 🇺🇸 US-25514'
+  server: 107.173.254.27
+  port: 15311
   type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  uuid: ad78d02b-873f-4cff-8d4a-673f53d6ce0f
   alterId: 0
   cipher: auto
+- name: '[OpenRay] 🇨🇦 CA-29083'
+  server: 51.222.200.165
+  port: 5000
+  type: ss
+  cipher: aes-256-gcm
+  password: Y6R9pAtvxxzmGC
+- name: '[OpenRay] 🇩🇪 DE-24060'
+  server: 130.61.82.58
+  port: 59924
+  type: ss
+  cipher: 2022-blake3-chacha20-poly1305
+  password: hjqTkJV5VFVNHAIg/ivqFp+lDtPbAwt1CF4ZqrbwLAg=
 - name: 🇫🇷FR_175|9.0MB/s|A004-260618 01
   server: 162.19.10.99
   port: 443
@@ -108,67 +68,134 @@ proxies:
   alpn:
   - h2
   skip-cert-verify: true
+- name: 🇬🇧GB_22|500KB/s|A004-260618 01
+  server: 149.102.149.207
+  port: 80
+  type: ss
+  cipher: aes-256-gcm
+  password: LXchLsIwtCeUAUgu
+- name: '[OpenRay] 🇯🇵 JP-4266'
+  server: 84.247.155.196
+  port: 80
+  type: ss
+  cipher: aes-256-gcm
+  password: 3eOFeNssde7PYYMv
+- name: 🇳🇱NL_37|5.3MB/s 01
+  server: 82.38.31.35
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇺🇸 US-26274'
+  server: bright.bitgas.org
+  port: 443
+  type: trojan
+  password: UQfj7bdfjibTjpUHfg72aew51S7fB32g
+  client-fingerprint: chrome
+  tls: true
+  skip-cert-verify: true
+- name: '[OpenRay] 🇨🇦 CA-29044'
+  server: 51.79.85.185
+  port: 8118
+  type: ss
+  cipher: aes-256-gcm
+  password: cdBIDV42DCwnfIN
+- name: 🇩🇪DE_98|1.5MB/s|S001-260618 01
+  server: 185.164.175.81
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
 - name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
   server: 82.110.60.9
   port: 19999
   type: ss
   cipher: aes-256-gcm
   password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: 🇯🇵JP_6|637KB/s|A004-260618 01
-  server: 84.247.155.196
+- name: 🇯🇵JP_15|442KB/s|B007-260618 01
+  server: 137.220.221.179
   port: 443
-  type: ss
-  cipher: aes-256-gcm
-  password: 3eOFeNssde7PYYMv
-- name: '[OpenRay] 🇳🇱 NL-628'
-  server: 82.38.31.205
+  type: vless
+  uuid: a16a3336-c9ab-489f-9b85-c973f5e2cfa4
+- name: '[OpenRay] 🇳🇱 NL-633'
+  server: 82.38.31.202
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-14762'
-  server: 216.106.183.35
-  port: 22324
+- name: '[OpenRay] 🇺🇸 US-22159'
+  server: 82.198.246.233
+  port: 180
   type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 1
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
   cipher: auto
-- name: 🇨🇦CA_33|211KB/s|A004-260618 01
-  server: ca225.vpnbook.com
-  port: 443
+- name: '[OpenRay] 🇨🇦 CA-27463'
+  server: 51.222.12.127
+  port: 445
   type: ss
-  cipher: chacha20-ietf-poly1305
-  password: 3ssumf2
-- name: '🇫🇷 France, Aubervilliers | [BL] #2'
-  server: 152.89.253.169
-  port: 443
-  type: vless
-  uuid: 97ecaad4-452c-45ec-b591-d68d3308aad4
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: kama1.api3-max.ru
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
+  cipher: aes-256-gcm
+  password: zDNVedRFPQexG9v
+- name: '[OpenRay] 🇩🇪 DE-6122'
+  server: 213.202.208.199
+  port: 7001
+  type: ss
+  cipher: aes-256-gcm
+  password: RexnBgU7EV5ADxG
 - name: 🇬🇧GB_3|3.0MB/s|A004-260618 01
   server: 141.98.101.181
   port: 443
   type: ss
   cipher: aes-128-gcm
   password: shadowsocks
-- name: 🇯🇵JP_15|442KB/s|B007-260618 01
-  server: 137.220.221.179
-  port: 443
-  type: vless
-  uuid: a16a3336-c9ab-489f-9b85-c973f5e2cfa4
-- name: '[OpenRay] 🇳🇱 NL-10104'
-  server: 82.38.31.201
+- name: 🇳🇱NL_49|4.0MB/s 01
+  server: 82.38.31.48
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇺🇸
+  server: 15.204.233.41
+  port: 8882
+  type: ss
+  cipher: aes-256-gcm
+  password: kDWvXYZoTBcGkC4
+- name: '[OpenRay] 🇨🇦 CA-28000'
+  server: 51.222.155.113
+  port: 5601
+  type: ss
+  cipher: aes-256-gcm
+  password: Y6R9pAtvxxzmGC
+- name: '[OpenRay] 🇬🇧 GB-216'
+  server: 94.156.250.148
+  port: 7001
+  type: ss
+  cipher: aes-256-gcm
+  password: RexnBgU7EV5ADxG
+- name: '[OpenRay] 🇳🇱 NL-10352'
+  server: 193.29.139.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: QCXDxuDlTTMD7jtgHUjIoj
+- name: '[OpenRay] 🇺🇸 US-15189'
+  server: 108.181.118.10
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: G5p6ww4o67HB
+- name: 🇨🇦CA_7|955KB/s|A004-260618 01
+  server: 149.22.95.183
+  port: 443
+  type: ss
+  cipher: aes-128-gcm
+  password: shadowsocks
+- name: 🇳🇱NL_11|4.2MB/s|A003-260618 01
+  server: 82.38.31.3
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
 - name: '[OpenRay] 🇺🇸 US-16534'
   server: 82.198.246.37
   port: 180
@@ -176,27 +203,69 @@ proxies:
   uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
   alterId: 0
   cipher: auto
-- name: '[OpenRay] 🇨🇦 CA-29044'
-  server: 51.79.85.185
-  port: 8118
+- name: '[OpenRay] 🇨🇦 CA-27937'
+  server: 51.79.64.198
+  port: 8119
   type: ss
   cipher: aes-256-gcm
   password: cdBIDV42DCwnfIN
-- name: '🇫🇷 France, Aubervilliers | [BL] #3'
-  server: 217.179.6.154
+- name: '[OpenRay] 🇳🇱 NL-8634'
+  server: 82.38.31.200
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-15567'
+  server: 82.198.246.97
+  port: 180
+  type: vmess
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
+  cipher: auto
+- name: 🇨🇦CA_24|1.5MB/s|A004-260618 01
+  server: 15.235.75.71
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: FD3rCuOsxOay
+- name: '[OpenRay] 🇳🇱 NL-10097'
+  server: 82.38.31.175
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇺🇸US_324|1.6MB/s 01
+  server: 198.98.53.130
   port: 443
-  type: vless
-  uuid: 97ecaad4-452c-45ec-b591-d68d3308aad4
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: kama4.api3-max.ru
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: '[OpenRay] 🇬🇧 GB-2633'
-  server: 66.163.117.58
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: eDfN7SODQceIOmIAbtJJtK
+- name: 🇨🇦CA_35|1.6MB/s|A004-260618 01
+  server: 142.4.216.225
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: 3ssumf2
+- name: '[OpenRay] 🇳🇱 NL-629'
+  server: 82.38.31.218
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-24763'
+  server: 15.204.246.132
+  port: 7307
+  type: ss
+  cipher: aes-256-gcm
+  password: FoOiGlkAA9yPEGP
+- name: '[OpenRay] 🇳🇱 NL-7170'
+  server: 82.38.31.149
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
   port: 22324
   type: vmess
   uuid: 04621bae-ab36-11ec-b909-0242ac120002
@@ -208,24 +277,6 @@ proxies:
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
-- name: '[OpenRay] 🇨🇦 CA-27936'
-  server: 51.79.49.116
-  port: 8882
-  type: ss
-  cipher: aes-256-gcm
-  password: kDWvXYZoTBcGkC4
-- name: '[OpenRay] 🇳🇱 NL-9580'
-  server: 82.38.31.36
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
 - name: '[OpenRay] 🇺🇸 US-24855'
   server: 84.17.41.2
   port: 18000
@@ -233,128 +284,8 @@ proxies:
   uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
   alterId: 0
   cipher: auto
-- name: '[OpenRay] 🇨🇦 CA-27937'
-  server: 51.79.64.198
-  port: 8119
-  type: ss
-  cipher: aes-256-gcm
-  password: cdBIDV42DCwnfIN
-- name: '[OpenRay] 🇳🇱 NL-639'
-  server: 82.38.31.184
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-26252'
-  server: 15.204.246.107
-  port: 8888
-  type: ss
-  cipher: aes-256-gcm
-  password: Y6R9pAtvxxzmGC
-- name: '[OpenRay] 🇳🇱 NL-9506'
-  server: 82.38.31.174
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇺🇸 US-22129'
-  server: 82.198.246.250
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8274'
-  server: 82.38.31.11
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇺🇸 US-22159'
-  server: 82.198.246.233
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-629'
-  server: 82.38.31.218
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-25455'
-  server: 15.204.247.175
-  port: 8008
-  type: ss
-  cipher: aes-256-gcm
-  password: XKFKl2rULjIp74
-- name: 🇳🇱NL_202|3.2MB/s|B007-260618 01
-  server: 82.38.31.66
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇺🇸 US-26784'
-  server: 192.3.247.109
-  port: 43579
-  type: ss
-  cipher: aes-256-gcm
-  password: 8c009bb6-08b3-4526-a86b-5af7ddfc567a-4c757b72-6eec-4faf-8c2e-09fd1c7fa936
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇺🇸US_707|298KB/s|S004-260618 01
-  server: 5.78.51.123
-  port: 1080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: 8tmnvX5zYuWGVIDP2jglZw
-- name: '[OpenRay] 🇳🇱 NL-7595'
-  server: 108.181.126.122
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: CJmTCCx7Ltud
-- name: '[OpenRay] 🇺🇸 US-22260'
-  server: 129.146.143.80
-  port: 48111
-  type: vmess
-  uuid: d4603cc2-e0ee-4651-83f5-1db5b7168177
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-10099'
-  server: 82.38.31.204
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-17014'
-  server: 38.91.107.49
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: 🇳🇱NL_51|3.4MB/s 01
-  server: 82.38.31.174
-  port: 443
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇺🇸 US-15126'
-  server: 67.220.85.46
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-  client-fingerprint: chrome
-- name: '[OpenRay] 🇳🇱 NL-634'
-  server: 82.38.31.217
+- name: '[OpenRay] 🇳🇱 NL-8665'
+  server: 82.38.31.180
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
@@ -366,99 +297,277 @@ proxies:
   uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
   alterId: 0
   cipher: auto
+- name: 🇳🇱NL_51|3.4MB/s 01
+  server: 82.38.31.174
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇺🇸 US-24824'
+  server: 169.197.142.22
+  port: 18000
+  type: vmess
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇳🇱 NL-639'
+  server: 82.38.31.184
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-26784'
+  server: 192.3.247.109
+  port: 43579
+  type: ss
+  cipher: aes-256-gcm
+  password: 8c009bb6-08b3-4526-a86b-5af7ddfc567a-4c757b72-6eec-4faf-8c2e-09fd1c7fa936
+- name: '[OpenRay] 🇳🇱 NL-9580'
+  server: 82.38.31.36
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇺🇸 US-22260'
+  server: 129.146.143.80
+  port: 48111
+  type: vmess
+  uuid: d4603cc2-e0ee-4651-83f5-1db5b7168177
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇳🇱 NL-10104'
+  server: 82.38.31.201
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇺🇸US_707|298KB/s|S004-260618 01
+  server: 5.78.51.123
+  port: 1080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: 8tmnvX5zYuWGVIDP2jglZw
+- name: '[OpenRay] 🇳🇱 NL-8659'
+  server: 82.38.31.219
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-15126'
+  server: 67.220.85.46
+  port: 18000
+  type: vmess
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
+  client-fingerprint: chrome
+- name: '[OpenRay] 🇳🇱 NL-628'
+  server: 82.38.31.205
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-25455'
+  server: 15.204.247.175
+  port: 8008
+  type: ss
+  cipher: aes-256-gcm
+  password: XKFKl2rULjIp74
 - name: 🇳🇱NL_72|3.5MB/s|A004-260618 01
   server: 82.38.31.18
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: 🇺🇸US_353|1.0MB/s 01
-  server: 173.244.56.6
-  port: 443
+- name: '[OpenRay] 🇺🇸 US-26050'
+  server: 38.180.135.156
+  port: 8388
   type: ss
-  cipher: aes-128-gcm
-  password: shadowsocks
-- name: '[OpenRay] 🇳🇱 NL-8077'
-  server: 82.38.31.181
+  cipher: chacha20-ietf-poly1305
+  password: YHtesZ0qvgtg
+- name: 🇳🇱NL_36|363KB/s|A004-260618 01
+  server: 82.38.31.7
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇺🇸 US-13160'
+  server: 108.181.0.177
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: G5p6ww4o67HB
+- name: '[OpenRay] 🇳🇱 NL-634'
+  server: 82.38.31.217
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-25514'
-  server: 107.173.254.27
-  port: 15311
-  type: vmess
-  uuid: ad78d02b-873f-4cff-8d4a-673f53d6ce0f
-  alterId: 0
-  cipher: auto
-- name: 🇳🇱NL_90|7.0MB/s|A004-260618 01
-  server: 82.38.31.149
-  port: 443
+- name: '[OpenRay] 🇺🇸 US-24205'
+  server: 23.150.248.20
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: qB2Cv9VIlujj
+- name: 🇳🇱NL_204|985KB/s|M001-260618 01
+  server: 82.38.31.62
+  port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇺🇸 US-17014'
+  server: 38.91.107.49
+  port: 18000
+  type: vmess
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
 - name: 🇳🇱NL_33|403KB/s|A004-260618 01
   server: 82.38.31.206
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇳🇱 NL-8665'
-  server: 82.38.31.180
-  port: 8080
+- name: '🇺🇸 #2'
+  server: 15.204.247.124
+  port: 2375
   type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇳🇱NL_213|2.3MB/s|M003-260806 01
-  server: 193.29.139.188
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-12026'
-  server: 193.29.139.197
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-728'
-  server: 193.29.139.235
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: 🇳🇱NL_120|2.8MB/s|A004-260618 01
-  server: 82.38.31.26
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-10488'
-  server: 188.116.23.244
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: eVC634QvVk5l
+  cipher: aes-256-gcm
+  password: faBAoD54k87UJG7
 - name: 🇳🇱NL_53|7.3MB/s|A004-260618 01
   server: 82.38.31.13
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-627'
-  server: 82.38.31.187
+- name: 🇺🇸US_46|889KB/s 01
+  server: 156.146.38.168
+  port: 443
+  type: ss
+  cipher: aes-128-gcm
+  password: shadowsocks
+- name: '[OpenRay] 🇳🇱 NL-10488'
+  server: 188.116.23.244
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: eVC634QvVk5l
+- name: 🇺🇸US_525|943KB/s|A004-260618 01
+  server: 173.244.56.9
+  port: 443
+  type: ss
+  cipher: aes-128-gcm
+  password: shadowsocks
+- name: 🇳🇱NL_62|852KB/s 01
+  server: 82.38.31.39
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇺🇸US_347|1005KB/s 01
+  server: 37.19.198.243
+  port: 443
+  type: ss
+  cipher: aes-128-gcm
+  password: shadowsocks
+- name: '[OpenRay] 🇳🇱 NL-8320'
+  server: 82.38.31.16
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇺🇸US_350|961KB/s|A004-260618 01
+  server: 37.19.198.244
+  port: 443
+  type: ss
+  cipher: aes-128-gcm
+  password: shadowsocks
+- name: '[OpenRay] 🇳🇱 NL-623'
+  server: 82.38.31.179
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇳🇱NL_96|3.0MB/s|A004-260618 01
+- name: '[OpenRay] 🇳🇱 NL-638'
+  server: 82.38.31.208
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-8635'
+  server: 82.38.31.195
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-9846'
+  server: 193.29.139.234
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: 4a2rfixophdjffa8KVA4Aa
+- name: '[OpenRay] 🇳🇱 NL-10865'
+  server: 82.38.31.213
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-728'
   server: 193.29.139.235
-  port: 443
+  port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-8690'
-  server: 82.38.31.215
+- name: '[OpenRay] 🇳🇱 NL-8894'
+  server: 82.38.31.164
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇳🇱NL_35|2.2MB/s 01
+  server: 82.38.31.10
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-8078'
+  server: 82.38.31.182
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇳🇱NL_205|7.8MB/s|M001-260618 01
+  server: 82.38.31.61
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-732'
+  server: 193.29.139.204
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇳🇱NL_208|3.3MB/s|B007-260618 01
+  server: 193.29.139.202
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-9484'
+  server: 82.38.31.156
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-8049'
+  server: 82.38.31.192
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-626'
+  server: 82.38.31.210
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
@@ -469,48 +578,6 @@ proxies:
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-623'
-  server: 82.38.31.179
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇳🇱 NL-732'
-  server: 193.29.139.204
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-7213'
-  server: 82.38.31.155
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: 🇳🇱NL_47|2.2MB/s|A004-260618 01
-  server: 193.29.139.225
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-8260'
-  server: 82.38.31.9
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-10097'
-  server: 82.38.31.175
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-8633'
-  server: 82.38.31.216
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
 - name: '[OpenRay] 🇳🇱 NL-11804'
   server: neth9.lunariai.ru
   port: 8443
@@ -523,30 +590,102 @@ proxies:
   - h2
   - http/1.1
   skip-cert-verify: true
+- name: '[OpenRay] 🇳🇱 NL-708'
+  server: 193.29.139.151
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-7213'
+  server: 82.38.31.155
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-8079'
+  server: 82.38.31.183
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
+  server: 82.38.31.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇳🇱 The Netherlands, Amsterdam [BL]
+  server: switcher-nick-croquet.freesocks.work
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: wwzVn2ZnHfqYa6l8EWh3eY
+- name: 🇳🇱NL_67|3.7MB/s|B007-260618 01
+  server: 82.38.31.162
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-8260'
+  server: 82.38.31.9
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇳🇱NL_132|4.2MB/s|B007-260618 01
+  server: 193.29.139.198
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
 - name: 🇳🇱NL_30|1005KB/s|B007-260618 01
   server: 193.29.139.132
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇳🇱 NL-8078'
-  server: 82.38.31.182
+- name: '🇳🇱 The Netherlands, Amsterdam [BL] #2'
+  server: 92.112.126.90
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: 9tqhMdIrTkgQ46PvhyAtMH
+- name: 🇳🇱NL_12|3.9MB/s|A003-260618 01
+  server: 82.38.31.47
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-8628'
+  server: 82.38.31.198
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇳🇱 NL-8894'
-  server: 82.38.31.164
+- name: 🇳🇱NL_206|3.8MB/s|G001-260618 01
+  server: 82.38.31.69
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-9484'
-  server: 82.38.31.156
+- name: '[OpenRay] 🇳🇱 NL-8633'
+  server: 82.38.31.216
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-632'
+  server: 82.38.31.199
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇳🇱NL_8|889KB/s|A003-260618 01
+  server: 82.38.31.203
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
 - name: '[OpenRay] 🇳🇱 NL-11616'
   server: 31.76.76.28
   port: 8443
@@ -556,32 +695,38 @@ proxies:
   tls: true
   servername: neth4.lckdwn.ru
   skip-cert-verify: true
-- name: '[OpenRay] 🇳🇱 NL-1899'
-  server: 82.38.31.189
+- name: 🇳🇱
+  server: 158.173.20.171
+  port: 443
+  type: ss
+  cipher: aes-128-gcm
+  password: shadowsocks
+- name: 🇳🇱NL_160|7.1MB/s|A003-260618 01
+  server: 82.38.31.17
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇳🇱NL_96|3.0MB/s|A004-260618 01
+  server: 193.29.139.235
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
 - name: 🇳🇱NL_76|1.9MB/s|A003-260618 01
   server: 82.38.31.46
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: 🇳🇱NL_203|3.8MB/s|B007-260618 01
-  server: 82.38.31.82
+- name: 🇳🇱NL_47|2.2MB/s|A004-260618 01
+  server: 193.29.139.225
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: 🇳🇱NL_36|363KB/s|A004-260618 01
-  server: 82.38.31.7
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '[OpenRay] 🇳🇱 NL-8049'
-  server: 82.38.31.192
+- name: '[OpenRay] 🇳🇱 NL-8636'
+  server: 82.38.31.193
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
