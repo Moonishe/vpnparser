@@ -314,9 +314,11 @@ class GitHubPublisher:
         # Contents API reports for a file IS its git blob SHA, so comparing it
         # with a locally computed blob hash is exact and needs no extra request.
         # The hash is the git object hash GitHub itself reports (S324 is
-        # suppressed below) — not a security primitive.
+        # suppressed below) — not a security primitive; usedforsecurity=False
+        # silences Bandit's B324 in the CI security gate as well.
         local_blob_sha = hashlib.sha1(  # noqa: S324
-            b"blob %d\x00" % len(content_bytes) + content_bytes
+            b"blob %d\x00" % len(content_bytes) + content_bytes,
+            usedforsecurity=False,
         ).hexdigest()
         if sha == local_blob_sha:
             logger.info("Unchanged, skipping %s (%s).", path, local_blob_sha[:8])

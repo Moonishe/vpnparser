@@ -251,8 +251,8 @@ jobs:
           # carry workflow_dispatch inputs, so the mode is derived from which
           # cron fired (EVENT_SCHEDULE holds the cron expression);
           # without this, the minute-41 run silently executed FULL mode.
-          # Inputs arrive via env (not ${{ }} in bash) so a future free-text
-          # input cannot inject shell.
+          # Inputs arrive via env — raw brace pairs are never written into
+          # bash here — so a future free-text input cannot inject shell.
           mode="${INPUT_MODE}"
           if [ -z "${mode}" ]; then
             # The fast-track fires on cron "41 * * * *" (see the schedule
