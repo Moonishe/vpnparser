@@ -1,4 +1,4 @@
-"""Tests for proxy health tracking and ranking — 100% coverage."""
+"""Tests for proxy health tracking and ranking вЂ” 100% coverage."""
 
 from __future__ import annotations
 
@@ -51,6 +51,51 @@ def test_record_success_resets_consecutive_failures() -> None:
     hist.record("socks5://1.2.3.4:1080", True, latency_ms=100)
     hist.record("socks5://1.2.3.4:1080", False)
     assert hist.is_banned("socks5://1.2.3.4:1080") is False
+
+
+def test_windowed_success_rate_outranks_lifetime_streak() -> None:
+    """A recently-dead proxy must not ride an ancient good streak.
+
+    Lifetime rate kept a proxy with an old 8/10 record ranked high even
+    after five consecutive fresh failures; the windowed trail flips it
+    below a proxy with a clean recent window.
+    """
+    hist = ProxyHealthHistory(window=5)
+    # Ancient mostly-good record (lifetime 0.8)...
+    hist.record("socks5://decayed.example:1080", True)
+    hist.record("socks5://decayed.example:1080", True)
+    hist.record("socks5://decayed.example:1080", True)
+    hist.record("socks5://decayed.example:1080", True)
+    # ...followed by a dead tail that fills the whole window.
+    for _ in range(5):
+        hist.record("socks5://decayed.example:1080", False)
+    # A steady but unremarkable proxy: 3 successes out of 5.
+    hist.record("socks5://steady.example:1080", True)
+    hist.record("socks5://steady.example:1080", False)
+    hist.record("socks5://steady.example:1080", True)
+    hist.record("socks5://steady.example:1080", True)
+    hist.record("socks5://steady.example:1080", False)
+    ranked = hist.rank(
+        ["socks5://decayed.example:1080", "socks5://steady.example:1080"],
+        drop_slow=False,
+        drop_banned=False,
+    )
+    assert ranked[0] == "socks5://steady.example:1080"
+
+
+def test_windowed_rate_falls_back_to_lifetime_without_field() -> None:
+    """Records persisted before recent_results existed still rank."""
+    hist = ProxyHealthHistory(window=5)
+    hist.records["socks5://legacy.example:1080"] = {
+        "attempts": 4,
+        "successes": 4,
+        "consecutive_failures": 0,
+        "latency_ms": [],
+        "last_seen": 1.0,
+        "banned_until": 0.0,
+    }
+    entry = hist.records["socks5://legacy.example:1080"]
+    assert hist._success_rate(entry) == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +261,7 @@ def test_prune_removes_old_records() -> None:
     """Records with >=2 attempts and old last_seen are pruned."""
     hist = ProxyHealthHistory()
     hist.record("socks5://old:1080", True)
-    hist.record("socks5://old:1080", True)  # 2 attempts — eligible for pruning
+    hist.record("socks5://old:1080", True)  # 2 attempts вЂ” eligible for pruning
     # Manually set last_seen far in the past
     hist.records["socks5://old:1080"]["last_seen"] = 0.0
     hist.record("socks5://new:1080", True)
@@ -226,7 +271,7 @@ def test_prune_removes_old_records() -> None:
 
 
 def test_prune_removes_stale_single_attempt_records() -> None:
-    """Age alone decides — a proxy seen once and never again is not special.
+    """Age alone decides вЂ” a proxy seen once and never again is not special.
 
     Exempting single-attempt records kept the least informative entries
     forever, which is most of the file: free proxy lists rotate, so nearly
@@ -278,7 +323,7 @@ def test_to_dict_returns_copy() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Persistence — load() edge cases
+# Persistence вЂ” load() edge cases
 # ---------------------------------------------------------------------------
 
 
@@ -370,6 +415,38 @@ def test_load_drops_entry_with_wrong_field_types() -> None:
     assert hist._avg_latency("socks5://ok:1080") == 150.0
 
 
+def test_legacy_entry_without_last_seen_survives_save_prune_cycle() -> None:
+    """Records persisted before last_seen existed must not be pruned by the
+    next save(): defaulting the missing field to 0.0 silently destroyed the
+    accumulated ban/latency stats on the very first rewrite."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "health.json"
+        data = {
+            "socks5://legacy:1080": {
+                "attempts": 7,
+                "successes": 5,
+                "consecutive_failures": 2,
+                "latency_ms": [120, 130],
+                "banned_until": 0.0,
+            },
+        }
+        path.write_text(json.dumps(data), encoding="utf-8")
+        hist = ProxyHealthHistory.load(str(path))
+        # save() always runs prune() first вЂ” that is where the 0.0 default
+        # used to kill the entry.
+        target = Path(tmpdir) / "out.json"
+        hist.save(target)
+        saved = json.loads(target.read_text(encoding="utf-8"))
+    assert "socks5://legacy:1080" in saved
+    entry = saved["socks5://legacy:1080"]
+    assert entry["attempts"] == 7
+    assert entry["successes"] == 5
+    assert entry["latency_ms"] == [120.0, 130.0]
+    # A missing last_seen is stamped "now", so the record earns a retention
+    # window instead of being instantly expired.
+    assert entry["last_seen"] > 0.0
+
+
 def test_load_recovers_from_corrupted_latency_list() -> None:
     """record() used to raise TypeError on a string latency list."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -402,7 +479,7 @@ def test_load_on_directory_path() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Persistence — save() edge cases
+# Persistence вЂ” save() edge cases
 # ---------------------------------------------------------------------------
 
 
@@ -428,7 +505,7 @@ def test_save_oserror_logs_warning(tmp_path: Path) -> None:
     """save() logs a warning on OSError."""
     hist = ProxyHealthHistory()
     hist.record("socks5://1.2.3.4:1080", True)
-    # Use a path in a non-existent drive or similar — on Windows, use a path with
+    # Use a path in a non-existent drive or similar вЂ” on Windows, use a path with
     # an invalid char; on all platforms, use a path to a directory instead of file.
     hist.save(str(tmp_path))  # tmp_path is a directory, should fail OSError
 
@@ -529,3 +606,180 @@ def test_fresh_failure_within_threshold_not_banned() -> None:
     for _ in range(2):
         hist.record("socks5://p:1080", False)
     assert not hist.is_banned("socks5://p:1080")
+
+
+class TestCredentialFreeKeys:
+    """Records are keyed without credentials: the history file is written to
+    disk on every run and must not hold a secret-at-rest."""
+
+    def test_record_key_strips_userinfo(self) -> None:
+        h = ProxyHealthHistory()
+        h.record("socks5://user:secretpass@1.2.3.4:1080", True, 100.0)
+        assert list(h.records) == ["socks5://1.2.3.4:1080"]
+
+    def test_saved_json_holds_no_credentials(self, tmp_path) -> None:
+        h = ProxyHealthHistory()
+        h.record("socks5://user:secretpass@1.2.3.4:1080", True, 100.0)
+        target = tmp_path / "proxy-health.json"
+        h.save(target)
+        text = target.read_text(encoding="utf-8")
+        assert "secretpass" not in text
+        assert "user@" not in text
+
+    def test_same_host_port_shares_record_across_credentials(self) -> None:
+        h = ProxyHealthHistory()
+        h.record("socks5://a:pw@1.2.3.4:1080", True, 100.0)
+        h.record("socks5://b:pw@1.2.3.4:1080", False, None)
+        entry = h.records["socks5://1.2.3.4:1080"]
+        assert entry["attempts"] == 2
+        assert entry["consecutive_failures"] == 1
+
+    def test_lookup_by_any_credential_spelling(self) -> None:
+        h = ProxyHealthHistory()
+        h.record("socks5://a:pw@1.2.3.4:1080", True, 100.0)
+        assert h.average_latency("socks5://zz:zz@1.2.3.4:1080") == 100.0
+        assert h.rank(["socks5://zz:zz@1.2.3.4:1080"]) == [
+            "socks5://zz:zz@1.2.3.4:1080",
+        ]
+
+    def test_key_is_structural_dial_target(self) -> None:
+        """The key is the dial target (scheme://host:port): credential spellings
+        and query strings collapse onto it, IPv6 stays bracketed, and a
+        scheme-less credential string never leaks into a persisted key."""
+        key = ProxyHealthHistory._key
+        assert key("socks5://user:pass@1.2.3.4:1080") == "socks5://1.2.3.4:1080"
+        assert key("socks5://1.2.3.4:1080") == "socks5://1.2.3.4:1080"
+        assert key("socks5://1.2.3.4:1080?x=1") == "socks5://1.2.3.4:1080"
+        assert (
+            key("socks5://user:pw@[2001:db8::1]:1080") == "socks5://[2001:db8::1]:1080"
+        )
+        assert key("socks5://USER:PW@H.Example:1080") == "socks5://h.example:1080"
+        assert "pass" not in key("user:pass@host")
+        # Unparseable junk falls back to a masked string, never raises.
+        assert isinstance(key("://"), str)
+
+
+class TestLegacyKeyMigration:
+    """Pre-0.2.0 files carried raw-credential keys; load() must re-key them."""
+
+    def test_load_migrates_raw_credential_keys(self, tmp_path, caplog) -> None:
+        import json as _json
+
+        target = tmp_path / "proxy-health.json"
+        legacy = {
+            "socks5://user:secretpass@1.2.3.4:1080": {
+                "attempts": 3,
+                "successes": 1,
+                "consecutive_failures": 2,
+                "latency_ms": [200.0],
+                "recent_results": [True, False, False],
+                "last_seen": 1.0,
+                "banned_until": 0.0,
+            },
+        }
+        target.write_text(_json.dumps(legacy), encoding="utf-8")
+        h = ProxyHealthHistory.load(target)
+        assert list(h.records) == ["socks5://1.2.3.4:1080"]
+        assert h.records["socks5://1.2.3.4:1080"]["attempts"] == 3
+
+    def test_migrated_twin_records_merge(self, tmp_path) -> None:
+        import json as _json
+
+        target = tmp_path / "proxy-health.json"
+        legacy = {
+            "socks5://a:pw@1.2.3.4:1080": {
+                "attempts": 2,
+                "successes": 2,
+                "consecutive_failures": 0,
+                "latency_ms": [100.0, 120.0],
+                "recent_results": [True, True],
+                "last_seen": 10.0,
+                "banned_until": 0.0,
+            },
+            "socks5://b:pw@1.2.3.4:1080": {
+                "attempts": 1,
+                "successes": 0,
+                "consecutive_failures": 1,
+                "latency_ms": [300.0],
+                "recent_results": [False],
+                "last_seen": 20.0,
+                "banned_until": 0.0,
+            },
+        }
+        target.write_text(_json.dumps(legacy), encoding="utf-8")
+        h = ProxyHealthHistory.load(target)
+        # Both legacy spellings collapse into ONE credential-free record.
+        assert list(h.records) == ["socks5://1.2.3.4:1080"]
+        merged = h.records["socks5://1.2.3.4:1080"]
+        assert merged["attempts"] == 3
+        assert merged["successes"] == 2
+        # The window keeps the most recent latency samples.
+        assert merged["latency_ms"] == [100.0, 120.0, 300.0]
+        assert merged["consecutive_failures"] == 1
+        assert merged["last_seen"] == 20.0
+        assert h.is_banned("socks5://x:y@1.2.3.4:1080") is False
+
+    def test_saved_json_holds_no_credentials_after_load_migration(
+        self, tmp_path
+    ) -> None:
+        """A legacy raw-key file is re-keyed at load AND stays clean at save."""
+        import json as _json
+
+        target = tmp_path / "legacy.json"
+        legacy = {
+            "socks5://user:secretpass@1.2.3.4:1080": {
+                "attempts": 2,
+                "successes": 1,
+                "consecutive_failures": 1,
+                "latency_ms": [150.0],
+                "recent_results": [True, False],
+                "last_seen": __import__("time").time(),
+                "banned_until": 0.0,
+            },
+        }
+        target.write_text(_json.dumps(legacy), encoding="utf-8")
+        h = ProxyHealthHistory.load(target)
+        out = tmp_path / "resaved.json"
+        h.save(str(out))
+        text = out.read_text(encoding="utf-8")
+        assert "secretpass" not in text
+        assert "user@" not in text
+        assert "socks5://1.2.3.4:1080" in text
+
+
+def test_sanitize_records_uses_configured_window_on_merge() -> None:
+    """Migration must not truncate to the hardcoded default window.
+
+    Records merged from credentialed twin keys used to be cut to
+    [-_DEFAULT_WINDOW:] even when the operator configured a wider
+    latency_window.
+    """
+    from src.validators.proxy_health import _sanitize_records
+
+    # Two credentialed variants of one host:port merge under the redacted
+    # key; the merged windows must honour the configured width, not the
+    # hardcoded default.
+    data = {
+        "socks5://u1:p1@9.9.9.9:1080": {
+            "attempts": 10,
+            "successes": 10,
+            "latency_ms": [100.0 * i for i in range(1, 11)],
+            "recent_results": [True] * 10,
+            "consecutive_failures": 0,
+            "banned_until": 0.0,
+            "last_seen": 1.0,
+        },
+        "socks5://u2:p2@9.9.9.9:1080": {
+            "attempts": 10,
+            "successes": 10,
+            "latency_ms": [100.0 * i for i in range(11, 21)],
+            "recent_results": [True] * 10,
+            "consecutive_failures": 0,
+            "banned_until": 0.0,
+            "last_seen": 2.0,
+        },
+    }
+    records = _sanitize_records(data, 8)
+    merged = records["socks5://9.9.9.9:1080"]
+    assert len(merged["latency_ms"]) == 8
+    assert len(merged["recent_results"]) == 8

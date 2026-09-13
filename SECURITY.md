@@ -14,7 +14,9 @@ This project is under active development. Only the latest commit on the `main` b
 If you discover a security vulnerability in this project, please report it responsibly:
 
 1. **Do not open a public issue.**
-2. Send an email to the repository owner with a detailed description.
+2. Use GitHub's **Private vulnerability reporting** (Security tab of this
+   repository) — it reaches the maintainers without any public trail and
+   lets a fix ship before disclosure.
 3. Allow reasonable time for investigation and remediation before disclosure.
 
 ## Known Risk Areas
@@ -52,7 +54,11 @@ This project processes untrusted network data and executes third-party binaries.
 
 - Run Xray in a sandboxed/network-isolated environment.
 - Add a staging publish step with smoke tests before committing to `main`.
-- Scope `GITHUB_TOKEN` to the minimal required permissions.
+
+(Already shipped, listed here so the plan is not mistaken for a gap:
+`GITHUB_TOKEN` is scoped to `contents: write` only (`update.yml`), and
+Dependabot keeps the SHA-pinned Actions updated — see
+`.github/dependabot.yml` and the Mitigations section.)
 
 ## Secret Handling
 

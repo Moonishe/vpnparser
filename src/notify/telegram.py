@@ -2,7 +2,7 @@
 
 Sends a message to a Telegram chat after each pipeline run with:
 - Config count and countries, freshness timestamp, publish delta
-- Subscription URLs (combined, blacklist, whitelist, 100/100 mix)
+- Subscription URLs (combined, blacklist, whitelist, dynamic mix)
 
 Usage (standalone, from CLI):
     python -m src.notify.telegram --configs 50 --countries "DE FI NL US"
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import html
 import json
 import logging
 import os
@@ -32,154 +31,51 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
+from src.notify import report as _report
+from src.notify.html_limits import (  # noqa: F401  (re-exports: tests reach these via telegram_module)
+    _ELLIPSIS,
+    _MAX_ENTITY_LEN,
+    _PAIRED_TAGS,
+    _SELF_CLOSING_TAGS,
+    _SEND_ATTEMPTS,
+    _TELEGRAM_MAX_TEXT,
+    _TOKEN_MIN_LEN,
+    _URL_FORBIDDEN_CHARS,
+    _flood_wait_seconds,
+    _open_tags,
+    _safe_cut_offset,
+    _truncate_html_safe,
+    _utf16_len,
+)
+from src.notify.report import (
+    _format_country_codes,
+    _format_country_counts,
+    _format_delta_section,
+    _format_source_alerts,
+    _format_trend_alert,
+    _format_validation_section,
+    _mix_label,
+    _subscription_urls,
+)
+from src.parsers.base import split_host_port
 from src.repo_info import github_branch, github_repo_slug
 from src.utils.paths import resolve_safe_output_path, write_text_atomic
 
+# Re-exports: tests reach these privates via `telegram_module.<name>`, and
+# the patch surface (monkeypatch.setattr(telegram_module, ...)) must keep
+# resolving here. Module-qualified binds keep ruff from pruning them as
+# "unused imports" without self-assignment tricks.
+_SUBSCRIPTION_LABELS = _report.SUBSCRIPTION_LABELS
+_country_name = _report._country_name
+_decode_subscription_lines = _report._decode_subscription_lines
+_format_permanently_disabled_sources = _report._format_permanently_disabled_sources
+_is_watermark_line = _report._is_watermark_line
+_repo_relative_output = _report._repo_relative_output
+_stats_history_path = _report._stats_history_path
+
 logger = logging.getLogger(__name__)
 
-# Telegram bot tokens have format: <digits>:<alphanumeric_hash>
-# e.g. "123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-_TOKEN_MIN_LEN = 20
-
-# Characters http.client rejects inside a URL path (C0 controls, space, DEL).
-# The token is interpolated into the sendMessage URL, and the rejection message
-# quotes that whole path — so a token pasted into .env with an embedded newline
-# would end up in the log verbatim.  Refuse it before it reaches urllib.
-_URL_FORBIDDEN_CHARS = frozenset(chr(code) for code in (*range(0x21), 0x7F))
-
-_REDACTED = "<redacted>"
-
-# HTML tags used in the notification template that need closing when truncated.
-_SELF_CLOSING_TAGS = {"br", "hr"}
-_PAIRED_TAGS = ("b", "i", "u", "s", "a", "code", "pre", "blockquote")
-
-# Telegram sendMessage rejects text longer than this with a 400.
-_TELEGRAM_MAX_TEXT = 4096
-
-# Longest entity html.escape() can emit ("&quot;" / "&#x27;") plus slack.
-_MAX_ENTITY_LEN = 8
-
-_ELLIPSIS = "..."
-
-# One retry is enough for the flood limit: two runs colliding (a manual
-# workflow_dispatch on top of the hourly schedule) is the realistic case, and
-# without it the "subscription updated" message is simply lost.
-_SEND_ATTEMPTS = 2
-
-# Used when a 429 body carries no usable ``retry_after``.
-_DEFAULT_FLOOD_WAIT = 3.0
-
-# Upper bound on an honoured ``retry_after`` — a bogus value must not park the
-# pipeline for hours.
-_MAX_FLOOD_WAIT = 30.0
-
-
-def _flood_wait_seconds(body: str) -> float:
-    """Return the delay to honour before retrying a flood-limited send.
-
-    Telegram answers a flood limit with HTTP 429 and
-    ``{"parameters": {"retry_after": N}}``.
-
-    Args:
-        body: Decoded response body of the 429 answer.
-
-    Returns:
-        Seconds to wait, clamped to ``_MAX_FLOOD_WAIT``.
-    """
-    try:
-        parameters = json.loads(body).get("parameters")
-        raw = parameters.get("retry_after")
-    except (AttributeError, TypeError, ValueError):
-        return _DEFAULT_FLOOD_WAIT
-    try:
-        seconds = float(raw)
-    except (TypeError, ValueError):
-        return _DEFAULT_FLOOD_WAIT
-    return min(max(seconds, 0.0), _MAX_FLOOD_WAIT)
-
-
-def _safe_cut_offset(text: str, limit: int) -> int:
-    """Return an offset ``<= limit`` at which ``text`` can be split safely.
-
-    ``text[:offset]`` never ends inside an HTML tag or a half-written
-    ``&entity;`` — both would make Telegram reject the message with
-    "can't parse entities".
-    """
-    cut = min(limit, len(text))
-    # Avoid cutting inside an HTML entity (&...;) — back up to '&'.  The ';'
-    # must land *inside* text[:cut], so the search bound is exclusive: a ';'
-    # at index cut is not part of the slice.
-    last_amp = text.rfind("&", max(0, cut - _MAX_ENTITY_LEN), cut)
-    if last_amp != -1 and text.find(";", last_amp, cut) == -1:
-        cut = last_amp
-    # Avoid cutting between '<' and '>' (inside a tag).  Backing up once is not
-    # enough: with runs like "a<<b" the new boundary lands right after another
-    # '<', so the prefix would again end on an unclosed tag opener.  ``cut``
-    # strictly decreases every round, so the loop always terminates.
-    while True:
-        last_open = text.rfind("<", 0, cut)
-        if last_open == -1 or text.find(">", last_open, cut) != -1:
-            break
-        cut = last_open
-    return max(0, cut)
-
-
-def _open_tags(text: str) -> list[str]:
-    """Return the paired tags left open in ``text``, outermost first."""
-    open_stack: list[str] = []
-    pos = 0
-    while pos < len(text):
-        lt = text.find("<", pos)
-        if lt == -1:
-            break
-        gt = text.find(">", lt)
-        if gt == -1:
-            break
-        tag_text = text[lt + 1 : gt].strip()
-        pos = gt + 1
-        if not tag_text:
-            continue
-        if tag_text.startswith("/"):
-            # A nameless closing tag ("</>", "</ >") has nothing to pop, and
-            # split() on the empty remainder yields no element to index.
-            closing = tag_text[1:].split()
-            if not closing:
-                continue
-            name = closing[0].lower()
-            for i in range(len(open_stack) - 1, -1, -1):
-                if open_stack[i] == name:
-                    open_stack.pop(i)
-                    break
-            continue
-        name = tag_text.split()[0].lower()
-        if name in _SELF_CLOSING_TAGS or name not in _PAIRED_TAGS:
-            continue
-        open_stack.append(name)
-    return open_stack
-
-
-def _truncate_html_safe(text: str, limit: int) -> str:
-    """Truncate Telegram HTML text so the *result* is at most limit characters.
-
-    Cuts at a safe offset (never inside a <tag> or an entity), appends an
-    ellipsis, and closes any tags left open by the cut. The ellipsis and the
-    closing tags count against ``limit`` — a "</blockquote>" tail adds 13
-    characters, and without reserving room for it the message would come back
-    from Telegram as 400 "message is too long".
-    """
-    if len(text) <= limit:
-        return text
-    cut = limit
-    while cut > 0:
-        prefix = text[: _safe_cut_offset(text, cut)].rstrip()
-        closing = "".join(f"</{name}>" for name in reversed(_open_tags(prefix)))
-        result = f"{prefix}{_ELLIPSIS}{closing}"
-        if len(result) <= limit:
-            return result
-        # Shrink by exactly the overflow: the next attempt keeps as much text
-        # as the reserved ellipsis/closing tags allow.
-        cut -= max(1, len(result) - limit)
-    return ""
+# --- limits & truncation: src/notify/html_limits.py (re-exported below) ---
 
 
 def _repo_slug() -> str:
@@ -192,24 +88,32 @@ def _repo_branch() -> str:
     return github_branch()
 
 
-def _h(value: Any) -> str:
-    """Escape dynamic values for Telegram HTML parse mode."""
-    return html.escape(str(value), quote=True)
+# _h/_b/_link: single definitions live in report.py (imported below);
+# this module and its tests use the same functions.
+_h = _report._h
 
 
-def _b(value: Any) -> str:
-    return f"<b>{_h(value)}</b>"
+_b = _report._b
 
 
-def _link(label: Any, url: Any) -> str:
-    return f'<a href="{_h(url)}">{_h(label)}</a>'
+_link = _report._link
+
+
+#: Handle credited in the bot intro. Overridable so a fork does not advertise
+#: this deployment's author; the default keeps the current behaviour.
+_DEFAULT_BOT_AUTHOR = "@dutysissy"
+
+
+def _bot_author() -> str:
+    """Return the handle credited in the intro line (env-overridable)."""
+    return (os.environ.get("TELEGRAM_BOT_AUTHOR") or "").strip() or _DEFAULT_BOT_AUTHOR
 
 
 def _bot_intro() -> str:
     repo_slug = _repo_slug()
     repo_url = f"https://github.com/{repo_slug}"
     return (
-        f"🤖 {_b('Я — vpnparser бот')} от @dutysissy\n"
+        f"🤖 {_b('Я — vpnparser бот')} от {_h(_bot_author())}\n"
         "📡 Парсю публичные VPN конфиги каждый час\n"
         f"🔗 {_link(repo_slug, repo_url)}"
     )
@@ -242,152 +146,8 @@ _FACT_FALLBACKS = [
     "Если вы используете бесплатный VPN, вы — товар. Ваш данные могут продаваться. К счастью, наш парсер находит бесплатные серверы, а не бесплатный VPN-сервис.",  # noqa: E501
 ]
 
-# Country flag emojis + Russian names for output.
-_COUNTRY_INFO = {
-    "DE": ("🇩🇪", "Германия"),
-    "FI": ("🇫🇮", "Финляндия"),
-    "NL": ("🇳🇱", "Нидерланды"),
-    "US": ("🇺🇸", "США"),
-    "GB": ("🇬🇧", "Великобритания"),
-    "FR": ("🇫🇷", "Франция"),
-    "JP": ("🇯🇵", "Япония"),
-    "SG": ("🇸🇬", "Сингапур"),
-    "CA": ("🇨🇦", "Канада"),
-    "AE": ("🇦🇪", "ОАЭ"),
-    "TR": ("🇹🇷", "Турция"),
-    "ID": ("🇮🇩", "Индонезия"),
-    "RU": ("🇷🇺", "Россия"),
-    "PL": ("🇵🇱", "Польша"),
-    "SE": ("🇸🇪", "Швеция"),
-    "CH": ("🇨🇭", "Швейцария"),
-    "AT": ("🇦🇹", "Австрия"),
-    "ES": ("🇪🇸", "Испания"),
-    "IT": ("🇮🇹", "Италия"),
-    "AU": ("🇦🇺", "Австралия"),
-    "KR": ("🇰🇷", "Корея"),
-    "HK": ("🇭🇰", "Гонконг"),
-    "TW": ("🇹🇼", "Тайвань"),
-    "IN": ("🇮🇳", "Индия"),
-    "TH": ("🇹🇭", "Таиланд"),
-    "VN": ("🇻🇳", "Вьетнам"),
-    "BR": ("🇧🇷", "Бразилия"),
-    "MX": ("🇲🇽", "Мексика"),
-    "IR": ("🇮🇷", "Иран"),
-    "BE": ("🇧🇪", "Бельгия"),
-    "CZ": ("🇨🇿", "Чехия"),
-    "UA": ("🇺🇦", "Украина"),
-    "PH": ("🇵🇭", "Филиппины"),
-    "MY": ("🇲🇾", "Малайзия"),
-    "ZA": ("🇿🇦", "ЮАР"),
-    "AR": ("🇦🇷", "Аргентина"),
-}
-
 
 #: Repo-relative paths used when the run summary does not name the outputs.
-_DEFAULT_OUTPUT_PATHS = {
-    "combined": "output/subscription.txt",
-    "blacklist": "output/subscription-blacklist.txt",
-    "whitelist": "output/subscription-whitelist.txt",
-    "mix": "output/subscription-mix.txt",
-}
-
-
-def _repo_relative_output(summary: dict[str, Any], key: str) -> str | None:
-    """Return the repo path of output *key*, as recorded by the pipeline.
-
-    The publisher commits every output file under the same (relative) path it
-    was written to, so ``run-summary.json`` already knows where the links must
-    point — including after ``publisher.output_file`` or ``split_output_files``
-    were repointed in settings.yaml.
-
-    Args:
-        summary: Parsed run-summary.json (may be empty).
-        key: Output name (``combined``, ``blacklist``, ...).
-
-    Returns:
-        The forward-slash repo path, or ``None`` when the summary does not
-        carry a usable one. Absolute paths and ``..`` segments yield ``None``:
-        they exist outside the repository, so no raw URL can address them.
-    """
-    outputs = summary.get("outputs")
-    item = outputs.get(key) if isinstance(outputs, dict) else None
-    raw = item.get("file") if isinstance(item, dict) else None
-    if not raw or not isinstance(raw, str):
-        return None
-    native = Path(raw)
-    if (
-        native.is_absolute()
-        or native.drive
-        # On Linux, PurePosixPath does not recognise drive letters, so
-        # C:/secrets/out.txt is neither absolute nor has .drive set.
-        or (len(raw) > 1 and raw[1:2] == ":")
-    ):
-        return None
-    path = PurePosixPath(raw.replace("\\", "/"))
-    if path.is_absolute() or ".." in path.parts:
-        return None
-    return str(path)
-
-
-def _subscription_urls(summary: dict[str, Any] | None = None) -> dict[str, str]:
-    """Return raw GitHub URLs for all published subscription outputs.
-
-    Args:
-        summary: Parsed run-summary.json. When it names the files this run
-            wrote, the links follow them; otherwise the default layout is used.
-    """
-    # Percent-encode each path segment so a run-summary path containing a
-    # space, "#", "?" or non-ASCII still yields a clickable raw link instead of
-    # silently truncating at the fragment/query or breaking the URL. Slugs carry
-    # "owner/repo" and paths carry "/" separators, so keep the separator literal
-    # (safe="/") while encoding the dangerous characters.
-    summary = summary if isinstance(summary, dict) else {}
-    slug = quote(_repo_slug(), safe="/")
-    branch = quote(_repo_branch(), safe="/")
-    return {
-        key: (
-            f"https://raw.githubusercontent.com/{slug}/{branch}/"
-            f"{quote(_repo_relative_output(summary, key) or default, safe='/')}"
-        )
-        for key, default in _DEFAULT_OUTPUT_PATHS.items()
-    }
-
-
-_SUBSCRIPTION_LABELS = {
-    "combined": "Общая",
-    "blacklist": "Blacklist",
-    "whitelist": "Whitelist",
-    # Fallback when the run summary carries no per-list counts; the dynamic
-    # variant comes from _mix_label().
-    "mix": "Mix",
-}
-
-
-def _mix_label(summary: dict[str, Any]) -> str:
-    """Build a dynamic "Mix <blacklist>/<whitelist>" label from real counts.
-
-    The old static "Mix 100/100" kept advertising round numbers while both
-    lists were capped by xray_max_alive (200 each) or filtered down to far
-    less; the numbers next to the label must match the per-list lines above.
-    """
-    outputs = summary.get("outputs")
-    if not isinstance(outputs, dict):
-        return _SUBSCRIPTION_LABELS["mix"]
-
-    def _count(key: str) -> int | None:
-        item = outputs.get(key)
-        if not isinstance(item, dict):
-            return None
-        try:
-            return int(item.get("count") or 0)
-        except (TypeError, ValueError):
-            return None
-
-    blacklist_count = _count("blacklist")
-    whitelist_count = _count("whitelist")
-    if blacklist_count is None or whitelist_count is None:
-        return _SUBSCRIPTION_LABELS["mix"]
-    return f"Mix {blacklist_count}/{whitelist_count}"
 
 
 def _load_run_summary(filepath: str) -> dict[str, Any]:
@@ -403,8 +163,17 @@ def _load_run_summary(filepath: str) -> dict[str, Any]:
 
 
 def _subscription_file_paths(subscription_file: str) -> dict[str, str]:
-    """Return expected local output files using the combined path as anchor."""
-    combined = Path(subscription_file or "output/subscription.txt")
+    """Return expected local output files using the combined path as anchor.
+
+    Resolved like the runner writes them (project root for relative paths),
+    so a different CWD does not point the fallback counts at stray files.
+    """
+    raw = subscription_file or "output/subscription.txt"
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        with contextlib.suppress(ValueError):
+            candidate = resolve_safe_output_path(raw)
+    combined = candidate
     output_dir = combined.parent
     return {
         "combined": str(combined),
@@ -412,56 +181,6 @@ def _subscription_file_paths(subscription_file: str) -> dict[str, str]:
         "whitelist": str(output_dir / "subscription-whitelist.txt"),
         "mix": str(output_dir / "subscription-mix.txt"),
     }
-
-
-def _country_name(code: str) -> str:
-    flag, name = _COUNTRY_INFO.get(code, ("🌍", code))
-    return f"{flag} {_h(name)}"
-
-
-def _format_country_counts(countries: dict[str, Any], *, max_items: int = 6) -> str:
-    """Format country counts as a compact Telegram line."""
-    parsed: list[tuple[str, int]] = []
-    for code, count in countries.items():
-        try:
-            parsed.append((str(code).upper(), int(count)))
-        except (TypeError, ValueError):
-            continue
-    if not parsed:
-        return "страны не определены"
-
-    parsed.sort(key=lambda item: item[1], reverse=True)
-    shown = parsed[:max_items]
-    parts = [f"{_country_name(code)} {count}" for code, count in shown]
-    remaining = len(parsed) - len(shown)
-    if remaining > 0:
-        parts.append(f"+{remaining} стран")
-    return ", ".join(parts)
-
-
-def _format_country_codes(countries: str, *, max_items: int = 9) -> str:
-    """Format a caller-supplied country-code list for Telegram.
-
-    Args:
-        countries: Whitespace- or comma-separated ISO codes ("DE FI NL").
-        max_items: How many countries are rendered before "+N стран".
-
-    Returns:
-        A compact ``flag name, flag name`` line, or ``""`` when nothing parsed.
-    """
-    codes: list[str] = []
-    for chunk in (countries or "").replace(",", " ").split():
-        code = chunk.strip().upper()
-        if code and code not in codes:
-            codes.append(code)
-    if not codes:
-        return ""
-    shown = codes[:max_items]
-    text = ", ".join(_country_name(code) for code in shown)
-    remaining = len(codes) - len(shown)
-    if remaining > 0:
-        text += f", +{remaining} стран"
-    return text
 
 
 def _fallback_subscription_line(configs_count: int, countries: str) -> str:
@@ -479,308 +198,6 @@ def _fallback_subscription_line(configs_count: int, countries: str) -> str:
     # so it never reads like the per-country counts of the lines above.
     suffix = f" — ожидались {country_text}" if country_text else ""
     return f"  {_b(_SUBSCRIPTION_LABELS['combined'])}: {configs_count}{suffix}"
-
-
-def _alert_min_alive() -> int:
-    """Per-list Xray-alive floor from settings; 10 when unreadable."""
-    try:
-        import yaml
-
-        settings_path = (
-            resolve_safe_output_path(".", strict=True) / "config" / "settings.yaml"
-        )
-        with settings_path.open("r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh) or {}
-        section = data.get("telegram")
-        if isinstance(section, dict):
-            value = section.get("alert_min_alive")
-            if value is not None:
-                return max(0, int(value))
-    except Exception:
-        logger.debug("settings.yaml unreadable; using default alert floor")
-    return 10
-
-
-def _stats_history_path(status_file: str) -> Path:
-    """The stats-history file lives next to the run summary it belongs to."""
-    if status_file:
-        return Path(status_file).parent / "stats-history.json"
-    return Path("output") / "stats-history.json"
-
-
-def _format_trend_alert(status_file: str = "") -> str:
-    """Warn when a run collapsed relative to the previous one.
-
-    Reads the last two entries of the published stats history: a list (or the
-    proxy pool) losing 40%+ of its alive count is the earliest visible signal
-    of a dying source or a network event, well before the absolute floor
-    fires.
-    """
-    try:
-        path = _stats_history_path(status_file)
-        if not path.exists():
-            return ""
-        entries = [
-            item
-            for item in json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(item, dict) and item.get("status") == "ok"
-        ]
-    except Exception:
-        return ""
-    if len(entries) < 2:
-        return ""
-    # Only "ok" runs carry complete liveness stats: diffing against a
-    # partially-written entry (mid-run failure, publish failure) would
-    # report a collapse that never happened.
-    prev, current = entries[-2], entries[-1]
-    lines: list[str] = []
-
-    def _alive(entry: dict[str, Any], key: str) -> int:
-        lists = entry.get("lists")
-        if not isinstance(lists, dict):
-            return 0
-        item = lists.get(key)
-        return int(item.get("alive") or 0) if isinstance(item, dict) else 0
-
-    for key in ("blacklist", "whitelist"):
-        prev_alive = _alive(prev, key)
-        cur_alive = _alive(current, key)
-        # Small numbers wobble run to run; only meaningful drops alert.
-        if prev_alive >= 5 and cur_alive < prev_alive * 0.6:
-            drop = round(100 * (1 - cur_alive / prev_alive))
-            lines.append(
-                f"📉 {_b(_h(key))}: {_b(cur_alive)} против {_b(prev_alive)} "
-                f"в прошлом прогоне (−{_b(drop)}%)"
-            )
-    prev_pool = int(prev.get("proxy_count") or 0)
-    cur_pool = int(current.get("proxy_count") or 0)
-    if prev_pool >= 6 and cur_pool * 2 < prev_pool:
-        lines.append(f"🧦 Прокси-пул просел: {_b(cur_pool)} против {_b(prev_pool)}")
-    return "\n".join(lines)
-
-
-def _format_low_alive_alert(summary: dict[str, Any]) -> str:
-    """One warning line per list whose verified-alive count collapsed."""
-    lists = (summary.get("validation") or {}).get("lists")
-    if not isinstance(lists, dict):
-        return ""
-    min_alive = _alert_min_alive()
-    if min_alive <= 0:
-        return ""
-    alerts: list[str] = []
-    for key in ("blacklist", "whitelist"):
-        item = lists.get(key)
-        if not isinstance(item, dict):
-            continue
-        checked = int(item.get("xray_checked") or 0)
-        alive = int(item.get("xray_alive") or 0)
-        if checked > 0 and alive < min_alive:
-            alerts.append(
-                f"⚠️ {_b(_h(key))}: живых {_b(alive)}/{_h(checked)} "
-                f"(порог {_h(min_alive)}) — проверьте пул прокси и источники"
-            )
-    return "\n".join(alerts)
-
-
-def _format_validation_section(summary: dict[str, Any]) -> str:
-    validation = summary.get("validation")
-    if not isinstance(validation, dict) or not validation:
-        return f"{_b('🧪 Проверка')}: нет данных по этому прогону"
-
-    tcp_enabled = bool(validation.get("tcp_enabled"))
-    tls_enabled = bool(validation.get("tls_enabled"))
-    xray_enabled = bool(validation.get("xray_enabled"))
-    proxy_pool_enabled = bool(validation.get("proxy_pool_enabled"))
-    proxy_pool_required = bool(validation.get("proxy_pool_required"))
-    proxy_count = int(validation.get("proxy_count") or 0)
-    proxy_min = int(validation.get("proxy_min_proxies") or 0)
-    proxy_rounds = int(validation.get("proxy_search_rounds") or 0)
-    proxy_round_limit = int(validation.get("proxy_search_round_limit") or 0)
-    strict_liveness = validation.get("fail_open_on_low_alive") is False
-    drop_unchecked = validation.get("drop_unchecked_after_tls") is True
-    proxy_search_text = ""
-    if proxy_rounds > 0 and proxy_round_limit > 0:
-        proxy_search_text = f", поиск {proxy_rounds}/{proxy_round_limit}"
-    strict_text = ", strict" if strict_liveness else ""
-    unchecked_text = ", без TCP-only" if drop_unchecked else ""
-    lists = validation.get("lists")
-    xray_ran_without_proxies = (
-        xray_enabled
-        and isinstance(lists, dict)
-        and any(
-            isinstance(item, dict) and int(item.get("xray_checked") or 0) > 0
-            for item in lists.values()
-        )
-    )
-
-    if not tcp_enabled and not tls_enabled and not xray_enabled:
-        first = f"{_b('🧪 Проверка')}: выключена"
-    elif (
-        proxy_pool_enabled
-        and proxy_pool_required
-        and proxy_count <= 0
-        and xray_ran_without_proxies
-    ):
-        first = (
-            f"{_b('🧪 Проверка')}: включена, без рабочих SOCKS5 прокси, "
-            f"Xray напрямую{strict_text}{unchecked_text}"
-        )
-        if proxy_round_limit > 0:
-            first += f", поиск прокси {proxy_round_limit} раундов"
-    elif proxy_pool_enabled and proxy_pool_required and proxy_count <= 0:
-        first = f"{_b('🧪 Проверка')}: пропущена, рабочих SOCKS5 прокси не найдено"
-        if proxy_round_limit > 0:
-            first += f" после {proxy_round_limit} раундов поиска"
-    elif proxy_count > 0:
-        min_text = f", минимум {proxy_min}" if proxy_min > 0 else ""
-        first = (
-            f"{_b('🧪 Проверка')}: включена, через {proxy_count} SOCKS5 прокси"
-            f"{min_text}{proxy_search_text}{strict_text}{unchecked_text}"
-        )
-    else:
-        first = (
-            f"{_b('🧪 Проверка')}: включена, без прокси{strict_text}{unchecked_text}"
-        )
-
-    lines = [first]
-    if isinstance(lists, dict):
-        for key in ("blacklist", "whitelist"):
-            item = lists.get(key)
-            if not isinstance(item, dict):
-                continue
-            label = _SUBSCRIPTION_LABELS.get(key, key)
-
-            tcp_checked = int(item.get("tcp_checked") or 0)
-            tcp_alive = int(item.get("tcp_alive") or 0)
-            tls_checked = int(item.get("tls_checked") or 0)
-            tls_alive = int(item.get("tls_alive") or 0)
-            tls_unchecked = int(item.get("tls_unchecked_passthrough") or 0)
-            xray_checked = int(item.get("xray_checked") or 0)
-            xray_alive = int(item.get("xray_alive") or 0)
-            xray_unsupported = int(item.get("xray_unsupported") or 0)
-            xray_probe_count = int(item.get("xray_probe_count") or 0)
-            xray_min_probe_successes = int(item.get("xray_min_probe_successes") or 0)
-            xray_attempts_per_config = int(item.get("xray_attempts_per_config") or 0)
-            xray_min_attempt_successes = int(
-                item.get("xray_min_attempt_successes") or 0,
-            )
-            xray_proxy_checks = int(item.get("xray_proxy_checks") or 0)
-            xray_min_proxy_successes = int(item.get("xray_min_proxy_successes") or 0)
-            xray_ip_check = bool(item.get("xray_require_distinct_outbound_ip"))
-            skipped = int(item.get("tcp_skipped_protocol") or 0)
-            rounds = int(item.get("tcp_search_rounds") or 0)
-            round_limit = int(item.get("tcp_search_round_limit") or 0)
-            if (
-                item.get("reason") == "no_proxies"
-                and tcp_checked <= 0
-                and tls_checked <= 0
-                and xray_checked <= 0
-            ):
-                lines.append(f"  {_b(label)}: не проверялся, нет рабочих прокси")
-                continue
-            if (
-                tcp_checked <= 0
-                and tls_checked <= 0
-                and xray_checked <= 0
-                and not item.get("checked")
-            ):
-                lines.append(f"  {_b(label)}: нет кандидатов для TCP/TLS проверки")
-                continue
-
-            suffix = " fail-open" if item.get("fail_open") else ""
-            round_text = (
-                f", раунды {rounds}/{round_limit}"
-                if rounds > 0 and round_limit > 1
-                else ""
-            )
-            if tcp_checked > 0:
-                tcp_label = "TCP" if tls_checked > 0 else ""
-                tcp_label = f" {tcp_label}" if tcp_label else ""
-                lines.append(
-                    f"  {_b(f'{label}{tcp_label}')}: проверено {tcp_checked}, "
-                    f"порт открыт {tcp_alive}, пропущено {skipped}"
-                    f"{round_text}{suffix}",
-                )
-            if tls_checked > 0:
-                dropped_text = (
-                    f", TCP-only отброшено {tls_unchecked}"
-                    if item.get("tls_drop_unchecked") and tls_unchecked > 0
-                    else ""
-                )
-                lines.append(
-                    f"  {_b(f'{label} TLS/REALITY')}: проверено {tls_checked}, "
-                    f"живых {tls_alive}{dropped_text}{suffix}",
-                )
-            if item.get("reason") == "xray_unavailable":
-                lines.append(f"  {_b(f'{label} Xray')}: пропущен, xray не установлен")
-            elif xray_checked > 0:
-                unsupported_text = (
-                    f", неподдержано {xray_unsupported}" if xray_unsupported > 0 else ""
-                )
-                probe_text = (
-                    f", HTTPS-пробы {xray_min_probe_successes}/{xray_probe_count}"
-                    if xray_probe_count > 1 and xray_min_probe_successes > 0
-                    else ""
-                )
-                attempt_text = (
-                    f", повторы {xray_min_attempt_successes}/{xray_attempts_per_config}"
-                    if xray_attempts_per_config > 1 and xray_min_attempt_successes > 0
-                    else ""
-                )
-                proxy_text = (
-                    f", proxy-сети {xray_min_proxy_successes}/{xray_proxy_checks}"
-                    if xray_proxy_checks > 0 and xray_min_proxy_successes > 0
-                    else ""
-                )
-                ip_text = ", IP-check" if xray_ip_check else ""
-                lines.append(
-                    f"  {_b(f'{label} Xray')}: проверено {xray_checked}, "
-                    f"реально рабочих {xray_alive}{unsupported_text}{probe_text}"
-                    f"{attempt_text}{proxy_text}{ip_text}",
-                )
-    quality = validation.get("quality")
-    if isinstance(quality, dict):
-        for key in ("blacklist", "whitelist"):
-            item = quality.get(key)
-            if not isinstance(item, dict):
-                continue
-            label = _SUBSCRIPTION_LABELS.get(key, key)
-            kept = int(item.get("kept") or 0)
-            slow_dropped = int(item.get("slow_dropped") or 0)
-            avg_score = float(item.get("avg_score") or 0)
-            lines.append(
-                f"  {_b(f'{label} quality')}: прошло {kept}, "
-                f"медленных удалено {slow_dropped}, score {avg_score:.1f}",
-            )
-    return "\n".join(lines)
-
-
-def _format_source_alerts(summary: dict[str, Any]) -> str:
-    """Render one line per source that returned nothing or failed to fetch.
-
-    ``sources.errors`` in run-summary.json is the only place these failures
-    live otherwise — an operator watching the chat never sees a quietly empty
-    source until its configs vanish from the subscription entirely.
-    """
-    sources = summary.get("sources")
-    if not isinstance(sources, dict):
-        return ""
-    errors = sources.get("errors")
-    if not isinstance(errors, list) or not errors:
-        return ""
-    lines = [f"⚠️ {_b('Проблемные источники')}:"]
-    for item in errors[:5]:
-        if not isinstance(item, dict):
-            continue
-        name = _h(item.get("source") or "?")
-        reason = str(item.get("error") or "нет данных")
-        if len(reason) > 100:
-            reason = reason[:97] + "…"
-        lines.append(f"  ⚠️ {name} — {_h(reason)}")
-    remaining = len(errors) - 5
-    if remaining > 0:
-        lines.append(f"  … и ещё {remaining}")
-    return "\n".join(lines)
 
 
 def _format_subscriptions_section(
@@ -873,7 +290,15 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
     try:
         import base64
 
-        text = base64.b64decode(raw).decode("utf-8")
+        # validate=True: the default decoder silently drops non-alphabet
+        # characters, so a plain-format file decoded into garbage instead of
+        # failing and keeping its raw lines. A link-bearing text skips decode.
+        # Whitespace is stripped first: files may arrive MIME-wrapped
+        # (soft line breaks every 76 chars), which validate=True rejects.
+        if "://" not in raw:
+            text = base64.b64decode("".join(raw.split()), validate=True).decode("utf-8")
+        else:
+            text = raw
     except Exception:
         text = raw
 
@@ -894,11 +319,15 @@ def _count_countries_from_file(filepath: str) -> dict[str, int]:
             from urllib.parse import unquote
 
             remark = unquote(line.split("#", 1)[1].strip())
-        # Extract host from link body
+        # Extract host from link body. split_host_port handles bracketed
+        # IPv6 (a plain .split(":") turned "2001:db8::1" into "2001").
         host = ""
         body = line.split("://", 1)[1] if "://" in line else ""
         if "@" in body:
-            host = body.split("@", 1)[1].split(":")[0].split("?")[0].strip("[]")
+            after_at = body.rsplit("@", 1)[1].split("?")[0].split("/", 1)[0]
+            parsed_hp = split_host_port(after_at)
+            if parsed_hp is not None:
+                host = parsed_hp[0]
         # Use detect_country from country_filter (same logic as pipeline)
         code = detect_country(remark, host)
         if code:
@@ -923,29 +352,44 @@ def _load_facts_history() -> list[str]:
 
 
 def _save_fact(fact: str) -> None:
-    """Append fact to history file, keeping last _FACT_HISTORY_MAX entries."""
-    history = _load_facts_history()
-    history.append(fact)
-    history = history[-_FACT_HISTORY_MAX:]
-    try:
-        # Atomic like every other state file: a crash mid-write used to be
-        # able to truncate the only non-atomic state artifact, silently
-        # resetting the rotation.
-        write_text_atomic(
-            resolve_safe_output_path(_FACT_HISTORY_FILE),
-            json.dumps(history, ensure_ascii=False, indent=2),
-        )
-    except Exception as exc:
-        logger.warning("Could not save fact history: %s", exc)
+    """Append fact to history file, keeping last _FACT_HISTORY_MAX entries.
+
+    No FileLock: the notifier is a single-writer step and the write itself
+    is atomic (tmp file + os.replace), so a crash cannot tear the file —
+    only a lost-update race between two concurrent notifiers remains. Retry
+    once on failure to ride out that race.
+    """
+    for _ in range(2):
+        try:
+            history = _load_facts_history()
+            history.append(fact)
+            history = history[-_FACT_HISTORY_MAX:]
+            # Atomic like every other state file: a crash mid-write used to be
+            # able to truncate the only non-atomic state artifact, silently
+            # resetting the rotation.
+            write_text_atomic(
+                resolve_safe_output_path(_FACT_HISTORY_FILE),
+                json.dumps(history, ensure_ascii=False, indent=2),
+            )
+            return
+        except Exception as exc:
+            logger.warning("Could not save fact history: %s", exc)
+    return
 
 
-def _generate_fun_fact() -> str:
+def _generate_fun_fact(*, save: bool = True) -> str:
     """Pick a fun VPN fact, rotating so consecutive messages don't repeat.
 
     The LLM-generated facts were removed: the only configured key was a
     Yandex one that every supported provider rejects with 401, so every call
     wasted seconds before falling back anyway. History-based rotation of the
     static fallbacks keeps the same variety for free.
+
+    Args:
+        save: Record the pick immediately (legacy default, keeps existing
+            callers/tests green). The pipeline passes ``save=False`` and
+            records only after a successful send, so a failed send does not
+            burn a fact the subscribers never saw.
     """
     import random
 
@@ -957,31 +401,62 @@ def _generate_fun_fact() -> str:
         # Everything has been shown once — restart the rotation.
         available = all_facts
     fact = random.choice(available)
-    _save_fact(fact)
+    if save:
+        _save_fact(fact)
     return fact
 
 
-def _is_watermark_line(line: str) -> bool:
-    """Detect the display-only vmess watermark (``add`` is 0.0.0.0)."""
-    from src.aggregator.output import is_watermark_vmess
+def _alert_min_alive() -> int:
+    """Per-list Xray-alive floor from settings; 10 when unreadable."""
+    try:
+        import yaml
 
-    return is_watermark_vmess(line)
+        settings_path = (
+            resolve_safe_output_path(".", strict=True) / "config" / "settings.yaml"
+        )
+        with settings_path.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        section = data.get("telegram")
+        if isinstance(section, dict):
+            value = section.get("alert_min_alive")
+            if value is not None:
+                return max(0, int(value))
+    except Exception:
+        logger.debug("settings.yaml unreadable; using default alert floor")
+    return 10
 
 
-def _decode_subscription_lines(raw: str) -> set[str]:
-    """Decode a base64 (or plain) subscription body into its config links."""
-    import base64
-
-    text = raw.strip()
-    with contextlib.suppress(Exception):
-        text = base64.b64decode(text).decode("utf-8")
-    # Skip the watermark vmess line: it is regenerated every run and would
-    # otherwise show up as a fake "+1/-1" delta.
-    return {
-        line.strip()
-        for line in text.splitlines()
-        if "://" in line and not _is_watermark_line(line.strip())
-    }
+def _format_low_alive_alert(summary: dict[str, Any]) -> str:
+    """One warning line per list whose verified-alive count collapsed."""
+    lists = (summary.get("validation") or {}).get("lists")
+    if not isinstance(lists, dict):
+        return ""
+    alerts: list[str] = []
+    # Infra-collapse banner: the runner computed explicit degradation reasons
+    # (a full Xray sweep with zero survivors is a dead-proxy spiral, not 100%
+    # dead input) — say so loudly before the per-list thresholds below.
+    reasons = summary.get("degraded_reasons")
+    if isinstance(reasons, list) and reasons:
+        alerts.append(
+            "🚨 Деградация пробы: "
+            + "; ".join(_h(str(reason)) for reason in reasons)
+            + " — похоже, умер пул прокси, а не все конфиги разом"
+        )
+    min_alive = _alert_min_alive()
+    if min_alive <= 0:
+        return "\n".join(alerts)
+    for key in ("blacklist", "whitelist"):
+        item = lists.get(key)
+        if not isinstance(item, dict):
+            continue
+        checked = _report._safe_int(item.get("xray_checked"))
+        alive = _report._safe_int(item.get("xray_alive"))
+        if checked > 0 and alive < min_alive:
+            alerts.append(
+                f"⚠️ {_b(key)}: живых {_b(alive)}/{_h(checked)} "
+                f"(порог {_h(min_alive)}) — проверьте пул прокси и источники"
+            )
+    return "\n".join(alerts)
 
 
 def _current_subscription_lines(subscription_file: str) -> set[str]:
@@ -1003,9 +478,17 @@ def _previous_published_lines(subscription_file: str) -> set[str]:
     notify step runs, so only git history still holds what subscribers see
     right now. Empty set when the baseline is unavailable — the delta line
     is then simply omitted instead of lying about "everything is new".
+
+    Runs ``git show`` via blocking subprocess: the caller (send_notification
+    via main._notify) is fully synchronous, so no ``to_thread`` offload is
+    needed here — do not call this from the async pipeline without one.
     """
     sha = (os.environ.get("GITHUB_SHA") or "").strip()
     if not re.fullmatch(r"[0-9a-fA-F]{6,40}", sha or ""):
+        logger.warning(
+            "No GITHUB_SHA for the publish delta — omitting the delta line "
+            "instead of reporting every config as new."
+        )
         return set()
     path = (
         PurePosixPath(subscription_file or "output/subscription.txt")
@@ -1017,6 +500,10 @@ def _previous_published_lines(subscription_file: str) -> set[str]:
             ["git", "show", f"{sha}:{path}"],
             capture_output=True,
             text=True,
+            # git show emits raw subscription bytes; text=True alone decodes
+            # with the ANSI code page (cp1251 on Windows), mangling non-ASCII
+            # remarks so the diff-vs-published set never matched.
+            encoding="utf-8",
             timeout=15,
             check=True,
         )
@@ -1025,31 +512,13 @@ def _previous_published_lines(subscription_file: str) -> set[str]:
     return _decode_subscription_lines(result.stdout)
 
 
-def _format_delta_section(current: set[str], previous: set[str]) -> str:
-    """Render "new vs removed" counts against the previous publication.
-
-    "Убрано" covers both dead configs and pool rotation past the cap — the
-    wording stays neutral because the pipeline cannot always tell them apart.
-    """
-    if not previous:
-        return ""
-    added = len(current - previous)
-    removed = len(previous - current)
-    if not added and not removed:
-        return ""
-    parts = []
-    if added:
-        parts.append(f"➕ новых {_h(added)}")
-    if removed:
-        parts.append(f"⚰️ убрано {_h(removed)}")
-    return f"🔄 {' · '.join(parts)}"
-
-
 def _send_telegram(token: str, chat_id: str, text: str) -> bool:
     """Send a message to Telegram via Bot API.
 
     A flood limit (HTTP 429) is retried once after the ``retry_after`` delay
-    Telegram sends with it; every other failure gives up immediately.
+    Telegram sends with it; 5xx and transport errors (URLError) get 2 retries
+    with backoff — Telegram flakes with 502s often enough that giving up
+    immediately lost notifications. Other 4xx give up immediately.
 
     Returns True on success, False on failure.
     """
@@ -1065,13 +534,16 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
     chat_id = str(chat_id).strip()
     text = text or ""
 
-    # Telegram sendMessage rejects text longer than 4096 chars with a 400.
-    # Truncate defensively; avoid cutting inside an HTML tag which would break
-    # parse_mode="HTML" and produce a 400.  The ellipsis and the closing tags
-    # are counted inside the limit, so the result always fits.
-    if len(text) > _TELEGRAM_MAX_TEXT:
+    # Telegram sendMessage rejects text longer than 4096 UTF-16 units with a
+    # 400.  Truncate defensively; avoid cutting inside an HTML tag which would
+    # break parse_mode="HTML" and produce a 400.  The ellipsis and the closing
+    # tags are counted inside the limit, so the result always fits.
+    if _utf16_len(text) > _TELEGRAM_MAX_TEXT:
         text = _truncate_html_safe(text, _TELEGRAM_MAX_TEXT)
-        logger.warning("Telegram message truncated to 4096 chars")
+        logger.warning(
+            "Telegram message truncated to %d UTF-16 units",
+            _TELEGRAM_MAX_TEXT,
+        )
 
     # Validate token format — fail fast instead of a 10s network timeout.
     # Telegram bot tokens: 123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
@@ -1114,19 +586,50 @@ def _send_telegram(token: str, chat_id: str, text: str) -> bool:
             except Exception:
                 body = ""
             logger.warning("Telegram API returned HTTP %d: %s", exc.code, body[:200])
-            if exc.code != 429 or attempt >= _SEND_ATTEMPTS:
-                return False
-            wait = _flood_wait_seconds(body)
-            logger.warning(
-                "Telegram flood limit — retrying once in %.0fs.",
-                wait,
-            )
-            time.sleep(wait)
+            if exc.code == 429 and attempt < _SEND_ATTEMPTS:
+                wait = _flood_wait_seconds(body)
+                logger.warning(
+                    "Telegram flood limit — retrying once in %.0fs.",
+                    wait,
+                )
+                time.sleep(wait)
+                continue
+            if 500 <= exc.code < 600 and attempt < _SEND_ATTEMPTS:
+                wait = 2.0 * attempt
+                logger.warning(
+                    "Telegram 5xx — retrying in %.0fs (attempt %d/%d).",
+                    wait,
+                    attempt + 1,
+                    _SEND_ATTEMPTS,
+                )
+                time.sleep(wait)
+                continue
+            return False
         except urllib.error.URLError as exc:
             if isinstance(exc.reason, (socket.timeout, TimeoutError)):
                 logger.warning("Telegram send timed out after 10s — API unreachable")
             else:
                 logger.warning("Telegram send network error: %s", exc.reason)
+            if attempt < _SEND_ATTEMPTS:
+                wait = 2.0 * attempt
+                logger.warning(
+                    "Retrying Telegram send in %.0fs (attempt %d/%d).",
+                    wait,
+                    attempt + 1,
+                    _SEND_ATTEMPTS,
+                )
+                time.sleep(wait)
+                continue
+            return False
+        except TimeoutError as exc:
+            # A READ-phase timeout (connect succeeded, response never came):
+            # the request may still have been delivered, so retrying could
+            # double-send — fail the attempt without a retry.
+            logger.warning(
+                "Telegram send read-timed out — not retrying (the message "
+                "may have been delivered): %s",
+                exc,
+            )
             return False
         except Exception as exc:
             # Unexpected errors from urllib quote the request URL, which carries
@@ -1168,10 +671,23 @@ def send_notification(
     configs_count = max(configs_count, 0)
 
     summary = _load_run_summary(status_file)
+    # The runner does not know its own summary path inside the payload; the
+    # helper needs it only to locate sibling artifacts (health history).
+    if isinstance(summary, dict) and status_file:
+        summary["_status_file"] = status_file
 
-    # Generate fun fact (rotating static pool — see _generate_fun_fact).
-    fact = _generate_fun_fact()
-    urls = _subscription_urls(summary)
+    # Generate fun fact without recording yet — saved only after a
+    # successful send (see below), so failures don't burn the rotation.
+    # Tolerate legacy zero-arg test doubles.
+    try:
+        fact = _generate_fun_fact(save=False)
+    except TypeError:
+        fact = _generate_fun_fact()
+    urls = _subscription_urls(
+        summary,
+        repo_slug=_repo_slug(),
+        repo_branch=_repo_branch(),
+    )
 
     validation_section = _format_validation_section(summary)
     low_alive_alert = _format_low_alive_alert(summary)
@@ -1202,6 +718,10 @@ def send_notification(
         _previous_published_lines(subscription_file),
     )
     delta_line = f"{delta_section}\n" if delta_section else ""
+    # The subscription links are the single actionable block of this message
+    # and truncation cuts from the tail — so the fun fact goes LAST, after
+    # the links. The previous order (fact then links) made an over-limit
+    # message lose exactly the links while keeping the trivia.
     message = (
         f"{_bot_intro()}\n"
         f"\n"
@@ -1212,15 +732,43 @@ def send_notification(
         f"\n"
         f"{subscriptions_section}\n"
         f"\n"
-        f"{_b('🔮 Факт')}: {_h(fact)}\n"
-        f"\n"
         f"{_b('📋 Подписки')} ({_link(repo_slug, repo_url)}):\n"
         f"  🔗 {_link('Общая', urls['combined'])}\n"
         f"  ⚫ {_link('Рабочий blacklist', urls['blacklist'])}\n"
         f"  ⚪ {_link('Рабочий whitelist', urls['whitelist'])}\n"
-        f"  🧩 {_link(mix_label, urls['mix'])}"
+        f"  🧩 {_link(mix_label, urls['mix'])}\n"
+        f"\n"
+        f"{_b('🔮 Факт')}: {_h(fact)}\n"
     )
 
+    ok = _send_telegram(token, chat_id, message)
+    if ok:
+        # Record the fact only when subscribers actually saw it — saving
+        # before the send burned one rotation entry per failed send.
+        _save_fact(fact)
+    return ok
+
+
+def send_crash_notification(error_message: str = "") -> bool:
+    """Send a compact pipeline-crash alert.
+
+    :func:`send_notification` reports a *finished* run; a crashed pipeline
+    produces no summary to report, and in ``--continuous`` mode that made
+    every crash invisible in the chat — the loop just logged and retried.
+    Returns True if sent, False if skipped or failed.
+    """
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat_id = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
+    if not token or not chat_id:
+        logger.info("Telegram credentials not set — skipping crash notification")
+        return False
+
+    repo_slug = _repo_slug()
+    updated_at = datetime.now(UTC).strftime("%d.%m %H:%M UTC")
+    message = f"💥 {_b('Пайплайн упал')} ({_h(repo_slug)})\n🕒 {_h(updated_at)}\n"
+    detail = (error_message or "").strip()
+    if detail:
+        message += f"\n{_h(detail[:300])}\n"
     return _send_telegram(token, chat_id, message)
 
 
@@ -1257,8 +805,8 @@ def main() -> int:
     if ok:
         logger.info("Notification sent")
         return 0
-    logger.info("Notification skipped or failed (non-fatal)")
-    return 0  # Non-fatal — don't fail the workflow.
+    logger.warning("Notification failed")
+    return 1
 
 
 if __name__ == "__main__":

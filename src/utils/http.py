@@ -10,6 +10,8 @@ exhaust memory. Streaming with a byte budget is the only way to bound that.
 
 from __future__ import annotations
 
+import codecs
+
 import httpx
 
 
@@ -31,16 +33,21 @@ async def read_limited_text(
         The decoded body, or ``None`` when the budget was exceeded (the caller
         discards the response and logs it).
     """
-    chunks: list[bytes] = []
+    # Decoded incrementally: buffering the raw chunks, joining them and THEN
+    # decoding tripled the peak (12 MiB body -> ~36 MiB transient) — with 50
+    # concurrent fetches that alone neared 1.8 GB.
+    encoding = response.encoding or "utf-8"
+    try:
+        codecs.lookup(encoding)
+    except LookupError:
+        encoding = "utf-8"
+    decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
+    parts: list[str] = []
     total = 0
     async for chunk in response.aiter_bytes():
         total += len(chunk)
         if total > max_bytes:
             return None
-        chunks.append(chunk)
-    payload = b"".join(chunks)
-    encoding = response.encoding or "utf-8"
-    try:
-        return payload.decode(encoding, errors="replace")
-    except LookupError:
-        return payload.decode("utf-8", errors="replace")
+        parts.append(decoder.decode(chunk))
+    parts.append(decoder.decode(b"", final=True))
+    return "".join(parts)

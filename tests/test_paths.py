@@ -9,6 +9,7 @@ import pytest
 
 from src.utils.paths import (
     _find_project_root,
+    _walk_for_anchor,
     resolve_safe_output_path,
     safe_open,
     validate_safe_output_path,
@@ -21,6 +22,15 @@ from src.utils.paths import (
 
 
 def test_find_project_root_fallback(tmp_path, monkeypatch):
+    """(clears the lru cache: the real function must not poison other tests)"""
+    _walk_for_anchor.cache_clear()
+    try:
+        return _find_project_root_fallback_impl(tmp_path, monkeypatch)
+    finally:
+        _walk_for_anchor.cache_clear()
+
+
+def _find_project_root_fallback_impl(tmp_path, monkeypatch):
     """When pyproject.toml is not found, fall back to cwd (line 27-32)."""
     monkeypatch.chdir(tmp_path)
     root = _find_project_root("pyproject.toml")
@@ -298,3 +308,77 @@ def test_write_text_atomic_cleans_temp_on_failure(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="disk full"):
         write_text_atomic(target, "data")
     assert [p.name for p in tmp_path.iterdir()] == []
+
+
+class TestProjectRootOverride:
+    """VPNPARSER_PROJECT_ROOT pins the containment base explicitly.
+
+    The installed console script launches from an arbitrary cwd: without the
+    override its "safe" output base silently followed the caller's directory.
+    """
+
+    def test_env_override_wins(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setenv("VPNPARSER_PROJECT_ROOT", str(tmp_path))
+        _walk_for_anchor.cache_clear()
+        try:
+            assert _find_project_root() == tmp_path.resolve()
+        finally:
+            _walk_for_anchor.cache_clear()
+
+    def test_cache_returns_same_object_until_cleared(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        _walk_for_anchor.cache_clear()
+        try:
+            a = _find_project_root()
+            b = _find_project_root()
+            assert a is b
+        finally:
+            _walk_for_anchor.cache_clear()
+
+    def test_blank_override_is_ignored(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+        monkeypatch.setenv("VPNPARSER_PROJECT_ROOT", "   ")
+        _walk_for_anchor.cache_clear()
+        try:
+            assert _find_project_root() == tmp_path.resolve()
+        finally:
+            _walk_for_anchor.cache_clear()
+
+
+def test_find_project_root_rejects_non_directory_override(
+    tmp_path, monkeypatch
+) -> None:
+    """VPNPARSER_PROJECT_ROOT pointing at a file/missing path is ignored."""
+    # Module-level imports (conftest monkeypatches the module attribute with
+    # an isolated root, so a function-local import would test the mock).
+    target = tmp_path / "pyproject.toml"
+    target.write_text("", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    _walk_for_anchor.cache_clear()
+    try:
+        monkeypatch.setenv("VPNPARSER_PROJECT_ROOT", str(tmp_path / "nope"))
+        assert _find_project_root() == tmp_path
+        f = tmp_path / "afile.txt"
+        f.write_text("x", encoding="utf-8")
+        monkeypatch.setenv("VPNPARSER_PROJECT_ROOT", str(f))
+        assert _find_project_root() == tmp_path
+    finally:
+        _walk_for_anchor.cache_clear()
+
+
+def test_find_project_root_honours_late_env_change(tmp_path, monkeypatch) -> None:
+    """The override is read fresh (only the CWD walk is cached)."""
+    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+    other = tmp_path / "other"
+    other.mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("VPNPARSER_PROJECT_ROOT", raising=False)
+    _walk_for_anchor.cache_clear()
+    try:
+        assert _find_project_root() == tmp_path
+        monkeypatch.setenv("VPNPARSER_PROJECT_ROOT", str(other))
+        assert _find_project_root() == other
+    finally:
+        _walk_for_anchor.cache_clear()

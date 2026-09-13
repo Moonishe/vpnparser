@@ -1,4 +1,4 @@
-"""Filter stages: garbage removal, country filter, dedup, and preprocessing."""
+"""Filter stages: garbage removal, dedup, sampling, and country filter."""
 
 from __future__ import annotations
 
@@ -24,31 +24,23 @@ class GarbageFilter(PipelineStage):
     def __init__(self, context: PipelineContext) -> None:
         self.context = context
 
-    async def run(
-        self,
-        state: PipelineState,
-        context: PipelineContext | None = None,
-    ) -> PipelineState:
-        filtered: dict[str, list[Config]] = {}
-        for label, configs in state.parsed.items():
-            clean, count = self.filter_garbage(configs)
-            if count:
-                logger.info(
-                    "Filtered %d garbage/placeholder configs for %s.",
-                    count,
-                    label,
-                )
-            filtered[label] = clean
-        state.parsed = filtered
-        return state
-
     @staticmethod
     def filter_garbage(configs: list[Config]) -> tuple[list[Config], int]:
-        """Remove placeholder/template configs (UUID, SERVER_IP, example.com)."""
+        """Remove placeholder/template configs and non-public address literals.
+
+        The address check runs at PARSE time (not only inside validators):
+        with tcp/tls/xray disabled or fail-open, a config pointing at
+        169.254.169.254 or 10.0.0.23 used to sail through preprocessing and
+        into the published subscription. ``is_blocked_literal`` is
+        synchronous, hot-path safe (no DNS), and mirrors the guard every
+        validator applies before its first socket.
+        """
+        from src.validators.address_guard import is_blocked_literal
+
         clean: list[Config] = []
         garbage = 0
         for cfg in configs:
-            if is_garbage_config(cfg):
+            if is_garbage_config(cfg) or is_blocked_literal(cfg.address):
                 garbage += 1
                 logger.debug(
                     "Garbage filtered: %s://%s:%d (%s)",
@@ -69,17 +61,6 @@ class CountryFilter(PipelineStage):
         self.context = context
         self.settings = context.settings
 
-    async def run(
-        self,
-        state: PipelineState,
-        context: PipelineContext | None = None,
-    ) -> PipelineState:
-        filtered: dict[str, list[Config]] = {}
-        for label, configs in state.parsed.items():
-            filtered[label] = self.filter_countries(configs, list_type=label)
-        state.parsed = filtered
-        return state
-
     def filter_countries(
         self,
         configs: list[Config],
@@ -94,7 +75,14 @@ class CountryFilter(PipelineStage):
             specific = by_list.get(normalize_list_type(list_type))
             if specific is not None:
                 allowed = specific
+        if allowed is None:
+            raise ValueError("allowed_countries is None")  # noqa: TRY003
         if isinstance(allowed, str):
+            allowed = [allowed]
+        elif not isinstance(allowed, (list, tuple, set, frozenset)):
+            # A bare scalar (int/tuple/other) is not a country list; wrap it so
+            # filter_by_country never receives a non-iterable. A tuple/set is a
+            # legitimate explicit list.
             allowed = [allowed]
 
         for cfg in configs:
@@ -113,14 +101,6 @@ class CountryFilter(PipelineStage):
 
         if not allowed:
             logger.info("No country filter configured — keeping all configs.")
-            for cfg in configs:
-                if cfg.country is None:
-                    cfg.country = detect_country(
-                        cfg.remark,
-                        getattr(cfg, "address", None),
-                        getattr(cfg, "sni", None),
-                        getattr(cfg, "host", None),
-                    )
             return configs
 
         allowed_list = [str(c).upper() for c in allowed]
@@ -130,18 +110,6 @@ class CountryFilter(PipelineStage):
 
 class DedupFilter(PipelineStage):
     """Deduplicate configs by (address, port)."""
-
-    async def run(
-        self,
-        state: PipelineState,
-        context: PipelineContext | None = None,
-    ) -> PipelineState:
-        deduped: dict[str, list[Config]] = {}
-        for label, configs in state.parsed.items():
-            deduped[label] = self.dedup_only(configs)
-            logger.info("%s after dedup: %d configs.", label, len(deduped[label]))
-        state.parsed = deduped
-        return state
 
     @staticmethod
     def dedup_only(configs: list[Config]) -> list[Config]:
@@ -158,48 +126,13 @@ class DedupFilter(PipelineStage):
             return configs
 
 
-class Sampler(PipelineStage):
-    """Sample configs to a per-list maximum."""
-
-    def __init__(self, context: PipelineContext) -> None:
-        self.context = context
-        self.settings = context.settings
-
-    async def run(
-        self,
-        state: PipelineState,
-        context: PipelineContext | None = None,
-    ) -> PipelineState:
-        vcfg = self.settings.section("validator")
-        max_to_process = self.settings.as_int(
-            vcfg.get("max_configs_to_validate"),
-            20000,
-            minimum=0,
-        )
-        sampled: dict[str, list[Config]] = {}
-        for label, configs in state.parsed.items():
-            if max_to_process > 0 and len(configs) > max_to_process:
-                logger.info(
-                    "Sampling %d configs from %d for %s processing.",
-                    max_to_process,
-                    len(configs),
-                    label,
-                )
-                sampled[label] = random.sample(configs, max_to_process)
-            else:
-                sampled[label] = configs
-        state.parsed = sampled
-        return state
-
-
 class PreprocessFilter(PipelineStage):
-    """Combined preprocess: garbage -> sample -> dedup -> country filter."""
+    """Combined preprocess: garbage -> dedup -> sample -> country filter."""
 
     def __init__(self, context: PipelineContext) -> None:
         self.context = context
         self.settings = context.settings
         self.garbage = GarbageFilter(context)
-        self.sampler = Sampler(context)
         self.dedup = DedupFilter()
         self.country = CountryFilter(context)
 
@@ -215,12 +148,18 @@ class PreprocessFilter(PipelineStage):
         return state
 
     def preprocess(self, configs: list[Config], *, label: str) -> list[Config]:
-        """Preprocess configs: garbage -> sample -> dedup -> country filter."""
+        """Preprocess configs: garbage -> dedup -> sample -> country filter.
+
+        Dedup runs before the sample: with the previous order the sampling
+        cap was spent on duplicates and the surviving pool could fall far
+        below ``max_configs_to_validate``.
+        """
         if not configs:
             return []
         configs, _ = self.garbage.filter_garbage(configs)
         if not configs:
             return []
+        configs = self.dedup.dedup_only(configs)
         max_to_process = self.settings.as_int(
             self.settings.section("validator").get("max_configs_to_validate"),
             20000,
@@ -234,7 +173,6 @@ class PreprocessFilter(PipelineStage):
                 label,
             )
             configs = random.sample(configs, max_to_process)
-        configs = self.dedup.dedup_only(configs)
         logger.info("%s after dedup: %d configs.", label, len(configs))
         configs = self.country.filter_countries(configs, list_type=label)
         logger.info("%s after country filter: %d configs.", label, len(configs))

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import ipaddress
 import logging
 import re
@@ -23,7 +24,7 @@ from src.parsers.base import Config
 from src.validators.address_guard import (
     filter_public_configs,
     is_blocked_literal,
-    resolve_pinned_address,
+    resolve_pinned_addresses,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,36 @@ _MAX_SERVER_NAME_CANDIDATES = 4
 #: candidates could keep one semaphore slot busy for minutes — the same stall
 #: the per-name cap above already prevents for a single dimension.
 _MAX_ATTEMPTS_PER_CONFIG = 12
+
+#: Per-stage counters for the refusal log (see tcp_check._log_refusal): one
+#: aggregate line per stage instead of thousands of WARNINGs per run.
+_refusals: dict[str, int] = {"non-public": 0, "unpinnable": 0}
+
+
+def _log_refusal(kind: str, host: str, port: int) -> None:
+    """Count a refused address; full detail goes to DEBUG only."""
+    _refusals[kind] = _refusals.get(kind, 0) + 1
+    logger.debug("Refusing %s TLS check of %s:%s.", kind, host, port)
+
+
+def log_refusal_summary() -> None:
+    """Emit one aggregate line for the refused addresses of this stage."""
+    refused = sum(_refusals.values())
+    if not refused:
+        return
+    logger.info(
+        "TLS stage refused %d address(s) (%s).",
+        refused,
+        ", ".join(f"{kind}: {count}" for kind, count in _refusals.items()),
+    )
+    for kind in _refusals:
+        _refusals[kind] = 0
+
+
+def reset_refusal_counters() -> None:
+    """Start a fresh refusal count — each stage invocation counts its own."""
+    for kind in _refusals:
+        _refusals[kind] = 0
 
 
 async def _open_connection_direct(
@@ -64,18 +95,27 @@ async def _open_connection_via_socks(
     ssl_context: ssl.SSLContext,
     server_hostname: str | None,
     proxy_url: str,
+    timeout: float | None = None,
 ) -> tuple[Any, Any]:
     """TLS connection routed through a SOCKS5 proxy."""
     from python_socks.async_.asyncio import Proxy
 
     proxy = Proxy.from_url(proxy_url)
-    sock = await proxy.connect(dest_host=host, dest_port=port, timeout=None)
+    # Timeout inside Proxy.connect (see tcp_check): an outer-only wait_for
+    # leaked the SOCKS socket FD on every mass-timeout wave.
+    sock = await proxy.connect(dest_host=host, dest_port=port, timeout=timeout)
     # Wrap the raw socket into an SSL-wrapped asyncio connection.
-    reader, writer = await asyncio.open_connection(
-        sock=sock,
-        ssl=ssl_context,
-        server_hostname=server_hostname,
-    )
+    # Close the raw socket if the wrap raises (see tcp_check).
+    try:
+        reader, writer = await asyncio.open_connection(
+            sock=sock,
+            ssl=ssl_context,
+            server_hostname=server_hostname,
+        )
+    except BaseException:
+        with contextlib.suppress(Exception):
+            sock.close()
+        raise
     return reader, writer
 
 
@@ -110,6 +150,17 @@ def _clean_server_name(value: str) -> str | None:
         host, port = cleaned.rsplit(":", 1)
         if port.isdigit():
             cleaned = host.strip()
+
+    # A bracketed IPv6 literal with a port ("[::1]:443") strips to garbage
+    # ("::1]:443") via strip("[]"): anything bracket-shaped left is not a
+    # hostname. Bare IP literals are not valid SNI either (RFC 6066 forbids
+    # IP literals in server_name) — without SNI the handshake still proves
+    # liveness, while garbage fails it (false dead). Mirrors xray's
+    # _server_name, which drops the same inputs.
+    if "[" in cleaned or "]" in cleaned:
+        return None
+    if _is_ip_address(cleaned):
+        return None
 
     if not cleaned or cleaned.lower() in _EMPTY_SERVER_NAMES:
         return None
@@ -167,6 +218,47 @@ def _alpn_protocols(value: str | None) -> list[str] | None:
     return protocols or None
 
 
+#: ALPN names the cache accepts. ``cfg.alpn`` comes straight out of an
+#: untrusted subscription link, and _tls_context is a process-lifetime
+#: functools.cache keyed on it: an attacker-controlled source minting a
+#: distinct alpn=... per config would otherwise hold one SSLContext (with a
+#: loaded trust store, ~15ms of blocking work each) per key for the life of a
+#: --continuous process. Anything outside this set is treated as "no ALPN".
+_KNOWN_ALPN = frozenset({"h2", "http/1.1", "h3"})
+
+
+def _alpn_cache_key(value: str | None) -> tuple[str, ...] | None:
+    """Normalize an untrusted alpn string into a bounded cache key."""
+    protocols = _alpn_protocols(value)
+    if not protocols:
+        return None
+    known = tuple(sorted({p.lower() for p in protocols if p.lower() in _KNOWN_ALPN}))
+    return known or None
+
+
+@functools.cache
+def _tls_context(verify_tls: bool, alpn_key: tuple[str, ...] | None) -> ssl.SSLContext:
+    """Build (and cache) the TLS context for one verify/alpn combination.
+
+    ``ssl.create_default_context()`` re-reads the system trust store — about
+    15ms of *blocking* work on Windows — and this sits on the hot path of a
+    stage running at concurrency 100: one context per attempt stalled the
+    event loop for minutes over a large sweep. xray_probe caches the same
+    call for the same reason. Contexts are immutable after setup, so the
+    cache is safe; ALPN is part of the key because it mutates the context.
+    The key cardinality is bounded (see ``_KNOWN_ALPN``): the input is
+    attacker-controlled and a raw ``cfg.alpn`` would mint unlimited keys.
+    """
+    ssl_context = ssl.create_default_context()
+    if not verify_tls:
+        # Liveness-only mode: accept any certificate and any hostname.
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+    if alpn_key:
+        ssl_context.set_alpn_protocols(list(alpn_key))
+    return ssl_context
+
+
 async def tls_check(
     host: str,
     port: int,
@@ -175,7 +267,9 @@ async def tls_check(
     timeout: float = 5.0,
     proxy_url: str | None = None,
     verify_tls: bool = False,
-) -> bool:
+    resolve_timeout: float = 5.0,
+    pin_address: bool = True,
+) -> bool | None:
     """TLS handshake to host:port, optionally through a SOCKS5 proxy.
 
     By default the handshake only proves that the server completes one — most
@@ -184,58 +278,79 @@ async def tls_check(
     require a certificate valid for the connection target; only meaningful
     when the checked servers are known to hold trusted certificates.
 
-    Returns True if the handshake completes successfully, False on any error.
+    ``pin_address=False`` honours the operator's ``check_hostnames: false``
+    opt-out: the hostname is dialled as-is (OS/proxy resolves it) and no DNS
+    query is made here, mirroring tcp_check and the Xray stage.
+
+    Returns True on success, False on dead, None on no verdict (transient
+    DNS-pin failure — must not count toward health bans).
     """
     if is_blocked_literal(host):
-        logger.warning("Refusing TLS check of non-public address %s:%s.", host, port)
+        _log_refusal("non-public", host, port)
         return False
 
-    # Pin the connect target to the address the guard validated (DNS
+    # Pin the connect target to the addresses the guard validated (DNS
     # rebinding); SNI/certificate identity still comes from server_hostname.
-    pinned = await resolve_pinned_address(host)
-    if pinned is None:
-        logger.warning("Refusing TLS check of unpinnable address %s:%s.", host, port)
-        return False
+    # The list is walked in order: a dual-stack host whose first answer is an
+    # unroutable AAAA used to die when only the first address survived.
+    if pin_address:
+        pinned_addresses = await resolve_pinned_addresses(host, timeout=resolve_timeout)
+        if not pinned_addresses:
+            _log_refusal("unpinnable", host, port)
+            return None
+    else:
+        # check_hostnames=false skips DNS entirely (same contract as the
+        # Xray stage's pin_address): no resolve, no pin, dial the name.
+        pinned_addresses = [host]
 
     server_hostname = sni or host
     try:
-        ssl_context = ssl.create_default_context()
-        if not verify_tls:
-            # Liveness-only mode: accept any certificate and any hostname.
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-        protocols = _alpn_protocols(alpn)
-        if protocols:
-            ssl_context.set_alpn_protocols(protocols)
+        # Bounded key: untrusted ALPN input must not mint unlimited contexts.
+        ssl_context = _tls_context(verify_tls, _alpn_cache_key(alpn))
     except Exception:
         return False
 
-    try:
-        if proxy_url:
-            reader, writer = await asyncio.wait_for(
-                _open_connection_via_socks(
-                    pinned,
-                    port,
-                    ssl_context,
-                    server_hostname,
-                    proxy_url,
-                ),
-                timeout=timeout,
-            )
-        else:
-            reader, writer = await asyncio.wait_for(
-                _open_connection_direct(pinned, port, ssl_context, server_hostname),
-                timeout=timeout,
-            )
-    except (TimeoutError, ssl.SSLError, ConnectionRefusedError, OSError):
-        return False
-    except Exception:
+    writer = None
+    for address in pinned_addresses:
+        try:
+            if proxy_url:
+                # Inner timeout drives the handshake; outer is safety +5.
+                reader, writer = await asyncio.wait_for(
+                    _open_connection_via_socks(
+                        address,
+                        port,
+                        ssl_context,
+                        server_hostname,
+                        proxy_url,
+                        timeout=timeout,
+                    ),
+                    timeout=timeout + 5.0,
+                )
+            else:
+                reader, writer = await asyncio.wait_for(
+                    _open_connection_direct(
+                        address,
+                        port,
+                        ssl_context,
+                        server_hostname,
+                    ),
+                    timeout=timeout,
+                )
+            break
+        except (TimeoutError, ssl.SSLError, ConnectionRefusedError, OSError):
+            writer = None
+            continue
+        except Exception:
+            writer = None
+            continue
+    if writer is None:
         return False
 
-    with contextlib.suppress(OSError, ssl.SSLError, Exception):
+    # Exception covers everything the narrower names would: close()/wait_closed()
+    # are best-effort teardown on a socket that just failed its handshake.
+    with contextlib.suppress(Exception):
         writer.close()
-        with contextlib.suppress(OSError, ssl.SSLError, Exception):
-            await writer.wait_closed()
+        await writer.wait_closed()
 
     return True
 
@@ -281,6 +396,7 @@ async def validate_configs_tls(
     if not configs:
         return []
 
+    reset_refusal_counters()
     proxy_choices = [p for p in (proxy_urls or []) if p]
     if not proxy_choices and proxy_url:
         proxy_choices = [proxy_url]
@@ -305,7 +421,7 @@ async def validate_configs_tls(
             return
         async with semaphore:
             try:
-                ok = False
+                ok: bool | None = False
                 # Flatten proxies x SNI names and cap the total: the product
                 # used to be unbounded when the whole pool was requested.
                 combos = [
@@ -322,10 +438,21 @@ async def validate_configs_tls(
                         timeout=timeout,
                         proxy_url=candidate_proxy,
                         verify_tls=verify_tls,
+                        resolve_timeout=resolve_timeout,
+                        pin_address=check_hostnames,
                     )
+                    if ok is None:
+                        # Transient DNS-pin failure: further combos cannot
+                        # help (same hostname), stop as no-verdict.
+                        break
                     if ok:
                         break
                 cfg.is_alive = ok
+            except asyncio.CancelledError:
+                # Early-stop cancel reached no verdict: keep no TCP True as
+                # a false TLS pass (see xray/singbox reset).
+                cfg.is_alive = None
+                raise
             except Exception as exc:
                 logger.debug(
                     "TLS check failed for %s:%d: %s — marking as dead.",
@@ -335,10 +462,17 @@ async def validate_configs_tls(
                 )
                 cfg.is_alive = False
 
-    await asyncio.gather(
+    results = await asyncio.gather(
         *(_check_one(i, c) for i, c in enumerate(configs)),
         return_exceptions=True,
     )
+    for cfg, result in zip(configs, results, strict=False):
+        # Cancelled mid-handshake: no TLS verdict was reached.
+        if isinstance(result, asyncio.CancelledError) and _is_tls_security(
+            cfg.security
+        ):
+            cfg.is_alive = None
+    log_refusal_summary()
 
     return [
         c for c in configs if not _is_tls_security(c.security) or c.is_alive is True

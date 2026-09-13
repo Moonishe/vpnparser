@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import re
 import socket
 import threading
 from concurrent.futures import Future
@@ -27,6 +28,74 @@ from typing import Any
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
+
+#: Userinfo masking, strict form: the ``@`` must sit inside the authority,
+#: before any ``/``, ``?`` or ``#``.  Web URLs (jsDelivr, unpkg, GitHub raw)
+#: pin versions with ``@`` in the path (``/gh/owner/repo@main/file``); an
+#: unanchored pattern rewrote those to ``//***@main/...``, hiding the very
+#: host the log line was about.
+_WEB_USERINFO_RE = re.compile(r"//[^\s/?#]*@")
+
+#: Userinfo masking, greedy form for everything that is not ``http(s)://``.
+#: Proxy URLs carry no path worth protecting, and a credential there is
+#: allowed to keep raw special characters (``socks5://u:pa/ss@host:1080``),
+#: so mask all the way up to the ``@``.  The lookbehind keeps this pattern
+#: off ``https:``/``http:`` URLs so a mixed string (exception text carrying
+#: both a proxy URL and a source URL) gets the right treatment per scheme.
+_PROXY_USERINFO_RE = re.compile(r"(?<!https:)(?<!http:)//[^\s]*?@", re.IGNORECASE)
+
+#: Query parameters whose values are credentials in source/download URLs:
+#: GitHub raw ``download_url``s carry ``?token=`` for private repos, CDN and
+#: API urls use ``?key=``/``?sig=``.  The parameter name stays visible so the
+#: log line still says what kind of secret was there.
+#:
+#: The secret word is matched as a whole *name token*: it must sit on a token
+#: boundary — the start of the name, a ``_``/``-``/``.`` separator, a
+#: case transition (either direction: ``AWSAccessKeyId``, ``XToken``) — and end
+#: on one as well.  That covers vendor spellings with any number of separated
+#: affixes (``license_key``, ``access-token``, ``X-Amz-Signature``,
+#: ``x-amz-credential``), camel-cased glued names, and glued lowercase
+#: suffixes (``sessionid``, ``sessiontoken``, ``sigv4``, ``passwd2``,
+#: ``token2``) — the earlier boundary set silently leaked those, and the
+#: first regex revision (2026-09-12) regressed them relative to the 0.1.x
+#: affix form.  The standalone word ``pass`` is also a credential name.
+#: Unrelated words that merely *contain* a secret word (``monkey``,
+#: ``keyboard``, ``passport``, ``signal``) keep their values visible: the
+#: suffix set after a secret word is limited to digits and credential-ish
+#: tokens (``id``/``token``/``sig``/versioned ``sigv4``).  A credential is
+#: never made safer by the prefix in front of it, but a false positive hides
+#: a diagnostic that had nothing to do with secrets.
+#:
+#: The token check runs in a lookahead over the parameter name so the name is
+#: still consumed (and captured) as a whole; both the lookahead scan and the
+#: name match are single, non-nested quantifiers, so there is no catastrophic
+#: backtracking.
+_SECRET_QUERY_RE = re.compile(
+    r"([?&#;](?=[A-Za-z0-9_.-]*?"
+    r"(?:(?<=[?&#;])|(?<=[_.-])|(?<=[A-Za-z0-9])(?=[A-Z]))"
+    r"(?i:token|api[_-]?key|apikey|key|secret|password|passwd|pass|pwd|signature|"
+    r"sig|credential|session|jwt|auth(?:orization)?|authentication)"
+    r"(?:(?==)|(?=[_.-])|(?<=[a-z0-9])(?=[A-Z])|(?i:(?:\d+|id|token|sig|v\d+))))"
+    r"[A-Za-z0-9_.-]*=)"
+    r"[^&#\s]*",
+)
+
+
+def redact_proxy_url(url: str) -> str:
+    """Mask a URL's secrets — userinfo and credential query values — for logs.
+
+    Proxy URLs such as ``socks5://user:pass@host:1080`` carry credentials and
+    GitHub raw ``download_url``s end in ``?token=...`` for private repos;
+    logging either raw leaks the secret into log files and, via error strings,
+    into the published ``run-summary.json``.  The scheme, host, port and
+    non-secret query parameters stay intact so diagnostics remain useful.
+    """
+    if not url:
+        return url
+    redacted = _WEB_USERINFO_RE.sub("//***@", url)
+    redacted = _PROXY_USERINFO_RE.sub("//***@", redacted)
+    return _SECRET_QUERY_RE.sub(r"\1***", redacted)
+
 
 #: URL schemes the fetchers are allowed to touch.
 SAFE_URL_SCHEMES = frozenset({"http", "https"})
@@ -245,13 +314,25 @@ async def resolve_host_addresses(
     return addresses
 
 
-async def resolve_global_ips(host: str, *, timeout: float = 5.0) -> list[str]:
+async def resolve_global_ips(
+    host: str,
+    *,
+    timeout: float = 5.0,
+) -> list[str] | None:
     """Resolve *host* and return only its globally routable IP addresses.
 
     Accepts IPv4/IPv6 literals (returned as-is when public) and hostnames
-    (resolved via ``getaddrinfo``, IPv4 and IPv6 alike). Returns an empty list
-    when the host does not resolve, resolution times out, or every address is
-    non-public.
+    (resolved via ``getaddrinfo``, IPv4 and IPv6 alike).
+
+    Three outcomes are deliberately distinguishable:
+
+    - a list — the validated public addresses;
+    - ``[]`` — a terminal verdict: the host resolved into non-public space,
+      or an IP literal is private. The caller must never retry this;
+    - ``None`` — a *transient* lookup failure (timeout, resolver outage,
+      NXDOMAIN moment). Callers that treat a dropped URL as final for the
+      whole run should retry a ``None`` once, exactly like
+      :func:`is_public_host` does.
     """
     bare = _strip_brackets(host)
     if not bare:
@@ -266,6 +347,8 @@ async def resolve_global_ips(host: str, *, timeout: float = 5.0) -> list[str]:
         return [] if is_private_address(bare) else [bare]
 
     answers = await resolve_host_addresses(bare, timeout=timeout)
+    if answers is None:
+        return None
     if not answers:
         return []
 
@@ -340,6 +423,16 @@ async def is_safe_public_url(url: str, *, timeout: float = 5.0) -> bool:
     except ValueError:
         return False
     if parts.scheme.lower() not in SAFE_URL_SCHEMES:
+        return False
+    # Userinfo in a guard-checked URL is never legitimate (api_base with
+    # embedded credentials would leak the token model); reject outright.
+    if parts.username or parts.password:
+        return False
+    try:
+        port = parts.port
+    except ValueError:
+        return False
+    if port is not None and not 1 <= port <= 65535:
         return False
     host = parts.hostname
     if not host:

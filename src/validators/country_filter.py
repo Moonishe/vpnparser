@@ -73,8 +73,11 @@ _NAME_TO_CODE: dict[str, str] = {
     "usa": "US",
     "united states": "US",
     "america": "US",
-    # NOTE: "us" and "uk" removed — too many false positives ("contact us", "about us").
-    # US/GB are detected via _CODE_RE (uppercase) and emoji flags.
+    # NOTE: "us" is NOT in this map — too many false positives ("contact us",
+    # "about us"); US is detected via _CODE_RE (uppercase) and emoji flags.
+    # "uk" IS mapped explicitly: a bare lowercase "uk" token in a remark is
+    # unambiguous enough to be worth a GB match (the stale comment above it
+    # used to claim both were removed while "uk" sat right below).
     "uk": "GB",
     "united kingdom": "GB",
     "england": "GB",
@@ -346,7 +349,7 @@ _CODE_RE = re.compile(
 # "US/01" and rejects "CONTACT US", "SERVER ID", "SIGN IN", "5TH FLOOR",
 # "MY SERVER", "DO IT" (code followed by space or end-of-string).
 _AMBIGUOUS_CODE_RE = re.compile(
-    r"(?:^|[^A-Za-z])(" + "|".join(_AMBIGUOUS_CODES) + r")(?=[-\d\]/|)])",
+    r"(?:^|[^A-Za-z])(" + "|".join(_AMBIGUOUS_CODES) + r")(?=[-\d\]/|._])",
 )
 
 # An ambiguous code that reads as a common word collides with its word
@@ -357,6 +360,301 @@ _AMBIGUOUS_CODE_RE = re.compile(
 # and dropping it would cost far more than the rare misread costs.
 _PRECEDING_WORD_TAIL_RE = re.compile(r"[A-Za-z]{2,}\Z")
 _ID_DELIMITER_CHARS = " -_[|(/"
+
+# Every ISO 3166-1 alpha-2 code (249). Used ONLY to recognise stamps of
+# countries outside _SUPPORTED_CODES (e.g. "NO-01" on a Norwegian server):
+# the country filter would drop such configs after a lookup anyway, so the
+# capped API budget is spent on them last. Never assigned as a *kept*
+# country — only detect_country() (supported codes) does that.
+_ALL_ISO_CODES: tuple[str, ...] = (
+    "AD",
+    "AE",
+    "AF",
+    "AG",
+    "AI",
+    "AL",
+    "AM",
+    "AO",
+    "AQ",
+    "AR",
+    "AS",
+    "AT",
+    "AU",
+    "AW",
+    "AX",
+    "AZ",
+    "BA",
+    "BB",
+    "BD",
+    "BE",
+    "BF",
+    "BG",
+    "BH",
+    "BI",
+    "BJ",
+    "BL",
+    "BM",
+    "BN",
+    "BO",
+    "BQ",
+    "BR",
+    "BS",
+    "BT",
+    "BV",
+    "BW",
+    "BY",
+    "BZ",
+    "CA",
+    "CC",
+    "CD",
+    "CF",
+    "CG",
+    "CH",
+    "CI",
+    "CK",
+    "CL",
+    "CM",
+    "CN",
+    "CO",
+    "CR",
+    "CU",
+    "CV",
+    "CW",
+    "CX",
+    "CY",
+    "CZ",
+    "DE",
+    "DJ",
+    "DK",
+    "DM",
+    "DO",
+    "DZ",
+    "EC",
+    "EE",
+    "EG",
+    "EH",
+    "ER",
+    "ES",
+    "ET",
+    "FI",
+    "FJ",
+    "FK",
+    "FM",
+    "FO",
+    "FR",
+    "GA",
+    "GB",
+    "GD",
+    "GE",
+    "GF",
+    "GG",
+    "GH",
+    "GI",
+    "GL",
+    "GM",
+    "GN",
+    "GP",
+    "GQ",
+    "GR",
+    "GS",
+    "GT",
+    "GU",
+    "GW",
+    "GY",
+    "HK",
+    "HM",
+    "HN",
+    "HR",
+    "HT",
+    "HU",
+    "ID",
+    "IE",
+    "IL",
+    "IM",
+    "IN",
+    "IO",
+    "IQ",
+    "IR",
+    "IS",
+    "IT",
+    "JE",
+    "JM",
+    "JO",
+    "JP",
+    "KE",
+    "KG",
+    "KH",
+    "KI",
+    "KM",
+    "KN",
+    "KP",
+    "KR",
+    "KW",
+    "KY",
+    "KZ",
+    "LA",
+    "LB",
+    "LC",
+    "LI",
+    "LK",
+    "LR",
+    "LS",
+    "LT",
+    "LU",
+    "LV",
+    "LY",
+    "MA",
+    "MC",
+    "MD",
+    "ME",
+    "MF",
+    "MG",
+    "MH",
+    "MK",
+    "ML",
+    "MM",
+    "MN",
+    "MO",
+    "MP",
+    "MQ",
+    "MR",
+    "MS",
+    "MT",
+    "MU",
+    "MV",
+    "MW",
+    "MX",
+    "MY",
+    "MZ",
+    "NA",
+    "NC",
+    "NE",
+    "NF",
+    "NG",
+    "NI",
+    "NL",
+    "NO",
+    "NP",
+    "NR",
+    "NU",
+    "NZ",
+    "OM",
+    "PA",
+    "PE",
+    "PF",
+    "PG",
+    "PH",
+    "PK",
+    "PL",
+    "PM",
+    "PN",
+    "PR",
+    "PS",
+    "PT",
+    "PW",
+    "PY",
+    "QA",
+    "RE",
+    "RO",
+    "RS",
+    "RU",
+    "RW",
+    "SA",
+    "SB",
+    "SC",
+    "SD",
+    "SE",
+    "SG",
+    "SH",
+    "SI",
+    "SJ",
+    "SK",
+    "SL",
+    "SM",
+    "SN",
+    "SO",
+    "SR",
+    "SS",
+    "ST",
+    "SV",
+    "SX",
+    "SY",
+    "SZ",
+    "TC",
+    "TD",
+    "TF",
+    "TG",
+    "TH",
+    "TJ",
+    "TK",
+    "TL",
+    "TM",
+    "TN",
+    "TO",
+    "TR",
+    "TT",
+    "TV",
+    "TW",
+    "TZ",
+    "UA",
+    "UG",
+    "UM",
+    "US",
+    "UY",
+    "UZ",
+    "VA",
+    "VC",
+    "VE",
+    "VG",
+    "VI",
+    "VN",
+    "VU",
+    "WF",
+    "WS",
+    "YE",
+    "YT",
+    "ZA",
+    "ZM",
+    "ZW",
+)
+
+# Import-time guard against typos in the table above: every supported code
+# must be a real ISO code, otherwise _FOREIGN_CODE_RE silently misses it.
+_MISSING_ISO_CODES = set(_SUPPORTED_CODES) - set(_ALL_ISO_CODES)
+if _MISSING_ISO_CODES:
+    raise RuntimeError(
+        "country_filter: supported code(s) missing from _ALL_ISO_CODES: "
+        f"{sorted(_MISSING_ISO_CODES)}",
+    )
+
+_FOREIGN_CODES: tuple[str, ...] = tuple(
+    code for code in _ALL_ISO_CODES if code not in _SUPPORTED_CODES
+)
+
+# Unsupported-but-valid ISO stamps: the strict ambiguous-code discipline
+# (case-sensitive uppercase, non-alpha left boundary, structural delimiter
+# right after) — "NO-01", "[NO]", "NO|DE" match, "NO LOGS" does not.
+_FOREIGN_CODE_RE = re.compile(
+    r"(?:^|[^A-Za-z])(" + "|".join(_FOREIGN_CODES) + r")(?=[-\d\]/|._])",
+)
+
+
+def remark_names_unsupported_country(remark: str | None) -> str | None:
+    """Return a valid ISO-3166 code outside ``_SUPPORTED_CODES`` from *remark*.
+
+    Remark-only and delimiter-strict by design: bare words ("NO LOGS")
+    never match, only stamps ("NO-01"). Hostname stamps are deliberately
+    out of scope — reverse-DNS noise needs its own rule set, and a missed
+    stamp only costs API-budget priority, never correctness.
+
+    Callers use this to deprioritize (not skip) rate-limited GeoIP lookups
+    the country filter would drop after the lookup anyway.
+    """
+    if not remark or not isinstance(remark, str):
+        return None
+    match = _FOREIGN_CODE_RE.search(remark)
+    return match.group(1).upper() if match else None
+
 
 # Hostname prefix patterns: de01.vpn.com, nl-ams.vpn.net, us-east.server.net
 # Matches a 2-letter country code at the start of a hostname segment.
@@ -371,10 +669,20 @@ _HOST_COUNTRY_RE = re.compile(
     r"(?:^|\.|[-_])(" + "|".join(_SAFE_CODES) + r")[-\d.]",
     re.IGNORECASE,
 )
+# Ambiguous codes in hostnames must start a segment, carry no lettered
+# prefix, and be followed by digits that END WITHIN the segment (a hyphen or
+# more digits then a hyphen — "us1-node", "us-01"): a bare "us1."/"id2.host"
+# is indistinguishable from instance numbering ("id2.host.net", "it3.pop.net"
+# were read as Indonesia / Italy), so the segment-final stamp form is
+# deliberately not matched for the ambiguous set — the safe codes (DE, NL…)
+# keep covering it, and remarks cover the rest.
 _HOST_AMBIGUOUS_RE = re.compile(
-    r"(?:^|\.|[-_])(" + "|".join(_AMBIGUOUS_CODES) + r")\d",
+    r"(?:^|\.)([a-z0-9-]*?)(" + "|".join(_AMBIGUOUS_CODES) + r")(?:\d|-|_|\.)",
     re.IGNORECASE,
 )
+# A non-empty leading prefix inside the same label ("cdn" in "cdn-in1")
+# vetoes the match: real stamps are bare ("us1-node").
+_HOST_AMBIGUOUS_PREFIX_RE = re.compile(r"[a-z]", re.IGNORECASE)
 
 # Two-letter city/state abbreviations ("la", "tx", "nj", ...) are far too
 # short for a case-insensitive \b-search over remark+address+sni+host: they hit
@@ -504,13 +812,33 @@ def detect_country(remark: str, *extra_fields: str | None) -> str | None:
             return _CITY_TO_CODE[m.group(1).lower()]
 
     # 6. Hostname country prefix — check address/sni/host.
-    #    Ambiguous codes require a digit after (not hyphen) so that reverse
-    #    DNS like "in-addr.arpa" or "my-server.example.com" don't match.
+    #    Ambiguous codes must start a segment and may not carry a lettered
+    #    prefix inside it (see the regex comment): "us1." / "us1-node" match,
+    #    "cdn-in1" / "id2" do not.
     for field in extra_fields:
-        if field:
-            m = _HOST_COUNTRY_RE.search(field) or _HOST_AMBIGUOUS_RE.search(field)
-            if m:
-                return m.group(1).upper()
+        if not field:
+            continue
+        m = _HOST_COUNTRY_RE.search(field)
+        if m:
+            return m.group(1).upper()
+        for m in _HOST_AMBIGUOUS_RE.finditer(field):
+            if _HOST_AMBIGUOUS_PREFIX_RE.search(m.group(1)):
+                continue
+            # "my-server" is English, not Malaysia: a '-' right after the
+            # code with no digit anywhere in the same dot-label is prose
+            # ("my-server", "in-house", "it-support"), not a country stamp
+            # ("us-01", "us1-node"). Genuine hyphen stamps without digits
+            # ("id-jakarta") still resolve via the city regex on combined.
+            delimiter = m.group(0)[-1] if m.group(0) else ""
+            if delimiter == "-":
+                seg_start = field.rfind(".", 0, m.start(2)) + 1
+                seg_end = field.find(".", m.end(2))
+                if seg_end == -1:
+                    seg_end = len(field)
+                label = field[seg_start:seg_end]
+                if not any(ch.isdigit() for ch in label):
+                    continue
+            return m.group(2).upper()
 
     return None
 
@@ -533,25 +861,35 @@ def normalize_country_code(value: str | None) -> str | None:
     return None
 
 
-def filter_by_country(configs: list[Config], allowed: list[str]) -> list[Config]:
+def filter_by_country(configs: list[Config], allowed: list[str] | None) -> list[Config]:
     """Filter configs to only those whose remark matches an allowed country.
 
     Args:
         configs: List of Config objects with a ``remark`` field.
         allowed: List of 2-letter country codes (e.g. ``["DE", "FI", "NL", "US"]``).
-            Empty list = no filtering (return all).
+            Empty list = no filtering (return all). ``None`` is rejected — a
+            missing list must not silently disable the filter (fail-open).
 
     Returns filtered list. Configs get ``country`` set when detected.
+
+    Raises:
+        ValueError: if ``allowed`` is ``None`` — callers must pass an explicit
+            list (``[]`` disables filtering).
 
     Raises a warning (never an exception) if ``allowed`` contains codes not in
     :data:`_SUPPORTED_CODES` — such codes will never match because
     :func:`detect_country` only returns codes from that set.  This catches
     typos in ``settings.yaml`` (e.g. ``"UK"`` instead of ``"GB"``).
     """
+    if allowed is None:
+        raise ValueError(
+            "filter_by_country requires an explicit allowed list; "
+            "pass [] to disable filtering rather than None."
+        )
     if not allowed:
         return configs
 
-    allowed_upper = {c.upper() for c in allowed}
+    allowed_upper = {str(c).strip().upper() for c in allowed}
 
     # Warn about unsupported codes — they silently never match, which is a
     # common misconfiguration (e.g. "UK" vs "GB", "USA" vs "US").
@@ -574,6 +912,6 @@ def filter_by_country(configs: list[Config], allowed: list[str]) -> list[Config]
                 getattr(cfg, "sni", None),
                 getattr(cfg, "host", None),
             )
-        if cfg.country and cfg.country in allowed_upper:
+        if cfg.country and str(cfg.country).strip().upper() in allowed_upper:
             result.append(cfg)
     return result

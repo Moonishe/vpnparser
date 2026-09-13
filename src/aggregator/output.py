@@ -13,6 +13,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import tempfile
 
 from src.parsers.base import Config
@@ -71,6 +72,12 @@ def is_watermark_vmess(line: str) -> bool:
     if not line.startswith("vmess://"):
         return False
     body = line[len("vmess://") :].split("#", 1)[0].split("?", 1)[0].strip()
+    # Normalise like _vmess_with_country: the wild mixes standard and
+    # URL-safe alphabets, drops padding and glues whitespace/BOM noise.
+    body = re.sub(
+        r"[\s\ufeff\u200b\u200c\u200d\u200e\u200f\u202a-\u202e\u2060]+", "", body
+    )
+    body = body.replace("-", "+").replace("_", "/")
     padded = body + "=" * (-len(body) % 4)
     try:
         payload = json.loads(base64.b64decode(padded).decode("utf-8"))
@@ -123,7 +130,7 @@ def _vmess_with_country(link: str, code: str) -> str:
         ps = str(obj.get("ps") or "")
         if detect_country(ps) is not None:
             return link
-        obj["ps"] = f"{ps}-{code}" if ps else code
+        obj["ps"] = (f"{ps}-{code}" if ps else code)[:256]
         encoded = base64.b64encode(
             json.dumps(obj, ensure_ascii=False).encode("utf-8")
         ).decode("ascii")
@@ -158,7 +165,14 @@ def _with_country_fragment(config: Config) -> str:
         return f"{head}#{code}"
     # Append to the still-encoded fragment: an ASCII "-XX" suffix survives
     # any percent-encoding in front of it and extract_remark() unquotes after.
-    return f"{head}#{frag}-{code}"
+    # Cap the fragment at 256 chars like extract_remark/cap_remark, keeping
+    # the country suffix: without it a long remark rode into every published
+    # artifact unchanged.
+    new_frag = f"{frag}-{code}"
+    if len(new_frag) > 256:
+        keep = 256 - len(code) - 1
+        new_frag = f"{frag[:keep]}-{code}" if keep > 0 else code
+    return f"{head}#{new_frag}"
 
 
 def generate_plain(configs: list[Config]) -> str:
@@ -167,10 +181,16 @@ def generate_plain(configs: list[Config]) -> str:
     Prepends a watermark entry with the GitHub repo name as the first line so
     it shows up first in Happ's server list.
     Joins raw_link fields with newline. Filters out configs with empty
-    raw_link. Returns just the watermark for empty input.
+    raw_link and configs explicitly marked dead by validation
+    (``is_alive is False``) so a failed liveness verdict can never be
+    republished. Configs whose liveness was never checked (``is_alive is None``)
+    are still emitted — that is the "validation disabled" passthrough. Returns
+    just the watermark for empty input.
     """
     links = [_watermark_link()]
     for config in configs:
+        if config.is_alive is False:
+            continue
         safe = _safe_raw_link(_with_country_fragment(config))
         if safe:
             links.append(safe)
@@ -214,20 +234,27 @@ def write_subscription(
 
     The returned count is the number of configs that actually contributed
     a link to the output: those with a non-empty raw_link that survived the
-    control-character filter (see :func:`_safe_raw_link`).
+    control-character filter (see :func:`_safe_raw_link`) and were not
+    explicitly marked dead by validation (``is_alive is not False``).
     """
-    written = sum(1 for c in configs if _safe_raw_link(c.raw_link))
+    written = sum(
+        1 for c in configs if c.is_alive is not False and _safe_raw_link(c.raw_link)
+    )
     output = generate_output(configs, fmt=fmt)
 
     path = resolve_safe_output_path(filepath)
     if path.parent and not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Atomic write — write to temp file then rename.
+    # Atomic write — write to temp file then rename. Flush + fsync before the
+    # rename so a power loss / kill -9 cannot publish a truncated base64
+    # subscription (which would make every config in it unparseable).
     fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(output)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, str(path))
     except Exception:
         with contextlib.suppress(Exception):

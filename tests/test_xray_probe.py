@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import socket
 import ssl
 import tempfile
@@ -17,13 +18,16 @@ from src.parsers.base import Config
 from src.validators import address_guard, xray_probe
 from src.validators.xray_probe import (
     _alpn,
+    _clean_transport_field,
     _extract_probe_ip,
     _first_csv,
     _free_local_port,
     _http_status_code,
     _https_probe_response,
     _https_probe_via_socks,
+    _is_https_probe_url,
     _is_ip,
+    _is_local_outbound_ip,
     _normalize_probe_urls,
     _proxy_outbound,
     _release_local_port,
@@ -347,6 +351,45 @@ def test_stream_settings_xhttp_and_splithttp_alias() -> None:
     assert legacy is not None
     assert legacy["network"] == "xhttp"
     assert legacy["xhttpSettings"] == {"path": "/x"}
+
+
+def test_stream_settings_rejects_control_chars_in_host_or_path() -> None:
+    """Untrusted host/path with control characters (CRLF header injection
+    etc.) must fail the probe instead of reaching Xray settings verbatim."""
+    crlf_host = _make_cfg(
+        network="ws",
+        security="none",
+        path="/ws",
+        host="a.example\r\nX-Injected: 1",
+    )
+    assert _stream_settings(crlf_host) is None
+    nul_path = _make_cfg(
+        network="ws",
+        security="none",
+        path="/ws\x00evil",
+        host="a.example",
+    )
+    assert _stream_settings(nul_path) is None
+    tab_host = _make_cfg(
+        network="httpupgrade",
+        security="tls",
+        path="/up",
+        host="a.example\n",
+    )
+    assert _stream_settings(tab_host) is None
+
+
+def test_clean_transport_field_accepts_normal_values() -> None:
+    """The guard rejects only control characters — every ordinary spelling
+    (query strings, commas, unicode remarks in path) keeps probing."""
+    assert _clean_transport_field("/ws?x=1&y=2") is True
+    assert _clean_transport_field("a.example,b.example") is True
+    assert _clean_transport_field("/vérification-ütf8") is True
+    assert _clean_transport_field(None) is True
+    assert _clean_transport_field("") is True
+    assert _clean_transport_field("/a\r\nb") is False
+    assert _clean_transport_field("a\x7fb") is False
+    assert _clean_transport_field("a\x1bb") is False
 
 
 # ===================== _proxy_outbound ======================
@@ -740,7 +783,8 @@ async def test_probe_check_fails_when_no_port_can_be_reserved(
     monkeypatch.setattr(xray_probe, "_reserved_ports", {51000})
     monkeypatch.setattr(xray_probe, "_free_local_port", _no_port)
     cfg = _make_cfg(address="93.184.216.34", port=443)
-    assert await xray_probe_check(cfg, xray_path="/usr/bin/xray") is None
+    with pytest.raises(xray_probe._NoVerdictError):
+        await xray_probe_check(cfg, xray_path="/usr/bin/xray")
     # The reservation of the probe that owns 51000 must survive.
     assert xray_probe._reserved_ports == {51000}
     assert "Cannot reserve a local SOCKS port" in caplog.text
@@ -1272,10 +1316,8 @@ async def test_probe_check_survives_a_failing_temp_dir_cleanup(
 @pytest.mark.asyncio
 async def test_probe_check_config_none(cfg_vless: Config) -> None:
     with patch("src.validators.xray_probe.build_xray_config", return_value=None):
-        assert (
+        with pytest.raises(xray_probe._NoVerdictError):
             await xray_probe_check(cfg_vless, xray_path="/usr/bin/xray", timeout=5.0)
-            is None
-        )
 
 
 @pytest.mark.asyncio
@@ -1297,13 +1339,13 @@ async def test_probe_check_startup_timeout(cfg_vless: Config) -> None:
 
             with patch("tempfile.TemporaryDirectory") as mock_tmp:
                 mock_tmp.return_value.__enter__.return_value = tmpdir
-                r = await xray_probe_check(
-                    cfg_vless,
-                    xray_path="/usr/bin/xray",
-                    startup_timeout=1.0,
-                    timeout=5.0,
-                )
-                assert r is None
+                with pytest.raises(xray_probe._NoVerdictError):
+                    await xray_probe_check(
+                        cfg_vless,
+                        xray_path="/usr/bin/xray",
+                        startup_timeout=1.0,
+                        timeout=5.0,
+                    )
 
 
 @pytest.mark.asyncio
@@ -1453,6 +1495,57 @@ async def test_probe_check_timeout_then_kill(cfg_vless: Config) -> None:
 @pytest.mark.asyncio
 async def test_validate_empty() -> None:
     assert await validate_configs_xray([], xray_path="/usr/bin/xray") == []
+
+
+@pytest.mark.asyncio
+async def test_validate_time_budget_skips_without_verdict() -> None:
+    """Candidates arriving after the deadline get no verdict at all.
+
+    The budget is a runaway-stage safety net: a skipped config must look
+    exactly like "never probed" (xray_was_checked False), so the health
+    history records nothing and the next run retries it first.
+    """
+    cfg1 = _make_cfg(address="1.2.3.4", port=443)
+    cfg2 = _make_cfg(address="5.6.7.8", port=443)
+    fake_time = MagicMock()
+    # First call computes the deadline; later calls are already past it.
+    fake_time.monotonic.side_effect = [100.0, 200.0, 200.0, 200.0]
+    with (
+        patch(
+            "src.validators.xray_probe.xray_probe_check", new_callable=AsyncMock
+        ) as probe,
+        patch("src.validators.xray_probe.time", fake_time),
+    ):
+        result = await validate_configs_xray(
+            [cfg1, cfg2],
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            time_budget_seconds=50.0,
+        )
+    assert result == []
+    probe.assert_not_awaited()
+    assert cfg1.xray_was_checked is False
+    assert cfg1.is_alive is None
+    assert cfg2.xray_was_checked is False
+    assert cfg2.is_alive is None
+
+
+@pytest.mark.asyncio
+async def test_validate_time_budget_zero_is_off() -> None:
+    """time_budget_seconds=0 (default) never skips anything."""
+    cfg1 = _make_cfg(address="1.2.3.4", port=443)
+    with patch(
+        "src.validators.xray_probe.xray_probe_check", new_callable=AsyncMock
+    ) as probe:
+        probe.return_value = 0.5
+        result = await validate_configs_xray(
+            [cfg1],
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            time_budget_seconds=0.0,
+        )
+    assert result == [cfg1]
+    assert cfg1.is_alive is True
 
 
 @pytest.mark.asyncio
@@ -1876,7 +1969,7 @@ async def test_validate_stops_between_attempts_without_recording_a_failure() -> 
     assert result == [fast]
     assert fast.xray_was_checked is True
     assert slow.xray_was_checked is False
-    assert slow.is_alive is False
+    assert slow.is_alive is None
 
 
 @pytest.mark.asyncio
@@ -2024,16 +2117,15 @@ async def test_validate_distinct_ip_probes_identity_endpoint() -> None:
 
 @pytest.mark.asyncio
 async def test_probe_check_reports_process_start_failure(caplog) -> None:
-    """A missing/locked binary must be reported, not silently marked dead."""
+    """A missing/locked binary must be reported as no verdict, not dead."""
     caplog.set_level(logging.WARNING)
     cfg = _make_cfg()
     with patch(
         "asyncio.create_subprocess_exec",
         side_effect=FileNotFoundError("xray is gone"),
     ):
-        assert (
-            await xray_probe_check(cfg, xray_path="/usr/bin/xray", timeout=1.0) is None
-        )
+        with pytest.raises(xray_probe._NoVerdictError):
+            await xray_probe_check(cfg, xray_path="/usr/bin/xray", timeout=1.0)
     assert "Cannot start Xray" in caplog.text
     assert "xray is gone" in caplog.text
 
@@ -2372,7 +2464,8 @@ async def test_probe_check_releases_port_for_unsupported_config(monkeypatch) -> 
     monkeypatch.setattr(xray_probe, "_free_local_port", lambda: 12345)
     cfg = _make_cfg(address="93.184.216.34", port=443)
     cfg.protocol = "unknown"
-    assert await xray_probe_check(cfg, xray_path="/usr/bin/xray") is None
+    with pytest.raises(xray_probe._NoVerdictError):
+        await xray_probe_check(cfg, xray_path="/usr/bin/xray")
     assert xray_probe._reserved_ports == set()
 
 
@@ -2451,3 +2544,382 @@ async def test_validate_via_proxies_latency_compensated() -> None:
         )
     assert len(result) == 1
     assert cfg.latency_ms == 300.0
+
+
+# ===================== _proxy_outbound invalid ports ======================
+
+
+def test_proxy_outbound_invalid_port_is_skipped(caplog) -> None:
+    """One operator proxy URL with a garbage port must not crash the probe."""
+    caplog.set_level(logging.WARNING)
+    assert _proxy_outbound("socks5://1.2.3.4:notaport") is None
+    assert _proxy_outbound("http://1.2.3.4:99999") is None
+    assert "Skipping invalid proxy url (bad port)" in caplog.text
+
+
+# ===================== _sweep_stale_probe_dirs ======================
+
+
+def test_sweep_stale_probe_dirs_reclaims_leftover_dirs(
+    tmp_path,
+    monkeypatch,
+    caplog,
+) -> None:
+    """Probe temp dirs left behind by killed runs are swept at stage start."""
+    stale = tmp_path / "vpnparser-xray-old"
+    stale.mkdir()
+    (stale / "config.json").write_text("{}", encoding="utf-8")
+    # A fresh dir mimics another live pipeline process's probe: skipping it
+    # is the point of the age guard.
+    fresh = tmp_path / "vpnparser-xray-live"
+    fresh.mkdir()
+    old_time = __import__("time").time() - 3600
+    import os as _os
+
+    _os.utime(stale, (old_time, old_time))
+    other = tmp_path / "keep-me"
+    other.mkdir()
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    caplog.set_level(logging.INFO)
+
+    assert xray_probe._sweep_stale_probe_dirs() == 1
+    assert not stale.exists()
+    assert fresh.exists(), "a live probe dir must not be swept"
+    assert other.exists()
+    assert "Reclaimed 1 leftover probe temp director" in caplog.text
+
+
+def test_sweep_stale_probe_dirs_survives_locked_entry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """One unremovable dir costs nothing: the sweep continues without it."""
+    stuck = tmp_path / "vpnparser-singbox-stuck"
+    stuck.mkdir()
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    real_rmtree = shutil.rmtree
+
+    def _locked(path, *args, **kwargs):
+        if "vpnparser" in str(path):
+            raise OSError(5, "access denied")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", _locked)
+    assert xray_probe._sweep_stale_probe_dirs() == 0
+    assert stuck.exists()
+
+
+# ===================== _is_local_outbound_ip ======================
+
+
+def test_is_local_outbound_ip_rejects_rfc1918_loopback_linklocal() -> None:
+    assert _is_local_outbound_ip("10.1.2.3") is True
+    assert _is_local_outbound_ip("192.168.1.1") is True
+    assert _is_local_outbound_ip("172.16.0.9") is True
+    assert _is_local_outbound_ip("127.0.0.1") is True
+    assert _is_local_outbound_ip("169.254.169.254") is True
+    assert _is_local_outbound_ip("100.64.0.1") is True
+
+
+def test_is_local_outbound_ip_unwraps_ipv4_mapped_ipv6() -> None:
+    assert _is_local_outbound_ip("::ffff:10.0.0.1") is True
+    assert _is_local_outbound_ip("::ffff:203.0.113.7") is False
+
+
+def test_is_local_outbound_ip_judges_pure_ipv6() -> None:
+    assert _is_local_outbound_ip("::1") is True
+    assert _is_local_outbound_ip("fe80::1") is True
+    assert _is_local_outbound_ip("fd12::1") is True
+
+
+def test_is_local_outbound_ip_accepts_public_and_test_net() -> None:
+    assert _is_local_outbound_ip("203.0.113.7") is False
+    assert _is_local_outbound_ip("198.51.100.5") is False
+    assert _is_local_outbound_ip("8.8.8.8") is False
+    assert _is_local_outbound_ip("2001:db8::1") is False
+
+
+def test_is_local_outbound_ip_unparsable_is_not_local() -> None:
+    assert _is_local_outbound_ip("not-an-ip") is False
+
+
+# ===================== malformed probe URL ports ======================
+
+
+def test_is_https_probe_url_rejects_malformed_ports() -> None:
+    """A port that makes ``.port`` raise counts as unusable, never crashes."""
+    assert _is_https_probe_url("https://example.com:443") is True
+    assert _is_https_probe_url("https://example.com:99999") is False
+    assert _is_https_probe_url("https://example.com:abc") is False
+
+
+def test_normalize_probe_urls_drops_malformed_ports() -> None:
+    """One typo'd port in probe_urls falls back to the built-in target."""
+    assert _normalize_probe_urls(
+        probe_urls=["https://h.example:99999", "https://h.example:abc"]
+    ) == ["https://www.gstatic.com/generate_204"]
+
+
+@pytest.mark.asyncio
+async def test_https_probe_invalid_port_fails_closed() -> None:
+    """_https_probe_response returns the fail-closed tuple instead of raising."""
+    assert await _https_probe_response(
+        probe_url="https://example.com:abc", timeout=1.0
+    ) == (None, "")
+    assert await _https_probe_response(
+        probe_url="https://example.com:99999", timeout=1.0
+    ) == (None, "")
+
+
+# ===================== SSRF guard / probe-host checks ======================
+
+
+@pytest.mark.asyncio
+async def test_safe_probe_host_blocks_obfuscated_loopback_literals() -> None:
+    """Non-canonical loopback spellings are IP literals, not hostnames."""
+    xray_probe._probe_host_blocked.cache_clear()
+    assert await xray_probe._safe_probe_host("2130706433") is False
+    assert await xray_probe._safe_probe_host("0x7f000001") is False
+    assert await xray_probe._safe_probe_host("127.1") is False
+    assert await xray_probe._safe_probe_host("169.254.169.254") is False
+    assert await xray_probe._safe_probe_host("example.com") is True
+
+
+@pytest.mark.asyncio
+async def test_https_probe_refuses_non_public_host(monkeypatch, caplog) -> None:
+    """The SSRF guard fail-closes the probe before any socket is opened."""
+    caplog.set_level(logging.WARNING)
+    xray_probe._probe_host_blocked.cache_clear()
+    assert await _https_probe_response(
+        probe_url="https://2130706433/", timeout=1.0
+    ) == (None, "")
+    assert "SSRF guard" in caplog.text
+
+
+# ===================== build_xray_config pinned_address ======================
+
+
+def test_build_xray_config_pinned_address_replaces_connect_keeps_sni() -> None:
+    """The connect address is pinned; SNI stays the hostname (TLS intact)."""
+    cfg = _make_cfg(address="vpn.example.com", sni="sni.example.com", security="tls")
+
+    pinned = build_xray_config(cfg, socks_port=10800, pinned_address="93.184.216.34")
+    assert pinned is not None
+    vnext = pinned["outbounds"][0]["settings"]["vnext"][0]
+    assert vnext["address"] == "93.184.216.34"
+    assert (
+        pinned["outbounds"][0]["streamSettings"]["tlsSettings"]["serverName"]
+        == "sni.example.com"
+    )
+
+    unpinned = build_xray_config(cfg, socks_port=10800)
+    assert unpinned is not None
+    assert (
+        unpinned["outbounds"][0]["settings"]["vnext"][0]["address"] == "vpn.example.com"
+    )
+
+
+def test_build_xray_config_pinned_address_trojan() -> None:
+    cfg = _make_cfg(
+        protocol="trojan",
+        address="vpn.example.com",
+        uuid_or_password="pw",
+        security="tls",
+        sni="sni.example.com",
+    )
+    r = build_xray_config(cfg, socks_port=10800, pinned_address="203.0.113.9")
+    assert r is not None
+    assert r["outbounds"][0]["settings"]["servers"][0]["address"] == "203.0.113.9"
+
+
+# ===================== xray_probe_check DNS pinning ======================
+
+
+@pytest.mark.asyncio
+async def test_probe_check_skipped_when_dns_pin_fails(
+    monkeypatch,
+    caplog,
+) -> None:
+    """No validated public address -> no verdict, not run blind."""
+    caplog.set_level(logging.WARNING)
+
+    async def _no_pin(host, *, timeout=5.0):
+        return None
+
+    monkeypatch.setattr(xray_probe, "resolve_pinned_address", _no_pin)
+    monkeypatch.setattr(xray_probe, "_reserved_ports", set())
+    cfg = _make_cfg(address="server.example.com", port=443)
+    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_sub:
+        with pytest.raises(xray_probe._NoVerdictError):
+            await xray_probe_check(cfg, xray_path="/usr/bin/xray", timeout=5.0)
+    mock_sub.assert_not_called()
+    assert "DNS pin failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_probe_check_cancellation_during_grace_wait_kills_xray(
+    cfg_vless: Config,
+) -> None:
+    """A second cancellation during the grace wait must not spare Xray."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            patch("src.validators.xray_probe._free_local_port", return_value=12345),
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_sub,
+            patch(
+                "src.validators.xray_probe._wait_for_port",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "src.validators.xray_probe._https_probe_response",
+                new_callable=AsyncMock,
+                return_value=(204, ""),
+            ),
+            patch("tempfile.TemporaryDirectory") as mock_tmp,
+        ):
+            proc = _fake_xray_proc()
+            proc.wait = AsyncMock(side_effect=[asyncio.CancelledError(), 0])
+            mock_sub.return_value = proc
+            mock_tmp.return_value.__enter__.return_value = tmpdir
+            with pytest.raises(asyncio.CancelledError):
+                await xray_probe_check(
+                    cfg_vless,
+                    xray_path="/usr/bin/xray",
+                    timeout=5.0,
+                    startup_timeout=2.0,
+                )
+            proc.kill.assert_called_once()
+    assert xray_probe._reserved_ports == set()
+
+
+@pytest.mark.asyncio
+async def test_validate_returns_empty_when_all_addresses_are_blocked() -> None:
+    """A list emptied by the address guard returns [] instead of crashing."""
+    cfgs = [
+        _make_cfg(address="127.0.0.1", port=443),
+        _make_cfg(address="10.0.0.9", port=443),
+    ]
+    with patch(
+        "src.validators.xray_probe.xray_probe_check", new_callable=AsyncMock
+    ) as m:
+        result = await validate_configs_xray(
+            cfgs, xray_path="/usr/bin/xray", timeout=5.0
+        )
+    assert result == []
+    m.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_validate_via_proxies_with_empty_pool_probes_directly(caplog) -> None:
+    """via-proxy mode with an empty pool logs and probes directly."""
+    cfg = _make_cfg(address="93.184.216.34", port=443)
+    caplog.set_level(logging.INFO)
+    with patch(
+        "src.validators.xray_probe.xray_probe_check", new_callable=AsyncMock
+    ) as m:
+        m.return_value = 0.5
+        result = await validate_configs_xray(
+            [cfg],
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            probe_via_proxies=True,
+            probe_proxy_urls=None,
+        )
+    assert len(result) == 1
+    assert "probing directly" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_validate_reports_progress_heartbeat(monkeypatch, caplog) -> None:
+    """Long probe runs log a heartbeat so operators see the stage is alive."""
+    monkeypatch.setattr(xray_probe, "_PROBE_HEARTBEAT_SECONDS", 0.01)
+    cfgs = [_make_cfg(address=f"93.184.216.{i}", port=443) for i in range(1, 52)]
+
+    async def _probe(_cfg: Config, **_kwargs: object) -> float:
+        await asyncio.sleep(0.05)
+        return 0.5
+
+    caplog.set_level(logging.INFO)
+    with patch("src.validators.xray_probe.xray_probe_check", new=_probe):
+        result = await validate_configs_xray(
+            cfgs,
+            xray_path="/usr/bin/xray",
+            timeout=5.0,
+            concurrency=25,
+            progress_label="Test Xray",
+        )
+    assert len(result) == 51
+    assert "progress:" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_validate_reaps_done_watcher_that_finishes_first(monkeypatch) -> None:
+    """A done-watcher completing before the gather must be reaped, not leak."""
+    real_event = asyncio.Event
+
+    class _InstantEvent(real_event):
+        async def wait(self):
+            return True
+
+    monkeypatch.setattr(asyncio, "Event", _InstantEvent)
+    cfg = _make_cfg(address="93.184.216.1", port=443)
+    with patch(
+        "src.validators.xray_probe.xray_probe_check", new_callable=AsyncMock
+    ) as m:
+        m.return_value = 0.5
+        result = await validate_configs_xray(
+            [cfg], xray_path="/usr/bin/xray", timeout=5.0, max_alive=5
+        )
+    assert result == [cfg]
+    assert all(task.done() for task in asyncio.all_tasks() - {asyncio.current_task()})
+
+
+@pytest.mark.asyncio
+async def test_https_probe_closes_orphan_socks_socket(monkeypatch) -> None:
+    """A SOCKS socket the TLS layer never adopted must be closed in finally."""
+    reader = AsyncMock()
+    reader.read = AsyncMock(return_value=b"HTTP/1.1 200 OK\r\n\r\n")
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.wait_closed = AsyncMock()
+    mock_sock = MagicMock()
+
+    async def _open_conn(sock=None, ssl=None, server_hostname=None):
+        return reader, None
+
+    monkeypatch.setattr(asyncio, "open_connection", _open_conn)
+    with patch("python_socks.async_.asyncio.Proxy") as MockProxy:
+        inst = MagicMock()
+        MockProxy.from_url.return_value = inst
+        inst.connect = AsyncMock(return_value=mock_sock)
+        code, body = await _https_probe_response(
+            probe_url="https://example.com", timeout=5.0, socks_port=10800
+        )
+    assert (code, body) == (None, "")
+    mock_sock.close.assert_called_once()
+    writer.close.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_https_probe_breaks_when_deadline_already_passed(monkeypatch) -> None:
+    """remaining <= 0 at the top of the read loop must break immediately."""
+
+    async def _passthrough(coro, timeout=None):
+        return await coro
+
+    monkeypatch.setattr(asyncio, "wait_for", _passthrough)
+    reader = AsyncMock()
+    reader.read = AsyncMock(side_effect=AssertionError("must not be read"))
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.wait_closed = AsyncMock()
+
+    async def _open(*args, **kwargs):
+        return reader, writer
+
+    monkeypatch.setattr(asyncio, "open_connection", _open)
+    code, body = await _https_probe_response(
+        probe_url="https://example.com", timeout=-5.0
+    )
+    assert (code, body) == (None, "")
+    reader.read.assert_not_awaited()

@@ -15,6 +15,8 @@ from src.validators.proxy_pool import (
     _fetch_source,
     _is_public_ipv4,
     _normalize_proxy,
+    _pin_public_target,
+    _safe_source_url,
     fetch_proxy_candidates,
     load_proxy_pool,
     parse_proxy_candidates,
@@ -172,7 +174,11 @@ def _stream_client(
 
 
 @pytest.mark.asyncio
-async def test_fetch_source_success() -> None:
+async def test_fetch_source_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
     client = _stream_client([(200, b"1.2.3.4:1080", {})])
 
     text = await _fetch_source(client, "https://example.com/proxies.txt")
@@ -181,7 +187,11 @@ async def test_fetch_source_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_source_http_error() -> None:
+async def test_fetch_source_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
     client = AsyncMock(spec=httpx.AsyncClient)
     client.stream.side_effect = httpx.HTTPError("connection failed")
 
@@ -190,7 +200,11 @@ async def test_fetch_source_http_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_source_non_200() -> None:
+async def test_fetch_source_non_200(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
     client = _stream_client([(404, b"", {})])
 
     text = await _fetch_source(client, "https://example.com/proxies.txt")
@@ -198,7 +212,18 @@ async def test_fetch_source_non_200() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_source_follows_safe_redirect() -> None:
+async def test_fetch_source_follows_safe_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A redirect to a hostname is resolved and pinned before following; the
+    # connect goes to the approved address, not the (re-resolved) name.
+    async def _fake_resolve(host: str) -> list[str]:
+        return {
+            "example.com": ["203.0.113.1"],
+            "mirror.example.com": ["203.0.113.2"],
+        }.get(host, [])
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
     client = _stream_client(
         [
             (301, b"", {"location": "https://mirror.example.com/list.txt"}),
@@ -208,13 +233,48 @@ async def test_fetch_source_follows_safe_redirect() -> None:
 
     text = await _fetch_source(client, "https://example.com/proxies.txt")
     assert text == "1.2.3.4:1080"
-    # Second hop went to the redirect target.
+    # Second hop connects to the pinned, validated address (not the raw name).
     second_url = client.stream.call_args_list[1][0][1]
-    assert second_url == "https://mirror.example.com/list.txt"
+    assert second_url == "https://203.0.113.2/list.txt"
+    # The original hostname is preserved via the Host header for virtual hosting.
+    assert (
+        client.stream.call_args_list[1].kwargs["headers"]["Host"]
+        == "mirror.example.com"
+    )
 
 
 @pytest.mark.asyncio
-async def test_fetch_source_refuses_private_redirect() -> None:
+async def test_fetch_source_refuses_internal_hostname_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A redirect to an internal hostname (resolved to a private IP) is refused.
+
+    The pinning step resolves once and refuses when the name resolves to no
+    public address, so the connect can never be aimed at an internal host.
+    """
+
+    async def _fake_resolve(host: str) -> list[str]:
+        return [] if host == "intranet.corp.internal" else ["203.0.113.9"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
+    client = _stream_client(
+        [(302, b"", {"location": "https://intranet.corp.internal/px.txt"})],
+    )
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert text == ""
+    # Only the initial request was made — the internal hop was refused.
+    assert client.stream.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_source_refuses_private_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
     client = _stream_client(
         [(302, b"", {"location": "http://169.254.169.254/latest/meta-data"})],
     )
@@ -226,9 +286,35 @@ async def test_fetch_source_refuses_private_redirect() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_source_refuses_https_downgrade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A https->http redirect is refused (no silent TLS downgrade)."""
+
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.9"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
+    client = _stream_client(
+        [(302, b"", {"location": "http://mirror.example.com/list.txt"})],
+    )
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert text == ""
+    # Only the initial request was made — the downgrade was refused.
+    assert client.stream.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_fetch_source_discards_oversized_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1"]
+
+    # _fake_resolve must be applied first; the byte-cap override below uses
+    # the same monkeypatch fixture and does not clobber it.
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
     monkeypatch.setattr(proxy_pool_module, "_MAX_SOURCE_BODY_BYTES", 10)
     # Two chunks of 64 KiB each: once the byte cap is exceeded the whole body
     # is discarded (None) — a truncated list would silently skew the pool.
@@ -249,6 +335,10 @@ async def test_fetch_source_wall_clock_budget(
     """
     import asyncio as _asyncio
 
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
     monkeypatch.setattr(proxy_pool_module, "_DOWNLOAD_BUDGET_FACTOR", 0.0)
 
     async def drip_forever(chunk_size: int):
@@ -271,7 +361,13 @@ async def test_fetch_source_wall_clock_budget(
 
 
 @pytest.mark.asyncio
-async def test_fetch_source_redirect_without_location() -> None:
+async def test_fetch_source_redirect_without_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
     client = _stream_client([(301, b"", {})])
 
     text = await _fetch_source(client, "https://example.com/proxies.txt")
@@ -767,3 +863,157 @@ def test_count_proxy_networks_groups_by_prefix16() -> None:
     ]
     assert count_proxy_networks(urls) == 4
     assert count_proxy_networks([]) == 0
+
+
+def test_count_proxy_networks_skips_unparsable_urls() -> None:
+    """A URL without a hostname contributes no network bucket."""
+    from src.validators.proxy_pool import count_proxy_networks
+
+    assert count_proxy_networks(["garbage-url"]) == 0
+    assert count_proxy_networks(["garbage-url", "socks5://1.2.3.4:1080"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# _safe_source_url / _pin_public_target — URL vetting edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_safe_source_url_rejects_malformed_url() -> None:
+    """A urlsplit() ValueError (invalid IPv6 literal) fails closed to None."""
+    assert _safe_source_url("http://[::1") is None
+
+
+def test_safe_source_url_rejects_unknown_scheme_and_empty_host() -> None:
+    assert _safe_source_url("ftp://example.com/list.txt") is None
+    assert _safe_source_url("https:///no-host") is None
+
+
+async def test_pin_public_target_rebuilds_userinfo(monkeypatch) -> None:
+    """Percent-encoded credentials ride along untouched (no re-quoting).
+
+    Re-quoting turned "p%40ss" into "p%2540ss" and the proxy refused the auth
+    it had originally given, so the raw urlsplit values are rebuilt as-is.
+    """
+
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1", "203.0.113.2"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
+
+    pinned = await _pin_public_target("https://user:secret@example.com/list.txt")
+    assert pinned is not None
+    assert pinned.connect_urls == (
+        "https://user:secret@203.0.113.1/list.txt",
+        "https://user:secret@203.0.113.2/list.txt",
+    )
+    assert pinned.host_header == "example.com"
+    assert pinned.extensions == {"sni_hostname": "example.com"}
+    assert pinned.logical_url == "https://user:secret@example.com/list.txt"
+
+    # Username without password keeps the bare "user@" authority.
+    token = await _pin_public_target("https://token@example.com/list.txt")
+    assert token is not None
+    assert token.connect_urls[0] == "https://token@203.0.113.1/list.txt"
+
+
+# ---------------------------------------------------------------------------
+# _fetch_source — connect-failure retry and redirect-hop budget
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_source_connect_failure_on_every_pinned_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every pinned address refused -> logged, empty string, no exception."""
+
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.1", "203.0.113.2"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
+    client = AsyncMock(spec=httpx.AsyncClient)
+    client.stream = MagicMock(
+        side_effect=[httpx.ConnectError("refused"), httpx.ConnectTimeout("slow")]
+    )
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert text == ""
+    assert client.stream.call_count == 2
+
+
+async def test_fetch_source_exceeds_redirect_hops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A redirect loop is cut off after the hop budget and yields no body."""
+
+    async def _fake_resolve(host: str) -> list[str]:
+        return ["203.0.113.9"]
+
+    monkeypatch.setattr(proxy_pool_module, "resolve_global_ips", _fake_resolve)
+    # The mock replays the same 301 for every hop -> the loop runs out.
+    client = _stream_client(
+        [(301, b"", {"location": "https://example.com/list.txt"})],
+    )
+
+    text = await _fetch_source(client, "https://example.com/proxies.txt")
+    assert text == ""
+    assert client.stream.call_count == proxy_pool_module._MAX_REDIRECT_HOPS + 1
+
+
+async def test_fetch_proxy_candidates_skips_source_returning_no_text() -> None:
+    """An empty/oversized source body skips that source, not the whole sweep."""
+    with patch(
+        "src.validators.proxy_pool._fetch_source", new_callable=AsyncMock
+    ) as mock_fetch:
+        mock_fetch.side_effect = [None, "", "1.2.3.4:1080"]
+        result = await fetch_proxy_candidates(
+            ["https://a.com/l.txt", "https://b.com/l.txt", "https://c.com/l.txt"],
+            max_candidates=10,
+        )
+        assert result == ["socks5://1.2.3.4:1080"]
+
+
+# ---------------------------------------------------------------------------
+# validate_proxy_candidates — done_event bookkeeping race
+# ---------------------------------------------------------------------------
+
+
+async def test_validate_candidates_sets_event_when_watcher_finishes_early(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A watcher that completes without the event must not leave it unset.
+
+    ``done_task`` (waiting on ``done_event``) can be finished without the
+    event being set; the defensive set keeps the bookkeeping consistent
+    instead of leaving workers waiting on a never-set event.
+    """
+
+    class _InstantEvent(asyncio.Event):
+        async def wait(self) -> bool:
+            return True
+
+    monkeypatch.setattr(asyncio, "Event", _InstantEvent)
+
+    with patch(
+        "src.validators.proxy_pool.proxy_connects", new_callable=AsyncMock
+    ) as mock_pc:
+        mock_pc.return_value = True
+        result = await validate_proxy_candidates(
+            ["socks5://1.2.3.4:1080", "socks5://5.6.7.8:1080"],
+            max_proxies=5,
+        )
+    assert result == ["socks5://1.2.3.4:1080", "socks5://5.6.7.8:1080"]
+    assert mock_pc.await_count == 2
+
+
+def test_parse_proxy_candidates_rejects_embedded_garbage() -> None:
+    """An unanchored regex minted pool candidates out of junk lines."""
+    text = "token=1.2.3.4:8080&x=1\nuser:pass@5.6.7.8:1080"
+    assert parse_proxy_candidates(text) == []
+
+
+def test_parse_proxy_candidates_allows_trailing_comment() -> None:
+    text = "1.2.3.4:1080 # fast exit\nsocks5://5.6.7.8:1080"
+    assert parse_proxy_candidates(text) == [
+        "socks5://1.2.3.4:1080",
+        "socks5://5.6.7.8:1080",
+    ]

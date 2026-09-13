@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -90,7 +91,7 @@ def _setup_banned_config(runner, cfg) -> None:
     cfg.is_alive = False
     runner._update_health_history([cfg])
     runner._update_health_history([cfg])
-    assert runner._is_health_or_source_banned(cfg) is True
+    assert runner._quality.is_banned(cfg) is True
 
 
 def test_health_ban_skipped_when_few_xray_alive(tmp_path, monkeypatch) -> None:
@@ -142,7 +143,7 @@ validator:
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             [cfg],
             label="blacklist",
             tcp_enabled=False,
@@ -151,14 +152,20 @@ validator:
         )
     )
 
-    stats = runner._liveness_stats["lists"]["blacklist"]
+    stats = runner._liveness.context.liveness_stats["lists"]["blacklist"]
     assert result == [cfg]
     assert stats["xray_alive"] == 1
     assert stats["output_after_health"] == 1
 
 
 def test_health_ban_overridden_by_fresh_xray_pass(tmp_path, monkeypatch) -> None:
-    """A banned config that passes Xray right now is not erased by the ban."""
+    """A banned-source config that passes Xray right now is not erased.
+
+    Config-level bans are pre-filtered BEFORE probing (the 2026-08-30 run
+    burned its whole Xray budget re-probing the known-dead tail), so this
+    scenario exercises the remaining fresh-evidence path: a source-level ban,
+    where a passing probe must outrank the stale source verdict.
+    """
     settings = tmp_path / "settings.yaml"
     health_file = tmp_path / "health-history.json"
     settings.write_text(
@@ -169,6 +176,8 @@ quality:
   ban_after_consecutive_failures: 2
   ban_cooldown_hours: 12
   health_ban_min_alive: 3
+  source_health_enabled: true
+  source_health_history_file: {health_file}
 validator:
   allowed_countries: []
   xray_enabled: true
@@ -183,7 +192,13 @@ validator:
         sources_path=str(tmp_path / "missing.json"),
     )
     cfg = _vless("banned.example")
-    _setup_banned_config(runner, cfg)
+    cfg.source_name = "dead_src"
+    # A SOURCE ban, not a config ban: config bans are pre-filtered away
+    # before any probe and can never carry fresh evidence by design.
+    runner._quality.health.load()["sources"]["dead_src"] = {
+        "banned_until": int(time.time()) + 3600,
+    }
+    assert runner._quality.is_banned(cfg) is True
     monkeypatch.setattr(runner, "_update_health_history", lambda _configs: None)
     monkeypatch.setattr(runner, "_update_source_health", lambda _c, _s: None)
 
@@ -207,7 +222,7 @@ validator:
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             all_configs,
             label="blacklist",
             tcp_enabled=False,

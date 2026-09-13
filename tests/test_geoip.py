@@ -4,6 +4,7 @@ and batch enrichment. httpx and getaddrinfo are mocked inline (no network).
 
 from __future__ import annotations
 
+import asyncio
 import socket
 
 import httpx
@@ -49,11 +50,22 @@ class _FakeResp:
     def __init__(self, status: int, json_data: object | None = None) -> None:
         self.status_code = status
         self._json = json_data
+        # read_limited_text (used instead of a raw resp.json() since the
+        # byte-cap fix) reads the encoding and iterates bytes.
+        self.encoding = "utf-8"
 
     def json(self):
         if self._json is None:
             raise ValueError("no json")
         return self._json
+
+    async def aiter_bytes(self):
+        import json as _json
+
+        if self._json is None:
+            yield b"not json"
+        else:
+            yield _json.dumps(self._json).encode("utf-8")
 
 
 class _FakeHttpClient:
@@ -71,12 +83,69 @@ class _FakeHttpClient:
             raise self._result
         return self._result
 
+    def stream(self, method: str, url: str):
+        # lookup_country streams since the byte-cap fix; the fake adapts the
+        # same canned result to the streaming interface.
+        if isinstance(self._result, Exception):
+            exc = self._result
+
+            class _FailingCtx:
+                async def __aenter__(self):
+                    raise exc
+
+                async def __aexit__(self, *_exc):
+                    return False
+
+            return _FailingCtx()
+
+        result = self._result
+
+        class _StreamCtx:
+            async def __aenter__(self):
+                return result
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        return _StreamCtx()
+
+
+async def _public_yes(url: str, *, timeout: float = 5.0) -> bool:
+    return True
+
 
 def _patch_geoip_httpx(monkeypatch, result) -> None:
+    monkeypatch.setattr(
+        "src.validators.geoip._url_is_safe_public",
+        _public_yes,
+    )
     monkeypatch.setattr(
         "src.validators.geoip.httpx.AsyncClient",
         lambda *a, **kw: _FakeHttpClient(result),
     )
+
+
+def test_default_api_url_uses_free_tier_http() -> None:
+    """The free ip-api.com tier serves plain http only — https answers 403
+    for every request, which used to kill API enrichment silently."""
+    assert geoip._DEFAULT_API_URL == "http://ip-api.com/json/{ip}"
+
+
+async def test_lookup_country_warns_once_on_403(monkeypatch, caplog) -> None:
+    """A 403 means the endpoint scheme/tier is wrong; warn once, not per IP."""
+    import logging as _logging
+
+    caplog.set_level(_logging.WARNING)
+    geoip._403_state["warned"] = False
+    _patch_geoip_httpx(monkeypatch, _FakeResp(403))
+    try:
+        assert await geoip.lookup_country("8.8.8.8") is None
+        assert await geoip.lookup_country("8.8.4.4") is None
+    finally:
+        warned_403 = [r for r in caplog.records if "403" in r.getMessage()]
+        geoip._403_state["warned"] = False
+    assert len(warned_403) == 1
+    assert "ip-api.com" in warned_403[0].getMessage()
 
 
 async def test_lookup_country_success_uppercases(monkeypatch) -> None:
@@ -416,9 +485,19 @@ class _MMReader:
 
 
 class _MMResp:
-    def __init__(self, status_code: int = 200, chunks: list[bytes] | None = None):
+    def __init__(
+        self,
+        status_code: int = 200,
+        chunks: list[bytes] | None = None,
+        headers: dict[str, str] | None = None,
+    ):
         self.status_code = status_code
         self._chunks = list(chunks or [])
+        self.headers = headers or {}
+        # Mirrors httpx: a redirect needs 3xx AND a Location header.
+        self.is_redirect = 300 <= status_code < 400 and bool(
+            self.headers.get("location")
+        )
 
     async def aiter_bytes(self, _n: int):
         for chunk in self._chunks:
@@ -437,8 +516,10 @@ class _MMRespCM:
 
 
 class _MMClient:
-    def __init__(self, resp: _FakeResp) -> None:
+    def __init__(self, resp: _FakeResp, follow_up: _FakeResp | None = None) -> None:
         self._resp = resp
+        self._follow_up = follow_up
+        self._calls = 0
 
     async def __aenter__(self) -> _MMClient:
         return self
@@ -447,11 +528,145 @@ class _MMClient:
         return None
 
     def stream(self, _method: str, _url: str) -> _MMRespCM:
+        if self._follow_up is not None and self._calls >= 1:
+            self._calls += 1
+            return _MMRespCM(self._follow_up)
+        self._calls += 1
         return _MMRespCM(self._resp)
 
 
 def _patch_mm_httpx(monkeypatch, resp: _FakeResp) -> None:
+    # The download path now passes the same SSRF gate as every other fetch;
+    # these tests exercise the download itself, not the gate.
+    monkeypatch.setattr(geoip, "is_safe_public_url", _public_yes)
     monkeypatch.setattr(geoip.httpx, "AsyncClient", lambda **_kw: _MMClient(resp))
+
+
+async def test_ensure_geoip_database_rejects_non_public_url(
+    tmp_path, monkeypatch
+) -> None:
+    """The mmdb download is an outbound fetch and must pass the SSRF gate."""
+    db = tmp_path / "db.mmdb"
+
+    async def _public_no(url: str, *, timeout: float = 5.0) -> bool:
+        return False
+
+    monkeypatch.setattr(geoip, "is_safe_public_url", _public_no)
+    _patch_mm_httpx(monkeypatch, _MMResp(chunks=[b"database-bytes"]))
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="http://169.254.169.254/db.mmdb", sha256="00" * 32
+    )
+    assert ok is None
+    assert not db.exists()
+
+
+async def test_ensure_geoip_database_follows_gated_redirect(
+    tmp_path, monkeypatch
+) -> None:
+    """GitHub release assets (the pinned URL shape) 302 onto a signed CDN url:
+    the download must follow the redirect, with EVERY hop passing the SSRF
+    gate (the old no-redirect fetch could never succeed there)."""
+    import hashlib
+
+    payload = b"database-bytes"
+    sha = hashlib.sha256(payload).hexdigest()
+    db = tmp_path / "db.mmdb"
+    gated: list[str] = []
+
+    async def _gate(url: str, *, timeout: float = 5.0) -> bool:
+        gated.append(url)
+        return True
+
+    monkeypatch.setattr(geoip, "is_safe_public_url", _gate)
+    redirect = _MMResp(
+        status_code=302, headers={"location": "https://cdn.example/db.mmdb"}
+    )
+    final = _MMResp(chunks=[payload])
+    monkeypatch.setattr(
+        geoip.httpx, "AsyncClient", lambda **_kw: _MMClient(redirect, final)
+    )
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="https://example/db.mmdb", sha256=sha
+    )
+    assert ok is not None
+    assert db.read_bytes() == payload
+    assert gated == ["https://example/db.mmdb", "https://cdn.example/db.mmdb"]
+
+
+@pytest.mark.asyncio
+async def test_geoip_sha256_pin_is_case_insensitive(tmp_path, monkeypatch) -> None:
+    """A pin copied from `Get-FileHash` is UPPERCASE; a case-sensitive compare
+    rejected the freshly downloaded database forever (only a warning), silently
+    disabling the whole offline backend."""
+    import hashlib
+
+    payload = b"database-bytes"
+    sha = hashlib.sha256(payload).hexdigest().upper()
+    db = tmp_path / "db.mmdb"
+
+    async def _gate(url: str, *, timeout: float = 5.0) -> bool:
+        return True
+
+    monkeypatch.setattr(geoip, "is_safe_public_url", _gate)
+    final = _MMResp(chunks=[payload])
+    monkeypatch.setattr(geoip.httpx, "AsyncClient", lambda **_kw: _MMClient(final))
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="https://example/db.mmdb", sha256=sha
+    )
+    assert ok is not None
+    assert db.read_bytes() == payload
+
+    # The pre-existing-file path matches too (no download needed).
+    assert geoip._file_sha256_matches(db, sha) is True
+
+
+async def test_ensure_geoip_database_refuses_private_redirect_target(
+    tmp_path, monkeypatch
+) -> None:
+    """A redirect may not move the fetch to a host the gate never checked."""
+    db = tmp_path / "db.mmdb"
+
+    async def _gate(url: str, *, timeout: float = 5.0) -> bool:
+        return "169.254.169.254" not in url
+
+    monkeypatch.setattr(geoip, "is_safe_public_url", _gate)
+    redirect = _MMResp(
+        status_code=302, headers={"location": "http://169.254.169.254/db.mmdb"}
+    )
+    monkeypatch.setattr(geoip.httpx, "AsyncClient", lambda **_kw: _MMClient(redirect))
+    ok = await geoip.ensure_geoip_database(
+        path=str(db), url="https://example/db.mmdb", sha256="00" * 32
+    )
+    assert ok is None
+    assert not db.exists()
+
+
+async def test_url_gate_caches_verdict_per_scheme_and_host(monkeypatch) -> None:
+    """Every lookup re-checked the same API host — hundreds of DNS queries
+    per run. The verdict must be asked once per (scheme, host)."""
+    calls: list[str] = []
+
+    async def _gate(url: str, *, timeout: float = 5.0) -> bool:
+        calls.append(url)
+        return True
+
+    monkeypatch.setattr(geoip, "is_safe_public_url", _gate)
+    geoip.clear_gate_verdict_cache()
+    try:
+        url = "http://gate.example/json/{ip}"
+        assert await geoip._url_is_safe_public(url, timeout=1.0) is True
+        assert await geoip._url_is_safe_public(url, timeout=1.0) is True
+        assert len(calls) == 1
+        # A different scheme is a different endpoint and re-checked.
+        assert await geoip._url_is_safe_public("https://gate.example/x", timeout=1.0)
+        assert len(calls) == 2
+    finally:
+        geoip.clear_gate_verdict_cache()
+
+
+async def test_url_gate_rejects_hostless_url() -> None:
+    assert await geoip._url_is_safe_public("http://", timeout=1.0) is False
+    assert await geoip._url_is_safe_public("not a url", timeout=1.0) is False
 
 
 async def test_ensure_geoip_database_rejects_unpinned_download(tmp_path) -> None:
@@ -525,6 +740,38 @@ def test_country_from_mmdb_record_shapes() -> None:
     assert geoip._country_from_mmdb_record("junk") is None
 
 
+async def test_offline_geoip_matches_api_for_unsupported_country() -> None:
+    """Both backends must drop a code outside _SUPPORTED_CODES.
+
+    The API path normalizes ``countryCode`` through ``normalize_country_code``;
+    the offline path used to return any two-letter code verbatim, so a config
+    geolocated in Norway (``NO``) got ``country="NO"`` and the write stage
+    produced a ``subscription-NO.txt`` the country filter never sanctioned.
+    """
+    api_result = await geoip._country_from_response(
+        _FakeResp(200, {"countryCode": "NO"}),
+        "http://ip-api.com/json/8.8.8.8",
+    )
+    offline_result = geoip._country_from_mmdb_record({"country": {"iso_code": "NO"}})
+    assert api_result is None
+    assert offline_result is api_result
+
+
+def test_country_from_mmdb_record_keeps_supported_codes() -> None:
+    """Supported codes are still returned, uppercased, as before."""
+    assert geoip._country_from_mmdb_record({"country": {"iso_code": "nl"}}) == "NL"
+    assert (
+        geoip._country_from_mmdb_record({"registered_country": {"iso_code": "US"}})
+        == "US"
+    )
+
+
+@pytest.mark.parametrize("code", ["X", "123", "", None, 12, ["NL"]])
+def test_country_from_mmdb_record_ignores_garbage(code: object) -> None:
+    """Malformed iso_code values stay fail-soft to None."""
+    assert geoip._country_from_mmdb_record({"country": {"iso_code": code}}) is None
+
+
 async def test_enrich_configs_geoip_offline_groups_by_ip() -> None:
     first = Config("vless", "one.example", 443, "u")
     second = Config("vless", "two.example", 443, "u")
@@ -563,3 +810,110 @@ async def test_enrich_configs_geoip_offline_survives_bad_reader(tmp_path) -> Non
         [cfg], str(tmp_path / "x.mmdb"), reader_factory=_boom
     )
     assert cfg.country is None
+
+
+class TestLookupByteCap:
+    """A response larger than the byte cap is discarded, not parsed."""
+
+    def test_oversized_response_is_discarded(self, monkeypatch, caplog) -> None:
+        import logging as _logging
+
+        class _HugeResp:
+            status_code = 200
+            encoding = "utf-8"
+
+            async def aiter_bytes(self):
+                # One chunk just over the cap: read_limited_text must bail.
+                yield b"x" * (geoip._API_RESPONSE_MAX_BYTES + 1)
+
+        class _HugeClient:
+            def __init__(self, *a, **kw):
+                return None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            def stream(self, method: str, url: str):
+                result = _HugeResp()
+
+                class _Ctx:
+                    async def __aenter__(self):
+                        return result
+
+                    async def __aexit__(self, *_exc):
+                        return False
+
+                return _Ctx()
+
+        monkeypatch.setattr(
+            "src.validators.geoip._url_is_safe_public",
+            _public_yes,
+        )
+        monkeypatch.setattr(
+            "src.validators.geoip.httpx.AsyncClient",
+            _HugeClient,
+        )
+        caplog.set_level(_logging.WARNING)
+        assert asyncio.run(geoip.lookup_country("8.8.8.8")) is None
+        assert "byte cap" in caplog.text
+
+
+class TestFreeTierHttpDefault:
+    """ip-api.com FREE tier refuses https (403): shipped defaults must be http."""
+
+    def test_module_default_is_http(self) -> None:
+        assert geoip._DEFAULT_API_URL.startswith("http://"), (
+            "ip-api.com free tier answers 403 for https; shipped default must "
+            "be http:// (see the note in config/settings.yaml)"
+        )
+
+    def test_403_warn_fires_once(self, monkeypatch, caplog) -> None:
+        import logging as _logging
+
+        geoip._403_state["warned"] = False
+        monkeypatch.setattr(
+            "src.validators.geoip.is_safe_public_url",
+            _public_yes,
+        )
+
+        class _Forbidden:
+            status_code = 403
+            encoding = "utf-8"
+
+            async def aiter_bytes(self):
+                yield b""
+
+        class _ForbiddenClient:
+            def __init__(self, *a, **kw):
+                return None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            def stream(self, method: str, url: str):
+                result = _Forbidden()
+
+                class _Ctx:
+                    async def __aenter__(self):
+                        return result
+
+                    async def __aexit__(self, *_exc):
+                        return False
+
+                return _Ctx()
+
+        monkeypatch.setattr(
+            "src.validators.geoip.httpx.AsyncClient",
+            _ForbiddenClient,
+        )
+        caplog.set_level(_logging.WARNING)
+        assert asyncio.run(geoip.lookup_country("8.8.8.8")) is None
+        assert asyncio.run(geoip.lookup_country("8.8.4.4")) is None
+        warnings_403 = [r for r in caplog.records if "403" in r.getMessage()]
+        assert len(warnings_403) == 1

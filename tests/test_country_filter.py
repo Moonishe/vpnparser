@@ -152,6 +152,19 @@ def test_filter_by_country_empty_allowed_returns_all() -> None:
     assert result == [cfg]
 
 
+def test_filter_by_country_none_allowed_raises() -> None:
+    """A None allowed list must not silently disable the filter (fail-open)."""
+    cfg = Config(
+        protocol="vless",
+        address="1.1.1.1",
+        port=443,
+        uuid_or_password="u",
+        country="DE",
+    )
+    with pytest.raises(ValueError):
+        filter_by_country([cfg], None)  # type: ignore[arg-type]
+
+
 def test_filter_by_country_invalid_code_warns(caplog) -> None:
     """Line 480: warning logged for unsupported allowed country codes."""
     caplog.set_level("WARNING")
@@ -302,3 +315,18 @@ def test_filter_by_country_detects_country_when_none() -> None:
 )
 def test_normalize_country_code(value: str | None, expected: str | None) -> None:
     assert normalize_country_code(value) == expected
+
+
+def test_remark_names_unsupported_country() -> None:
+    """Strict-delimited valid ISO outside the supported list is recognised."""
+    from src.validators.country_filter import remark_names_unsupported_country
+
+    assert remark_names_unsupported_country("NO-01") == "NO"
+    assert remark_names_unsupported_country("[NO] Oslo") == "NO"
+    # Bare words never match (same discipline as the ambiguous-code rule).
+    assert remark_names_unsupported_country("NO LOGS") is None
+    assert remark_names_unsupported_country("no-01") is None
+    # Supported codes are detect_country's job, not this helper's.
+    assert remark_names_unsupported_country("DE-01") is None
+    assert remark_names_unsupported_country(None) is None
+    assert remark_names_unsupported_country("") is None

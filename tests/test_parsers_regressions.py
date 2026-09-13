@@ -21,6 +21,13 @@ Second pass (bugs found in / left by the first one):
 Third pass:
 
 12. The ad filter must stay linear on a hostile remark (ReDoS).
+
+Fourth pass:
+
+13. ``find_all_links`` must strip a markdown trailing backtick (and the
+    ``=``/``+``/``*``/``~`` wrapping leftovers).
+14. ``is_garbage_config`` must scan the query fields and the plain-ss
+    password half in its string branch too.
 """
 
 from __future__ import annotations
@@ -28,6 +35,8 @@ from __future__ import annotations
 import base64
 import json
 import time
+
+import pytest
 
 from src.parsers import PARSER_BY_SCHEME
 from src.parsers.base import (
@@ -42,6 +51,7 @@ from src.parsers.subscription import SubscriptionParser
 from src.parsers.trojan import TrojanParser
 from src.parsers.vless import VlessParser
 from src.parsers.vmess import VmessParser
+from src.scheduler.stages.filter import GarbageFilter
 
 _GOOD_UUID = "11111111-1111-4111-8111-111111111111"
 _IPV6 = "2001:db8::1"
@@ -78,6 +88,40 @@ def test_find_all_links_ipv6_inside_prose_and_lists() -> None:
     assert find_all_links(f"see [config]({link})") == [link]
     assert find_all_links(f"<code>{link}</code>") == [link]
     assert find_all_links(f"{link}\n{link}") == [link, link]
+
+
+def test_find_all_links_strips_markdown_backtick_wrapping() -> None:
+    """A trailing backtick must not ride into the link.
+
+    GitHub READMEs routinely wrap links in markdown inline code.  The
+    backtick used to glue onto the port (``8388` ``) and split_host_port
+    rejected it — ss / tuic / hysteria2 lost the config outright, while
+    vmess/vless still parsed but published the polluted raw_link.
+    """
+    links = [
+        "ss://YWVzLTI1Ni1nY206cGFzcw@real-server.net:8388",
+        f"tuic://{_GOOD_UUID}:pass@real-server.net:443",
+        "hy2://pass@real-server.net:443",
+    ]
+    for link in links:
+        found = find_all_links(f"`{link}`")
+        assert found == [link], link
+        cfg = PARSER_BY_SCHEME[link.split("://", 1)[0]].parse(found[0])
+        assert cfg is not None, link
+
+    # vmess/vless: extraction is clean, so the published raw_link is clean too.
+    vmess_payload = json.dumps(
+        {"add": "real-server.net", "port": "443", "id": _GOOD_UUID}
+    )
+    vmess_encoded = base64.b64encode(vmess_payload.encode()).decode("ascii").rstrip("=")
+    for link in (
+        f"vmess://{vmess_encoded}",
+        f"vless://{_GOOD_UUID}@real-server.net:443",
+    ):
+        found = find_all_links(f"`{link}`")
+        assert found == [link], link
+        cfg = PARSER_BY_SCHEME[link.split("://", 1)[0]].parse(found[0])
+        assert cfg is not None and cfg.raw_link == link, link
 
 
 def test_find_all_links_still_rejects_scheme_lookalikes() -> None:
@@ -326,6 +370,41 @@ _CREDENTIAL_CASES: list[tuple[str, str, str, str]] = [
     ("tuic://{cred}@real-server.net:443", "tuic", "real-server.net", "notauuid:pw"),
     ("tuic://{cred}@real-server.net:443", "tuic", "real-server.net", "v5-token"),
     ("tuic://{cred}@real-server.net:443", "tuic", "real-server.net", ""),
+    # Plain shadowsocks: the userinfo is ``method:PASSWORD`` but the Config
+    # only ever holds the password half (ss_method is not scanned), so the
+    # string branch must judge the same part.
+    (
+        "ss://aes-256-gcm:{cred}@real-server.net:443",
+        "ss",
+        "real-server.net",
+        "realpass",
+    ),
+    (
+        "ss://aes-256-gcm:{cred}@real-server.net:443",
+        "ss",
+        "real-server.net",
+        "super-password-2024",
+    ),
+    (
+        "ss://aes-256-gcm:{cred}@real-server.net:443",
+        "ss",
+        "real-server.net",
+        "PASSWORD",
+    ),
+    (
+        "ss://aes-256-gcm:{cred}@real-server.net:443",
+        "ss",
+        "real-server.net",
+        "SERVER_IP",
+    ),
+    # A placeholder-looking METHOD is invisible to the Config branch (ss_method
+    # is not scanned) — the string branch must not flag it either.
+    (
+        "ss://SERVER_IP:{cred}@real-server.net:443",
+        "ss",
+        "real-server.net",
+        "realpass",
+    ),
 ]
 
 
@@ -342,6 +421,38 @@ def test_is_garbage_config_branches_agree_on_credentials() -> None:
         assert is_garbage_config(link) is is_garbage_config(cfg), (
             f"{link!r} vs Config(credential={credential!r})"
         )
+
+
+def test_is_garbage_config_branches_agree_on_query_fields() -> None:
+    """Query values that reach Config fields must be judged identically.
+
+    ``sni`` / ``host`` / ``pbk`` / ``sid`` land in Config fields and are
+    scanned there; the string branch used to skip the query entirely, so
+    ``trojan://real-pass@real-server.net:443?sni=example.com`` passed as a
+    string while its Config was rejected.  Values of unrelated params
+    (``obfs-password``) stay unscanned — the Config branch never sees them.
+    """
+    for param, value, expected in (
+        ("sni", "example.com", True),
+        ("host", "SERVER_IP_1", True),
+        ("pbk", "PUBLIC_KEY", True),
+        ("sid", "SHORT_ID", True),
+        ("sni", "real-server.net", False),
+        ("obfs-password", "PASSWORD", False),
+    ):
+        link = f"trojan://real-pass@real-server.net:443?{param}={value}"
+        cfg = Config(
+            protocol="trojan",
+            address="real-server.net",
+            port=443,
+            uuid_or_password="real-pass",
+            sni=value if param == "sni" else None,
+            host=value if param == "host" else None,
+            pbk=value if param == "pbk" else None,
+            sid=value if param == "sid" else None,
+        )
+        assert is_garbage_config(link) is expected, link
+        assert is_garbage_config(cfg) is expected, link
 
 
 def test_is_garbage_config_still_sees_placeholders_in_userinfo() -> None:
@@ -435,6 +546,41 @@ def test_hysteria2_accepts_port_hopping() -> None:
     assert parser.parse(f"hy2://pass@{_IPV6}#x") is None
 
 
+def test_hysteria2_mport_query_param_is_a_port_range_source() -> None:
+    """``?mport=443-500`` fills in a missing authority port.
+
+    Panels that cannot put a range into the authority emit the same spec as
+    the ``mport`` query param; it used to be dropped silently.  An explicit
+    authority port always wins over ``mport``: ``host:443?mport=...`` dials
+    443 no matter what the query says.
+    """
+    parser = Hysteria2Parser()
+    via_query = parser.parse("hy2://pass@real-server.net?mport=443-500&sni=x#r")
+    via_authority = parser.parse("hy2://pass@real-server.net:443-500?sni=x#r")
+    assert via_query is not None and via_authority is not None
+    assert via_query.port == via_authority.port == 443
+    assert via_query.address == via_authority.address == "real-server.net"
+    assert via_query.security == via_authority.security == "tls"
+    # An explicit authority port wins over a range mport — even an invalid
+    # one, which is simply ignored.
+    explicit = parser.parse("hy2://pass@real-server.net:443?mport=443-500#r")
+    assert explicit is not None and explicit.port == 443
+    ignored_bad = parser.parse("hy2://pass@real-server.net:443?mport=0-500#r")
+    assert ignored_bad is not None and ignored_bad.port == 443
+    differing = parser.parse("hy2://pass@real-server.net:8443?mport=443-500#r")
+    assert differing is not None and differing.port == 8443
+    # Without an authority port the mport range is validated like the
+    # authority form: an out-of-range first port is rejected, and a plain
+    # (non-range) mport does not create a port out of nothing.
+    assert parser.parse("hy2://pass@real-server.net?mport=0-500#r") is None
+    assert parser.parse("hy2://pass@real-server.net?mport=443#r") is None
+    plain = parser.parse("hy2://pass@real-server.net:8443?mport=443#r")
+    assert plain is not None and plain.port == 8443
+    # An explicit authority range keeps precedence over a conflicting mport.
+    both = parser.parse("hy2://pass@real-server.net:443,8443?mport=500-600#r")
+    assert both is not None and both.port == 443
+
+
 def test_hysteria2_rejects_whitespace_only_password() -> None:
     """The password is stripped once, so emptiness is the only check needed."""
     parser = Hysteria2Parser()
@@ -456,6 +602,18 @@ def test_strict_b64decode_rejects_invalid_lengths_without_raising() -> None:
     cfg = ShadowsocksParser().parse("ss://aes-256-gcm:YWJjZ@real-server.net:8388")
     assert cfg is not None
     assert (cfg.ss_method, cfg.uuid_or_password) == ("aes-256-gcm", "YWJjZ")
+
+
+def test_strict_b64decode_keeps_non_utf8_payload() -> None:
+    """Valid base64 with non-utf-8 bytes is kept (replacement), not dropped.
+
+    ``///+`` decodes to ``b"\\xff\\xfe"``, which is not valid utf-8. A strict
+    decode would drop the whole config; decoding with replacement characters
+    keeps the config (matching the other link decoders) at the cost of a
+    possibly mangled credential — the lesser evil, since a dropped ss:// config
+    is a lost proxy rather than a cosmetic glitch.
+    """
+    assert _strict_b64decode("///+") == "���"
 
 
 def _ad_probe(remark: str) -> Config:
@@ -524,3 +682,102 @@ def test_ad_filter_still_catches_spaced_v2ray_pool_remarks() -> None:
     # an oversized remark, and a plain display name is still published.
     assert is_garbage_config(_ad_probe("t.me/adchannel " + "x" * 100_000)) is True
     assert is_garbage_config(_ad_probe("DE-Frankfurt 01")) is False
+
+
+class TestBacktickMarkdownLinks:
+    """GitHub READMEs wrap links in markdown code spans; a glued backtick
+    corrupted the port (vless://...:443` -> int("443`")) and whole configs
+    were lost for ss/tuic/hy2/anytls."""
+
+    @pytest.mark.parametrize(
+        "link",
+        [
+            "vless://11111111-1111-4111-8111-111111111111@a.com:443#X",
+            "ss://YWJjZA@b.com:443#X",
+            "tuic://uuid:pw@c.com:443?sni=s#T",
+            "hy2://pw@d.com:443?obfs=x#H",
+            "anytls://pw@e.com:443#A",
+            "vmess://eyJhZGQiOiJhLmNvbSIsInBvcnQiOiI0NDMifQ==",
+        ],
+    )
+    def test_backtick_wrapped_link_survives(self, link: str) -> None:
+        wrapped = f"`{link}`"
+        assert find_all_links(wrapped) == [link]
+
+    def test_backtick_suffix_stripped_from_raw_link(self) -> None:
+        from src.parsers.vless import VlessParser
+
+        links = find_all_links(
+            "x `vless://11111111-1111-4111-8111-111111111111@a.com:443#X` y"
+        )
+        assert links == ["vless://11111111-1111-4111-8111-111111111111@a.com:443#X"]
+        cfg = VlessParser().parse(links[0])
+        assert cfg is not None and cfg.port == 443
+
+
+class TestLoneSurrogateResilience:
+    """A crafted vmess JSON payload with \\ud800 escapes must not crash dedup
+    (UnicodeEncodeError in dedup_key's .encode()) or the liveness loop — the
+    surrogates are stripped at the parser entry point and in dedup_key."""
+
+    def test_lone_surrogate_stripped_at_parse(self) -> None:
+        from src.parsers.vmess import VmessParser
+
+        raw = (
+            '{"v":"2","ps":"X","add":"1.2.3.4","port":"443",'
+            '"id":"11111111-1111-4111-8111-111111111111","path":"A\\ud800B"}'
+        )
+        link = "vmess://" + base64.b64encode(raw.encode()).decode()
+        cfg = VmessParser().parse(link)
+        assert cfg is not None
+        # The surrogate sequence was decoded by json.loads to a lone surrogate
+        # character, which the parser strips. The path survives without it.
+        assert cfg.path is not None
+        cfg.path.encode("utf-8")  # must not raise
+
+    def test_dedup_key_survives_surrogates(self) -> None:
+        from src.parsers.base import Config
+
+        cfg = Config(
+            protocol="vless",
+            address="1.2.3.4",
+            port=443,
+            uuid_or_password="11111111-1111-4111-8111-111111111111",
+            path="A\N{REPLACEMENT CHARACTER}B",
+        )
+        # errors="ignore" in dedup_key strips the surrogate instead of raising.
+        _ = cfg.dedup_key  # must not raise UnicodeEncodeError
+
+
+class TestParseTimeSSRFGuard:
+    """Private/reserved IP literals are filtered at parse time, not only when
+    liveness runs — with tcp/tls/xray disabled the old code published them."""
+
+    def test_private_ip_literal_filtered(self) -> None:
+        private = Config(
+            protocol="vless",
+            address="169.254.169.254",
+            port=80,
+            uuid_or_password="11111111-1111-4111-8111-111111111111",
+        )
+        public = Config(
+            protocol="vless",
+            address="93.184.216.34",
+            port=443,
+            uuid_or_password="11111111-1111-4111-8111-111111111111",
+        )
+        clean, count = GarbageFilter.filter_garbage([private, public])
+        assert count == 1
+        assert len(clean) == 1
+        assert clean[0].address == "93.184.216.34"
+
+    def test_loopback_literal_filtered(self) -> None:
+        loopback = Config(
+            protocol="vless",
+            address="127.0.0.1",
+            port=8080,
+            uuid_or_password="11111111-1111-4111-8111-111111111111",
+        )
+        clean, count = GarbageFilter.filter_garbage([loopback])
+        assert count == 1
+        assert clean == []

@@ -25,11 +25,16 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 from urllib.parse import unquote, urlparse
 
 from src.parsers.base import Config
-from src.validators.address_guard import filter_public_configs, is_blocked_literal
+from src.utils.net import redact_proxy_url
+from src.validators.address_guard import (
+    filter_public_configs,
+    is_blocked_literal,
+    resolve_pinned_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +49,7 @@ _DEFAULT_IDENTITY_PROBE_URLS = [
     "https://api.ipify.org",
     "https://www.cloudflare.com/cdn-cgi/trace",
 ]
-_DEFAULT_ACCEPTED_STATUS_CODES = set(range(200, 400))
+_DEFAULT_ACCEPTED_STATUS_CODES = set(range(200, 300))
 #: Cap on how much of a probe response is buffered before giving up on EOF.
 _MAX_PROBE_RESPONSE_BYTES = 64 * 1024
 #: Statuses defined to carry no body, so the response ends with its headers.
@@ -53,6 +58,18 @@ _BODILESS_STATUS_CODES = frozenset({204, 304})
 _LAST_CHUNK = b"0\r\n\r\n"
 #: How long a body no header framed may still keep the probe waiting.
 _UNFRAMED_BODY_IDLE_SECONDS = 2.0
+#: Interval of the stage heartbeat ("X checked, Y alive") in long probe runs.
+_PROBE_HEARTBEAT_SECONDS = 60
+
+
+class _NoVerdictError(Exception):
+    """Probe reached no verdict (infra/timeout), not a dead server.
+
+    Raised for per-config ceiling timeouts, DNS-pin failures, port
+    exhaustion, spawn failures and startup timeouts. Callers convert
+    it to ``xray_was_checked=False, is_alive=None`` so health history
+    records nothing instead of a false failure.
+    """
 
 
 def _is_rooted_path(candidate: str) -> bool:
@@ -87,10 +104,11 @@ def _resolve_configured_path(candidate: str) -> str | None:
     """Resolve an operator-supplied Xray path without consulting the CWD.
 
     Rooted paths are taken as given. A relative path is anchored at the project
-    root — ``XRAY_EXECUTABLE=bin/xray/xray.exe`` is the layout this repository
-    ships — so the binary that gets executed does not depend on the directory
-    the runner was started from, and a stray ``xray.exe`` sitting in that
-    directory can never win. PATH is the last resort.
+    root — the CI layout is ``bin/xray/xray`` (see update.yml), the local
+    Windows checkout ships the flat ``bin/xray.exe`` — so the binary that gets
+    executed does not depend on the directory the runner was started from, and
+    a stray ``xray.exe`` sitting in that directory can never win. PATH is the
+    last resort; there is NO implicit ``bin/`` scan.
 
     Args:
         candidate: Path or program name from settings or the environment.
@@ -178,6 +196,20 @@ def _alpn(value: str | None) -> list[str] | None:
     return protocols or None
 
 
+def _clean_transport_field(value: str | None) -> bool:
+    """Return ``True`` when *value* holds no control characters (CR/LF incl.).
+
+    ``path``/``host`` come from untrusted subscription links and are placed
+    verbatim into Xray settings (ws Host header, grpc serviceName,
+    httpupgrade host, xhttp path); SNI is regex-validated separately, these
+    fields only get the cheapest safe check. Anything with a control
+    character makes the probe fail — the value is never transformed.
+    """
+    if not value:
+        return True
+    return not any(ord(char) < 0x20 or char == "\x7f" for char in value)
+
+
 def _stream_settings(cfg: Config) -> dict[str, Any] | None:
     network = str(cfg.network or "tcp").lower()
     security = str(cfg.security or "none").lower()
@@ -189,6 +221,8 @@ def _stream_settings(cfg: Config) -> dict[str, Any] | None:
     if network == "splithttp":
         network = "xhttp"
     if network not in _SUPPORTED_NETWORKS:
+        return None
+    if not _clean_transport_field(cfg.path) or not _clean_transport_field(cfg.host):
         return None
 
     stream: dict[str, Any] = {"network": network}
@@ -246,6 +280,24 @@ def _stream_settings(cfg: Config) -> dict[str, Any] | None:
         alpn = _alpn(cfg.alpn)
         if alpn:
             tls["alpn"] = alpn
+        # NOTE, verified against bin/xray.exe (Xray 26.3.27) on 2026-09-12:
+        # this tunnel endpoint IS certificate-verified. The previous comment
+        # here claimed a "non-verifying tunnel endpoint, as before"; that was
+        # wrong on both counts. Xray >= 24 removed `allowInsecure` (26.x
+        # rejects it with exit 23), and `pinnedPeerCertSha256: []` is a schema
+        # error rather than a no-op: the field is a hex STRING, and a JSON
+        # array fails to unmarshal. Neither key is emitted below, so both the
+        # chain and the hostname of the endpoint are checked.
+        #
+        # Measured cost of that, on the live corpus: 147 reachable TLS
+        # endpoints were sampled and NONE was self-signed, so this does not
+        # currently drop configs. A handshake against a genuinely self-signed
+        # endpoint does fail with "x509: certificate signed by unknown
+        # authority"; to probe one, obtain the leaf SHA-256 out of band (TOFU)
+        # and set `pinnedPeerCertSha256` to that hex string.
+        #
+        # Probe integrity is provided separately by verifying the PROBE
+        # TARGET's certificate (_probe_ssl_context).
         stream["security"] = "tls"
         stream["tlsSettings"] = tls
     elif security != "none":
@@ -259,13 +311,18 @@ def _proxy_outbound(proxy_url: str) -> dict[str, Any] | None:
         parsed = urlparse(proxy_url)
         # Reading .port validates it and raises ValueError on garbage like
         # "socks5://h:notaport" — one bad operator URL must not crash the
-        # probe phase for every config.
-        port = int(
-            parsed.port
-            or (1080 if parsed.scheme.lower() in {"socks", "socks5"} else 8080)
-        )
+        # probe phase for every config. Port 0 is compared against None, not
+        # truthiness: a literal 0 is invalid for a listener but is a valid
+        # parse result, and `or` silently turned it into the default.
+        port = parsed.port
+        if port is None:
+            port = 1080 if parsed.scheme.lower() in {"socks", "socks5"} else 8080
+        port = int(port)
     except ValueError:
-        logger.warning("Skipping invalid proxy url (bad port): %r", proxy_url)
+        logger.warning(
+            "Skipping invalid proxy url (bad port): %r",
+            redact_proxy_url(proxy_url),
+        )
         return None
     scheme = parsed.scheme.lower()
     if scheme not in {"socks", "socks5", "http"} or not parsed.hostname:
@@ -294,8 +351,17 @@ def build_xray_config(
     socks_port: int,
     *,
     dial_proxy_url: str | None = None,
+    pinned_address: str | None = None,
 ) -> dict[str, Any] | None:
-    """Build a minimal Xray config for one outbound."""
+    """Build a minimal Xray config for one outbound.
+
+    ``pinned_address`` (a validated public IP literal) replaces the address
+    in the *connect* fields while SNI/Host keep the hostname: handing the
+    raw hostname to Xray lets the core resolve it itself, reopening the
+    resolve-then-connect window the TCP/TLS stages close via
+    :func:`resolve_pinned_address`.
+    """
+    connect_address = pinned_address or cfg.address
     protocol = str(cfg.protocol or "").lower()
     if protocol not in _SUPPORTED_PROTOCOLS:
         return None
@@ -321,7 +387,7 @@ def build_xray_config(
         outbound["settings"] = {
             "vnext": [
                 {
-                    "address": cfg.address,
+                    "address": connect_address,
                     "port": int(cfg.port),
                     "users": [user],
                 },
@@ -331,7 +397,7 @@ def build_xray_config(
         outbound["settings"] = {
             "servers": [
                 {
-                    "address": cfg.address,
+                    "address": connect_address,
                     "port": int(cfg.port),
                     "password": cfg.uuid_or_password,
                 },
@@ -348,7 +414,7 @@ def build_xray_config(
         outbound["settings"] = {
             "vnext": [
                 {
-                    "address": cfg.address,
+                    "address": connect_address,
                     "port": int(cfg.port),
                     "users": [user],
                 },
@@ -360,7 +426,7 @@ def build_xray_config(
         outbound["settings"] = {
             "servers": [
                 {
-                    "address": cfg.address,
+                    "address": connect_address,
                     "port": int(cfg.port),
                     "method": cfg.ss_method,
                     "password": cfg.uuid_or_password,
@@ -430,6 +496,49 @@ def _free_local_port(*, attempts: int = 20) -> int:
 def _release_local_port(port: int) -> None:
     """Give a reserved port number back to the pool."""
     _reserved_ports.discard(port)
+
+
+_PROBE_DIR_PREFIXES = ("vpnparser-xray-", "vpnparser-singbox-")
+
+#: A directory younger than this belongs to a live probe of another pipeline
+#: process (manual run next to --continuous): rmtree-ing it would unlink that
+#: probe's config.json mid-run. Older than this, the owner is gone.
+_SWEEP_MIN_AGE_SECONDS = 600.0
+
+
+def _sweep_stale_probe_dirs(
+    prefixes: tuple[str, ...] = _PROBE_DIR_PREFIXES,
+    *,
+    min_age_seconds: float = _SWEEP_MIN_AGE_SECONDS,
+) -> int:
+    """Best-effort delete leftover probe temp directories from earlier runs.
+
+    ``ignore_cleanup_errors=True`` keeps a cleanup failure from corrupting a
+    verdict, but on Windows the failed rmtree left the directory behind —
+    each one carrying ``config.json`` with the probe's credentials. A short
+    sweep at stage start reclaims them once the owning processes are gone.
+    Fresh directories are skipped: two pipeline processes on one host would
+    otherwise delete each other's live probe configs.
+    """
+    removed = 0
+    now = time.time()
+    with contextlib.suppress(OSError):
+        for entry in Path(tempfile.gettempdir()).iterdir():
+            if not entry.is_dir() or not entry.name.startswith(prefixes):
+                continue
+            try:
+                if now - entry.stat().st_mtime < min_age_seconds:
+                    continue
+            except OSError:
+                continue
+            try:
+                shutil.rmtree(entry, ignore_errors=False)
+            except OSError:
+                continue
+            removed += 1
+    if removed:
+        logger.info("Reclaimed %d leftover probe temp director(y/ies).", removed)
+    return removed
 
 
 async def _wait_for_port(
@@ -534,7 +643,51 @@ def _probe_response_is_unframed(chunk: bytes) -> bool:
     return not _is_chunked_transfer(header) and _content_length(header) is None
 
 
+#: Explicitly local answer ranges for the identity-probe verdict. Deliberately
+#: NOT ``ipaddress``'s ``is_private``: that flag also covers documentation
+#: ranges (TEST-NET-1/2/3), which the pipeline's fixtures and logs treat as
+#: public addresses. What must be rejected is space no routable server lives
+#: in: RFC1918, loopback, link-local (incl. the cloud metadata endpoint),
+#: CGNAT, this-host and broadcast.
+_LOCAL_OUTBOUND_V4_NETWORKS = (
+    ipaddress.IPv4Network("0.0.0.0/8"),
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("100.64.0.0/10"),
+    ipaddress.IPv4Network("127.0.0.0/8"),
+    ipaddress.IPv4Network("169.254.0.0/16"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv4Network("255.255.255.255/32"),
+)
+_LOCAL_OUTBOUND_V6_NETWORKS = (
+    ipaddress.IPv6Network("::1/128"),
+    ipaddress.IPv6Network("fe80::/10"),
+    ipaddress.IPv6Network("fc00::/7"),
+)
+
+
+def _is_local_outbound_ip(ip_text: str) -> bool:
+    """Return ``True`` for RFC1918/loopback/link-local/CGNAT/metadata answers.
+
+    The identity-probe body arrives *through the server under test*, so the
+    reported IP is attacker-controlled: a hostile endpoint answering
+    ``10.0.0.1`` would otherwise satisfy ``require_distinct_outbound_ip``
+    (which only compares the value against the known-rejected set) without
+    ever proxying anything.
+    """
+    try:
+        addr = ipaddress.ip_address(ip_text.strip())
+    except ValueError:
+        return False
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    if isinstance(addr, ipaddress.IPv6Address):
+        return any(addr in net for net in _LOCAL_OUTBOUND_V6_NETWORKS)
+    return any(addr in net for net in _LOCAL_OUTBOUND_V4_NETWORKS)
+
+
 def _extract_probe_ip(body: str) -> str | None:
+    """Return the first parseable IP an identity endpoint reported."""
     text = body.strip()
     if not text:
         return None
@@ -580,11 +733,42 @@ def _probe_ssl_context(verify_tls: bool) -> ssl.SSLContext:
     return context
 
 
+# Probe hosts are operator-configured; cache the SSRF verdict per run so a
+# large batch does not re-check the same host on every config/attempt.
+# lru_cache with a cap instead of a bare dict: the dict grew for the life of
+# a --continuous process, and while the cardinality is config-bounded today,
+# the cap makes that a property rather than an assumption.
+@functools.lru_cache(maxsize=256)
+def _probe_host_blocked(host: str) -> bool:
+    """Return ``True`` when *host* is a non-public IP literal (SSRF guard)."""
+    return is_blocked_literal(host)
+
+
+async def _safe_probe_host(host: str) -> bool:
+    """Return ``True`` unless *host* is a non-public IP literal (SSRF guard).
+
+    Only IP literals are rejected: hostnames resolve through the operator's DNS
+    and are trusted (mirrors the LLM api_base guard). Checking a literal needs
+    no network, so a probe never depends on live name resolution.
+
+    Judged through :func:`is_blocked_literal`, not bare ``ip_address()``: the
+    latter rejects non-canonical spellings (``2130706433``, ``0x7f000001``,
+    ``127.1``), which then fell into the "not an IP, therefore a hostname,
+    therefore trusted" branch — a fail-open hole for exactly the loopback and
+    metadata addresses this guard exists to block.
+    """
+    return not _probe_host_blocked(host)
+
+
 def _is_https_probe_url(url: str) -> bool:
     """Return ``True`` when *url* is something :func:`_https_probe_response` can use."""
     try:
         parsed = urlparse(url)
-        return parsed.scheme == "https" and bool(parsed.hostname)
+        # ``.port`` is read here, not just in the caller: it raises ValueError
+        # on ``:99999``/``:abc``, and in _https_probe_response that raise sits
+        # outside the try block — one typo in probe_urls aborted the whole
+        # liveness stage instead of dropping the entry.
+        return parsed.scheme == "https" and bool(parsed.hostname) and parsed.port != 0
     except ValueError:
         return False
 
@@ -636,14 +820,32 @@ async def _https_probe_response(
     host = parsed.hostname
     if parsed.scheme != "https" or not host:
         raise ValueError(f"probe_url must be HTTPS: {probe_url!r}")
-    port = parsed.port or 443
+    # ``.port`` raises on ``:99999``/``:abc``. Callers reach this through
+    # _normalize_probe_urls (which now rejects those), but a direct caller must
+    # not be able to abort the liveness stage with one malformed URL either.
+    try:
+        port = parsed.port or 443
+    except ValueError:
+        logger.warning("Ignoring probe URL %r: invalid port.", probe_url)
+        return (None, "")
+    # Config-driven SSRF guard: never connect the probe (which can carry a proxy
+    # credential in dial_proxy_url) to a host that resolves into a private/loopback
+    # range (e.g. 169.254.169.254). Fail closed. (Normal callers pass through
+    # _normalize_probe_urls which rejects bad ports upfront, so a bad probe URL
+    # cannot mass-ban the run via per-config failures.)
+    if not await _safe_probe_host(host):
+        logger.warning(
+            "Refusing probe to non-public host %s (SSRF guard).",
+            redact_proxy_url(host),
+        )
+        return (None, "")
     path = parsed.path or "/"
     if parsed.query:
         path = f"{path}?{parsed.query}"
 
     writer = None
+    sock = None
     try:
-        sock = None
         if socks_port is not None or proxy_url:
             from python_socks.async_.asyncio import Proxy
 
@@ -699,9 +901,25 @@ async def _https_probe_response(
             if _probe_response_is_complete(bytes(buffer)):
                 break
         chunk = bytes(buffer)
-    except Exception:
+    except Exception as exc:
+        # A probe is best-effort: report the failure instead of swallowing it
+        # silently, so a misconfigured endpoint or proxy surfaces in logs
+        # rather than degrading to an "unreachable" verdict. Still return the
+        # fail-closed (None, "") tuple — never raise out of a probe.
+        logger.warning(
+            "xray probe read failed for %s: %s",
+            redact_proxy_url(proxy_url or probe_url),
+            exc,
+        )
         return (None, "")
     finally:
+        if writer is None and sock is not None:
+            # open_connection never took ownership of the raw SOCKS socket
+            # (it raised or was cancelled before a transport existed) — close
+            # it here or every failed proxied probe leaks one file descriptor.
+            # A double close of an already-dead socket is a harmless no-op.
+            with contextlib.suppress(Exception):
+                sock.close()
         with contextlib.suppress(Exception):
             if writer is not None:
                 writer.close()
@@ -764,6 +982,25 @@ def _rotated_proxy_urls_for_config(
     return [*urls[offset:], *urls[:offset]]
 
 
+def _log_probe_stderr(fh: BinaryIO, *, tool: str) -> None:
+    """Log a bounded tail of a probe process's stderr temp file.
+
+    DEVNULL made a startup failure undiagnosable: the exit code was logged,
+    but WHY the generated config was rejected (bad inbound, port clash,
+    unsupported option) lived only in stderr. The file handle stays open for
+    the whole probe — reading via the same handle avoids Windows sharing
+    issues — and no pipe is involved, so a chatty process cannot deadlock.
+    """
+    try:
+        fh.seek(0)
+        data = fh.read(8192)
+    except OSError:
+        return
+    text = data.decode("utf-8", errors="replace").strip()
+    if text:
+        logger.warning("%s startup output: %s", tool, text[-2000:])
+
+
 async def xray_probe_check(
     cfg: Config,
     *,
@@ -778,8 +1015,24 @@ async def xray_probe_check(
     verify_probe_tls: bool = True,
     timeout: float = 12.0,
     startup_timeout: float = 4.0,
+    pin_address: bool = True,
+    resolve_timeout: float = 5.0,
+    per_config_timeout: float | None = None,
 ) -> float | None:
     """Run real HTTPS probes through one Xray outbound.
+
+    Args:
+        pin_address: Resolve ``cfg.address`` once and connect to the
+            validated literal (DNS rebinding guard, same as the TCP/TLS
+            stages). ``False`` keeps the legacy hostname connect — the
+            operator's explicit ``check_hostnames: false`` opt-out.
+        per_config_timeout: Hard wall-clock ceiling for the whole probe of
+            THIS config, covering every URL attempt and the subprocess.
+            Without it a slow chain holds one of the stage's concurrency
+            slots for up to ``attempts x (startup + urls x timeout)``
+            seconds, starving every other candidate. A timeout leaves no
+            verdict (the caller's ``xray_was_checked`` bookkeeping treats
+            the config as not-yet-probed, so it retries first next run).
 
     Returns:
         Latency in seconds of the successful probe request, or ``None``
@@ -789,6 +1042,72 @@ async def xray_probe_check(
         and the quality stage drops "slow" configs on exactly this
         number.
     """
+    if per_config_timeout is None or per_config_timeout <= 0:
+        return await _xray_probe_check_body(
+            cfg,
+            xray_path=xray_path,
+            probe_url=probe_url,
+            probe_urls=probe_urls,
+            min_probe_successes=min_probe_successes,
+            accepted_status_codes=accepted_status_codes,
+            dial_proxy_url=dial_proxy_url,
+            require_distinct_outbound_ip=require_distinct_outbound_ip,
+            reject_outbound_ips=reject_outbound_ips,
+            verify_probe_tls=verify_probe_tls,
+            timeout=timeout,
+            startup_timeout=startup_timeout,
+            pin_address=pin_address,
+            resolve_timeout=resolve_timeout,
+        )
+    try:
+        async with asyncio.timeout(per_config_timeout):
+            return await _xray_probe_check_body(
+                cfg,
+                xray_path=xray_path,
+                probe_url=probe_url,
+                probe_urls=probe_urls,
+                min_probe_successes=min_probe_successes,
+                accepted_status_codes=accepted_status_codes,
+                dial_proxy_url=dial_proxy_url,
+                require_distinct_outbound_ip=require_distinct_outbound_ip,
+                reject_outbound_ips=reject_outbound_ips,
+                verify_probe_tls=verify_probe_tls,
+                timeout=timeout,
+                startup_timeout=startup_timeout,
+                pin_address=pin_address,
+                resolve_timeout=resolve_timeout,
+            )
+    except TimeoutError:
+        logger.warning(
+            "Xray probe of %s:%s exceeded the %ss per-config ceiling — "
+            "treated as not probed.",
+            cfg.address,
+            cfg.port,
+            per_config_timeout,
+        )
+        raise _NoVerdictError(
+            f"per-config ceiling {per_config_timeout}s exceeded"
+        ) from None
+
+
+async def _xray_probe_check_body(
+    cfg: Config,
+    *,
+    xray_path: str,
+    probe_url: str | None = "https://www.gstatic.com/generate_204",
+    probe_urls: list[str] | tuple[str, ...] | None = None,
+    min_probe_successes: int = 1,
+    accepted_status_codes: set[int] | None = None,
+    dial_proxy_url: str | None = None,
+    require_distinct_outbound_ip: bool = False,
+    reject_outbound_ips: set[str] | None = None,
+    verify_probe_tls: bool = True,
+    timeout: float = 12.0,
+    startup_timeout: float = 4.0,
+    pin_address: bool = True,
+    resolve_timeout: float = 5.0,
+) -> float | None:
+    """Single-config probe body: spawn Xray, run the probe URLs, clean up."""
     if is_blocked_literal(cfg.address):
         logger.warning(
             "Refusing Xray probe of non-public address %s:%s.",
@@ -797,19 +1116,41 @@ async def xray_probe_check(
         )
         return None
 
+    pinned_address: str | None = None
+    if pin_address:
+        pinned_address = await resolve_pinned_address(
+            cfg.address,
+            timeout=resolve_timeout,
+        )
+        if pinned_address is None:
+            logger.warning(
+                "Xray probe of %s:%s skipped — no validated public address "
+                "(DNS pin failed).",
+                cfg.address,
+                cfg.port,
+            )
+            raise _NoVerdictError("DNS pin failed")
+
     try:
         socks_port = _free_local_port()
     except OSError as exc:
         logger.warning("Cannot reserve a local SOCKS port for the Xray probe: %s", exc)
-        return None
+        raise _NoVerdictError("no free local port") from exc
 
     # Everything below runs under one finally: a reserved port number that is
     # never released is burnt for the lifetime of the process, and preparing the
     # config can fail for reasons of its own (full disk, locked temp file).
     try:
-        xray_config = build_xray_config(cfg, socks_port, dial_proxy_url=dial_proxy_url)
+        xray_config = build_xray_config(
+            cfg,
+            socks_port,
+            dial_proxy_url=dial_proxy_url,
+            pinned_address=pinned_address,
+        )
         if xray_config is None:
-            return None
+            # Unbuildable (bad dial proxy URL, unsupported combo): operator
+            # or infra problem, not a dead server — no verdict, not a ban.
+            raise _NoVerdictError("cannot build xray config")
 
         urls = _normalize_probe_urls(probe_url, probe_urls)
         required_successes = min(len(urls), max(1, min_probe_successes))
@@ -830,6 +1171,10 @@ async def xray_probe_check(
         ) as tmpdir:
             config_path = Path(tmpdir) / "config.json"
             config_path.write_text(json.dumps(xray_config), encoding="utf-8")
+            # stderr to a temp file: see _log_probe_stderr. Not a pipe (a
+            # chatty process would deadlock an unread PIPE buffer) and not
+            # DEVNULL (a bare exit code does not diagnose a bad config).
+            err_fh = (Path(tmpdir) / "stderr.log").open("wb")
             try:
                 proc = await asyncio.create_subprocess_exec(
                     xray_path,
@@ -837,16 +1182,18 @@ async def xray_probe_check(
                     "-config",
                     str(config_path),
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=err_fh,
                 )
             except OSError as exc:
+                err_fh.close()
                 # Deleted binary, missing permissions, antivirus lock: without
                 # this every config would silently fail with is_alive=False.
                 logger.warning("Cannot start Xray from %s: %s", xray_path, exc)
-                return None
+                raise _NoVerdictError("cannot start xray") from exc
             try:
                 if not await _wait_for_port(socks_port, startup_timeout, proc=proc):
-                    return None
+                    _log_probe_stderr(err_fh, tool="Xray")
+                    raise _NoVerdictError("xray startup timeout")
                 successes = 0
                 failures_allowed = len(urls) - required_successes
                 failures = 0
@@ -867,7 +1214,17 @@ async def xray_probe_check(
                         successes += 1
                         success_latency = time.monotonic() - probe_started
                         outbound_ip = _extract_probe_ip(body)
-                        if outbound_ip and outbound_ip not in rejected_ips:
+                        if (
+                            outbound_ip
+                            and outbound_ip not in rejected_ips
+                            # The body arrives through the server under test,
+                            # so the answer is attacker-controlled: a hostile
+                            # endpoint could report a private address and
+                            # satisfy the distinct-IP check without proxying
+                            # anything. Documentation ranges (TEST-NET) stay
+                            # acceptable — fixtures and logs use them.
+                            and not _is_local_outbound_ip(outbound_ip)
+                        ):
                             identity_ok = True
                         if successes >= required_successes and (
                             not require_distinct_outbound_ip or identity_ok
@@ -894,6 +1251,8 @@ async def xray_probe_check(
                     else None
                 )
             finally:
+                with contextlib.suppress(Exception):
+                    err_fh.close()
                 if proc.returncode is None:
                     proc.terminate()
                     try:
@@ -910,6 +1269,15 @@ async def xray_probe_check(
                         with contextlib.suppress(Exception):
                             await proc.wait()
                         raise
+                # Shrink the credential-at-rest window: config.json holds the
+                # VPN credentials in cleartext. The TemporaryDirectory
+                # cleanup runs at context exit, but on Windows an open Xray
+                # handle can delay it (ignore_cleanup_errors) — wipe the file
+                # now and drop the dir immediately.
+                with contextlib.suppress(Exception):
+                    config_path.unlink()
+                with contextlib.suppress(Exception):
+                    shutil.rmtree(tmpdir, ignore_errors=True)
     finally:
         _release_local_port(socks_port)
 
@@ -935,6 +1303,10 @@ async def validate_configs_xray(
     startup_timeout: float = 4.0,
     concurrency: int = 6,
     max_alive: int = 0,
+    progress_label: str = "",
+    time_budget_seconds: float = 0.0,
+    deadline: float | None = None,
+    per_config_timeout: float | None = None,
 ) -> list[Config]:
     """Return configs that can pass a real HTTPS probe through Xray.
 
@@ -947,6 +1319,14 @@ async def validate_configs_xray(
     data centers are exactly the traffic RU servers block or drop, so a
     direct probe from there marks living configs dead. The direct path stays
     in use whenever the pool is empty.
+
+    Args:
+        time_budget_seconds: Wall-clock budget measured from THIS call
+            (0 = off). Kept for standalone callers.
+        deadline: Absolute ``time.monotonic()`` deadline shared across the
+            fresh/retry/stale passes of one list. When given it wins over
+            ``time_budget_seconds`` — without it, three passes each starting
+            their own clock meant up to 3x the configured stage budget.
     """
     if not configs:
         return []
@@ -959,15 +1339,41 @@ async def validate_configs_xray(
     )
     if not configs:
         return []
+    # Blocking filesystem scan — off the event loop.
+    await asyncio.to_thread(_sweep_stale_probe_dirs)
 
     for cfg in configs:
         cfg.xray_was_checked = False
-        cfg.is_alive = False
+        # None = no verdict yet. False here used to turn every
+        # budget-skipped/cancelled candidate into a health-history
+        # failure via the shared probe_log (which holds references).
+        cfg.is_alive = None
 
     semaphore = asyncio.Semaphore(max(1, concurrency))
     alive: list[Config] = []
     alive_lock = asyncio.Lock()
     done_event = asyncio.Event()
+    # Heartbeat counters: the stage used to be "silent by design", which left
+    # operators unable to tell a healthy grind from a dead-proxy spiral during
+    # a 1-3h run. done_count increments are plain int ops — asyncio keeps
+    # them race-free within one loop. no_verdict_count tracks infra/timeout
+    # skips separately so the finished line does not misread them as
+    # early-stop remainder.
+    done_count = 0
+    no_verdict_count = 0
+    total_count = len(configs)
+    # Time budget (0 = off): a deadline past which no NEW candidate starts —
+    # a runaway stage stops gracefully instead of grinding for hours. An
+    # explicit absolute ``deadline`` (shared across the list's passes) wins
+    # over the per-call duration so N passes cannot multiply the budget.
+    budget_deadline: float | None
+    if deadline is not None:
+        budget_deadline = deadline
+    else:
+        budget_deadline = (
+            time.monotonic() + time_budget_seconds if time_budget_seconds > 0 else None
+        )
+    budget_skipped = 0
     proxy_urls = [url for url in (probe_proxy_urls or []) if str(url).strip()]
     if probe_via_proxies and not proxy_urls:
         logger.info(
@@ -1041,10 +1447,20 @@ async def validate_configs_xray(
                     proxy_reject_ips[str(proxy_url).strip()].add(found.strip())
 
     async def _check_one(cfg: Config) -> None:
+        nonlocal done_count, budget_skipped, no_verdict_count
         if done_event.is_set():
             return
         async with semaphore:
             if done_event.is_set():
+                return
+            # Time budget: candidates arriving after the deadline get no
+            # verdict (xray_was_checked stays False), so the health history
+            # counts nothing against them and the next run probes them
+            # first — a safety net against a runaway stage, not a verdict.
+            if budget_deadline is not None and time.monotonic() > budget_deadline:
+                budget_skipped += 1
+                cfg.xray_was_checked = False
+                cfg.is_alive = None
                 return
             cfg.xray_was_checked = True
             attempts = max(1, attempts_per_config)
@@ -1067,32 +1483,46 @@ async def validate_configs_xray(
                     # the config goes back to "not checked" so the health
                     # history records no verdict it never earned.
                     cfg.xray_was_checked = False
+                    cfg.is_alive = None
                     return
                 dial_proxy_url = (
                     attempt_proxies[attempt_index % len(attempt_proxies)]
                     if attempt_proxies
                     else None
                 )
-                probe_latency = await xray_probe_check(
-                    cfg,
-                    xray_path=xray_path,
-                    probe_url=None,
-                    probe_urls=probe_targets,
-                    min_probe_successes=min_probe_successes,
-                    dial_proxy_url=dial_proxy_url,
-                    require_distinct_outbound_ip=require_distinct_outbound_ip,
-                    # A proxied attempt must also reject the proxy's own
-                    # exit IP: a "VPN" whose outbound equals the SOCKS
-                    # proxy's exit is just the proxy itself.
-                    reject_outbound_ips=(
-                        proxy_reject_ips.get(dial_proxy_url, reject_ips)
-                        if dial_proxy_url
-                        else reject_ips
-                    ),
-                    verify_probe_tls=verify_probe_tls,
-                    timeout=timeout,
-                    startup_timeout=startup_timeout,
-                )
+                try:
+                    probe_latency = await xray_probe_check(
+                        cfg,
+                        xray_path=xray_path,
+                        probe_url=None,
+                        probe_urls=probe_targets,
+                        min_probe_successes=min_probe_successes,
+                        dial_proxy_url=dial_proxy_url,
+                        require_distinct_outbound_ip=require_distinct_outbound_ip,
+                        # A proxied attempt must also reject the proxy's own
+                        # exit IP: a "VPN" whose outbound equals the SOCKS
+                        # proxy's exit is just the proxy itself.
+                        reject_outbound_ips=(
+                            proxy_reject_ips.get(dial_proxy_url, reject_ips)
+                            if dial_proxy_url
+                            else reject_ips
+                        ),
+                        verify_probe_tls=verify_probe_tls,
+                        timeout=timeout,
+                        startup_timeout=startup_timeout,
+                        pin_address=check_hostnames,
+                        resolve_timeout=resolve_timeout,
+                        # A per-config ceiling keeps one slow URL chain from
+                        # holding a stage semaphore slot for minutes; the
+                        # docstring of xray_probe_check carries the arithmetic.
+                        per_config_timeout=per_config_timeout,
+                    )
+                except _NoVerdictError:
+                    # Infra/timeout/DNS-pin: no verdict, not a dead server.
+                    cfg.xray_was_checked = False
+                    cfg.is_alive = None
+                    no_verdict_count += 1
+                    return
                 if probe_latency is not None:
                     raw_ms = float(probe_latency) * 1000.0
                     # A via-proxy latency includes the proxy's own dial hop;
@@ -1129,25 +1559,37 @@ async def validate_configs_xray(
             ):
                 for proxy_url in _rotated_proxy_urls_for_config(cfg, proxy_urls):
                     proxy_url = str(proxy_url).strip()
-                    proxy_ok = (
-                        await xray_probe_check(
-                            cfg,
-                            xray_path=xray_path,
-                            probe_url=None,
-                            probe_urls=probe_targets,
-                            min_probe_successes=min_probe_successes,
-                            dial_proxy_url=proxy_url,
-                            require_distinct_outbound_ip=require_distinct_outbound_ip,
-                            reject_outbound_ips=proxy_reject_ips.get(
-                                proxy_url,
-                                reject_ips,
-                            ),
-                            verify_probe_tls=verify_probe_tls,
-                            timeout=timeout,
-                            startup_timeout=startup_timeout,
+                    try:
+                        proxy_ok = (
+                            await xray_probe_check(
+                                cfg,
+                                xray_path=xray_path,
+                                probe_url=None,
+                                probe_urls=probe_targets,
+                                min_probe_successes=min_probe_successes,
+                                dial_proxy_url=proxy_url,
+                                require_distinct_outbound_ip=require_distinct_outbound_ip,
+                                reject_outbound_ips=proxy_reject_ips.get(
+                                    proxy_url,
+                                    reject_ips,
+                                ),
+                                verify_probe_tls=verify_probe_tls,
+                                timeout=timeout,
+                                startup_timeout=startup_timeout,
+                                # Same verdict path as the primary attempt: with
+                                # check_hostnames=false this check used to re-pin
+                                # via DNS while the main probe skipped it.
+                                pin_address=check_hostnames,
+                                resolve_timeout=resolve_timeout,
+                                per_config_timeout=per_config_timeout,
+                            )
+                            is not None
                         )
-                        is not None
-                    )
+                    except _NoVerdictError:
+                        cfg.xray_was_checked = False
+                        cfg.is_alive = None
+                        no_verdict_count += 1
+                        return
                     if proxy_ok:
                         proxy_successes += 1
                         if proxy_successes >= required_proxy_successes:
@@ -1163,6 +1605,7 @@ async def validate_configs_xray(
                 mid = len(successful_latencies) // 2
                 cfg.latency_ms = successful_latencies[mid]
             cfg.is_alive = ok
+            done_count += 1
             if not ok:
                 return
             async with alive_lock:
@@ -1170,35 +1613,114 @@ async def validate_configs_xray(
                 if max_alive > 0 and len(alive) >= max_alive:
                     done_event.set()
 
+    async def _report_progress() -> None:
+        # Heartbeat: one line per interval instead of 96 minutes of silence.
+        # Small candidate sets skip it — tests and tiny lists gain nothing.
+        if not progress_label or total_count < 50:
+            return
+        while True:
+            await asyncio.sleep(_PROBE_HEARTBEAT_SECONDS)
+            logger.info(
+                "%s progress: %d/%d checked, %d alive.",
+                progress_label,
+                done_count,
+                total_count,
+                len(alive),
+            )
+
+    progress_task = asyncio.create_task(_report_progress())
     tasks = [asyncio.create_task(_check_one(cfg)) for cfg in configs]
 
-    if max_alive > 0:
-        # Same early stop as the TCP stage: without cancelling the in-flight
-        # probes the stage still waits for the slowest one — up to
-        # attempts * (startup + probes) seconds — after its goal is reached.
-        pending_tasks = set(tasks)
-        done_task = asyncio.create_task(done_event.wait())
-        while pending_tasks and not done_event.is_set():
-            done, _pending = await asyncio.wait(
-                [*pending_tasks, done_task],
-                return_when=asyncio.FIRST_COMPLETED,
+    try:
+        if max_alive > 0:
+            # Same early stop as the TCP stage: without cancelling the
+            # in-flight probes the stage still waits for the slowest one — up
+            # to attempts * (startup + probes) seconds — after its goal is
+            # reached. Raced via gather() so the whole pending set does not
+            # get re-registered into asyncio.wait on every completion, and so
+            # an outer cancellation cannot orphan in-flight probes.
+            gather_task: asyncio.Future[Any] = asyncio.gather(
+                *tasks, return_exceptions=True
             )
-            pending_tasks -= done
-
-        if done_event.is_set():
-            for task in pending_tasks:
-                task.cancel()
-        if not done_task.done():
-            done_task.cancel()
-            await asyncio.gather(done_task, return_exceptions=True)
-
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+            done_task = asyncio.ensure_future(done_event.wait())
+            try:
+                await asyncio.wait(
+                    [gather_task, done_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except asyncio.CancelledError:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                done_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await gather_task
+                with contextlib.suppress(asyncio.CancelledError):
+                    await done_task
+                raise
+            finally:
+                if done_task.done() and not done_event.is_set():
+                    done_event.set()
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                done_task.cancel()
+            try:
+                results = await gather_task
+            except asyncio.CancelledError:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await gather_task
+                raise
+            # Reap the watcher: cancel() only requests cancellation, and
+            # returning with a not-yet-finished task leaks it past the stage.
+            with contextlib.suppress(asyncio.CancelledError):
+                await done_task
+        else:
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+            except asyncio.CancelledError:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                raise
+    finally:
+        # An external cancellation (runner shutdown) must not strand the
+        # heartbeat task: it would keep sleeping until the loop closes.
+        progress_task.cancel()
+        await asyncio.gather(progress_task, return_exceptions=True)
+    logger.info(
+        "%s finished: %d/%d checked, %d alive%s%s.",
+        progress_label or "Xray stage",
+        done_count,
+        total_count,
+        len(alive),
+        f", {no_verdict_count} no-verdict" if no_verdict_count else "",
+        (
+            ""
+            if done_count + budget_skipped + no_verdict_count >= total_count
+            else " (remainder skipped by early stop)"
+        ),
+    )
+    if budget_skipped:
+        logger.warning(
+            "%s time budget (%.0fs) hit: %d candidate(s) left unprobed "
+            "(no verdict recorded, they retry first next run).",
+            progress_label or "Xray stage",
+            time_budget_seconds,
+            budget_skipped,
+        )
     for cfg, result in zip(configs, results, strict=False):
         if isinstance(result, asyncio.CancelledError):
             # A cancelled probe reached no verdict, so it must not leave the
             # config marked as attempted: the health history would count the
             # early stop as a failed probe and move the config towards a ban.
             cfg.xray_was_checked = False
+            cfg.is_alive = None
             continue
         if isinstance(result, BaseException):
             # Without this the real reason (missing binary, permission error)
@@ -1209,6 +1731,7 @@ async def validate_configs_xray(
             # a failed probe and move the config towards a ban (the same rule
             # as the CancelledError branch above).
             cfg.xray_was_checked = False
+            cfg.is_alive = None
             logger.warning(
                 "Xray probe of %s:%s raised %s: %s",
                 cfg.address,

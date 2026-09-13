@@ -1,16 +1,22 @@
-"""Output-writing stage: subscriptions, splits, locations, and run summary."""
+"""Output-writing helpers used by the runner (subscriptions, splits, locations).
+
+The runner composes the write stage itself (order, publish floor, summary
+shape): the generic ``run(state)`` form and the second, diverging output
+assembly it used to carry (hardcoded mix path, its own summary payload)
+were dead code and have been removed.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from src.aggregator.output import _safe_raw_link
 from src.parsers.base import Config
-from src.scheduler.context import PipelineContext, PipelineState
+from src.scheduler.context import PipelineContext
 from src.scheduler.stages.aggregate import Aggregator
 from src.scheduler.stages.base import PipelineStage
 from src.utils.paths import (
@@ -19,30 +25,22 @@ from src.utils.paths import (
     write_text_atomic,
 )
 
+
+def _is_countable(cfg: Config) -> bool:
+    """Same predicate the writer applies: alive (or unjudged) + safe link."""
+    return cfg.is_alive is not False and _safe_raw_link(cfg.raw_link) is not None
+
+
 logger = logging.getLogger(__name__)
 
 
 class OutputWriter(PipelineStage):
-    """Writes subscription files, split files, location files, and the run summary."""
+    """Writes subscription files, split files, and location files on demand."""
 
     def __init__(self, context: PipelineContext) -> None:
         self.context = context
         self.settings = context.settings
         self.aggregator = Aggregator(context)
-
-    async def run(
-        self,
-        state: PipelineState,
-        context: PipelineContext | None = None,
-    ) -> PipelineState:
-        """Write all configured outputs from the aggregated and split configs."""
-        output_files = self._write_outputs(
-            state.aggregated,
-            state.split_configs,
-            state.summary_file,
-        )
-        state.output_files = output_files
-        return state
 
     def _publisher_section(self) -> dict[str, Any]:
         return self.settings.section("publisher")
@@ -245,15 +243,23 @@ class OutputWriter(PipelineStage):
         outputs = self._build_location_outputs(configs, limit)
         output_files: list[str] = []
         for country, country_configs in outputs.items():
+            # Forward slashes: Path gives backslashes on Windows, which leak
+            # into run-summary.json and break cross-platform tooling.
             output_file = str(
                 Path(output_dir) / self._location_output_filename(country),
-            )
+            ).replace("\\", "/")
             count = self._write_output(country_configs, output_file)
-            self._record_output_stats(
-                f"location_{country.lower()}",
-                output_file,
-                country_configs,
-            )
+            self.context.output_stats[f"location_{country.lower()}"] = {
+                "file": output_file,
+                "count": sum(1 for cfg in country_configs if _is_countable(cfg)),
+                "countries": dict(
+                    Counter(
+                        str(cfg.country).upper()
+                        for cfg in country_configs
+                        if _is_countable(cfg) and getattr(cfg, "country", None)
+                    ).most_common(),
+                ),
+            }
             output_files.append(output_file)
             logger.info(
                 "Wrote %d %s location configs to %s.",
@@ -261,8 +267,12 @@ class OutputWriter(PipelineStage):
                 country,
                 output_file,
             )
-        for output_file in stale_files:
-            if output_file in output_files:
+        written = {p.replace("\\", "/") for p in output_files}
+        for stale in stale_files:
+            # Forward slashes like the freshly written entries above, so the
+            # membership check cannot miss on separator spelling.
+            output_file = stale.replace("\\", "/")
+            if output_file in written:
                 continue
             # Empty, not missing: the placeholder is what replaces the stale
             # copy already published for a country that is gone.
@@ -270,11 +280,13 @@ class OutputWriter(PipelineStage):
             # Retired files are rewritten and published like any other output,
             # so they belong in the run summary too — without this an empty run
             # reports no location outputs at all while replacing every one.
-            self._record_output_stats(
-                f"location_{self._location_country_key(output_file)}",
-                output_file,
-                [],
-            )
+            self.context.output_stats[
+                f"location_{self._location_country_key(output_file)}"
+            ] = {
+                "file": output_file,
+                "count": 0,
+                "countries": {},
+            }
             output_files.append(output_file)
             logger.info("Retired location output %s (now empty).", output_file)
         return output_files
@@ -294,40 +306,6 @@ class OutputWriter(PipelineStage):
         _, _, code = stem.partition("-")
         return (code or stem).lower()
 
-    def _write_outputs(
-        self,
-        aggregated: list[Config],
-        splits: dict[str, list[Config]],
-        summary_file: str | None = None,
-    ) -> list[str]:
-        pcfg = self._publisher_section()
-        combined_output_file = str(pcfg.get("output_file") or "output/subscription.txt")
-        mix_output_file = str(
-            pcfg.get("mix_output_file") or "output/subscription-mix.txt",
-        )
-        split_output_files = pcfg.get("split_output_files") or {}
-
-        output_files: list[str] = [combined_output_file]
-        count = self._write_output(aggregated, combined_output_file)
-        logger.info("Wrote %d configs to %s.", count, combined_output_file)
-
-        clash_output_file = self._write_clash_output(aggregated)
-        if clash_output_file:
-            output_files.append(clash_output_file)
-
-        mix_configs = self._build_mix(aggregated, splits, pcfg)
-        self._write_output(mix_configs, mix_output_file)
-        output_files.append(mix_output_file)
-
-        split_files = self._write_split_outputs(splits, split_output_files)
-        output_files.extend(split_files)
-
-        location_files = self._write_location_outputs(aggregated)
-        output_files.extend(location_files)
-
-        self._write_run_summary("success", summary_file)
-        return output_files
-
     def _clash_output_file(self) -> str | None:
         """Configured Clash YAML path, or ``None`` when the twin is off."""
         pcfg = self._publisher_section()
@@ -343,6 +321,7 @@ class OutputWriter(PipelineStage):
         except ValueError:
             logger.exception("Unsafe Clash output path %r rejected", clash_output_file)
             return None
+        write_failed = False
         try:
             from src.aggregator.clash import write_clash_subscription
 
@@ -353,41 +332,40 @@ class OutputWriter(PipelineStage):
             logger.exception("Clash subscription write failed.")
             self._write_empty_clash_output()
             count = 0
-        logger.info("Wrote %d proxies to %s.", count, clash_output_file)
+            write_failed = True
+        if not write_failed:
+            # A failure already logged its exception above; "Wrote 0 proxies"
+            # right after it read like a success line for a broken run.
+            logger.info("Wrote %d proxies to %s.", count, clash_output_file)
         # Same shape the other outputs get via _record_output_stats: an empty
         # run's clash entry used to differ from a success run's (count source
         # and countries), making run-summary comparisons asymmetric.
+        # Countries are counted over exactly the set the YAML writer keeps
+        # (alive + raw link + expressible): counting dead or inexpressible
+        # (shadowtls, bad network, reality w/o pbk, tuic v4) configs inflated
+        # the sum past the file's count.
+        from src.aggregator.clash import config_to_clash_proxy
+
         country_counts = Counter(
             str(cfg.country).upper()
             for cfg in configs
-            if cfg.raw_link and getattr(cfg, "country", None)
+            if cfg.raw_link
+            and cfg.is_alive is not False
+            and config_to_clash_proxy(cfg, set()) is not None
+            and getattr(cfg, "country", None)
         )
         self.context.output_stats["clash"] = {
             "file": clash_output_file,
             "count": count,
             "countries": dict(country_counts.most_common()),
         }
+        if write_failed:
+            # A failed write leaves a `proxies: []` placeholder behind; handing
+            # that path to the publisher would overwrite a working published
+            # Clash twin with an empty one, so the caller is told there is
+            # nothing to publish this run.
+            return None
         return clash_output_file
-
-    def _write_empty_outputs(self, summary_file: str | None = None) -> list[str]:
-        pcfg = self._publisher_section()
-        combined_output_file = str(pcfg.get("output_file") or "output/subscription.txt")
-        mix_output_file = str(
-            pcfg.get("mix_output_file") or "output/subscription-mix.txt",
-        )
-        split_output_files = pcfg.get("split_output_files") or {}
-
-        output_files = [combined_output_file, mix_output_file]
-        self._write_empty_output(combined_output_file)
-        self._write_empty_output(mix_output_file)
-        self._write_empty_clash_output()
-        clash_file = str(pcfg.get("clash_output_file") or "")
-        if clash_file:
-            output_files.append(clash_file)
-        self._write_empty_split_outputs(split_output_files)
-        output_files.extend(str(path) for path in split_output_files.values())
-        self._write_run_summary("empty_sources", summary_file)
-        return output_files
 
     def _write_empty_clash_output(self) -> None:
         """Leave an empty (but valid) YAML document behind on empty runs."""
@@ -396,52 +374,13 @@ class OutputWriter(PipelineStage):
         if not clash_output_file:
             return
         try:
-            safe_path = resolve_safe_output_path(clash_output_file)
-        except ValueError:
-            return
-        try:
-            with safe_path.open("w", encoding="utf-8", newline="\n") as fh:
-                fh.write("proxies: []\n")
-        except OSError as exc:
+            write_text_atomic(clash_output_file, "proxies: []\n")
+        except (OSError, ValueError) as exc:
             logger.warning(
                 "Could not write empty Clash output %s: %s",
                 clash_output_file,
                 exc,
             )
-
-    @staticmethod
-    def _build_mix(
-        aggregated: list[Config],
-        splits: dict[str, list[Config]],
-        pcfg: dict[str, Any],
-    ) -> list[Config]:
-        blacklist = list(splits.get("blacklist", []))
-        whitelist = list(splits.get("whitelist", []))
-        mix_black = pcfg.get("mix_blacklist_count", 100)
-        mix_white = pcfg.get("mix_whitelist_count", 100)
-        if isinstance(mix_black, int) and mix_black > 0:
-            blacklist = blacklist[:mix_black]
-        if isinstance(mix_white, int) and mix_white > 0:
-            whitelist = whitelist[:mix_white]
-
-        mixed: list[Config] = []
-        black_iter = iter(blacklist)
-        white_iter = iter(whitelist)
-        while True:
-            added = False
-            try:
-                mixed.append(next(black_iter))
-                added = True
-            except StopIteration:
-                pass
-            try:
-                mixed.append(next(white_iter))
-                added = True
-            except StopIteration:
-                pass
-            if not added:
-                break
-        return mixed
 
     def _write_output(self, configs: list[Config], output_file: str) -> int:
         try:
@@ -449,19 +388,44 @@ class OutputWriter(PipelineStage):
         except ValueError:
             logger.exception("Unsafe output path %r rejected", output_file)
             return 0
+        return self._write_output_safe(configs, str(safe_path))
+
+    def _write_output_safe(self, configs: list[Config], safe_path: str) -> int:
         try:
             from src.aggregator.output import write_subscription
         except (ImportError, AttributeError):
             logger.exception(
                 "Cannot import write_subscription — writing plain fallback.",
             )
-            return self._write_plain_fallback(configs, str(safe_path))
+            count = self._write_plain_fallback(configs, safe_path)
+            self._mark_fallback(safe_path)
+            return count
         try:
             count = write_subscription(configs, str(safe_path))
         except Exception:
+            # A plain-links file is NOT the format the repository promises
+            # (base64). It is better than no local file, but it must never be
+            # published as if it were the real subscription — the runner
+            # filters these paths out of the publish set (see
+            # _fallback_paths).
             logger.exception("write_subscription failed — plain fallback.")
-            return self._write_plain_fallback(configs, str(safe_path))
+            count = self._write_plain_fallback(configs, safe_path)
+            self._mark_fallback(safe_path)
+            return count
         return int(count) if count else 0
+
+    def _mark_fallback(self, safe_path: str) -> None:
+        """Record a path written in the fallback format (never publish it).
+
+        The path is stored as the RESOLVED absolute form: the runner filters
+        publish candidates via ``_canonical_output_path`` and relative
+        configured paths (``output/subscription.txt``) must match it.
+        """
+        from pathlib import Path as _Path
+
+        self.context.output_stats.setdefault("_fallback_paths", []).append(
+            str(_Path(safe_path).resolve()),
+        )
 
     def _write_empty_output(self, output_file: str) -> None:
         if not validate_safe_output_path(output_file):
@@ -474,88 +438,13 @@ class OutputWriter(PipelineStage):
     @staticmethod
     def _write_plain_fallback(configs: list[Config], output_file: str) -> int:
         try:
-            path = Path(output_file)
-            path.parent.mkdir(parents=True, exist_ok=True)
             lines = [c.raw_link for c in configs if c.raw_link]
-            with path.open("w", encoding="utf-8") as fh:
-                fh.write("\n".join(lines))
-                if lines:
-                    fh.write("\n")
+            text = "\n".join(lines)
+            if lines:
+                text += "\n"
+            # Atomic write so a crash mid-write cannot publish a broken file.
+            write_text_atomic(output_file, text, encoding="utf-8")
             return len(lines)
         except Exception:
             logger.exception("Plain fallback write failed for %s", output_file)
             return 0
-
-    def _write_split_outputs(
-        self,
-        splits: dict[str, list[Config]],
-        split_output_files: dict[str, str],
-    ) -> list[str]:
-        output_files: list[str] = []
-        for list_key, output_file in split_output_files.items():
-            configs = splits.get(list_key, [])
-            count = self._write_output(configs, output_file)
-            logger.info("Wrote %d %s configs to %s.", count, list_key, output_file)
-            output_files.append(output_file)
-        return output_files
-
-    def _write_empty_split_outputs(self, split_output_files: dict[str, str]) -> None:
-        for output_file in split_output_files.values():
-            self._write_empty_output(output_file)
-
-    def _record_output_stats(
-        self,
-        name: str,
-        output_file: str,
-        configs: list[Config],
-    ) -> None:
-        country_counts = Counter(
-            str(cfg.country).upper()
-            for cfg in configs
-            if cfg.raw_link and getattr(cfg, "country", None)
-        )
-        self.context.output_stats[name] = {
-            "file": output_file,
-            "count": sum(1 for cfg in configs if cfg.raw_link),
-            "countries": dict(country_counts.most_common()),
-        }
-
-    def _status_output_file(self) -> str | None:
-        pcfg = self._publisher_section()
-        raw = pcfg.get("status_output_file")
-        if not raw:
-            return None
-        return str(raw)
-
-    def _write_run_summary(
-        self,
-        status: str,
-        output_file: str | None = None,
-    ) -> str | None:
-        output_file = output_file or self._status_output_file()
-        if not output_file:
-            return None
-        validation = dict(self.context.liveness_stats)
-        validation.pop("proxy_urls", None)
-        payload = {
-            "status": status,
-            "outputs": self.context.output_stats,
-            "validation": validation,
-        }
-        try:
-            path = resolve_safe_output_path(output_file)
-        except ValueError:
-            logger.exception("Unsafe run summary path %r rejected", output_file)
-            return None
-        try:
-            # Atomic write — the summary is committed to the repository and
-            # read back by CI and the Telegram reporter, so a crash mid-write
-            # must not leave a truncated JSON for them to fail on.
-            write_text_atomic(
-                path,
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-            )
-        except Exception as exc:
-            logger.warning("Could not write run summary %s: %s", output_file, exc)
-            return None
-        return output_file

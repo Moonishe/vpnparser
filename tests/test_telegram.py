@@ -582,26 +582,29 @@ class TestCountCountriesFromFile:
         f = tmp_path / "sub.txt"
         import base64
 
+        from src.aggregator.output import _watermark_link
+
         content = (
-            "vmess://AAAA@0.0.0.0:0#watermark\n"
-            "vless://11111111-1111-4111-8111-111111111111@de.example.com:443#DE-01\n"
+            _watermark_link()
+            + "\nvless://11111111-1111-4111-8111-111111111111@de.example.com:443#DE-01\n"
         )
         encoded = base64.b64encode(content.encode()).decode()
         f.write_text(encoded, encoding="utf-8")
         result = telegram_module._count_countries_from_file(str(f))
-        assert isinstance(result, dict)
+        # The 0.0.0.0 watermark must not be counted; the one real config is.
+        assert result == {"DE": 1}
 
     def test_remark_with_url_encoding(self, tmp_path) -> None:
         f = tmp_path / "sub.txt"
         import base64
 
-        content = (
-            "vless://11111111-1111-4111-8111-111111111111@de.example.com:443#DE%2D01\n"
-        )
+        content = "vless://11111111-1111-4111-8111-111111111111@server.example.com:443#DE%2D01\n"
         encoded = base64.b64encode(content.encode()).decode()
         f.write_text(encoded, encoding="utf-8")
         result = telegram_module._count_countries_from_file(str(f))
-        assert isinstance(result, dict)
+        # A country-neutral host pins the remark path: DE must come from the
+        # percent-decoded remark, not the hostname.
+        assert result == {"DE": 1}
 
     def test_host_extraction_with_ipv6(self, tmp_path) -> None:
         f = tmp_path / "sub.txt"
@@ -613,7 +616,21 @@ class TestCountCountriesFromFile:
         encoded = base64.b64encode(content.encode()).decode()
         f.write_text(encoded, encoding="utf-8")
         result = telegram_module._count_countries_from_file(str(f))
-        assert isinstance(result, dict)
+        # split_host_port must survive the bracketed IPv6 and still count.
+        assert result == {"DE": 1}
+
+    def test_mime_wrapped_base64_decoded(self, tmp_path) -> None:
+        f = tmp_path / "sub.txt"
+        import base64
+
+        content = "vless://11111111-1111-4111-8111-111111111111@server.example.com:443#DE-01\n"
+        encoded = base64.b64encode(content.encode()).decode()
+        # MIME soft-wraps base64 at 76 chars; the strict decoder must still
+        # read it instead of silently keeping the raw (undecodable) text.
+        wrapped = "\r\n".join(encoded[i : i + 76] for i in range(0, len(encoded), 76))
+        f.write_text(wrapped, encoding="utf-8")
+        result = telegram_module._count_countries_from_file(str(f))
+        assert result == {"DE": 1}
 
     def test_no_protocol_line_skipped(self, tmp_path) -> None:
         f = tmp_path / "sub.txt"
@@ -828,7 +845,7 @@ class TestSendTelegram:
         assert telegram_module._send_telegram(
             "123456789:ABCDEFGHIJKLMNOPQRST", "-100123", long_text
         )
-        assert "truncated to 4096 chars" in caplog.text
+        assert "truncated to 4096 UTF-16 units" in caplog.text
 
     @pytest.mark.parametrize(
         "prefix,suffix",
@@ -899,6 +916,29 @@ class TestSendTelegram:
             is False
         )
         assert "timed out" in caplog.text
+
+    def test_read_timeout_returns_false_without_retry(
+        self, monkeypatch, caplog
+    ) -> None:
+        """A READ-phase timeout (bare TimeoutError, not URLError) must not
+        retry: the request may already have been delivered, a retry would
+        double-send."""
+        caplog.set_level("WARNING")
+        attempts = {"n": 0}
+
+        def fake_urlopen(req, timeout=15):
+            attempts["n"] += 1
+            raise TimeoutError("read timed out")
+
+        monkeypatch.setattr(telegram_module.urllib.request, "urlopen", fake_urlopen)
+        assert (
+            telegram_module._send_telegram(
+                "123456789:ABCDEFGHIJKLMNOPQRST", "-100123", "text"
+            )
+            is False
+        )
+        assert attempts["n"] == 1
+        assert "not retrying" in caplog.text
 
     def test_url_error_other_returns_false(self, monkeypatch, caplog) -> None:
         caplog.set_level("WARNING")
@@ -1216,6 +1256,8 @@ class TestMain:
             telegram_module.main()
 
     def test_main_notification_fails_still_returns_zero(self, monkeypatch) -> None:
+        # Contract changed: CLI reports send failure with exit 1 so the
+        # workflow step is visibly red (was: non-fatal 0 that hid failures).
         monkeypatch.setattr(
             "sys.argv",
             ["telegram.py", "--configs", "10", "--countries", "DE"],
@@ -1224,7 +1266,7 @@ class TestMain:
         monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
         monkeypatch.setattr(telegram_module, "send_notification", lambda **kw: False)
 
-        assert telegram_module.main() == 0
+        assert telegram_module.main() == 1
 
 
 # ── _subscription_urls ──────────────────────────────────────────────────
@@ -1683,6 +1725,22 @@ def test_decode_subscription_lines_decodes_base64_and_skips_watermark() -> None:
     }
 
 
+def test_decode_subscription_lines_keeps_plain_text() -> None:
+    """A plain-format subscription must keep its lines: the old decode without
+    validate=True silently mangled text that merely resembled base64, and the
+    new/removed delta was lost."""
+    raw = "\n".join(
+        [
+            "vless://11111111-1111-4111-8111-111111111111@a.example:443#A",
+            "vless://11111111-1111-4111-8111-111111111111@b.example:443#B",
+        ],
+    )
+    assert telegram_module._decode_subscription_lines(raw) == {
+        "vless://11111111-1111-4111-8111-111111111111@a.example:443#A",
+        "vless://11111111-1111-4111-8111-111111111111@b.example:443#B",
+    }
+
+
 def test_previous_published_lines_requires_github_sha(monkeypatch) -> None:
     monkeypatch.delenv("GITHUB_SHA", raising=False)
     assert telegram_module._previous_published_lines("output/subscription.txt") == set()
@@ -1787,3 +1845,536 @@ def test_send_notification_includes_alerts_and_delta(monkeypatch) -> None:
     # Source degradation alert present.
     assert "Проблемные источники" in text
     assert "src-x" in text
+
+
+# ── _utf16_len ──────────────────────────────────────────────────────────
+
+
+class TestUtf16Len:
+    """Telegram's limit counts UTF-16 code units, not Python code points."""
+
+    def test_empty_string(self) -> None:
+        assert telegram_module._utf16_len("") == 0
+
+    def test_ascii_counts_one_unit_per_char(self) -> None:
+        assert telegram_module._utf16_len("abc") == 3
+
+    def test_astral_char_counts_two_units(self) -> None:
+        # U+1F525 fire is outside the BMP → one surrogate pair = 2 units.
+        assert telegram_module._utf16_len("\U0001f525") == 2
+
+    def test_flag_emoji_counts_four_units(self) -> None:
+        # 🇩🇪 is two regional indicators, each astral → 2 + 2 units, while
+        # len() sees only 2 code points.
+        assert telegram_module._utf16_len("\U0001f1e9\U0001f1ea") == 4
+
+    def test_bmp_char_counts_one_unit(self) -> None:
+        assert telegram_module._utf16_len("a⚙b") == 3
+
+    def test_lone_surrogate_does_not_crash(self) -> None:
+        # surrogatepass: untrusted text with a lone surrogate encodes to a
+        # single unit instead of raising on the notify step.
+        assert telegram_module._utf16_len("\ud83d") == 1
+
+
+class TestTruncateHtmlSafeUtf16:
+    """The cut is measured in UTF-16 units, so astral chars count twice."""
+
+    def test_within_utf16_limit_returns_text_unchanged(self) -> None:
+        # 10 flags = 40 UTF-16 units but only 20 code points: the limit is
+        # measured in units, so exactly-at-limit text passes through.
+        text = "\U0001f1e9\U0001f1ea" * 10
+        assert telegram_module._truncate_html_safe(text, 40) == text
+
+    def test_over_utf16_limit_truncates_even_when_len_fits(self) -> None:
+        # 40 UTF-16 units, 20 code points: a len()-based guard (20 <= 30)
+        # returned the text unchanged and Telegram answered 400 "too long".
+        text = "\U0001f1e9\U0001f1ea" * 10
+        result = telegram_module._truncate_html_safe(text, 30)
+        assert result != text
+        assert telegram_module._utf16_len(result) <= 30
+        assert result.endswith("...")
+
+    def test_truncation_never_splits_a_surrogate_pair(self) -> None:
+        text = "\U0001f1e9\U0001f1ea" * 50
+        result = telegram_module._truncate_html_safe(text, 25)
+        assert telegram_module._utf16_len(result) <= 25
+        # Python slices by code points, so every remaining char is complete.
+        for ch in result:
+            assert not 0xD800 <= ord(ch) <= 0xDFFF
+
+    def test_truncation_with_astral_chars_and_tags_fits_limit(self) -> None:
+        # 🔥 (U+1F525) costs 2 UTF-16 units per code point: the cut is chosen
+        # in units, and the closing </b> counts against the limit.
+        text = "<b>" + "x" * 100 + "\U0001f525" * 30 + "</b>"
+        result = telegram_module._truncate_html_safe(text, 60)
+        assert telegram_module._utf16_len(result) <= 60
+        assert result.endswith("...</b>")
+        assert result.count("<b>") == result.count("</b>")
+
+    def test_astral_text_beyond_any_cut_returns_empty(self) -> None:
+        # Every flag code point costs 2 units, so the shrink step can
+        # overshoot straight past zero — the invariant is "fits, or empty".
+        text = "\U0001f1e9\U0001f1ea" * 100
+        assert telegram_module._truncate_html_safe(text, 50) == ""
+
+
+# ── send_crash_notification ─────────────────────────────────────────────
+
+
+class TestSendCrashNotification:
+    """Compact crash alert for a pipeline that died before any summary."""
+
+    @staticmethod
+    def _capture_send(monkeypatch) -> dict[str, str]:
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+        sent: dict[str, str] = {}
+
+        def fake_send(token, chat_id, text) -> bool:
+            sent.update(token=token, chat_id=chat_id, text=text)
+            return True
+
+        monkeypatch.setattr(telegram_module, "_send_telegram", fake_send)
+        return sent
+
+    def test_no_credentials_returns_false(self, monkeypatch, caplog) -> None:
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+        caplog.set_level("INFO")
+        assert telegram_module.send_crash_notification("boom") is False
+        assert "skipping crash notification" in caplog.text
+
+    def test_success_sends_compact_message(self, monkeypatch) -> None:
+        sent = self._capture_send(monkeypatch)
+        assert telegram_module.send_crash_notification("boom")
+        assert sent["token"] == "123456789:ABCDEFGHIJKLMNOPQRST"
+        assert sent["chat_id"] == "-100123"
+        assert "💥" in sent["text"]
+        assert "<b>Пайплайн упал</b>" in sent["text"]
+        # Header + timestamp + detail block.
+        assert sent["text"].count("\n") == 4
+
+    def test_error_message_is_escaped_and_truncated(self, monkeypatch) -> None:
+        sent = self._capture_send(monkeypatch)
+        detail = "<b>traceback</b>" + "x" * 400
+        assert telegram_module.send_crash_notification(detail)
+        text = sent["text"]
+        # The error text is untrusted output — it must not inject HTML.
+        assert "&lt;b&gt;traceback&lt;/b&gt;" in text
+        assert "<b>traceback</b>" not in text
+        # Only the first 300 *raw* characters of the detail are kept
+        # (16 of them are the escaped tag markup).
+        assert "x" * 284 in text
+        assert "x" * 285 not in text
+
+    def test_blank_error_message_omits_detail(self, monkeypatch) -> None:
+        sent = self._capture_send(monkeypatch)
+        assert telegram_module.send_crash_notification("   ")
+        # Header + timestamp only — no dangling empty detail block.
+        assert sent["text"].count("\n") == 2
+        assert "traceback" not in sent["text"]
+
+    def test_repo_slug_is_escaped(self, monkeypatch) -> None:
+        sent = self._capture_send(monkeypatch)
+        monkeypatch.setattr(telegram_module, "_repo_slug", lambda: "acme/r<b>x")
+        assert telegram_module.send_crash_notification()
+        assert "acme/r&lt;b&gt;x" in sent["text"]
+
+
+# ── _mix_label ──────────────────────────────────────────────────────────
+
+
+class TestMixLabel:
+    """Dynamic "Mix <blacklist>/<whitelist>" label from real per-list counts."""
+
+    def test_dynamic_counts(self) -> None:
+        summary = {"outputs": {"blacklist": {"count": 120}, "whitelist": {"count": 80}}}
+        assert telegram_module._mix_label(summary) == "Mix 120/80"
+
+    def test_non_dict_outputs_falls_back_to_static(self) -> None:
+        assert telegram_module._mix_label({"outputs": "nope"}) == "Mix"
+
+    def test_missing_list_key_falls_back_to_static(self) -> None:
+        summary = {"outputs": {"whitelist": {"count": 80}}}
+        assert telegram_module._mix_label(summary) == "Mix"
+
+    def test_non_dict_item_falls_back_to_static(self) -> None:
+        summary = {"outputs": {"blacklist": "oops", "whitelist": {"count": 80}}}
+        assert telegram_module._mix_label(summary) == "Mix"
+
+    def test_bad_count_value_falls_back_to_static(self) -> None:
+        summary = {
+            "outputs": {"blacklist": {"count": "abc"}, "whitelist": {"count": 80}}
+        }
+        assert telegram_module._mix_label(summary) == "Mix"
+
+
+# ── _format_trend_alert edge cases ──────────────────────────────────────
+
+
+class TestTrendAlertEdgeCases:
+    """Malformed history and entries without liveness stats."""
+
+    def test_invalid_json_returns_empty(self, tmp_path) -> None:
+        (tmp_path / "stats-history.json").write_text("not json", encoding="utf-8")
+        assert telegram_module._format_trend_alert(str(tmp_path / "s.json")) == ""
+
+    def test_entries_without_lists_still_alert_on_pool_drop(self, tmp_path) -> None:
+        # ok entries without "lists" → _alive() yields 0 for every list, but
+        # the proxy-pool diff must still fire.
+        history = [
+            {"ts": 1, "status": "ok", "proxy_count": 30},
+            {"ts": 2, "status": "ok", "proxy_count": 10},
+        ]
+        (tmp_path / "stats-history.json").write_text(
+            json.dumps(history), encoding="utf-8"
+        )
+        text = telegram_module._format_trend_alert(str(tmp_path / "s.json"))
+        assert "Прокси-пул просел" in text
+        assert "<b>10</b> против <b>30</b>" in text
+
+
+# ── _format_low_alive_alert edge cases ──────────────────────────────────
+
+
+class TestLowAliveAlertEdgeCases:
+    """Degradation banner and the min_alive<=0 short circuit."""
+
+    @staticmethod
+    def _patch_settings(monkeypatch, tmp_path, value: int) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "settings.yaml").write_text(
+            f"telegram:\n  alert_min_alive: {value}\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(
+            telegram_module,
+            "resolve_safe_output_path",
+            lambda _p, strict=False: tmp_path,
+        )
+
+    def test_degraded_reasons_banner(self) -> None:
+        summary = {
+            "validation": {"lists": {}},
+            "degraded_reasons": ["Xray: 0 alive out of 200"],
+        }
+        text = telegram_module._format_low_alive_alert(summary)
+        assert "Деградация пробы" in text
+        assert "Xray: 0 alive out of 200" in text
+        assert "умер пул прокси" in text
+
+    def test_min_alive_zero_keeps_banner_drops_threshold_lines(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        self._patch_settings(monkeypatch, tmp_path, 0)
+        summary = {
+            "validation": {
+                "lists": {"blacklist": {"xray_checked": 10, "xray_alive": 0}}
+            },
+            "degraded_reasons": ["probe collapsed"],
+        }
+        text = telegram_module._format_low_alive_alert(summary)
+        assert "Деградация пробы" in text
+        assert "порог" not in text
+
+    def test_min_alive_zero_silent_without_reasons(self, monkeypatch, tmp_path) -> None:
+        self._patch_settings(monkeypatch, tmp_path, 0)
+        summary = {
+            "validation": {
+                "lists": {"blacklist": {"xray_checked": 10, "xray_alive": 0}}
+            }
+        }
+        assert telegram_module._format_low_alive_alert(summary) == ""
+
+
+# ── _format_permanently_disabled_sources ────────────────────────────────
+
+
+class TestPermanentlyDisabledSources:
+    """The health gate's permanent culls must reach the chat, HTML-escaped."""
+
+    @staticmethod
+    def _summary(tmp_path) -> dict[str, str]:
+        return {"_status_file": str(tmp_path / "run-summary.json")}
+
+    @staticmethod
+    def _write_health(tmp_path, data: dict) -> None:
+        (tmp_path / "health-history.json").write_text(
+            json.dumps(data), encoding="utf-8"
+        )
+
+    def test_unreadable_health_file_returns_empty(self, tmp_path) -> None:
+        # No health-history.json next to the summary.
+        assert (
+            telegram_module._format_permanently_disabled_sources(
+                self._summary(tmp_path)
+            )
+            == ""
+        )
+
+    def test_invalid_json_returns_empty(self, tmp_path) -> None:
+        (tmp_path / "health-history.json").write_text("not json", encoding="utf-8")
+        assert (
+            telegram_module._format_permanently_disabled_sources(
+                self._summary(tmp_path)
+            )
+            == ""
+        )
+
+    def test_sources_not_a_dict_returns_empty(self, tmp_path) -> None:
+        self._write_health(tmp_path, {"sources": ["a", "b"]})
+        assert (
+            telegram_module._format_permanently_disabled_sources(
+                self._summary(tmp_path)
+            )
+            == ""
+        )
+
+    def test_recent_ban_only_returns_empty(self, tmp_path) -> None:
+        import time
+
+        self._write_health(
+            tmp_path, {"sources": {"src-a": {"banned_until": time.time() + 3600}}}
+        )
+        assert (
+            telegram_module._format_permanently_disabled_sources(
+                self._summary(tmp_path)
+            )
+            == ""
+        )
+
+    def test_permanent_bans_are_listed_and_escaped(self, tmp_path) -> None:
+        import time
+
+        self._write_health(
+            tmp_path,
+            {
+                "sources": {
+                    "bad<source>": {"banned_until": time.time() + 10 * 365 * 24 * 3600},
+                    "recent-src": {"banned_until": time.time() + 3600},
+                }
+            },
+        )
+        result = telegram_module._format_permanently_disabled_sources(
+            self._summary(tmp_path)
+        )
+        assert "Источники отключены навсегда" in result
+        # The name goes into a parse_mode=HTML message: an unescaped "<"
+        # rejected the WHOLE run report with 400 "can't parse entities".
+        assert "bad&lt;source&gt;" in result
+        assert "bad<source>" not in result
+        assert "recent-src" not in result
+        assert "Верните вручную" in result
+
+    def test_more_than_five_sources_adds_overflow_line(self, tmp_path) -> None:
+        import time
+
+        far = time.time() + 10 * 365 * 24 * 3600
+        self._write_health(
+            tmp_path, {"sources": {f"src-{i}": {"banned_until": far} for i in range(6)}}
+        )
+        result = telegram_module._format_permanently_disabled_sources(
+            self._summary(tmp_path)
+        )
+        assert "… и ещё 1" in result
+
+    def test_source_alerts_leads_with_permanent_disabled_line(self, tmp_path) -> None:
+        import time
+
+        self._write_health(
+            tmp_path,
+            {
+                "sources": {
+                    "src-x": {"banned_until": time.time() + 10 * 365 * 24 * 3600}
+                }
+            },
+        )
+        summary = {
+            "_status_file": str(tmp_path / "run-summary.json"),
+            "sources": {"errors": [{"source": "src-y", "error": "empty"}]},
+        }
+        result = telegram_module._format_source_alerts(summary)
+        assert "Источники отключены навсегда" in result
+        assert result.index("Источники отключены") < result.index(
+            "Проблемные источники"
+        )
+
+    def test_source_alerts_skips_non_dict_error_items(self) -> None:
+        errors = ["garbage", {"source": "src-ok", "error": "empty"}]
+        result = telegram_module._format_source_alerts({"sources": {"errors": errors}})
+        assert "src-ok" in result
+        assert "garbage" not in result
+
+
+# ── _format_subscriptions_section count fallbacks ──────────────────────
+
+
+class TestSubscriptionsCountFallbacks:
+    """A malformed count must zero out, not kill the notification."""
+
+    def test_bad_output_count_becomes_zero(self) -> None:
+        result = telegram_module._format_subscriptions_section(
+            {"outputs": {"combined": {"count": "abc", "countries": {"DE": 1}}}},
+            "",
+        )
+        assert "<b>Общая</b>: 0" in result
+
+    def test_bad_location_count_becomes_zero(self) -> None:
+        result = telegram_module._format_subscriptions_section(
+            {
+                "outputs": {
+                    "combined": {"count": 5, "countries": {"DE": 5}},
+                    "location_de": {"count": "oops"},
+                }
+            },
+            "",
+        )
+        assert "<b>Локации</b>: 1 файлов, до 0 серверов" in result
+
+
+# ── _count_countries_from_file: plain text / IPv6 / watermark ──────────
+
+
+class TestCountCountriesFromFilePlainText:
+    """Plain-format files skip base64; hosts come from split_host_port."""
+
+    def test_plain_text_file_with_links_counts_countries(self, tmp_path) -> None:
+        f = tmp_path / "sub.txt"
+        f.write_text(
+            "vless://11111111-1111-4111-8111-111111111111@de.example.com:443#DE-01\n"
+            "vless://11111111-1111-4111-8111-111111111111@fi.example.com:443#FI-02\n",
+            encoding="utf-8",
+        )
+        result = telegram_module._count_countries_from_file(str(f))
+        assert result == {"DE": 1, "FI": 1}
+
+    def test_plain_text_without_links_falls_back_to_raw(self, tmp_path) -> None:
+        # No "://" anywhere and a non-alphabet payload: b64decode(validate=True)
+        # rejects it and the raw text is kept instead of decoding into garbage.
+        f = tmp_path / "sub.txt"
+        f.write_text("totally not base64!!\n", encoding="utf-8")
+        assert telegram_module._count_countries_from_file(str(f)) == {}
+
+    def test_bracketed_ipv6_host_is_counted(self, tmp_path) -> None:
+        f = tmp_path / "sub.txt"
+        f.write_text(
+            "vless://11111111-1111-4111-8111-111111111111@[2001:db8::1]:443#DE-01\n",
+            encoding="utf-8",
+        )
+        result = telegram_module._count_countries_from_file(str(f))
+        # The remark decides here: the trailing "#DE-01" poisons the port
+        # for split_host_port, so the extracted host stays empty.
+        assert result == {"DE": 1}
+
+    def test_bracketed_ipv6_without_fragment_parses_host(self, tmp_path) -> None:
+        # A plain .split(":") turned "2001:db8::1" into "2001"; split_host_port
+        # handles the brackets, so the host is extracted (and simply matches no
+        # country — the line is counted via the host, not a remark).
+        f = tmp_path / "sub.txt"
+        f.write_text(
+            "vless://11111111-1111-4111-8111-111111111111@[2001:db8::1]:443\n",
+            encoding="utf-8",
+        )
+        assert telegram_module._count_countries_from_file(str(f)) == {}
+
+    def test_host_without_fragment_drives_country_detection(self, tmp_path) -> None:
+        # No "#" remark: only split_host_port succeeding (line "host =
+        # parsed_hp[0]") lets the hostname rule see "de01.example.com".
+        f = tmp_path / "sub.txt"
+        f.write_text(
+            "vless://11111111-1111-4111-8111-111111111111@de01.example.com:443\n",
+            encoding="utf-8",
+        )
+        assert telegram_module._count_countries_from_file(str(f)) == {"DE": 1}
+
+    def test_vmess_link_without_at_yields_empty_host(self, tmp_path) -> None:
+        import base64 as _b64
+
+        payload = _b64.b64encode(
+            json.dumps({"add": "de.example.com", "ps": "DE node"}).encode("utf-8")
+        ).decode("ascii")
+        f = tmp_path / "sub.txt"
+        f.write_text(f"vmess://{payload}#DE-01\n", encoding="utf-8")
+        # No "@" in the body → host stays empty; the remark still counts.
+        result = telegram_module._count_countries_from_file(str(f))
+        assert result == {"DE": 1}
+
+    def test_watermark_line_structurally_skipped(self, tmp_path) -> None:
+        import base64 as _b64
+
+        watermark = "vmess://" + _b64.b64encode(
+            json.dumps({"add": "0.0.0.0", "ps": "watermark"}).encode("utf-8")
+        ).decode("ascii")
+        f = tmp_path / "sub.txt"
+        f.write_text(
+            watermark
+            + "\n"
+            + "vless://11111111-1111-4111-8111-111111111111@de.example.com:443#DE-01\n",
+            encoding="utf-8",
+        )
+        result = telegram_module._count_countries_from_file(str(f))
+        assert result == {"DE": 1}
+
+
+# ── send_notification: trend wiring + message tail order ───────────────
+
+
+class TestSendNotificationOrdering:
+    """The tail keeps the actionable links before the fun fact."""
+
+    @staticmethod
+    def _capture_send(monkeypatch) -> dict[str, str]:
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCDEFGHIJKLMNOPQRST")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+        sent: dict[str, str] = {}
+
+        def fake_send(token, chat_id, text) -> bool:
+            sent.update(text=text)
+            return True
+
+        monkeypatch.setattr(telegram_module, "_send_telegram", fake_send)
+        return sent
+
+    def test_links_come_before_fun_fact(self, monkeypatch) -> None:
+        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda: "ФАКТ-XYZ")
+        monkeypatch.setattr(telegram_module, "_load_run_summary", lambda p: {})
+        monkeypatch.setattr(telegram_module, "_format_trend_alert", lambda p: "")
+        sent = self._capture_send(monkeypatch)
+        assert telegram_module.send_notification(configs_count=5)
+        text = sent["text"]
+        assert text.index("📋 Подписки") < text.index("ФАКТ-XYZ")
+        # The fact is the very last block: truncation cuts it, not the links.
+        assert text.rstrip().endswith("ФАКТ-XYZ")
+
+    def test_trend_alert_is_appended_to_validation_section(self, monkeypatch) -> None:
+        monkeypatch.setattr(telegram_module, "_generate_fun_fact", lambda: "fact")
+        monkeypatch.setattr(telegram_module, "_load_run_summary", lambda p: {})
+        monkeypatch.setattr(
+            telegram_module,
+            "_format_trend_alert",
+            lambda p: "📉 <b>Blacklist</b>: обвал",
+        )
+        sent = self._capture_send(monkeypatch)
+        assert telegram_module.send_notification(configs_count=5)
+        assert "📉 <b>Blacklist</b>: обвал" in sent["text"]
+
+
+class TestBotAuthorOverride:
+    """The credited handle is config, not a hardcoded deployment detail."""
+
+    def test_default_author_is_used_without_env(self, monkeypatch) -> None:
+        monkeypatch.delenv("TELEGRAM_BOT_AUTHOR", raising=False)
+        assert telegram_module._bot_author() == telegram_module._DEFAULT_BOT_AUTHOR
+        assert telegram_module._DEFAULT_BOT_AUTHOR in telegram_module._bot_intro()
+
+    def test_env_override_is_escaped_into_the_intro(self, monkeypatch) -> None:
+        monkeypatch.setenv("TELEGRAM_BOT_AUTHOR", "@fork<owner>")
+        assert telegram_module._bot_author() == "@fork<owner>"
+        intro = telegram_module._bot_intro()
+        assert "@fork&lt;owner&gt;" in intro
+        assert "@fork<owner>" not in intro
+
+    def test_blank_env_falls_back_to_the_default(self, monkeypatch) -> None:
+        monkeypatch.setenv("TELEGRAM_BOT_AUTHOR", "   ")
+        assert telegram_module._bot_author() == telegram_module._DEFAULT_BOT_AUTHOR

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.parsers.base import Config
+from src.parsers.subscription import SubscriptionParser
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.settings import Settings
 from src.scheduler.stages.parse import (
@@ -331,6 +332,29 @@ class TestParseAllByList:
             )
             grouped = await lp.parse_all_by_list([result])
         assert grouped["blacklist"][0].country == "DE"
+
+    async def test_geoip_default_api_url_is_free_tier_http(self) -> None:
+        """The default endpoint is http: the free ip-api.com tier refuses
+        https (403 per request), which silently killed API enrichment while
+        still burning the rate limit."""
+        ctx = _make_context({"validator": {"geoip_enabled": True}})
+        lp = LinkParser(ctx)
+        seen_urls: list[str] = []
+
+        async def fake_enrich(configs, api_url=None, **kwargs):
+            seen_urls.append(api_url)
+
+        with patch(
+            "src.validators.geoip.enrich_configs_geoip",
+            side_effect=fake_enrich,
+        ):
+            result = _ns(
+                list_type="blacklist",
+                files=[("g.txt", _vless("g.example"))],
+                name="src",
+            )
+            await lp.parse_all_by_list([result])
+        assert seen_urls == ["http://ip-api.com/json/{ip}"]
 
     async def test_geoip_respects_per_run_lookup_cap(
         self, caplog: pytest.LogCaptureFixture
@@ -833,3 +857,96 @@ class TestGeoIPCandidateSelection:
             await lp.parse_all_by_list([result])
 
         assert enriched == []
+
+
+# ===========================================================================
+# Unsupported-scheme links must not disable the LLM fallback (audit round 2)
+# ===========================================================================
+
+
+class TestUnsupportedSchemeFallback:
+    async def test_wireguard_only_triggers_llm_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A wireguard-only file has no extractable links (wireguard:// was
+        removed from the extraction schemes — there is no parser and no
+        end-to-end support), so the LLM still gets its chance at the
+        surrounding text via the unsupported-content fallback."""
+        ctx = _make_context({"llm": {"enabled": True, "min_text_length": 10}})
+        lp = LinkParser(ctx)
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
+        fake_llm = MagicMock()
+        fake_llm.extract_links = AsyncMock(return_value=[_vless("llm.example")])
+        monkeypatch.setattr(
+            "src.scheduler.stages.parse.LLMFallbackParser",
+            lambda **kw: fake_llm,
+        )
+        content = (
+            "wireguard://key12345678901234567890123456789012@1.2.3.4:51820 "
+            "some messy proxy description text here"
+        )
+        result = await lp.extract_links(SubscriptionParser(), content, "f.txt", "src")
+        assert _vless("llm.example") in result
+        assert not any(link.startswith("wireguard://") for link in result)
+
+    async def test_parseable_links_skip_llm_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Files with parseable links never burn LLM budget (as before)."""
+        ctx = _make_context({"llm": {"enabled": True, "min_text_length": 10}})
+        lp = LinkParser(ctx)
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
+        fake_llm = MagicMock()
+        fake_llm.extract_links = AsyncMock(
+            side_effect=AssertionError("LLM must not run")
+        )
+        monkeypatch.setattr(
+            "src.scheduler.stages.parse.LLMFallbackParser",
+            lambda **kw: fake_llm,
+        )
+        result = await lp.extract_links(
+            SubscriptionParser(), _vless("x.com"), "f.txt", "src"
+        )
+        assert result == [_vless("x.com")]
+
+    async def test_llm_budget_charges_http_attempts(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One budget unit per file understated paid retries: charge the
+        actual HTTP attempts (up to _MAX_RETRIES per file on 429/5xx)."""
+        ctx = _make_context({"llm": {"enabled": True, "max_calls_per_run": 50}})
+        lp = LinkParser(ctx)
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
+        fake_llm = MagicMock()
+        fake_llm.http_attempts = 0
+
+        async def _extract(_content: str) -> list[str]:
+            fake_llm.http_attempts += 3
+            return []
+
+        fake_llm.extract_links = _extract
+        monkeypatch.setattr(
+            "src.scheduler.stages.parse.LLMFallbackParser",
+            lambda **kw: fake_llm,
+        )
+        with patch(
+            "src.scheduler.stages.parse.should_use_llm",
+            return_value=True,
+        ):
+            assert await lp.llm_fallback("x" * 200, "f.txt", "src") == []
+        assert lp._llm_calls_made == 3
+        assert lp._llm_calls_per_source["src"] == 3
+
+
+def test_geoip_priority_sorts_unsupported_iso_last() -> None:
+    """Foreign-ISO remarks go last so the capped API budget serves
+    keepable configs first (stable sort keeps parse order in-group)."""
+    from src.parsers.base import Config
+    from src.scheduler.stages.parse import _geoip_priority
+
+    de = Config("vless", "a.example", 443, "id", remark="DE-01")
+    no = Config("vless", "b.example", 443, "id", remark="NO-01")
+    plain = Config("vless", "c.example", 443, "id", remark="server")
+    cfgs = [no, de, plain]
+    cfgs.sort(key=_geoip_priority)
+    assert [c.address for c in cfgs] == ["a.example", "c.example", "b.example"]

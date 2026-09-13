@@ -14,6 +14,7 @@ from src.parsers.base import Config
 from src.scheduler.runner import PipelineRunner
 from src.sources.list_types import infer_source_list_type
 from src.sources.manager import SourceManager
+from src.utils.paths import resolve_safe_output_path
 from src.validators import tls_check as tls_module
 
 # --- Edge Case 1: Empty sources.json ---------------------------------------
@@ -204,7 +205,7 @@ def test_edge5_tls_validator_security_types(monkeypatch):
     # security="none" -> passes, is_alive stays None
     cfg_none = Config(
         protocol="vless",
-        address="example.com",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="none",
@@ -218,7 +219,7 @@ def test_edge5_tls_validator_security_types(monkeypatch):
     # security="tls" -> checked, is_alive=True
     cfg_tls = Config(
         protocol="vless",
-        address="example.com",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -230,7 +231,7 @@ def test_edge5_tls_validator_security_types(monkeypatch):
     # security="reality" -> checked, is_alive=True
     cfg_reality = Config(
         protocol="vless",
-        address="example.com",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="reality",
@@ -247,7 +248,7 @@ def test_edge5_tls_validator_security_types(monkeypatch):
 
     cfg_tls_fail = Config(
         protocol="vless",
-        address="dead.com",
+        address="93.184.216.35",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -274,7 +275,7 @@ def test_edge5b_tls_with_pre_set_is_alive(monkeypatch):
     # Config that FAILED TCP check (is_alive=False) but security="none"
     cfg = Config(
         protocol="vless",
-        address="dead.com",
+        address="93.184.216.35",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="none",
@@ -366,11 +367,18 @@ def test_empty_run_publishes_all_subscription_outputs(tmp_path, monkeypatch):
     sources = tmp_path / "sources.json"
     sources.write_text('{"sources": []}', encoding="utf-8")
 
-    combined = str(tmp_path / "subscription.txt")
-    mix = str(tmp_path / "subscription-mix.txt")
-    bl = str(tmp_path / "subscription-blacklist.txt")
-    wl = str(tmp_path / "subscription-whitelist.txt")
-    summary = str(tmp_path / "run-summary.json")
+    # Publish paths must be repo-relative (an absolute local path is refused
+    # by _repo_path_for instead of committed as a garbage commit path), and
+    # the settings/output tree must live under the isolated project root.
+    root = Path(resolve_safe_output_path("."))
+    settings_out = root / "out"
+    settings_out.mkdir(exist_ok=True)
+
+    combined = str(settings_out / "subscription.txt")
+    mix = str(settings_out / "subscription-mix.txt")
+    bl = str(settings_out / "subscription-blacklist.txt")
+    wl = str(settings_out / "subscription-whitelist.txt")
+    summary = str(settings_out / "run-summary.json")
     health = str(tmp_path / "health-history.json")
 
     settings = tmp_path / "settings.yaml"
@@ -487,7 +495,7 @@ def test_bonus_tls_check_one_exception_handling(monkeypatch):
 
     cfg = Config(
         protocol="vless",
-        address="example.com",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -507,7 +515,12 @@ def test_bonus_tls_check_one_exception_handling(monkeypatch):
 
 
 def test_bonus_split_independent_processing(tmp_path):
-    """Check if split outputs are processed independently from combined."""
+    """Split outputs are configured independently from the combined output.
+
+    Asserts the documented behaviour: split paths come from
+    ``split_output_files`` (independent of the combined path), and the runner
+    exposes the same processing settings for both.
+    """
     settings = tmp_path / "settings.yaml"
     settings.write_text(
         """
@@ -518,20 +531,26 @@ aggregator:
   max_configs_in_output: 75
   sort_by: country
   max_per_country: 10
+publisher:
+  split_output_files:
+    blacklist: output/subscription-blacklist.txt
+    whitelist: output/subscription-whitelist.txt
 """,
         encoding="utf-8",
     )
-    _runner = PipelineRunner(
+    runner = PipelineRunner(
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
 
-    # The combined pipeline in run() does its own dedup/country/sort/limit
-    # Then split outputs re-process independently from configs_by_list
-    # This means configs that were SAMPLED OUT of the combined output
-    # could still appear in split outputs (or vice versa)
-    print("  NOTED: split outputs are processed independently from combined")
-    print("  This means sampling/dedup/limit may differ between combined and split")
+    # Split files resolve from their own config keys, not from the combined
+    # path — that is what "processed independently" means here.
+    splits = runner._split_output_files("output/subscription.txt")
+    assert set(splits) == {"blacklist", "whitelist"}
+    assert splits["blacklist"] == "output/subscription-blacklist.txt"
+    assert splits["whitelist"] == "output/subscription-whitelist.txt"
+    # Same limit settings serve both the combined and the split pipelines.
+    assert runner._max_configs() == 75
 
 
 # --- FIXED: _publish reads file via asyncio.to_thread (no event-loop block) ---
@@ -600,8 +619,10 @@ publisher:
     )
 
 
-def test_bonus_publish_missing_file_skips_cleanly(tmp_path):
+def test_bonus_publish_missing_file_skips_cleanly(tmp_path, capsys, caplog):
     """_publish must log + skip when the output file does not exist (no crash)."""
+    import logging
+
     settings = tmp_path / "settings.yaml"
     settings.write_text(
         """
@@ -618,9 +639,13 @@ publisher:
         github_token="fake-token",
     )
 
-    # Should return without raising — FileNotFoundError is caught.
-    asyncio.run(runner._publish(str(tmp_path / "nope.txt"), repo_path="output/x.txt"))
-    print("  FIXED: missing output file -> logged + skipped, no exception")
+    # Should return False without raising — FileNotFoundError is caught.
+    caplog.set_level(logging.WARNING)
+    result = asyncio.run(
+        runner._publish(str(tmp_path / "nope.txt"), repo_path="output/x.txt")
+    )
+    assert result is False
+    assert "does not exist" in caplog.text
 
 
 # --- FIXED: interleave max_total default matches _sort_and_limit (500) -------
@@ -680,6 +705,17 @@ validator:
 
     monkeypatch.setattr(runner, "_fetch_sources", fake_fetch_sources)
     monkeypatch.setattr(runner, "_parse_all_by_list", fake_parse_all_by_list)
+
+    # The default settings leave all liveness validators disabled, which now
+    # fail-closed (configs marked not-alive). Stub validation to mark configs
+    # alive so this test can exercise the aggregation/interleave logic only.
+    async def fake_validate(configs_by_list):
+        for cfgs in configs_by_list.values():
+            for c in cfgs:
+                c.is_alive = True
+        return configs_by_list
+
+    monkeypatch.setattr(runner, "_validate_liveness_by_list", fake_validate)
 
     output_file = str(tmp_path / "combined.txt")
     count = asyncio.run(runner.run(output_file=output_file, publish=False))

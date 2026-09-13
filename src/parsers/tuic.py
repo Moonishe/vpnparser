@@ -71,9 +71,13 @@ class TuicParser(BaseParser):
             if not credential:
                 return None
 
-            # v4 format (TOKEN): a single token with no colon — already
-            # validated above by the non-empty check.
-            # v5 format (UUID:PASSWORD): both halves must be non-empty.
+            # v4 format (TOKEN): a single opaque token — already validated
+            # above by the non-empty check. A v4 token may legally contain
+            # ":" (e.g. "%3A"-decoded): it is still one credential.
+            # v5 format (UUID:PASSWORD): both halves must be non-empty; a
+            # non-UUID head is not a v5 pair, so the whole credential stays
+            # a v4 token instead of being dropped. The probe decides whether
+            # the server accepts it.
             if ":" in credential:
                 uuid_part, _, password_part = credential.partition(":")
                 if not uuid_part.strip() or not password_part.strip():
@@ -91,9 +95,23 @@ class TuicParser(BaseParser):
 
             query = parse_qs_single(query_str)
 
-            sni = query.get("sni")
-            alpn = query.get("alpn")
+            _sni_raw = query.get("sni")
+            sni = _sni_raw.strip() if _sni_raw and _sni_raw.strip() else None
+            _alpn_raw = query.get("alpn")
+            alpn = _alpn_raw.strip() if _alpn_raw and _alpn_raw.strip() else None
 
+            def _clean_opt(key: str) -> str | None:
+                # Mihomo expects lowercase ("bbr", not " BBR ").
+                raw = query.get(key)
+                cleaned = raw.strip().lower() if raw and raw.strip() else ""
+                return cleaned or None
+
+            _cc = _clean_opt("congestion_control")
+            if _cc is not None and _cc not in ("bbr", "cubic", "new_reno"):
+                return None
+            _urm = _clean_opt("udp_relay_mode")
+            if _urm is not None and _urm not in ("native", "quic"):
+                return None
             cfg = Config(
                 protocol=self.protocol,
                 address=host,
@@ -103,8 +121,10 @@ class TuicParser(BaseParser):
                 security="tls",
                 sni=sni,
                 alpn=alpn,
+                congestion_control=_cc,
+                udp_relay_mode=_urm,
                 remark=remark,
-                raw_link=link,
+                raw_link=link.strip(),
             )
             return cfg
         except Exception:

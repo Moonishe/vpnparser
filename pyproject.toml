@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vpnparser"
-version = "0.1.0"
+version = "0.2.1"
 description = "Fetch, parse, validate, and publish VPN proxy configurations."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,6 +38,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
+    "pytest-timeout>=2.3",
     "hypothesis>=6.0",
     "ruff>=0.15.13",
     "mypy>=2.3",
@@ -54,8 +55,21 @@ dev = [
 Homepage = "https://github.com/Moonishe/vpnparser"
 Repository = "https://github.com/Moonishe/vpnparser"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[project.scripts]
+# Installed console entry point: `vpnparser --run [--publish]` without the
+# `python -m src.main` CWD dependency.
+vpnparser = "src.main:main"
+
+[tool.setuptools]
+# The import root stays `src` (a rename would break ~800 string-based
+# monkeypatch targets in tests and every documented command). Packaging the
+# package as `src*` from the repo root is the smallest correct layout: the
+# previous `where = ["src"]` shipped the eight subpackages as GENERIC
+# top-level names (`utils`, `parsers`, `sources`, ...) — squatting any other
+# package that installed the real ones — and omitted src/main.py entirely, so
+# the documented entry point was unimportable from a real (non-editable)
+# install. `src` as a distribution top-level remains a known compromise.
+packages = ["src", "src.aggregator", "src.notify", "src.parsers", "src.publisher", "src.scheduler", "src.scheduler.stages", "src.sources", "src.utils", "src.validators"]
 
 [tool.ruff]
 target-version = "py311"
@@ -107,10 +121,23 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/notify/telegram.py" = [
-    "RUF001",   # confusing unicode — data content, not code
+    "RUF001",   # confusing unicode - data content, not code
+]
+"src/notify/report.py" = [
+    "RUF001",   # confusing unicode - data content, not code
+]
+"tools/*" = [
+    "E402",     # sys.path.insert before imports is the point of a live script
+    "S106",     # fixture credentials in probe scripts
+    "TRY003",   # long exception messages in fail-open probes
+    "UP031",    # percent-format yaml templates — readable as-is
+    "E741",     # single-letter loop var over links in a scratch probe
 ]
 "src/validators/xray_probe.py" = [
     "TRY003",   # exception messages
+]
+"src/validators/singbox_probe.py" = [
+    "TRY003",   # exception messages (no-verdict reasons)
 ]
 "src/publisher/github.py" = [
     "TRY003",   # exception messages
@@ -180,6 +207,10 @@ addopts = [
     "-p", "no:cacheprovider",
     "--cov=src",
     "--cov-report=term-missing",
+    # A hung socket/subprocess test otherwise burns the whole CI job timeout
+    # (30min in ci.yml, 210min inside the publish job in update.yml).
+    "--timeout=120",
+    "--timeout-method=thread",
     # Ratchet: measured coverage is 99%; keep ~2 points of slack so a single new
     # module does not fail the build, but catch real regressions. A gate far
     # below the real number lets a whole module lose its tests unnoticed.
@@ -215,5 +246,6 @@ skips = [
     "B607",  # partial path — git from PATH
 ]
 
-[tool.pip-audit]
-desc = { format = "columnar" }
+# pip-audit takes no pyproject configuration — it runs via flags in CI
+# (see .github/workflows/ci.yml and `make audit`). Kept as a comment so a
+# future [tool.pip-audit] is not mistaken for an active setting.

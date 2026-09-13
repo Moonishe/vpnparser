@@ -1,7 +1,8 @@
 # VPN Config Parser
 
 <p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/Moonishe/vpnparser/update.yml?branch=main&label=CI&logo=github" alt="CI">
+  <img src="https://img.shields.io/github/actions/workflow/status/Moonishe/vpnparser/ci.yml?branch=main&label=CI&logo=github" alt="CI">
+  <img src="https://img.shields.io/github/actions/workflow/status/Moonishe/vpnparser/update.yml?branch=main&label=publish&logo=github" alt="Publish">
   <img src="https://img.shields.io/badge/python-%3E%3D3.11-blue?logo=python" alt="Python">
   <img src="https://img.shields.io/github/license/Moonishe/vpnparser" alt="License">
   <img src="https://img.shields.io/github/last-commit/Moonishe/vpnparser" alt="Last commit">
@@ -30,7 +31,9 @@ fetch ──► parse ──► garbage filter ──► dedup ──► country
 1. **Fetch** -- downloads subscription files from configured GitHub repos and URLs.
 2. **Parse** -- extracts proxy links (`vmess://`, `vless://`, `trojan://`, …), decodes base64 blobs.
 3. **Garbage filter** -- drops malformed or obviously invalid configs.
-4. **Dedup** -- removes duplicates by `(protocol, address, port)`.
+4. **Dedup** -- removes duplicates by `(protocol, address, port, credential
+   hash)`; transport fields (ws path, SNI, REALITY pbk, ...) are hashed too,
+   so two accounts or two endpoints on one `address:port` both survive.
 5. **Country filter** -- keeps only allowed countries, applies per-list rules.
 6. **Aggregate** -- country-balanced round-robin selection caps per output.
 7. **Write** -- produces base64-encoded subscription files.
@@ -58,10 +61,10 @@ ones back into subscriptions.
 
 | File | Contents |
 |------|----------|
-| `output/subscription.txt` | Combined pool (country-balanced, ≤`aggregator.max_configs_in_output`, currently 300) |
+| `output/subscription.txt` | Combined pool (country-balanced, ≤`aggregator.max_configs_in_output`) |
 | `output/subscription-blacklist.txt` | Blacklist pool |
 | `output/subscription-whitelist.txt` | Whitelist / restricted-network pool |
-| `output/subscription-mix.txt` | 100 black + 100 white |
+| `output/subscription-mix.txt` | Halves of `aggregator.max_configs_in_output` per list (see `src/scheduler/stages/aggregate.py` `_build_mixed_output`: `max_total // 2` + remainder; override via `publisher.mix_blacklist_count` / `mix_whitelist_count`) |
 | `output/subscription-clash.yaml` | Mihomo/Clash YAML twin of the combined pool |
 | `output/locations/subscription-XX.txt` | Per-country subsets (≤50 per country) |
 | `output/run-summary.json` | Validation metadata for Telegram notifications |
@@ -94,13 +97,11 @@ capped -- see [SECURITY.md](SECURITY.md). All sources currently shipped are
 
 ### Included upstreams
 
-- **igareck/vpn-configs-for-russia** -- Black + White lists
+- **igareck/vpn-configs-for-russia** -- Black + White lists (active; see `config/sources.json` for enabled flags)
 - **luxxuria/harvester** -- Top tested configs
-- **DarkRoyalty/shnajder-vpn-configs** -- Whitelist entries
-- **V2RayRoot/V2RayConfig**, **sakha1370/OpenRay** -- Blacklist pools
-- **jsxta/whitelist-russia** -- Whitelist subscription
-- **kort0881/vpn-vless-configs-russia** -- `url-list` indexes of mirrored blacklist sources
-- **proxifly/free-proxy-list**, **ProxyScrape/free-proxy-list**, **VPSLabCloud/VPSLab-Free-Proxy-List**, **gfpcom/free-proxy-list** -- SOCKS5 proxy pool
+- **flaafix/flaafix.github.io**, **blastvpn/blastvpn-config** -- active pools
+- Disabled by default (stale/dead): DarkRoyalty, V2RayRoot, sakha1370, jsxta, kort0881 url-lists, hiztin, solovyov — see `enabled:false` in `config/sources.json`
+- SOCKS5 proxy pool (`validator.proxy_pool.sources` in `config/settings.yaml`): proxifly, proxyscrape, iplocate, TheSpeedX, monosans, hookzof, jetkai, ShiftyTR (VPSLab/gfpcom removed — slowed the sweep)
 
 ---
 
@@ -148,6 +149,9 @@ Local `.env` files are loaded automatically when `python-dotenv` is installed.
 | `VALIDATOR_PROXY` | Optional SOCKS5 proxy for validation |
 | `XRAY_EXECUTABLE` | Xray-core binary for the L3 probe. Relative paths resolve from the project root, bare names from `PATH`. With `xray_required: true` and no binary the liveness stage drops everything |
 | `XRAY_LOCATION_ASSET` | Directory with `geoip.dat`/`geosite.dat`, read by the Xray binary itself (optional) |
+| `SINGBOX_EXECUTABLE` | sing-box binary for the QUIC probe (hysteria2/tuic — Xray cannot dial them). Same resolution rules as `XRAY_EXECUTABLE` |
+| `TELEGRAM_BOT_AUTHOR` | Handle credited in the notification intro (default: `@dutysissy`) |
+| `VPNPARSER_PROJECT_ROOT` | Explicit project-root override for the installed `vpnparser` script (containment base for output paths) |
 
 ---
 
@@ -159,6 +163,18 @@ python -m src.main --run
 
 # Run and publish results
 python -m src.main --run --publish
+
+# Fast-track: re-validate the ALREADY PUBLISHED split files (minutes)
+# and republish the survivors — what the hourly `41 * * * *` cron runs
+python -m src.main --revalidate-published --publish
+
+# Continuous mode (loops until interrupted, backoff on empty runs)
+python -m src.main --run --continuous
+
+# Send the Telegram report for the last run (CI calls this after publish);
+# or let the pipeline itself notify (--notify works with --run/--revalidate-published)
+python -m src.main --run --publish --notify
+python -m src.notify.telegram --configs 50 --file output/subscription.txt
 
 # Verbose mode
 python -m src.main --run -v
@@ -174,9 +190,13 @@ python -m pytest -q -p no:cacheprovider
 
 ## Configuration
 
-Key settings in [`config/settings.yaml`](config/settings.yaml):
+Key settings in [`config/settings.yaml`](config/settings.yaml)
+(full list — every key is read by `src/`, see `test_every_setting_is_read_by_src`).
+The **Shipped value** column is what the repository's `settings.yaml` sets; if
+you delete a key, the code fallback may differ (e.g. `proxy_attempts_per_config`
+falls back to 5, `max_configs_in_output` to 500, `xray_max_alive` to 0):
 
-| Section | Key | Default | Description |
+| Section | Key | Shipped value | Description |
 |---------|-----|---------|-------------|
 | `sources` | `max_concurrent_fetches` | `10` | Concurrent fetch limit |
 | `validator` | `allowed_countries` | `[]` | Global country allowlist (empty = all) |
@@ -184,18 +204,39 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 | `validator` | `whitelist_ru_ratio`, `whitelist_eu_countries` | `0.8` | RU/EU split in whitelist |
 | `validator` | `max_configs_to_validate` | `0` | Cap on parsed configs (0 = unlimited) |
 | `validator` | `tcp_enabled`, `tls_enabled`, `xray_enabled` | `true` | Liveness check toggles |
+| `validator` | `tcp_timeout_seconds`, `tcp_concurrency` | `4`, `120` | TCP probe budget and parallelism |
+| `validator` | `tcp_candidate_limit`, `tcp_search_rounds`, `tcp_max_alive` | `0`, `3`, `0` | TCP sweep scope (0 = unlimited / no early stop) |
 | `validator` | `proxy_attempts_per_config`, `tls_proxy_attempts_per_config` | `3` | SOCKS5 proxy retries |
-| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `300`, `15` | Xray probe limits |
+| `validator` | `tls_timeout_seconds`, `tls_concurrency` | `10`, `80` | TLS probe budget and parallelism |
+| `validator` | `tls_verify_certificates` | `false` | Verify server certs (most VPN servers are self-signed) |
+| `validator` | `xray_max_alive_by_list`, `xray_concurrency` | `300`, `24` | Xray probe limits |
 | `validator` | `xray_required` | `true` | Drop everything when Xray cannot run (see `XRAY_EXECUTABLE`) |
+| `validator` | `xray_timeout_seconds`, `xray_startup_timeout_seconds` | `15`, `5` | Per-URL and per-spawn timeouts |
+| `validator` | `xray_attempts_per_config`, `xray_min_probe_successes` | `3`, `2` | Attempts and successes to mark alive |
+| `validator` | `xray_probe_via_proxies`, `xray_proxy_probe_count`, `xray_min_proxy_successes` | `true`, `8`, `0` | Dial through the SOCKS pool |
+| `validator` | `xray_stage_budget_minutes` | `45` | Wall-clock budget per list shared by all Xray/sing-box passes (candidates arriving after it get no verdict and retry first) |
+| `validator` | `xray_per_config_timeout_seconds` | `120` | Hard ceiling for ONE config's whole probe (0 = off) |
+| `validator` | `verification_ttl_minutes` | `180` | Recently-passed configs get one fast re-probe instead of the full attempt set (0 = off) |
 | `validator` | `xray_require_distinct_outbound_ip` | `false` | Fail-closed when direct IP unknown |
+| `validator` | `singbox_enabled`, `singbox_timeout_seconds`, `singbox_concurrency` | `true`, `15`, `10` | QUIC (hysteria2/tuic) L3 probe via sing-box |
+| `validator` | `proxy_pool.enabled`, `proxy_pool.required` | `true`, `true` | Build a free SOCKS5 pool; fail-closed when empty |
+| `validator` | `proxy_pool.min_proxies`, `proxy_pool.max_proxies` | `15`, `40` | Pool size bounds |
 | `validator` | `min_alive_to_filter`, `fail_open_on_low_alive` | `10`, `false` | Low-live thresholds |
 | `validator` | `geoip_enabled` | `true` | IP→country enrichment (offline `geoip_mmdb_file` first, `geoip_api_url` fallback) |
 | `validator` | `geoip_requests_per_minute`, `geoip_max_lookups` | `40`, `300` | GeoIP rate limit and per-run lookup cap (extra configs keep `country=None`) |
 | `aggregator` | `max_configs_in_output` | `300` | Hard cap per file (matches `xray_max_alive`) |
 | `aggregator` | `max_per_country` | `200` | Per-country cap in the combined output |
 | `publisher` | `output_file` | `output/subscription.txt` | Combined output path |
+| `publisher` | `mix_blacklist_count`, `mix_whitelist_count` | `150`, `150` | Mix split override (default: halves of `max_configs_in_output`) |
 | `publisher` | `location_output_limit` | `50` | Cap per `output/locations/subscription-XX.txt` |
+| `publisher` | `min_publish_configs` | `10` | Empty-run floor: below it only metadata is published |
+| `quality` | `health_history_enabled`, `health_history_file` | `true` | Per-config/source health history (local-only state; restored via the workflow cache) |
+| `quality` | `health_history_retention_days`, `health_history_max_records` | `30`, `20000` | History bounds: age window AND hard record cap (still-banned records exempt) |
+| `quality` | `min_consecutive_passes`, `stability_min_alive` | `2`, `10` | Publish only configs alive this many runs in a row (relaxed before it empties a list) |
+| `quality` | `source_min_checked`, `source_bad_alive_rate` | `20`, `0.02` | When a source counts as persistently bad |
+| `quality` | `health_ban_min_alive` | `3` | Skip bans when Xray found this few alive |
 | `llm` | `enabled` | `false` | LLM fallback when regex finds no links |
+| `llm` | `max_calls_per_run`, `max_calls_per_source` | `50`, `10` | Hard ceilings on paid LLM calls |
 
 ---
 
@@ -203,8 +244,10 @@ Key settings in [`config/settings.yaml`](config/settings.yaml):
 
 [`.github/workflows/update.yml`](.github/workflows/update.yml) -- the pipeline:
 
-- **Triggers:** hourly schedule (`0 * * * *`) and manual dispatch (with a
-  `skip_publish` input). No push trigger -- pushes are handled by `ci.yml`.
+- **Triggers:** full discovery run every 3 hours (`11 */3 * * *`), an hourly
+  fast-track revalidation of the published set (`41 * * * *`, minutes instead
+  of hours), and manual dispatch (inputs: `skip_publish`, `mode: full|fast`).
+  No push trigger -- pushes are handled by `ci.yml`.
 - Installs dependencies and a checksum-verified Xray-core, runs the checks and
   the test suite, executes the pipeline, publishes the subscription files, and
   sends an optional Telegram notification with a summary and a fun VPN fact.
@@ -236,7 +279,7 @@ pushes to `main`:
 - Fetch failures are isolated per source -- one dead upstream does not fail
   the whole run.
 - Blacklist output keeps only `DE`, `FI`, `NL`, `US`, `GB`, `FR`, `JP`, `CA`.
-- Whitelist targets 200 checked configs with an 80% RU / 20% EU split.
+- Whitelist is capped by `aggregator.max_configs_in_output` (300) with an 80% RU / 20% EU split (`whitelist_ru_ratio: 0.8`).
 - LLM fallback ([DashScope Qwen](https://dashscope.aliyun.com)) can extract
   links from pages where regex parsing fails. Disabled by default
   (`llm.enabled: false`); the key in `LLM_API_KEY` must match `llm.provider`.

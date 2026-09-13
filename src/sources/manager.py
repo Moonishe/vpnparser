@@ -11,11 +11,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import quote, urljoin, urlparse, urlsplit, urlunsplit
+from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
 from weakref import WeakKeyDictionary
 
 import httpx
@@ -24,15 +25,32 @@ import yaml
 from src.scheduler.settings import Settings
 from src.sources.github import GitHubClient
 from src.sources.list_types import DEFAULT_LIST_TYPE, infer_source_list_type
+from src.sources.source_options import (
+    DEFAULT_FETCH_ATTEMPTS,
+    DEFAULT_FETCH_TIMEOUT,
+    DEFAULT_LISTED_URL_ATTEMPTS,
+    _direct_fetch_overrides,
+    _fetch_timeout,
+    _filter_files,
+    _float_source_value,
+    _int_source_value,
+    _source_default_country,
+)
 from src.utils.http import read_limited_text
-from src.utils.net import RESOLVER_CONCURRENCY, SAFE_URL_SCHEMES, resolve_global_ips
-from src.validators.country_filter import normalize_country_code
+from src.utils.net import (
+    RESOLVER_CONCURRENCY,
+    SAFE_URL_SCHEMES,
+    redact_proxy_url,
+    resolve_global_ips,
+)
 
 logger = logging.getLogger(__name__)
 
 #: Statuses httpx treats as redirects. Followed manually so every hop can be
-#: re-validated against the SSRF guard.
-_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+#: re-validated against the SSRF guard. 300/305/306 are included for
+#: completeness (httpx would otherwise treat them as a normal body);
+#: 304 (Not Modified) is deliberately excluded — it is not a redirect.
+_REDIRECT_STATUSES = frozenset({300, 301, 302, 303, 305, 306, 307, 308})
 
 #: Maximum number of redirects followed for one untrusted URL.
 _MAX_REDIRECT_HOPS = 5
@@ -49,23 +67,34 @@ MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
 #: the whole redirect chain, which is several operations by itself.
 DOWNLOAD_TIMEOUT_FACTOR = 4.0
 
-#: Fallbacks for the per-source ``timeout``/``attempts`` knobs. A url-list index
-#: is fetched once per run and losing it costs the whole source, so it keeps the
-#: retry-heavy default; each URL listed *inside* one is one of hundreds, where a
-#: retry is rarely worth three times the wall clock.
-DEFAULT_FETCH_TIMEOUT = 30.0
-DEFAULT_FETCH_ATTEMPTS = 3
-DEFAULT_LISTED_URL_ATTEMPTS = 1
+#: Fallbacks for the per-source ``timeout``/``attempts`` knobs live in
+#: :mod:`src.sources.source_options` and are imported above.
 
-#: Process-wide ceiling on untrusted downloads in flight. Two invariants pin it:
+#: Process-wide ceiling on untrusted downloads in flight. Two constraints pin it:
 #: every fetch keeps one host lookup busy while it validates its target, and
 #: more than :data:`~src.utils.net.RESOLVER_CONCURRENCY` lookups at once queue
-#: past their own resolve timeout — a healthy source then looks unresolvable and
-#: is dropped as non-public; and every fetch may buffer up to
-#: :data:`MAX_DOWNLOAD_BYTES`, so the same ceiling bounds peak body memory. The
-#: per-source ``max_concurrent_urls`` semaphores enforce neither bound: the
-#: shipped config alone runs four url-list sources of 20 at once.
-MAX_INFLIGHT_DOWNLOADS = RESOLVER_CONCURRENCY
+#: past their own resolve timeout — a healthy source then looks unresolvable
+#: and is dropped as non-public. The memory side used to be "same constant":
+#: with :data:`MAX_DOWNLOAD_BYTES` buffered per fetch plus the decode copy,
+#: 50 in-flight downloads peaked near 1.5 GB — enough to OOM a runner alongside
+#: the later Xray stage. The download ceiling is therefore derived from the
+#: byte budget, and the resolver still bounds it from above via ``min(...)``.
+#: The per-source ``max_concurrent_urls`` semaphores enforce neither bound:
+#: the shipped config alone runs four url-list sources of 20 at once.
+#: The per-fetch cost counts the body (12 MiB cap) plus its decoded str copy
+#: and split churn — the repo's own measurements put one fetch near 30 MB
+#: with non-ASCII payloads, ~2.5x the body bytes the old estimate used.
+#: The 384 MiB total download budget keeps the fetch stage at ~5% of a
+#: 7 GB Actions runner's usable memory, leaving headroom for the Xray stage.
+_FETCH_MEMORY_BUDGET_MIB = 30
+_MAX_DOWNLOADS_FOR_MEMORY = max(1, (384 // _FETCH_MEMORY_BUDGET_MIB))
+
+#: A comma only separates two URLs when a ``scheme://`` follows it. Inside a
+#: single URL a comma is a legal character (``.../list?alpn=h3,h2``): the old
+#: blanket ``replace(",", " ")`` silently truncated such URLs and fetched the
+#: wrong address.
+_URL_COMMA_SPLIT_RE = re.compile(r",(?=[A-Za-z][A-Za-z0-9+.\-]*://)")
+MAX_INFLIGHT_DOWNLOADS = min(RESOLVER_CONCURRENCY, _MAX_DOWNLOADS_FOR_MEMORY)
 
 #: Addresses tried per hop before the hop is declared unreachable. Pinning the
 #: connection to one validated address (see :class:`_PinnedTarget`) loses the
@@ -89,14 +118,13 @@ def _host_literal(host: str) -> str:
     return f"[{host}]" if ":" in host else host
 
 
-#: ``scheme://user:pass@host`` — greedy across slashes so the *full* userinfo is
-#: masked even when a credential itself contains a ``/`` (``u:pa/ss@host``).
-_URL_USERINFO_RE = re.compile(r"//[^\s]*@")
-
-
 def _redact_url(url: str) -> str:
-    """Replace URL userinfo with ``***`` for logs and published errors."""
-    return _URL_USERINFO_RE.sub("//***@", url) if url else url
+    """Mask userinfo and credential query values for logs and published errors.
+
+    Delegates to the shared redactor: GitHub raw ``download_url``s carry
+    ``?token=`` for private repos, and these strings land in ``run-summary.json``.
+    """
+    return redact_proxy_url(url)
 
 
 def _safe_error_message(exc: BaseException, *, limit: int = 300) -> str:
@@ -109,11 +137,14 @@ def _safe_error_message(exc: BaseException, *, limit: int = 300) -> str:
     itself stays in the debug log.
     """
     text = str(exc).strip() or type(exc).__name__
-    first_line = text.splitlines()[0].strip() if text else type(exc).__name__
-    first_line = _redact_url(first_line)
-    if len(first_line) > limit:
-        first_line = f"{first_line[: limit - 1]}…"
-    return first_line
+    # Error strings (and httpx ones in particular) can embed the full request
+    # URL with credentials, sometimes across several lines; redact every line,
+    # not just the first, before the value lands in run-summary.json.
+    lines = [ln.strip() for ln in text.splitlines()] or [type(exc).__name__]
+    joined = " | ".join(_redact_url(ln) for ln in lines)
+    if len(joined) > limit:
+        joined = f"{joined[: limit - 1]}…"
+    return joined
 
 
 def _download_gate() -> asyncio.Semaphore:
@@ -194,7 +225,7 @@ class SourceManager:
             max_concurrent = int(max_concurrent)
         except (TypeError, ValueError):
             max_concurrent = 10
-        self._semaphore = asyncio.Semaphore(max(1, max_concurrent))
+        self._semaphore = asyncio.Semaphore(max(1, min(max_concurrent, 50)))
 
         # GitHub client (lazily used inside fetch_source; lifecycle owned here)
         # `or` (not the get() default): a present-but-empty key — YAML parses
@@ -224,6 +255,10 @@ class SourceManager:
             return data if isinstance(data, dict) else {}
         except (yaml.YAMLError, OSError):
             logger.exception("Failed to load settings %s", self.settings_file)
+            logger.warning(
+                "Using default settings after failing to load %s",
+                self.settings_file,
+            )
             return {}
 
     def _load_sources(self) -> list[dict[str, Any]]:
@@ -341,7 +376,7 @@ class SourceManager:
                         default_country=default_country,
                     )
                 filename = (
-                    str(source.get("filename") or "").strip()
+                    self._safe_filename(str(source.get("filename") or ""))
                     or self._filename_from_url(str(url))
                     or f"{name}.txt"
                 )
@@ -385,7 +420,7 @@ class SourceManager:
                         list_type=list_type,
                         default_country=default_country,
                     )
-                filename = path.rsplit("/", 1)[-1] or f"{name}.txt"
+                filename = path.replace("\\", "/").rsplit("/", 1)[-1] or f"{name}.txt"
                 return SourceResult(
                     source_name=name,
                     files=[(filename, content)],
@@ -394,8 +429,10 @@ class SourceManager:
                 )
 
             if stype == "raw":
-                max_depth = self._int_source_value(source, "max_depth", 3)
-                max_files = self._int_source_value(source, "max_files", 200)
+                max_depth = self._int_source_value(source, "max_depth", 3, maximum=10)
+                max_files = self._int_source_value(
+                    source, "max_files", 200, maximum=1000
+                )
                 files = await self._github.fetch_directory(
                     owner,
                     repo,
@@ -423,7 +460,7 @@ class SourceManager:
                 source_name=name,
                 error=(
                     f"unknown source type '{stype}' "
-                    "(expected 'subscription', 'raw', or 'url')"
+                    "(expected 'subscription', 'raw', 'url' or 'url-list')"
                 ),
                 list_type=list_type,
                 default_country=default_country,
@@ -448,6 +485,7 @@ class SourceManager:
         timeout: float = DEFAULT_FETCH_TIMEOUT,
         attempts: int = DEFAULT_FETCH_ATTEMPTS,
         retry_delay: float = 2.0,
+        client: httpx.AsyncClient | None = None,
     ) -> str:
         """Fetch a direct HTTP(S) text source from an untrusted URL.
 
@@ -456,6 +494,12 @@ class SourceManager:
         only (SSRF guard), the streamed body is discarded past
         ``MAX_DOWNLOAD_BYTES``, and every attempt runs under a wall-clock budget
         of ``timeout * DOWNLOAD_TIMEOUT_FACTOR`` seconds.
+
+        Args:
+            client: Shared client for a whole url-list batch. A fresh
+                ``AsyncClient`` re-parses the CA bundle and re-handshakes per
+                URL — a 200-URL index paid that 200 times. When omitted, a
+                per-call client is created (the standalone/tools path).
 
         Returns:
             The response body, ``""`` on 404 or on an oversized body.
@@ -479,19 +523,36 @@ class SourceManager:
             "User-Agent": "vpn-config-parser/1.0",
             "Accept": "text/plain,*/*",
         }
+
+        def _retryable(exc: Exception) -> bool:
+            # Deterministic 4xx never succeed on retry (408 timeout and 429
+            # rate-limit are the retriable exceptions): retrying them just
+            # burns attempts x budget wall clock.
+            if isinstance(exc, httpx.HTTPStatusError):
+                status = exc.response.status_code if exc.response is not None else 0
+                if 400 <= status < 500 and status not in (408, 429):
+                    return False
+            return True
+
         # follow_redirects=False: httpx would follow a hop to 127.0.0.1 or to
         # the cloud metadata endpoint without re-checking it, so redirects are
         # walked manually with a fresh SSRF check per hop.
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        if client is not None:
             for attempt in range(1, max_attempts + 1):
                 try:
                     # The gate is taken *outside* the budget: queue time is not
                     # the host's fault, and charging it to the fetch would time
-                    # out healthy sources under load.
-                    async with _download_gate(), asyncio.timeout(budget):
-                        return await SourceManager._get_validated(client, url, headers)
+                    # out healthy sources under load. Only the validated fetch
+                    # itself is charged to the budget.
+                    async with _download_gate():
+                        async with asyncio.timeout(budget):
+                            return await SourceManager._get_validated(
+                                client, url, headers
+                            )
                 except (httpx.RequestError, httpx.HTTPStatusError) as exc:
                     last_error = exc
+                    if not _retryable(exc):
+                        break
                 except TimeoutError:
                     last_error = TimeoutError(
                         f"fetch of {_redact_url(url)!r} "
@@ -506,7 +567,49 @@ class SourceManager:
                     max_attempts,
                     _safe_error_message(last_error),
                 )
-                await asyncio.sleep(max(0.0, retry_delay))
+                delay = min(
+                    max(0.0, retry_delay) * (2 ** (attempt - 1)) + random.uniform(0, 1),
+                    30.0,
+                )
+                await asyncio.sleep(delay)
+            if last_error is not None:
+                raise last_error
+            return ""  # pragma: no cover
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as owned:
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    # The gate is taken *outside* the budget: queue time is not
+                    # the host's fault, and charging it to the fetch would time
+                    # out healthy sources under load. Only the validated fetch
+                    # itself is charged to the budget.
+                    async with _download_gate():
+                        async with asyncio.timeout(budget):
+                            return await SourceManager._get_validated(
+                                owned, url, headers
+                            )
+                except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+                    last_error = exc
+                    if not _retryable(exc):
+                        break
+                except TimeoutError:
+                    last_error = TimeoutError(
+                        f"fetch of {_redact_url(url)!r} "
+                        f"exceeded its {budget:.1f}s budget",
+                    )
+                if attempt >= max_attempts:
+                    break
+                logger.warning(
+                    "Direct source fetch failed for %s (attempt %d/%d): %s",
+                    _redact_url(url),
+                    attempt,
+                    max_attempts,
+                    _safe_error_message(last_error),
+                )
+                delay = min(
+                    max(0.0, retry_delay) * (2 ** (attempt - 1)) + random.uniform(0, 1),
+                    30.0,
+                )
+                await asyncio.sleep(delay)
         if last_error is not None:
             raise last_error
         return ""  # pragma: no cover
@@ -541,7 +644,15 @@ class SourceManager:
             msg = f"refusing to fetch non-public url: {_redact_url(url)!r}"
             raise ValueError(msg)
 
+        # ``None`` = transient resolver failure (timeout / NXDOMAIN moment):
+        # a dropped URL is final for the whole run, so one retry is cheap
+        # insurance against losing a whole upstream index to one slow answer.
+        # ``[]`` is a terminal SSRF verdict and is never retried — the same
+        # split is_public_host uses.
         addresses = await resolve_global_ips(host)
+        if addresses is None:
+            await asyncio.sleep(0.25)
+            addresses = await resolve_global_ips(host)
         if not addresses:
             logger.warning("Dropped non-public source url: %s", _redact_url(url))
             msg = f"refusing to fetch non-public url: {_redact_url(url)!r}"
@@ -549,11 +660,19 @@ class SourceManager:
 
         userinfo = ""
         if parts.username or parts.password:
-            # urlsplit() returns percent-DECODED credentials; re-quoting them
-            # keeps a password like "p%40ss" from breaking out of the userinfo
-            # field when the authority is rebuilt around the pinned address.
-            username = quote(parts.username or "", safe="")
-            password = quote(parts.password, safe="") if parts.password else ""
+            # Credentials in a plaintext sources.json URL leak into logs and
+            # run-summary.json; warn so the operator notices the exposure.
+            logger.warning(
+                "Source URL for host %s contains userinfo; "
+                "credentials in plaintext sources.json may leak",
+                _redact_url(host),
+            )
+            # urlsplit() returns percent-ENCODED credentials (it does not
+            # decode them), so they are rebuilt as-is: re-quoting turned
+            # "p%40ss" into "p%2540ss" and the server answered 401 for a
+            # password that was never wrong.
+            username = parts.username or ""
+            password = parts.password or ""
             userinfo = f"{username}:{password}@" if password else f"{username}@"
         connect_urls = tuple(
             urlunsplit(
@@ -580,6 +699,7 @@ class SourceManager:
         client: httpx.AsyncClient,
         pinned: _PinnedTarget,
         headers: dict[str, str],
+        logical_url: str | None = None,
     ) -> tuple[str | None, str]:
         """GET one hop, falling back over the addresses approved for it.
 
@@ -587,6 +707,8 @@ class SourceManager:
             client: Client used to issue the request.
             pinned: Target produced by :meth:`_pin_public_target`.
             headers: Request headers; ``Host`` is taken from *pinned*.
+            logical_url: Human-facing URL of this hop (hostname form), for
+                diagnostics alongside the pinned IP ``connect_url``.
 
         Returns:
             ``(location, body)``. ``location`` is the redirect target when the
@@ -625,18 +747,25 @@ class SourceManager:
                         response,
                         max_bytes=MAX_DOWNLOAD_BYTES,
                     )
-            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            except httpx.TransportError as exc:
+                # Any transport failure on one pinned address (connect/read/
+                # write timeouts, resets, protocol errors — e.g. IPv6 TIMEOUT
+                # on an IPv4-only runner) must still try the next approved
+                # address instead of failing the whole fetch. HTTPStatusError
+                # (a completed response) is handled by the caller, not here.
                 last_error = exc
                 continue
             if body is None:
                 logger.warning(
-                    "Discarded oversized response from %s (limit %d bytes).",
+                    "Discarded oversized response for %s from %s (limit %d bytes).",
+                    _redact_url(logical_url or connect_url),
                     _redact_url(connect_url),
                     MAX_DOWNLOAD_BYTES,
                 )
                 return None, ""
             return None, body
-        assert last_error is not None  # connect_urls is never empty
+        if last_error is None:  # connect_urls is never empty; defensive
+            raise RuntimeError
         raise last_error
 
     @staticmethod
@@ -651,25 +780,45 @@ class SourceManager:
             The response body, or ``""`` on 404 or an oversized body.
 
         Raises:
-            ValueError: If a hop is not a public http(s) URL, or the redirect
-                chain is longer than ``_MAX_REDIRECT_HOPS``.
+            ValueError: If a hop is not a public http(s) URL, an https URL
+                redirects to http, or the redirect chain is longer than
+                ``_MAX_REDIRECT_HOPS``.
         """
         target = url
+        prior_scheme = urlsplit(target).scheme.lower()
         for _hop in range(_MAX_REDIRECT_HOPS + 1):
             pinned = await SourceManager._pin_public_target(target)
-            location, body = await SourceManager._stream_hop(client, pinned, headers)
+            location, body = await SourceManager._stream_hop(
+                client, pinned, headers, logical_url=target
+            )
             if location is None:
                 return body
             # Relative redirects resolve against the *logical* URL, never the
             # pinned address one.
             target = urljoin(target, location)
-        msg = f"too many redirects while fetching {url!r}"
+            # A server-controlled redirect must not downgrade TLS, mirroring
+            # proxy_pool's hop chain: an https source refetching over http is
+            # refused instead of silently handing the fetch to plaintext.
+            scheme = urlsplit(target).scheme.lower()
+            if prior_scheme == "https" and scheme == "http":
+                msg = f"https->http redirect refused: {_redact_url(target)!r}"
+                raise ValueError(msg)
+            prior_scheme = scheme
+        msg = f"too many redirects while fetching {_redact_url(url)!r}"
         raise ValueError(msg)
 
     @staticmethod
     def _filename_from_url(url: str) -> str:
         parsed = urlparse((url or "").strip())
-        return PurePosixPath(parsed.path).name or ""
+        # Sanitize override-safe: never return directory components.
+        # Backslashes are normalized first: PurePosixPath does not treat
+        # "dir\\file.txt" as a path separator, leaking the whole string.
+        return PurePosixPath(parsed.path.replace("\\", "/")).name or ""
+
+    @staticmethod
+    def _safe_filename(raw: str) -> str:
+        """Basename-only filename (no traversal via source override)."""
+        return PurePosixPath((raw or "").strip().replace("\\", "/")).name or ""
 
     async def _fetch_url_list(
         self,
@@ -722,14 +871,26 @@ class SourceManager:
             "{YYYYMMDD}": now.strftime("%Y%m%d"),
         }
 
+        # Cap early: a 12MB index holds ~500k URLs; collecting all
+        # before slicing to max_files wastes memory.
+        max_files_early = self._int_source_value(source, "max_files", 200)
+        max_files_early = min(max(1, max_files_early), 1000)
         seen: set[str] = set()
         urls: list[str] = []
         for line in index_content.splitlines():
+            if len(urls) >= max_files_early:
+                break
             line = line.strip()
             if not line or line.startswith(("#", "//")):
                 continue
             # Some lists include URLs after labels like "URL: ..."; keep only the URL.
-            candidates = [part.strip() for part in line.replace(",", " ").split()]
+            # Split tokens on whitespace, then on commas that precede another
+            # scheme:// — commas inside a URL itself are legal and must stay.
+            candidates = [
+                part.strip()
+                for token in line.split()
+                for part in _URL_COMMA_SPLIT_RE.split(token)
+            ]
             for candidate in candidates:
                 parsed = urlparse(candidate)
                 if parsed.scheme in {"http", "https"} and parsed.netloc:
@@ -749,10 +910,12 @@ class SourceManager:
                 default_country=default_country,
             )
 
-        max_files = self._int_source_value(source, "max_files", 200)
+        max_files = self._int_source_value(source, "max_files", 200, maximum=1000)
         urls = urls[:max_files]
 
-        concurrency = self._int_source_value(source, "max_concurrent_urls", 10)
+        concurrency = self._int_source_value(
+            source, "max_concurrent_urls", 10, maximum=50
+        )
         concurrency = max(1, concurrency)
         semaphore = asyncio.Semaphore(concurrency)
         timeout = self._fetch_timeout(source)
@@ -760,6 +923,7 @@ class SourceManager:
             source,
             "attempts",
             DEFAULT_LISTED_URL_ATTEMPTS,
+            maximum=10,
         )
 
         async def fetch_one(target: str) -> tuple[str, str] | None:
@@ -769,6 +933,10 @@ class SourceManager:
                         target,
                         timeout=timeout,
                         attempts=attempts,
+                        # One client for the whole url-list batch: a fresh
+                        # AsyncClient per URL re-parsed the CA bundle and
+                        # re-handshaked 200 times for a 200-URL index.
+                        client=shared_client,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -778,16 +946,24 @@ class SourceManager:
                     )
                     return None
                 if not content:
+                    logger.warning(
+                        "url-list fetch returned empty content for %s",
+                        _redact_url(target),
+                    )
                     return None
                 filename = (
-                    str(source.get("filename") or "").strip()
+                    self._safe_filename(str(source.get("filename") or ""))
                     or self._filename_from_url(target)
                     or f"{name}.txt"
                 )
                 return (filename, content)
 
-        tasks = [fetch_one(target) for target in urls]
-        fetched = await asyncio.gather(*tasks)
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=False,
+        ) as shared_client:
+            tasks = [fetch_one(target) for target in urls]
+            fetched = await asyncio.gather(*tasks)
         files = [item for item in fetched if item is not None]
 
         # Disambiguate duplicate filenames: a source-wide ``filename`` (or
@@ -828,11 +1004,7 @@ class SourceManager:
 
     @staticmethod
     def _source_default_country(source: dict[str, Any]) -> str | None:
-        raw = source.get("default_country")
-        # Only a supported 2-letter ISO code counts: anything else would be
-        # stamped onto Config.country and leak into location files and filter
-        # verdicts (see src.validators.country_filter.normalize_country_code).
-        return normalize_country_code(raw)
+        return _source_default_country(source)
 
     @staticmethod
     def _int_source_value(
@@ -841,111 +1013,28 @@ class SourceManager:
         default: int,
         *,
         minimum: int = 1,
+        maximum: int | None = None,
     ) -> int:
-        """Read an integer source setting with a configurable lower bound.
-
-        Booleans are explicitly rejected — bool is a subclass of int in Python
-        (int(True) == 1), so without this guard ``max_files: false`` would
-        silently become 1. Pass minimum=0 to allow 0 as a sentinel (unlimited).
-        """
-        raw = source.get(key, default)
-        if isinstance(raw, bool):
-            return default
-        try:
-            value = int(raw)
-        except (TypeError, ValueError):
-            return default
-        return max(minimum, value)
+        return _int_source_value(source, key, default, minimum=minimum, maximum=maximum)
 
     @classmethod
     def _fetch_timeout(cls, source: dict[str, Any]) -> float:
-        """Return the per-request ``timeout`` configured for *source*.
-
-        Applies to every URL the source pulls — a url-list index just as much
-        as the URLs listed in it.
-        """
-        return cls._float_source_value(source, "timeout", DEFAULT_FETCH_TIMEOUT)
+        return _fetch_timeout(source)
 
     @classmethod
     def _direct_fetch_overrides(cls, source: dict[str, Any]) -> dict[str, Any]:
-        """Return the ``timeout``/``attempts`` overrides declared by *source*.
-
-        Both knobs are documented per source and used to be read for the URLs
-        *listed inside* a url-list only: the index itself, and every ``url``
-        source, silently kept the built-in 30s/3-attempt defaults, so a mirror
-        capped at ``timeout: 10`` could still hold the job for minutes.
-
-        Only keys the source actually sets are returned, leaving
-        :meth:`_fetch_direct_url` as the single place its own defaults live.
-        """
-        overrides: dict[str, Any] = {}
-        if "timeout" in source:
-            overrides["timeout"] = cls._fetch_timeout(source)
-        if "attempts" in source:
-            overrides["attempts"] = cls._int_source_value(
-                source,
-                "attempts",
-                DEFAULT_FETCH_ATTEMPTS,
-            )
-        return overrides
+        return _direct_fetch_overrides(source)
 
     @staticmethod
     def _float_source_value(source: dict[str, Any], key: str, default: float) -> float:
-        """Read a float source setting, rejecting booleans."""
-        raw = source.get(key, default)
-        if isinstance(raw, bool):
-            return default
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            return default
-        return value
+        return _float_source_value(source, key, default)
 
     @staticmethod
     def _filter_files(
         source: dict[str, Any],
         files: list[tuple[str, str]],
     ) -> list[tuple[str, str]]:
-        """Apply optional include_files/exclude_files filters to raw sources.
-
-        Non-list values (str, int, None) are silently ignored — only actual
-        lists are iterated.  ``None`` items inside a list are skipped so they
-        cannot become the literal string ``"none"`` and accidentally filter
-        out every file.
-
-        Filter entries are normalized identically to filenames (backslashes
-        converted to forward slashes, leading/trailing slashes stripped,
-        lowercased) so that ``"/keep.txt"`` or ``"dir\\\\file.txt"`` in the
-        config match the corresponding file.
-        """
-
-        def _norm(value: object) -> str:
-            return str(value).strip().replace("\\", "/").strip("/").lower()
-
-        def _to_filter_set(key: str) -> set[str]:
-            raw = source.get(key)
-            if not isinstance(raw, list):
-                return set()
-            return {
-                _norm(item) for item in raw if item is not None and str(item).strip()
-            }
-
-        include = _to_filter_set("include_files")
-        exclude = _to_filter_set("exclude_files")
-        if not include and not exclude:
-            return files
-
-        filtered: list[tuple[str, str]] = []
-        for filename, content in files:
-            key = _norm(filename)
-            basename = PurePosixPath(key).name
-            match_keys = {key, basename}
-            if include and not (include & match_keys):
-                continue
-            if exclude & match_keys:
-                continue
-            filtered.append((filename, content))
-        return filtered
+        return _filter_files(source, files)
 
     # --- cleanup ---
 

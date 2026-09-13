@@ -19,16 +19,24 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 import logging
 import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
 from src.parsers.base import Config
-from src.utils.net import is_private_address, resolve_global_ips
+from src.utils.http import read_limited_text
+from src.utils.net import (
+    is_private_address,
+    is_safe_public_url,
+    redact_proxy_url,
+    resolve_global_ips,
+)
 from src.utils.paths import resolve_safe_output_path
 
 logger = logging.getLogger(__name__)
@@ -39,10 +47,70 @@ _DEFAULT_CONCURRENCY = 8
 # ip-api.com free tier allows 45 req/min. 40 leaves headroom for clock skew and
 # for whatever else on the runner's IP talks to the same endpoint.
 _DEFAULT_REQUESTS_PER_MINUTE = 40.0
-_DEFAULT_API_URL = "https://ip-api.com/json/{ip}"
+# Plain http only: the free tier does not serve https at all (the https
+# endpoint answers 403 for every request), so an https default silently killed
+# all API-based enrichment while still burning the 45 req/min budget on 403s.
+_DEFAULT_API_URL = "http://ip-api.com/json/{ip}"
+
+#: Byte budget for one API response — a country-code JSON answer is ~200 bytes.
+_API_RESPONSE_MAX_BYTES = 64 * 1024
+
+#: Redirect hops accepted for the mmdb download. GitHub release assets — the
+#: pinned URL shape in settings.yaml — always 302 onto a signed CDN url, so a
+#: fetch that refuses redirects can never succeed; the chain stays bounded
+#: and every hop re-passes the SSRF gate, like everywhere else in the repo.
+_MAX_DOWNLOAD_REDIRECTS = 5
 
 #: Injectable sleep, so tests can drive the limiter without real waiting.
 SleepFunc = Callable[[float], Awaitable[None]]
+
+#: Emitted once per process: lookups fail quietly, so a misconfigured endpoint
+#: (https on the free tier, a paid plan behind the wrong host) would otherwise
+#: burn the whole rate limit on 403s with nothing in the log to explain it.
+#: A one-key dict, not a bare bool: the module has no ``global`` elsewhere and
+#: the flag is reset by tests (same shape as tcp_check._refusals).
+_403_state: dict[str, bool] = {"warned": False}
+
+
+def _403_warn(message: str, *args: object) -> None:
+    """Log *message* at warning level, but only the first time it fires."""
+    if _403_state["warned"]:
+        return
+    _403_state["warned"] = True
+    logger.warning(message, *args)
+
+
+# is_safe_public_url re-resolves the API host on every call, and one run
+# queries the same endpoint for up to hundreds of addresses. Cache the verdict
+# per (scheme, host) — mirroring xray_probe._probe_host_blocked — with a cap
+# instead of a bare dict so growth stays a property, not an assumption, in
+# --continuous processes.
+_GATE_VERDICT_CACHE_MAX = 16
+_gate_verdict_cache: dict[tuple[str, str], bool] = {}
+
+
+def clear_gate_verdict_cache() -> None:
+    """Forget the cached url-gate verdicts (used by tests)."""
+    _gate_verdict_cache.clear()
+
+
+async def _url_is_safe_public(url: str, *, timeout: float) -> bool:
+    """Cache :func:`is_safe_public_url` per (scheme, host) of *url*."""
+    try:
+        parts = urlsplit(url.strip())
+        key = (parts.scheme.lower(), parts.hostname or "")
+    except ValueError:
+        return False
+    if not key[1]:
+        return False
+    cached = _gate_verdict_cache.get(key)
+    if cached is not None:
+        return cached
+    verdict = await is_safe_public_url(url, timeout=timeout)
+    if len(_gate_verdict_cache) >= _GATE_VERDICT_CACHE_MAX:
+        _gate_verdict_cache.clear()
+    _gate_verdict_cache[key] = verdict
+    return verdict
 
 
 def _is_private_ip(ip: str) -> bool:
@@ -50,7 +118,7 @@ def _is_private_ip(ip: str) -> bool:
 
     Thin alias for :func:`src.utils.net.is_private_address`, kept because the
     SSRF rule ("never send an internal address to an external GeoIP API") is
-    part of this module's contract.
+    part of this module's contract and is unit-tested directly.
     """
     return is_private_address(ip)
 
@@ -98,8 +166,15 @@ async def lookup_country(
     ip: str,
     api_url: str = _DEFAULT_API_URL,
     timeout: float = 5.0,
+    client: httpx.AsyncClient | None = None,
 ) -> str | None:
     """Lookup the 2-letter country code for an IP address.
+
+    Args:
+        client: Shared client for a whole enrichment batch. A fresh
+            ``AsyncClient`` per IP re-parsed the trust store (blocking) and
+            re-handshaked per lookup. When omitted, a per-call client is
+            created (the standalone/tools path).
 
     Returns the country code (e.g. "US") or None on any error: timeout,
     rate limit, non-200 response, missing/invalid fields, network error.
@@ -107,18 +182,60 @@ async def lookup_country(
     """
     url = api_url.replace("{ip}", ip)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(url)
-    except (httpx.HTTPError, OSError, Exception):
+        # Same SSRF gate every other outbound path passes: api_url is
+        # operator config, but the guard is one call and defence-in-depth
+        # is cheap. Cached per (scheme, host) — see _url_is_safe_public.
+        if not await _url_is_safe_public(url, timeout=timeout):
+            logger.warning(
+                "Refusing GeoIP lookup at non-public url %s.",
+                redact_proxy_url(api_url),
+            )
+            return None
+        # client.stream keeps the byte budget a true MEMORY bound: a plain
+        # client.get() buffers the whole body before read_limited_text could
+        # reject it, unlike every other streaming fetch path.
+        if client is not None:
+            async with client.stream("GET", url) as resp:
+                return await _country_from_response(resp, api_url)
+        else:
+            async with (
+                httpx.AsyncClient(timeout=timeout) as owned,
+                owned.stream("GET", url) as resp,
+            ):
+                return await _country_from_response(resp, api_url)
+    except (httpx.HTTPError, OSError):
         return None
 
+
+async def _country_from_response(resp: httpx.Response, api_url: str) -> str | None:
+    """Parse a streamed GeoIP response under the byte budget (caller owns it)."""
     if resp.status_code != 200:
+        if resp.status_code == 403:
+            _403_warn(
+                "GeoIP endpoint %s answered HTTP 403 — the free ip-api.com "
+                "tier does not serve https; check the url scheme "
+                "(http://ip-api.com works on the free tier) and your plan.",
+                redact_proxy_url(api_url),
+            )
         # 429 = rate limited; treat as failure.
         return None
 
     try:
-        data = resp.json()
-    except (ValueError, Exception):
+        # Same byte budget every other fetch path enforces: an unbounded
+        # resp.json() here was the one remaining uncapped response read.
+        body = await read_limited_text(resp, max_bytes=_API_RESPONSE_MAX_BYTES)
+    except httpx.HTTPError:
+        return None
+    if body is None:
+        logger.warning(
+            "GeoIP response from %s exceeded the %d byte cap — discarded.",
+            redact_proxy_url(api_url),
+            _API_RESPONSE_MAX_BYTES,
+        )
+        return None
+    try:
+        data = json.loads(body)
+    except ValueError:
         return None
 
     # ip-api.com returns {"countryCode": "US", ...} on success,
@@ -130,7 +247,12 @@ async def lookup_country(
 
     country = data.get("countryCode")
     if isinstance(country, str) and len(country) == 2:
-        return country.upper()
+        # normalize_country_code validates against the same ISO set the
+        # country filter uses — a bogus code from a spoofable http endpoint
+        # would create junk location files (subscription-A1.txt).
+        from src.validators.country_filter import normalize_country_code
+
+        return normalize_country_code(country)
     return None
 
 
@@ -155,13 +277,15 @@ def _warn_about_failures(results: list[object], action: str) -> None:
     failures = [result for result in results if isinstance(result, BaseException)]
     if not failures:
         return
+    # Exception strings can embed the requested URL (httpx appends it to
+    # connection errors); it may carry a credential in the query string.
     logger.warning(
         "GeoIP %s failed for %d/%d config(s); first error: %s: %s",
         action,
         len(failures),
         len(results),
         type(failures[0]).__name__,
-        failures[0],
+        redact_proxy_url(str(failures[0])),
     )
 
 
@@ -217,14 +341,17 @@ async def enrich_configs_geoip(
     async def _lookup_one(ip: str, targets: list[Config]) -> None:
         await limiter.acquire()
         async with semaphore:
-            country = await lookup_country(ip, api_url=api_url)
+            country = await lookup_country(ip, api_url=api_url, client=shared_client)
         for cfg in targets:
             cfg.country = country
 
-    looked_up = await asyncio.gather(
-        *(_lookup_one(ip, targets) for ip, targets in by_ip.items()),
-        return_exceptions=True,
-    )
+    # One client for the whole batch: a per-IP client re-read the system
+    # trust store (blocking) and re-handshaked per lookup.
+    async with httpx.AsyncClient(timeout=5.0) as shared_client:
+        looked_up = await asyncio.gather(
+            *(_lookup_one(ip, targets) for ip, targets in by_ip.items()),
+            return_exceptions=True,
+        )
     _warn_about_failures(list(looked_up), "country lookup")
     return configs
 
@@ -257,7 +384,10 @@ def _file_sha256_matches(path: Path, expected: str | None) -> bool:
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             digest.update(chunk)
-    return digest.hexdigest() == expected
+    # Case-insensitive: `Get-FileHash` on Windows prints UPPERCASE, and a pin
+    # copied from there used to fail forever, silently disabling the whole
+    # offline backend (only a warning in the log).
+    return digest.hexdigest() == expected.lower()
 
 
 async def ensure_geoip_database(
@@ -301,39 +431,75 @@ async def ensure_geoip_database(
     digest = hashlib.sha256()
     size = 0
     too_large = False
+    downloaded = False
     try:
-        async with (
-            httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client,
-            client.stream("GET", url) as resp,
-        ):
-            if resp.status_code != 200:
+        # follow_redirects=False with a manual, gated hop loop: the pinned
+        # GitHub-release URL always 302s onto a signed CDN url, so a
+        # no-redirect fetch never returned 200 and the offline database
+        # could never be installed on a clean runner. A redirect may not
+        # silently move the fetch to a host nobody checked, so every hop
+        # (first included) is validated by is_safe_public_url before the
+        # request, and the chain is bounded like every other download.
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            hop_url = url
+            for _hop in range(_MAX_DOWNLOAD_REDIRECTS + 1):
+                if not await is_safe_public_url(hop_url, timeout=timeout):
+                    logger.warning(
+                        "Refusing GeoIP database download from non-public url %s.",
+                        redact_proxy_url(hop_url),
+                    )
+                    return None
+                async with client.stream("GET", hop_url) as resp:
+                    if resp.is_redirect:
+                        location = resp.headers.get("location")
+                        if not location:
+                            logger.warning(
+                                "GeoIP database download returned HTTP %d "
+                                "without a Location header.",
+                                resp.status_code,
+                            )
+                            return None
+                        hop_url = str(urljoin(hop_url, location))
+                        continue
+                    if resp.status_code != 200:
+                        logger.warning(
+                            "GeoIP database download returned HTTP %d.",
+                            resp.status_code,
+                        )
+                        return None
+                    with part.open("wb") as fh:
+                        async for chunk in resp.aiter_bytes(64 * 1024):
+                            size += len(chunk)
+                            if size > max_bytes:
+                                too_large = True
+                                break
+                            digest.update(chunk)
+                            fh.write(chunk)
+                    downloaded = True
+                    break
+            if not downloaded:
                 logger.warning(
-                    "GeoIP database download returned HTTP %d.",
-                    resp.status_code,
+                    "GeoIP database download exceeded %d redirect hops at %s.",
+                    _MAX_DOWNLOAD_REDIRECTS,
+                    redact_proxy_url(hop_url),
                 )
                 return None
-            with part.open("wb") as fh:
-                async for chunk in resp.aiter_bytes(64 * 1024):
-                    size += len(chunk)
-                    if size > max_bytes:
-                        too_large = True
-                        break
-                    digest.update(chunk)
-                    fh.write(chunk)
         if too_large:
             logger.warning(
                 "GeoIP database at %s is larger than the size cap (%d bytes).",
-                url,
+                redact_proxy_url(url),
                 max_bytes,
             )
             with contextlib.suppress(OSError):
                 part.unlink(missing_ok=True)
             return None
-        if digest.hexdigest() != sha256:
+        # .lower() on both sides: a pin copied from `Get-FileHash` (uppercase
+        # on Windows) must match, same as _file_sha256_matches above.
+        if digest.hexdigest() != (sha256 or "").lower():
             logger.warning(
                 "GeoIP database checksum mismatch for %s — keeping the old "
                 "file (if any).",
-                url,
+                redact_proxy_url(url),
             )
             with contextlib.suppress(OSError):
                 part.unlink(missing_ok=True)
@@ -342,14 +508,21 @@ async def ensure_geoip_database(
         logger.info("Downloaded GeoIP database to %s (%d bytes).", path, size)
         return str(target)
     except Exception as exc:
-        logger.warning("GeoIP database download failed: %s", exc)
+        logger.warning("GeoIP database download failed: %s", redact_proxy_url(str(exc)))
         with contextlib.suppress(OSError):
             part.unlink(missing_ok=True)
         return None
 
 
 def _country_from_mmdb_record(record: Any) -> str | None:
-    """Read an ISO code out of a MaxMind lookup result, fail-soft to None."""
+    """Read an ISO code out of a MaxMind lookup result, fail-soft to None.
+
+    The code goes through the same :func:`normalize_country_code` as the API
+    backend's ``countryCode``: a country outside the supported set (``NO``,
+    ``DK``) must resolve to ``None`` here too, otherwise the offline path
+    stamps a code the country filter never sanctions and the write stage
+    creates a ``subscription-NO.txt`` location file for it.
+    """
     if not isinstance(record, dict):
         return None
     for key in ("country", "registered_country"):
@@ -357,7 +530,9 @@ def _country_from_mmdb_record(record: Any) -> str | None:
         if isinstance(node, dict):
             code = node.get("iso_code")
             if isinstance(code, str) and len(code) == 2:
-                return code.upper()
+                from src.validators.country_filter import normalize_country_code
+
+                return normalize_country_code(code)
     return None
 
 

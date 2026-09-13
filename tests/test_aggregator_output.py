@@ -74,6 +74,39 @@ def test_generate_plain_skips_empty_raw_link() -> None:
     assert "vless://uuid@a.com:443" in lines
 
 
+def test_generate_plain_skips_dead_configs() -> None:
+    """Configs marked dead by validation are never published."""
+    alive = Config(
+        protocol="vless",
+        address="a.com",
+        port=443,
+        uuid_or_password="uuid",
+        raw_link="vless://uuid@a.com:443",
+        is_alive=True,
+    )
+    dead = Config(
+        protocol="vless",
+        address="b.com",
+        port=443,
+        uuid_or_password="uuid",
+        raw_link="vless://uuid@b.com:443",
+        is_alive=False,
+    )
+    unchecked = Config(
+        protocol="vless",
+        address="c.com",
+        port=443,
+        uuid_or_password="uuid",
+        raw_link="vless://uuid@c.com:443",
+        is_alive=None,
+    )
+    result = generate_plain([alive, dead, unchecked])
+    lines = result.split("\n")
+    assert "vless://uuid@a.com:443" in lines
+    assert "vless://uuid@b.com:443" not in lines  # dropped (dead)
+    assert "vless://uuid@c.com:443" in lines  # kept (unchecked passthrough)
+
+
 def test_write_subscription_creates_file_and_returns_count(tmp_path) -> None:
     """lines 105-113: write_subscription writes file, returns config count."""
     cfg = Config(

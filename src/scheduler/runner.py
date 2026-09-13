@@ -5,7 +5,7 @@
 1. **Fetch**    — ``SourceManager.fetch_all()`` pulls files from configured sources.
 2. **Parse**    — ``_parse_all_by_list()`` extracts proxy links and turns them into
                    ``Config`` objects grouped by source ``list_type`` (list type).
-3. **Filter**   — garbage/placeholder filter -> sample -> dedup -> country filter.
+3. **Filter**   — garbage/placeholder filter -> dedup -> sample -> country filter.
 4. **Aggregate**— interleave blacklist+whitelist -> sort -> per-country limit.
 5. **Write**    — ``write_subscription()`` emits combined, mix, and split files.
 6. **Publish**  — (optional) commit outputs to a GitHub repo via Contents API.
@@ -28,17 +28,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from src.aggregator.output import is_watermark_vmess
+from src.aggregator.output import _safe_raw_link, is_watermark_vmess
 from src.parsers.base import Config
+from src.publisher.github import GitHubPublishError
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
 from src.scheduler.settings import Settings, load_settings, load_settings_strict
 from src.scheduler.stages.aggregate import Aggregator
 from src.scheduler.stages.fetch import SourceFetcher
 from src.scheduler.stages.filter import (
-    CountryFilter,
     DedupFilter,
-    GarbageFilter,
     PreprocessFilter,
 )
 from src.scheduler.stages.liveness import LivenessValidator
@@ -47,6 +46,30 @@ from src.scheduler.stages.quality import QualityFilter
 from src.scheduler.stages.write import OutputWriter
 from src.sources.list_types import normalize_list_type
 from src.utils.paths import resolve_safe_output_path, write_text_atomic
+
+
+def _canonical_output_path(p: str) -> str:
+    """Normalise an output path to a comparable canonical form.
+
+    Relative paths resolve against the project root (not CWD) so "output/x.txt"
+    and its absolute counterpart produce the same key even when the process
+    runs outside the repo (console `vpnparser` + VPNPARSER_PROJECT_ROOT).
+    Falls back to CWD resolution when the project root cannot be determined.
+    Module-level (not async): ASYNC240 only fires inside async functions,
+    and this is a single fs stat on run-local paths with no concurrency.
+    """
+    raw = str(p)
+    try:
+        from src.utils.paths import _find_project_root
+
+        root = Path(_find_project_root()).resolve()
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        return os.path.normcase(os.path.normpath(str(candidate.resolve())))
+    except Exception:
+        return os.path.normcase(os.path.normpath(str(Path(raw).resolve())))
+
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +101,21 @@ class PipelineRunner:
         self._shared_publisher: Any | None = None
         self._liveness_stats: dict[str, Any] = {}
         self._output_stats: dict[str, Any] = {}
+        # Fetch outcome of THIS run (what run-summary.json "sources" reports).
+        # Captured in _fetch_sources and reset per run: the context attribute
+        # the fetch stage writes is overwritten too late for fast-track runs —
+        # clearing it in _prepare_run_state used to wipe it before the summary
+        # was written (every run reported "sources": {} and the Telegram
+        # broken-source alert never fired).
+        self._run_source_stats: dict[str, Any] = {}
+        # Subscription slices dropped by the per-file publish floor this run:
+        # {file path: config count}. Surfaced in run-summary.json so an
+        # operator can see WHY a file did not update.
+        self._publish_floor_applied: dict[str, int] = {}
+        # Paths of outputs written as empty this run (watermark placeholder, so
+        # they are NOT 0 bytes). The per-file publish floor skips these so they
+        # do not overwrite a previously working published slice.
+        self._empty_output_files: set[str] = set()
         self._health_history: HealthHistory | None = None
         self._proxy_health_history: Any | None = None
         self._proxy_health_file: str | None = None
@@ -105,11 +143,6 @@ class PipelineRunner:
         self._proxy_health_file = self._liveness._proxy_health_file
 
     # --- settings ---
-
-    @staticmethod
-    def _load_settings(path: str) -> dict[str, Any]:
-        """Deprecated: use ``src.scheduler.settings.load_settings``."""
-        return load_settings(path)
 
     def _require_settings_file(self) -> None:
         """Refuse to run the pipeline on the built-in defaults.
@@ -145,10 +178,22 @@ class PipelineRunner:
         every call site agrees.  The default (500) matches
         :func:`src.aggregator.merger.merge_and_filter`.
         """
-        try:
-            return int(self._section("aggregator").get("max_configs_in_output", 500))
-        except (TypeError, ValueError):
-            return 500
+        # as_int, not bare int(): bool is an int subclass, so a YAML
+        # ``max_configs_in_output: true`` typo used to become limit 1 and
+        # ``false`` unlimited — exactly the fail-mode Settings.as_int guards
+        # (the aggregate stage already uses it).
+        value = Settings.as_int(
+            self._section("aggregator").get("max_configs_in_output"),
+            500,
+        )
+        if value < 0:
+            logger.warning(
+                "aggregator.max_configs_in_output=%r is negative; using 0 "
+                "(unlimited) is ambiguous — clamping to 0.",
+                self._section("aggregator").get("max_configs_in_output"),
+            )
+            return 0
+        return value
 
     # --- main entry point ---
 
@@ -192,7 +237,8 @@ class PipelineRunner:
                 live subscription.
         """
         self._require_settings_file()
-        results = self._published_source_results(output_file)
+        # Blocking file IO off the event loop: published splits are read here.
+        results = await asyncio.to_thread(self._published_source_results, output_file)
         if not results:
             # Revalidating "nothing" must not fall through to an empty-run
             # publish that would wipe the live subscription.
@@ -208,12 +254,23 @@ class PipelineRunner:
         start = time.monotonic()
         self._liveness_stats = {}
         self._output_stats = {}
+        self._empty_output_files = set()
+        self._publish_floor_applied = {}
         # The stage context outlives a single run: stale ``location_*`` entries
         # would leak into this run's summary via _write_location_outputs(), and
         # stale liveness stats would leak the *previous* run's validation block
         # into an empty run's summary when the runner object is reused.
         self._context.output_stats.clear()
         self._context.liveness_stats.clear()
+        self._context.source_stats.clear()
+        # PipelineState is equally reusable (continuous mode reuses the runner):
+        # stale parsed/preprocessed/validated maps would leak the previous
+        # run's configs into an empty run's summary and publish set.
+        self._state.parsed.clear()
+        self._state.preprocessed.clear()
+        self._state.validated.clear()
+        self._state.aggregated.clear()
+        self._state.output_files.clear()
         self._publish_ok = False
         self._last_summary_path = None
         self._liveness.reset_proxy_cache()
@@ -310,41 +367,64 @@ class PipelineRunner:
             len(combined),
         )
 
-        # 5. Write combined output.
-        count = self._write_output(combined, output_file)
+        # 5. Write combined output (blocking file IO off the event loop).
+        count = await asyncio.to_thread(self._write_output, combined, output_file)
         self._record_output_stats("combined", output_file, combined)
         logger.info("Wrote %d configs to %s.", count, output_file)
         output_files = [output_file]
         split_output_files = self._split_output_files(output_file)
 
-        clash_file = self._writer._write_clash_output(combined)
+        # Blocking file IO off the event loop (see _write_output above).
+        clash_file = await asyncio.to_thread(self._writer._write_clash_output, combined)
         if clash_file:
             output_files.append(clash_file)
+            # Copied (not recomputed): the writer counted exactly the set the
+            # YAML keeps (alive + expressible). Recomputing here with the
+            # base64 predicate would count inexpressible configs the file
+            # does not hold. _finish_empty_run already records it the same
+            # way, so both summary shapes stay comparable.
+            clash_stats = self._writer.context.output_stats.get("clash")
+            if isinstance(clash_stats, dict):
+                self._output_stats["clash"] = clash_stats
+            else:
+                self._record_output_stats("clash", clash_file, combined)
 
         mix_output_file = self._mix_output_file(output_file, split_output_files)
         if mix_output_file:
             mix_configs = self._build_mixed_output(preprocessed_by_list, max_total)
             if mix_configs:
-                mix_count = self._write_output(mix_configs, mix_output_file)
+                mix_count = await asyncio.to_thread(
+                    self._write_output, mix_configs, mix_output_file
+                )
                 self._record_output_stats("mix", mix_output_file, mix_configs)
                 logger.info("Wrote %d mix configs to %s.", mix_count, mix_output_file)
             else:
-                self._write_empty_output(mix_output_file)
+                await asyncio.to_thread(self._write_empty_output, mix_output_file)
                 self._record_output_stats("mix", mix_output_file, [])
                 logger.warning("No configs for mix output.")
             output_files.append(mix_output_file)
 
         # 6. Write split outputs — sort+limit each preprocessed list now
         #    (deferred from step 3 so the combined path sorts only once).
+        #    A non-empty input can still sort to zero configs (whitelist
+        #    balance with no RU servers, max_configs_in_output <= 0); such a
+        #    slice must go through _write_empty_output so it is registered as
+        #    empty and skipped by the per-file publish floor — a watermark
+        #    written via _write_output is non-zero on disk and would
+        #    overwrite the working published file.
         for list_type, split_file in split_output_files.items():
             split_pre = preprocessed_by_list.get(list_type, [])
-            if split_pre:
-                if list_type == "whitelist":
-                    # Whitelist: 80% RU servers, 20% EU countries by default.
-                    split_configs = self._whitelist_balance(split_pre, max_total)
-                else:
-                    split_configs = self._sort_and_limit(split_pre)
-                split_count = self._write_output(split_configs, split_file)
+            if list_type == "whitelist":
+                # Whitelist: 80% RU servers, 20% EU countries by default.
+                split_configs = (
+                    self._whitelist_balance(split_pre, max_total) if split_pre else []
+                )
+            else:
+                split_configs = self._sort_and_limit(split_pre) if split_pre else []
+            if split_configs:
+                split_count = await asyncio.to_thread(
+                    self._write_output, split_configs, split_file
+                )
                 self._record_output_stats(list_type, split_file, split_configs)
                 logger.info(
                     "Wrote %d %s configs to %s.",
@@ -353,7 +433,7 @@ class PipelineRunner:
                     split_file,
                 )
             else:
-                self._write_empty_output(split_file)
+                await asyncio.to_thread(self._write_empty_output, split_file)
                 self._record_output_stats(list_type, split_file, [])
                 logger.warning("No configs for %s output.", list_type)
             output_files.append(split_file)
@@ -361,24 +441,67 @@ class PipelineRunner:
         # The subscription paths are reserved: location_output_dir may point at
         # the directory that holds them, and the cleanup mask would delete the
         # split/mix files written a few lines above.
-        location_output_files = self._write_location_outputs(
+        location_output_files = await asyncio.to_thread(
+            self._write_location_outputs,
             all_live_configs,
             self._configured_subscription_output_paths(output_file),
         )
         output_files.extend(location_output_files)
 
-        summary_file = self._write_run_summary("ok")
+        # A run with every validator disabled writes watermark-only files and
+        # still follows the success path (it is not an "empty run": configs
+        # were parsed and then deliberately excluded) — reporting "ok" there
+        # hid the misconfiguration. The summary carries the diagnostic status.
+        run_status = (
+            "validation_disabled"
+            if self._liveness_stats.get("status") == "disabled"
+            else "ok"
+        )
+        # Blocking file IO off the event loop: summary/health/stats are tens
+        # of thousands of records of JSON.
+        summary_file = await asyncio.to_thread(self._write_run_summary, run_status)
         if summary_file:
             output_files.append(summary_file)
-        health_file = self._write_health_history()
-        if health_file:
-            output_files.append(health_file)
-        output_files.extend(self._write_stats_history("ok"))
+        # health-history.json is written locally (Telegram report and the
+        # workflow cache read it) but deliberately NOT published: at 69k
+        # records it exceeds the Contents API's practical body size, so the
+        # single PUT failed on every run — the failure surfaced as
+        # EXIT_PUBLISH_FAILED for the whole batch. The Actions cache
+        # (update.yml) persists it instead.
+        await asyncio.to_thread(self._write_health_history)
+        output_files.extend(
+            await asyncio.to_thread(self._write_stats_history, run_status)
+        )
 
-        self._save_proxy_health_history()
+        await asyncio.to_thread(self._save_proxy_health_history)
 
         # 7. Publish (optional).
         if publish:
+            # Floor: never overwrite a working subscription with a near-empty
+            # one. When fewer than min_publish_configs configs survived, drop the
+            # subscription files (combined/mix/split/location/clash) from the
+            # publish set and keep the last good published subscription; metadata
+            # (summary, stats, health) is still published so tooling sees the
+            # degraded status.
+            min_publish = self._min_publish_configs()
+            if count < min_publish:
+                logger.warning(
+                    "Only %d configs survived validation, below "
+                    "publisher.min_publish_configs=%d. Keeping the previously "
+                    "published subscription files rather than overwriting a "
+                    "working subscription with a near-empty one.",
+                    count,
+                    min_publish,
+                )
+                subscription_paths: list[str] = list(
+                    self._configured_subscription_output_paths(output_file)
+                )
+                subscription_paths.extend(location_output_files)
+                if clash_file:
+                    subscription_paths.append(clash_file)
+                output_files = [
+                    f for f in output_files if f not in set(subscription_paths)
+                ]
             self._publish_ok = await self._publish_files(
                 output_files,
                 combined_output_file=output_file,
@@ -388,8 +511,10 @@ class PipelineRunner:
                 # result existed; with a failed publish the repo copy may hold
                 # the optimistic status until a later run refreshes it. Rewrite
                 # the local copy truthfully so local tooling and the next run
-                # see the failure.
-                self._rewrite_summary_status(summary_file, "publish_failed")
+                # see the failure (blocking IO off the event loop).
+                await asyncio.to_thread(
+                    self._rewrite_summary_status, summary_file, "publish_failed"
+                )
 
         elapsed = time.monotonic() - start
         logger.info("Pipeline finished in %.2fs with %d configs.", elapsed, count)
@@ -420,8 +545,13 @@ class PipelineRunner:
                 logger.warning("Published %s file unreadable: %s", list_type, exc)
                 continue
             text = raw.strip()
-            with contextlib.suppress(Exception):
-                text = base64.b64decode(text).decode("utf-8")
+            # validate=True (unlike the default decoder, which silently drops
+            # non-alphabet characters) + a URL-scheme check first: a plain-text
+            # fallback file must not decode into garbage instead of failing
+            # the decode and keeping its raw lines.
+            if "://" not in text:
+                with contextlib.suppress(Exception):
+                    text = base64.b64decode(text, validate=True).decode("utf-8")
             links = [
                 line.strip()
                 for line in text.splitlines()
@@ -438,17 +568,18 @@ class PipelineRunner:
                     default_country=None,
                 )
             )
-        # Every published split must be revalidated, or not at all: the guard
-        # above ("no results at all") fired only when BOTH files were
-        # unreadable, so one dead file let the run republish just the other
-        # list — silently erasing half the live subscription.
+        # Every CONFIGURED split must be revalidated, or not at all: the guard
+        # above fired only when BOTH files were unreadable, so one dead file
+        # let the run republish just the other list — silently erasing half
+        # the live subscription. The required set derives from the configured
+        # splits instead of a hardcoded pair: a deployment with only one split
+        # made the fast-track permanently unusable.
+        configured_types = {
+            list_type for list_type in splits if list_type in ("blacklist", "whitelist")
+        }
         found_types = {str(getattr(result, "list_type", "")) for result in results}
-        missing = [
-            list_type
-            for list_type in ("blacklist", "whitelist")
-            if list_type not in found_types
-        ]
-        if missing:
+        missing = sorted(configured_types - found_types)
+        if configured_types and missing:
             msg = (
                 "rerun_published requires every published split file to be "
                 f"readable next to {output_file}; unreadable or link-less: "
@@ -460,7 +591,15 @@ class PipelineRunner:
 
     async def _fetch_sources(self) -> list[Any]:
         """Fetch all sources via the SourceFetcher stage."""
+        # Reset first: this is the per-run boundary for the fetch outcome (a
+        # rerun_published path never gets here and reports {}), and
+        # _prepare_run_state runs AFTER fetch, where a reset would erase the
+        # stats this very run just captured.
+        self._run_source_stats = {}
         self._state = await self._fetcher.run(self._state, self._context)
+        # Snapshot the fetch outcome for this run's summary; see
+        # _run_source_stats for why the context attribute alone is not enough.
+        self._run_source_stats = dict(self._context.source_stats)
         return self._state.sources
 
     # --- stage 2: parse ---
@@ -471,53 +610,22 @@ class PipelineRunner:
     ) -> dict[str, list[Config]]:
         """Parse all source results grouped by normalized list type."""
         self._state.sources = list(results)
-        self._state = await self._parser.run(self._state, self._context)
+        try:
+            self._state = await self._parser.run(self._state, self._context)
+        finally:
+            # The parse stage owns one shared LLM client; its run is over, so
+            # the connection must not outlive the stage (and in --continuous
+            # mode, accumulate one open client per run).
+            await self._parser.aclose()
         return self._state.parsed
 
-    @staticmethod
-    def _filter_garbage(configs: list[Config]) -> tuple[list[Config], int]:
-        """Remove placeholder/template configs. Delegates to GarbageFilter."""
-        return GarbageFilter.filter_garbage(configs)
-
     # --- stage 3: country filter ---
-
-    def _filter_countries(
-        self,
-        configs: list[Config],
-        *,
-        list_type: str = "mixed",
-    ) -> list[Config]:
-        """Filter configs by allowed countries. Delegates to CountryFilter."""
-        return CountryFilter(self._context).filter_countries(
-            configs,
-            list_type=list_type,
-        )
 
     # --- optional network liveness validation ---
 
     async def _validator_proxy_urls(self) -> list[str]:
         """Return configured validator proxies, including optional free pool."""
         return await self._liveness._validator_proxy_urls()
-
-    async def _search_validator_proxy_pool(
-        self,
-        load_proxy_pool: Any,
-        sources: list[str] | None,
-        pool_cfg: dict[str, Any],
-    ) -> list[str]:
-        """Search for working SOCKS5 proxies. Kept for compatibility."""
-        result = await self._liveness._search_validator_proxy_pool(
-            load_proxy_pool,
-            sources,
-            pool_cfg,
-        )
-        self._liveness_stats = self._context.liveness_stats
-        return result
-
-    @staticmethod
-    def _redact_proxy_url(proxy_url: str) -> str:
-        """Redact credentials from a proxy URL."""
-        return LivenessValidator._redact_proxy_url(proxy_url)
 
     async def _validate_liveness_by_list(
         self,
@@ -528,38 +636,7 @@ class PipelineRunner:
         self._liveness_stats = self._context.liveness_stats
         return result
 
-    async def _validate_liveness_configs(
-        self,
-        configs: list[Config],
-        *,
-        label: str,
-        tcp_enabled: bool,
-        tls_enabled: bool,
-        xray_enabled: bool = False,
-    ) -> list[Config]:
-        """Validate a single list's configs."""
-        result = await self._liveness.validate_configs(
-            configs,
-            label=label,
-            tcp_enabled=tcp_enabled,
-            tls_enabled=tls_enabled,
-            xray_enabled=xray_enabled,
-        )
-        self._liveness_stats = self._context.liveness_stats
-        return result
-
     # --- stage 3+5: aggregate (split into dedup + sort/limit) ---
-
-    def _xray_candidate_preselect(
-        self,
-        configs: list[Config],
-        max_total: int,
-        list_type: str,
-    ) -> list[Config]:
-        """Preselect only configs that could enter the final subscription."""
-        if normalize_list_type(list_type) == "whitelist":
-            return self._whitelist_balance(configs, max_total)
-        return self._country_balanced_limit(configs, max_total)
 
     def _dedup_only(self, configs: list[Config]) -> list[Config]:
         """Deduplicate configs by (address, port). Delegates to DedupFilter."""
@@ -577,36 +654,13 @@ class PipelineRunner:
         """Limit configs by taking one server per country in repeated rounds."""
         return self._aggregator._country_balanced_limit(configs, max_total)
 
-    def _quality_cfg(self) -> dict[str, Any]:
-        """Access the quality settings section. Kept for compatibility."""
-        return self._quality.settings.section("quality")
-
-    def _health_history_file(self) -> str | None:
-        return self._quality.health._file()
-
-    def _load_health_history(self) -> dict[str, Any]:
-        """Load health history. Kept for compatibility."""
-        return self._quality.health.load()
-
     def _write_health_history(self) -> str | None:
         """Persist health history. Kept for compatibility."""
         return self._quality.health.save()
 
-    @staticmethod
-    def _config_health_key(cfg: Config) -> str:
-        """Stable key for a config in health history."""
-        return HealthHistory.config_key(cfg)
-
     def _update_health_history(self, checked_configs: list[Config]) -> None:
         """Update per-config health history. Kept for compatibility."""
         self._quality.health.update(checked_configs)
-
-    def _source_run_stats(
-        self,
-        checked_configs: list[Config],
-    ) -> dict[str, dict[str, int]]:
-        """Compute source run statistics. Kept for compatibility."""
-        return self._quality.health.source_run_stats(checked_configs)
 
     def _update_source_health(
         self,
@@ -616,21 +670,21 @@ class PipelineRunner:
         """Update per-source health history. Kept for compatibility."""
         self._quality.health.update_sources(checked_configs, list_stats)
 
-    def _is_health_or_source_banned(self, cfg: Config) -> bool:
-        """Check if a config is banned. Kept for compatibility."""
-        return self._quality.is_banned(cfg)
-
-    def _quality_score(self, cfg: Config) -> float:
-        """Compute quality score. Kept for compatibility."""
-        return self._quality.health.score(cfg)
-
     def _apply_quality_filters(
         self,
         configs_by_list: dict[str, list[Config]],
     ) -> dict[str, list[Config]]:
         """Apply quality filters. Delegates to QualityFilter."""
         result = self._quality.apply(configs_by_list)
-        self._liveness_stats["quality"] = self._context.liveness_stats["quality"]
+        # Quality writes its stats onto the shared context. The runner's
+        # snapshot is only re-bound to that same dict after the liveness
+        # stage, so mirror the key for direct pre-liveness calls — and skip
+        # the write entirely when the two names already alias one dict
+        # (the old unconditional line was a silent self-assignment there).
+        if self._liveness_stats is not self._context.liveness_stats:
+            quality_stats = self._context.liveness_stats.get("quality")
+            if quality_stats is not None:
+                self._liveness_stats["quality"] = quality_stats
         return result
 
     def _preprocess_configs(
@@ -653,15 +707,6 @@ class PipelineRunner:
     ) -> list[Config]:
         """Build a strict 50/50 blacklist + whitelist mix from live configs."""
         return self._aggregator._build_mixed_output(preprocessed_by_list, max_total)
-
-    @staticmethod
-    def _take_unique_configs(
-        configs: list[Config],
-        target: int,
-        used_keys: set[Any],
-    ) -> list[Config]:
-        """Take up to target configs, skipping keys already used by another list."""
-        return Aggregator._take_unique_configs(configs, target, used_keys)
 
     def _process_configs(
         self,
@@ -724,12 +769,13 @@ class PipelineRunner:
 
         result: dict[str, str] = {}
         seen_paths: set[str] = set()
+        combined_canon = _canonical_output_path(combined_output_file)
         for key, path in raw.items():
             list_type = normalize_list_type(key)
             if list_type == "mixed" or not path:
                 continue
             path_str = str(path)
-            if path_str == combined_output_file:
+            if _canonical_output_path(path_str) == combined_canon:
                 continue
             if list_type in result:
                 logger.warning(
@@ -742,8 +788,16 @@ class PipelineRunner:
                     path_str,
                 )
                 continue
-            if path_str in seen_paths:
-                owner = next((lt for lt, p in result.items() if p == path_str), "?")
+            canon = _canonical_output_path(path_str)
+            if canon in seen_paths:
+                owner = next(
+                    (
+                        lt
+                        for lt, p in result.items()
+                        if _canonical_output_path(p) == canon
+                    ),
+                    "?",
+                )
                 logger.warning(
                     "split_output_files: path '%s' is already used by "
                     "list_type '%s' — ignoring duplicate for '%s' to "
@@ -753,7 +807,7 @@ class PipelineRunner:
                     list_type,
                 )
                 continue
-            seen_paths.add(path_str)
+            seen_paths.add(canon)
             result[list_type] = path_str
         return result
 
@@ -769,15 +823,19 @@ class PipelineRunner:
             return None
 
         path_str = str(path)
-        if path_str == combined_output_file:
+        if _canonical_output_path(path_str) == _canonical_output_path(
+            combined_output_file
+        ):
             logger.warning(
                 "mix_output_file points to the combined output '%s' — ignoring.",
                 combined_output_file,
             )
             return None
 
-        split_paths = set((split_output_files or {}).values())
-        if path_str in split_paths:
+        split_paths = {
+            _canonical_output_path(p) for p in (split_output_files or {}).values()
+        }
+        if _canonical_output_path(path_str) in split_paths:
             logger.warning(
                 "mix_output_file path '%s' is already used by a split output — "
                 "ignoring to prevent overwriting.",
@@ -828,7 +886,36 @@ class PipelineRunner:
         )
         if mix_output_file:
             paths.append(mix_output_file)
-        return list(dict.fromkeys(paths))
+        # Dedup by canonical path so "./output/x.txt" and "output/x.txt"
+        # do not produce two publish targets for one file.
+        seen: set[str] = set()
+        unique: list[str] = []
+        for p in paths:
+            canon = _canonical_output_path(p)
+            if canon in seen:
+                continue
+            seen.add(canon)
+            unique.append(p)
+        return unique
+
+    def _min_publish_configs(self) -> int:
+        """Floor on the number of configs that must survive before the run's
+
+        subscription files are republished. Below this many, publishing would
+        overwrite a working subscription with a near-empty one (typically after
+        an infrastructure/validation failure), so the previously published
+        subscription is kept instead. Mirrors the floor in ``_finish_empty_run``.
+        """
+        raw = self._section("publisher").get("min_publish_configs")
+        value = Settings.as_int(raw, 10)
+        if value < 0:
+            logger.warning(
+                "publisher.min_publish_configs=%r is negative; using default 10 "
+                "instead of publishing empty subscriptions.",
+                raw,
+            )
+            return 10
+        return value
 
     async def _finish_empty_run(
         self,
@@ -849,19 +936,23 @@ class PipelineRunner:
         empty status; the previously published subscription stays untouched
         until a run with real content replaces it.
         """
-        self._write_empty_output(output_file)
+        # Blocking file IO off the event loop (see _pipeline).
+        await asyncio.to_thread(self._write_empty_output, output_file)
         # Reset the run stats BEFORE the location outputs are recorded: the
         # secondary-output writer reports every emptied location file into
         # _output_stats, and a reset after that (as it used to be) wiped the
         # location_* entries from the run summary of every empty run.
         self._output_stats = {}
-        location_files = self._write_empty_secondary_outputs(output_file)
+        self._empty_output_files = set()
+        location_files = await asyncio.to_thread(
+            self._write_empty_secondary_outputs, output_file
+        )
 
         # Keep run-summary outputs in sync with the empty files we just wrote.
         self._record_output_stats("combined", output_file, [])
         clash_output_file = self._writer._clash_output_file()
         if clash_output_file:
-            self._writer._write_empty_clash_output()
+            await asyncio.to_thread(self._writer._write_empty_clash_output)
             self._record_output_stats("clash", clash_output_file, [])
         split_output_files = self._split_output_files(output_file)
         for list_type, split_file in split_output_files.items():
@@ -870,10 +961,10 @@ class PipelineRunner:
         if mix_output_file:
             self._record_output_stats("mix", mix_output_file, [])
 
-        summary_file = self._write_run_summary(status)
-        health_file = self._write_health_history()
-        self._save_proxy_health_history()
-        stats_files = self._write_stats_history(status)
+        summary_file = await asyncio.to_thread(self._write_run_summary, status)
+        await asyncio.to_thread(self._write_health_history)
+        await asyncio.to_thread(self._save_proxy_health_history)
+        stats_files = await asyncio.to_thread(self._write_stats_history, status)
         if publish:
             subscription_paths = self._configured_subscription_output_paths(
                 output_file,
@@ -885,18 +976,10 @@ class PipelineRunner:
             publish_paths.extend(stats_files)
             if summary_file:
                 publish_paths.append(summary_file)
-            if health_file:
-                publish_paths.append(health_file)
+            # health-history.json stays local-only: see the note in _pipeline.
 
-            # Same parsing style as _max_configs: the runner holds the raw
-            # mapping, not a Settings facade.
-            raw_min_publish = self._section("publisher").get("min_publish_configs")
-            try:
-                min_publish = (
-                    int(raw_min_publish) if raw_min_publish is not None else 10
-                )
-            except (TypeError, ValueError):
-                min_publish = 10
+            # Single source of truth with _pipeline (negative → default 10).
+            min_publish = self._min_publish_configs()
             min_publish = max(0, min_publish)
             if min_publish > 0:
                 logger.warning(
@@ -920,33 +1003,15 @@ class PipelineRunner:
                 combined_output_file=output_file,
             )
             if not self._publish_ok and summary_file:
-                self._rewrite_summary_status(summary_file, "publish_failed")
+                await asyncio.to_thread(
+                    self._rewrite_summary_status, summary_file, "publish_failed"
+                )
         return 0
 
     def _write_empty_split_outputs(self, combined_output_file: str) -> None:
         """Clear configured split outputs on empty runs."""
         for split_file in self._split_output_files(combined_output_file).values():
             self._write_empty_output(split_file)
-
-    def _location_output_config(self) -> tuple[bool, str, int]:
-        return self._writer._location_output_config()
-
-    @staticmethod
-    def _location_output_filename(country: str) -> str:
-        return OutputWriter._location_output_filename(country)
-
-    def _clear_location_outputs(
-        self,
-        reserved_paths: Iterable[str] | None = None,
-    ) -> list[str]:
-        return self._writer._clear_location_outputs(reserved_paths)
-
-    def _build_location_outputs(
-        self,
-        configs: list[Config],
-        per_location_limit: int,
-    ) -> dict[str, list[Config]]:
-        return self._writer._build_location_outputs(configs, per_location_limit)
 
     def _write_location_outputs(
         self,
@@ -990,13 +1055,55 @@ class PipelineRunner:
         country_counts = Counter(
             str(cfg.country).upper()
             for cfg in configs
-            if cfg.raw_link and getattr(cfg, "country", None)
+            if cfg.is_alive is not False
+            and _safe_raw_link(cfg.raw_link)
+            and getattr(cfg, "country", None)
         )
+        # Count with the same predicate the writer applies (dead configs and
+        # control-character links are skipped): a summary that reports more
+        # configs than the file holds reads as a healthy run after a fail-open
+        # validation.
         self._output_stats[name] = {
             "file": output_file,
-            "count": sum(1 for cfg in configs if cfg.raw_link),
+            "count": sum(
+                1
+                for cfg in configs
+                if cfg.is_alive is not False and _safe_raw_link(cfg.raw_link)
+            ),
             "countries": dict(country_counts.most_common()),
         }
+
+    def _degraded_reasons(self) -> list[str]:
+        """One-line reasons a run's alive pool collapsed in some list.
+
+        A full Xray sweep that leaves every candidate dead is almost always a
+        probe-infrastructure failure (dead SOCKS proxies), not input that is
+        100% dead — surface it in run-summary.json and Telegram instead of
+        reporting a healthy "ok" run with an empty subscription.
+        """
+        reasons: list[str] = []
+        lists = (self._liveness_stats or {}).get("lists") or {}
+        if isinstance(lists, dict):
+            for list_name, stats in lists.items():
+                if not isinstance(stats, dict):
+                    continue
+                checked = int(stats.get("xray_checked") or 0)
+                alive = int(stats.get("xray_alive") or 0)
+                if checked >= 50 and alive == 0:
+                    reasons.append(
+                        f"{list_name}: 0 alive from {checked} Xray-checked configs",
+                    )
+                elif checked >= 100 and alive / checked < 0.02:
+                    # A collapse to near-zero is the same probe-infrastructure
+                    # signature as a collapse to zero: 1/100 alive reported a
+                    # healthy "ok" run while the pool had died under it. The
+                    # 2% floor mirrors source_bad_alive_rate.
+                    reasons.append(
+                        f"{list_name}: alive rate {alive}/{checked} "
+                        f"({alive / checked:.1%}) below 2% — suspected "
+                        "probe-infrastructure failure",
+                    )
+        return reasons
 
     def _write_run_summary(self, status: str) -> str | None:
         """Write machine-readable run metadata for Telegram and debugging.
@@ -1019,14 +1126,31 @@ class PipelineRunner:
         # Internal liveness stats keep the raw URLs for debugging only.
         validation = dict(self._liveness_stats)
         validation.pop("proxy_urls", None)
-        payload = {
+        degraded_reasons = self._degraded_reasons()
+        payload: dict[str, Any] = {
             "status": status,
+            "generated_at": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ",
+                time.gmtime(),
+            ),
             "outputs": self._output_stats,
             # Failed sources are invisible in ``outputs``: a dead source only
             # shows up as a smaller subscription, so record the fetch outcome.
-            "sources": dict(self._context.source_stats),
+            # Per-run snapshot (see _run_source_stats): reading the context
+            # attribute here reported {} for every run — _prepare_run_state
+            # had already cleared it by the time the summary was written.
+            "sources": dict(self._run_source_stats),
+            # Subscription slices withheld by the per-file publish floor, with
+            # the counts that triggered the withholding.
+            "publish_floor_applied": dict(self._publish_floor_applied),
             "validation": validation,
         }
+        # One-glance health: a run whose alive pool collapsed in one list
+        # while the pipeline still "works" used to look identical to a good
+        # run in every machine-readable artifact.
+        if degraded_reasons:
+            payload["degraded"] = True
+            payload["degraded_reasons"] = degraded_reasons
         try:
             path = resolve_safe_output_path(output_file)
         except ValueError:
@@ -1093,6 +1217,11 @@ class PipelineRunner:
     def _write_empty_output(self, output_file: str) -> None:
         """Ensure the output file exists as a valid base64 subscription."""
         self._writer._write_empty_output(output_file)
+        # Record it so the per-file publish floor can skip this empty slice
+        # instead of overwriting a previously working published file.
+        # Canonical key: normpath alone never equated "output\\x" and
+        # "output/x" across spellings.
+        self._empty_output_files.add(_canonical_output_path(output_file))
 
     def _rewrite_summary_status(self, output_file: str, status: str) -> None:
         """Overwrite the ``status`` field of an existing run summary file.
@@ -1100,6 +1229,9 @@ class PipelineRunner:
         Used after a publish failure: the summary was written with ``"ok"``
         before the publish result was known, and the local copy should not
         keep claiming success the repo copy is not entitled to.
+
+        Blocking file IO — async callers must run this via
+        ``await asyncio.to_thread(...)``.
         """
         try:
             path = resolve_safe_output_path(output_file)
@@ -1121,11 +1253,6 @@ class PipelineRunner:
                 )
         except Exception as exc:
             logger.warning("Could not rewrite run summary %s: %s", output_file, exc)
-
-    @staticmethod
-    def _write_plain_fallback(configs: list[Config], output_file: str) -> int:
-        """Last-resort writer: one ``raw_link`` per line."""
-        return OutputWriter._write_plain_fallback(configs, output_file)
 
     # --- stage 6: publish ---
 
@@ -1155,8 +1282,59 @@ class PipelineRunner:
                 configured_combined_path,
             )
 
+        # Per-file floor: a subscription slice (split/mix) that came out empty
+        # must not overwrite a previously published, working file.  The combined
+        # floor above already drops every subscription file when the *whole* run
+        # is too small; this guards the opposite case, where the combined output
+        # is fine but an individual slice is empty — a transient gap, not a
+        # global degradation, so the last good slice is kept on the remote.
+        # This is a sub-case of the combined publish floor, so it is also
+        # disabled when min_publish_configs == 0 (the operator opt-out that
+        # publishes everything, including empty slices, on purpose).
+        if combined_output_file is not None and self._min_publish_configs() > 0:
+            output_files = self._filter_empty_subscription_slices(
+                output_files, combined_output_file
+            )
+            output_files = self._filter_below_floor_subscription_slices(
+                output_files, combined_output_file
+            )
+
+        # A file written in the plain-text fallback format (write_subscription
+        # crashed) must NOT be published as if it were the base64
+        # subscription the repo promises — the fallback file is local-only
+        # insurance, the published copy keeps the last good format.
+        # The writer records RESOLVED absolute paths; the publish set holds
+        # configured relative paths. Canonical form: resolve() both to a
+        # common anchor so the filter actually matches (normpath alone could
+        # never equate "output/x.txt" with "/abs/.../output/x.txt"). The
+        # canonicalisation is extracted to a module-level sync helper —
+        # ASYNC240 only fires inside async functions, and this is pure I/O
+        # on run-local paths with no concurrent hazard.
+        fallback_paths = {
+            _canonical_output_path(p)
+            for p in self._writer.context.output_stats.get("_fallback_paths", [])
+        }
+        if fallback_paths:
+            logger.warning(
+                "%d output file(s) fell back to plain-text format; excluded "
+                "from publish (the repo keeps the last good format): %s",
+                len(fallback_paths),
+                sorted(fallback_paths),
+            )
+            output_files = [
+                f
+                for f in output_files
+                if _canonical_output_path(f) not in fallback_paths
+            ]
+
         targets = self._unique_publish_paths(output_files)
         if not targets:
+            # "Nothing to publish" is a normal outcome (an empty run with the
+            # publish floor active filters every file) — it returns True so it
+            # is not confused with EXIT_PUBLISH_FAILED. It is logged so a
+            # caller diagnosing a missing update can tell "skipped on purpose"
+            # from "published".
+            logger.info("Nothing to publish — every candidate was filtered out.")
             return True
 
         all_ok = True
@@ -1168,17 +1346,205 @@ class PipelineRunner:
             self._shared_publisher = await self._enter_shared_publisher(stack)
             try:
                 for output_file in targets:
-                    repo_path = output_file
-                    if (
-                        combined_output_file is not None
-                        and output_file == combined_output_file
-                    ):
-                        repo_path = str(configured_combined_path or output_file)
-                    if not await self._publish(output_file, repo_path=repo_path):
+                    repo_path = self._repo_path_for(output_file)
+                    if repo_path is None:
+                        logger.error(
+                            "Cannot derive a repo-relative path for %r "
+                            "(absolute or outside the project); refusing to "
+                            "publish it as a garbage commit path. Fix: run "
+                            "with a relative --output.",
+                            output_file,
+                        )
                         all_ok = False
+                        continue
+                    try:
+                        if not await self._publish(output_file, repo_path=repo_path):
+                            all_ok = False
+                    except GitHubPublishError:
+                        # Deliberate batch abort (rate-limit beyond cap):
+                        # remaining files are not attempted, but the caller
+                        # must see False (→ publish_failed + exit 3), not a
+                        # crash (exit 1).
+                        logger.warning(
+                            "Publish batch aborted by rate-limit cap; "
+                            "%s not attempted further.",
+                            output_file,
+                        )
+                        all_ok = False
+                        break
             finally:
                 self._shared_publisher = None
         return all_ok
+
+    def _repo_path_for(self, output_file: str) -> str | None:
+        """Return the repository path for a local output file.
+
+        The publisher commits under the same path the file was written to, so
+        a relative ``--output``/settings path maps 1:1. An ABSOLUTE local path
+        (``C:\\...\\subscription-DE.txt``) must never become the commit path —
+        the old code took the local path verbatim and committed garbage like
+        ``C:/Users/...`` while the real subscription went stale. Absolute
+        paths are mapped back relative to the project root when possible and
+        rejected otherwise.
+        """
+        candidate = output_file.replace("\\", "/")
+        if candidate.startswith("/"):
+            try:
+                candidate = str(
+                    Path(candidate)
+                    .resolve()
+                    .relative_to(
+                        Path(resolve_safe_output_path(".")).resolve(),
+                    ),
+                )
+            except (ValueError, OSError):
+                return None
+        elif len(candidate) > 1 and candidate[1] == ":":
+            # Windows drive-letter path: resolve and strip the project root.
+            try:
+                candidate = str(
+                    Path(output_file)
+                    .resolve()
+                    .relative_to(
+                        Path(resolve_safe_output_path(".")).resolve(),
+                    ),
+                )
+            except (ValueError, OSError):
+                return None
+        if (
+            not candidate
+            or candidate.startswith(("..", "/"))
+            or Path(candidate).is_absolute()
+        ):
+            return None
+        # The Contents API path is always forward-slashed.
+        return candidate.replace("\\", "/")
+
+    @staticmethod
+    def _is_empty_output_file(path: str) -> bool:
+        """Return True when *path* exists and holds no content (an empty slice)."""
+        try:
+            # Resolve like the writer (project root, not CWD): a 0-byte check
+            # against CWD misses the file when running outside the repo and
+            # the empty slice then publishes over a working subscription.
+            resolved: Path
+            try:
+                resolved = resolve_safe_output_path(path)
+            except ValueError:
+                resolved = Path(path)
+            return resolved.exists() and resolved.stat().st_size == 0
+        except OSError:
+            return False
+
+    def _filter_empty_subscription_slices(
+        self,
+        output_files: list[str],
+        combined_output_file: str,
+    ) -> list[str]:
+        """Drop empty subscription slices so they don't overwrite a working file.
+
+        The combined floor already drops every subscription file when the whole
+        run is too small; this guards the opposite case, where the combined
+        output is fine but an individual slice (split/mix) is empty — a transient
+        gap.  Such an empty slice must not publish over a previously working
+        published file, so it is skipped.
+        """
+        sub_slices = {
+            _canonical_output_path(p)
+            for p in self._configured_subscription_output_paths(combined_output_file)
+        }
+        sub_slices.discard(_canonical_output_path(combined_output_file))
+        if not sub_slices:
+            return output_files
+        filtered: list[str] = []
+        for f in output_files:
+            norm = _canonical_output_path(f)
+            # An empty slice was written as a watermark placeholder (non-zero
+            # bytes), so key off the recorded empty set, with a 0-byte check as
+            # a secondary safety net.
+            is_empty = norm in self._empty_output_files or self._is_empty_output_file(f)
+            if norm in sub_slices and is_empty:
+                logger.warning(
+                    "Skipping publish of empty subscription slice %s "
+                    "(combined floor passed) to avoid overwriting a "
+                    "working published file.",
+                    f,
+                )
+                continue
+            filtered.append(f)
+        return filtered
+
+    def _filter_below_floor_subscription_slices(
+        self,
+        output_files: list[str],
+        combined_output_file: str,
+    ) -> list[str]:
+        """Drop subscription slices holding fewer than min_publish_configs.
+
+        The combined floor guards the whole run, and the empty-slice filter
+        above guards transient zero-config gaps; this guards the remaining
+        hole, where a slice came out with 1..N-1 configs (a near-dead list, a
+        drained country) and still published over a previously working file.
+        Every drop is recorded in ``_publish_floor_applied`` and surfaced in
+        run-summary.json — the floor used to act invisibly.
+        """
+        min_publish = self._min_publish_configs()
+        if min_publish <= 0:
+            return output_files
+        # Config counts per output path, as recorded by _record_output_stats:
+        # configured slices live under their own names, per-country location
+        # files under "location_<xx>".
+        counts: dict[str, int] = {}
+        floored_paths: set[str] = set()
+        for stat_key, entry in (self._output_stats or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            stat_file = entry.get("file")
+            if not stat_file or "count" not in entry:
+                continue
+            norm = _canonical_output_path(str(stat_file))
+            try:
+                counts[norm] = int(entry["count"])
+            except (TypeError, ValueError):
+                continue
+            if stat_key.startswith("location_") or "location" in str(stat_file):
+                floored_paths.add(norm)
+            elif stat_key == "clash":
+                # The YAML twin is a per-file floor subject too: configs
+                # inexpressible in Mihomo shrink it below the base64 twin's
+                # count, and a near-empty YAML must not overwrite a working
+                # published one.
+                floored_paths.add(norm)
+        combined_norm = _canonical_output_path(combined_output_file)
+        floored_paths.update(
+            p
+            for p in (
+                _canonical_output_path(path)
+                for path in self._configured_subscription_output_paths(
+                    combined_output_file
+                )
+            )
+            if p and p != combined_norm
+        )
+        if not floored_paths:
+            return output_files
+        filtered: list[str] = []
+        for f in output_files:
+            norm = _canonical_output_path(f)
+            count = counts.get(norm)
+            if norm in floored_paths and count is not None and 0 < count < min_publish:
+                self._publish_floor_applied[str(f)] = count
+                logger.warning(
+                    "Skipping publish of %s: %d config(s) below the per-file "
+                    "floor (min_publish_configs=%d); the last good file stays "
+                    "published.",
+                    f,
+                    count,
+                    min_publish,
+                )
+                continue
+            filtered.append(f)
+        return filtered
 
     @staticmethod
     def _unique_publish_paths(output_files: list[str]) -> list[str]:
@@ -1188,20 +1554,40 @@ class PipelineRunner:
         on Windows) while configured outputs keep the ``output/x.txt`` spelling
         from settings, so plain string dedup let the same file be committed
         twice — two Contents API round trips racing on one repo path.
-
-        ``os.path.normpath`` preserves backslashes on Linux, so normalise
-        separators separately before the dedup key.
+        Uses the same canonical form as the empty-slice and fallback filters.
         """
         seen: set[str] = set()
         unique: list[str] = []
         for output_file in output_files:
-            normalised = output_file.replace("\\", "/")
-            key = os.path.normcase(os.path.normpath(normalised))
+            key = _canonical_output_path(output_file)
             if key in seen:
                 continue
             seen.add(key)
             unique.append(output_file)
         return unique
+
+    @staticmethod
+    def _publish_owner_repo(pcfg: dict[str, Any]) -> tuple[str, str]:
+        """Resolve the ``(owner, repo)`` publish target.
+
+        ``publisher.owner``/``publisher.repo`` win; the GITHUB_OWNER +
+        GITHUB_REPO env pair comes next (that is what CI sets). The final
+        fallback is ``GITHUB_REPOSITORY`` — always exported on Actions
+        runners, unlike the ``github.event`` payload, which carries no
+        ``repository`` on schedule (the main trigger) and used to leave
+        every scheduled publish with an empty repo and exit 3. Deliberately
+        NO hardcoded default slug here: publishing must never silently
+        target a different repository than the one configured.
+        """
+        owner = str(pcfg.get("owner") or os.environ.get("GITHUB_OWNER") or "")
+        repo = str(pcfg.get("repo") or os.environ.get("GITHUB_REPO") or "")
+        if owner and repo:
+            return owner, repo
+        repository = (os.environ.get("GITHUB_REPOSITORY") or "").strip().strip("/")
+        if "/" in repository:
+            slug_owner, _, slug_repo = repository.partition("/")
+            return owner or slug_owner, repo or slug_repo
+        return owner, repo
 
     async def _enter_shared_publisher(
         self,
@@ -1218,8 +1604,7 @@ class PipelineRunner:
             file, exactly as it did before.
         """
         pcfg = self._section("publisher")
-        owner = pcfg.get("owner") or os.environ.get("GITHUB_OWNER")
-        repo = pcfg.get("repo") or os.environ.get("GITHUB_REPO")
+        owner, repo = self._publish_owner_repo(pcfg)
         if not self.github_token or not owner or not repo:
             return None
         branch = pcfg.get("branch") or os.environ.get("GITHUB_BRANCH") or "main"
@@ -1234,6 +1619,11 @@ class PipelineRunner:
                     branch=str(branch),
                 ),
             )
+        except ValueError:
+            # SSRF-guard rejection (bad api_base) is a config error, not a
+            # transient publish failure — fail closed, do not downgrade to
+            # per-file attempts.
+            raise
         except Exception:
             logger.exception("Could not open a shared GitHub publisher")
             return None
@@ -1246,10 +1636,8 @@ class PipelineRunner:
             return False
 
         pcfg = self._section("publisher")
-        owner = pcfg.get("owner") or os.environ.get("GITHUB_OWNER")
-        repo = pcfg.get("repo") or os.environ.get("GITHUB_REPO")
+        owner, repo = self._publish_owner_repo(pcfg)
         branch = pcfg.get("branch") or os.environ.get("GITHUB_BRANCH") or "main"
-        repo_path = repo_path or str(pcfg.get("output_file") or output_file)
         commit_tpl = pcfg.get("commit_message", "auto-update configs [{timestamp}]")
 
         if not owner or not repo:
@@ -1264,6 +1652,19 @@ class PipelineRunner:
         except ValueError:
             logger.exception("Unsafe output path for publish %r", output_file)
             return False
+        # Path-safety first, repo-path derivation second: an unsafe local
+        # path must fail with the "unsafe path" error, not the derivation one.
+        if repo_path is None:
+            repo_path = self._repo_path_for(
+                str(pcfg.get("output_file") or output_file),
+            )
+            if repo_path is None:
+                logger.error(
+                    "Cannot derive a repo-relative path for %r; refusing to "
+                    "publish it as a garbage commit path.",
+                    output_file,
+                )
+                return False
         try:
             content = await asyncio.to_thread(safe_path.read_text, encoding="utf-8")
         except FileNotFoundError:
@@ -1305,6 +1706,17 @@ class PipelineRunner:
                 ok = bool(
                     await publisher.publish_file(repo_path, content, commit_message),
                 )
+        except GitHubPublishError:
+            # The publisher raises this only when it deliberately aborts
+            # (e.g. the rate-limit reset beyond the wait cap — "aborting
+            # publish"). Swallowing it made every remaining file in the batch
+            # issue GET+PUT pairs against an exhausted limit. Aborting the
+            # batch is the point of the exception.
+            raise
+        except ValueError:
+            # SSRF-guard / config error — fail closed, do not downgrade to
+            # a plain publish failure.
+            raise
         except Exception:
             logger.exception("Publish failed")
             return False

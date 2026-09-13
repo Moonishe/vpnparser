@@ -14,15 +14,6 @@ from src.scheduler.settings import Settings
 
 
 @dataclass
-class ListResult:
-    """A list label together with its configs and per-list statistics."""
-
-    label: str
-    configs: list[Config] = field(default_factory=list)
-    stats: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
 class PipelineContext:
     """Dependencies and shared bookkeeping for the whole pipeline run."""
 
@@ -46,10 +37,6 @@ class PipelineState:
     sources: list[Any] = field(default_factory=list)
     parsed: dict[str, list[Config]] = field(default_factory=dict)
     preprocessed: dict[str, list[Config]] = field(default_factory=dict)
-    quality_filtered: dict[str, list[Config]] = field(default_factory=dict)
     validated: dict[str, list[Config]] = field(default_factory=dict)
     aggregated: list[Config] = field(default_factory=list)
-    split_configs: dict[str, list[Config]] = field(default_factory=dict)
     output_files: list[str] = field(default_factory=list)
-    summary_file: str | None = None
-    published: bool = False

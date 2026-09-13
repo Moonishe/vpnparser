@@ -67,12 +67,17 @@ def _strict_b64decode(data: str) -> str:
     # A length of 4n+1 encodes no whole byte group and can never be valid.
     if padding == 3:
         return ""
-    # No try/except here: the two guards above leave nothing for b64decode to
-    # reject (the body is pure alphabet and never 4n+1 long), and
-    # ``errors="replace"`` makes the decode total.
+    # No try/except around b64decode: the two guards above leave nothing for it
+    # to reject (the body is pure alphabet and never 4n+1 long). The utf-8
+    # decode uses replacement characters: a payload with stray non-utf-8 bytes
+    # (e.g. an unusual password) is still parsed rather than silently dropped,
+    # matching the other link decoders; credential corruption is far less costly
+    # than losing a whole config.
+    # The utf-8 decode uses replacement characters (never raises), so a payload
+    # with stray non-utf-8 bytes (e.g. an unusual password) is still parsed
+    # rather than silently dropped, matching the other link decoders.
     return base64.b64decode(body + "=" * padding, validate=True).decode(
-        "utf-8",
-        errors="replace",
+        "utf-8", errors="replace"
     )
 
 
@@ -139,7 +144,16 @@ class ShadowsocksParser(BaseParser):
                     method, password = left.split(":", 1)
                     host_port = right
 
-            if not method or not password or not host_port:
+            # Whitespace-only credentials are empty: reject before strip so
+            # they never become ghost configs (stripped to "" downstream —
+            # published in base64, skipped in Clash).
+            if (
+                not method
+                or not method.strip()
+                or not password
+                or not password.strip()
+                or not host_port
+            ):
                 return None
 
             # 6. Split host:port — use the shared split_host_port helper which
@@ -154,12 +168,42 @@ class ShadowsocksParser(BaseParser):
                 return None
             host, port = parsed_hp
 
+            # Unknown ciphers can never connect: reject instead of
+            # publishing a config that wastes a probe. The 2022-blake3
+            # family are real panel values, so they stay. Unencrypted
+            # "none"/"plain" are never published.
+            method_norm = method.strip().lower()
+            if method_norm not in (
+                "aes-128-gcm",
+                "aes-256-gcm",
+                "chacha20-ietf-poly1305",
+                # Alias for the same AEAD cipher emitted by common panels
+                # and accepted by Xray/shadowsocks-rust; rejecting it used
+                # to silently drop live configs.
+                "chacha20-poly1305",
+                "xchacha20-ietf-poly1305",
+                "aes-128-cfb",
+                "aes-192-cfb",
+                "aes-256-cfb",
+                "aes-128-ctr",
+                "aes-192-ctr",
+                "aes-256-ctr",
+                "chacha20-ietf",
+                "chacha20",
+                "xchacha20",
+                "rc4-md5",
+                "2022-blake3-aes-128-gcm",
+                "2022-blake3-aes-256-gcm",
+                "2022-blake3-chacha20-poly1305",
+            ):
+                return None
+
             return Config(
                 protocol="ss",
                 address=host,
                 port=port,
-                uuid_or_password=password,
-                ss_method=method,
+                uuid_or_password=password.strip(),
+                ss_method=method_norm,
                 remark=remark,
                 raw_link=raw,
             )

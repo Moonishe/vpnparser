@@ -23,6 +23,7 @@ A test that genuinely needs the real project root can opt out with
 from __future__ import annotations
 
 import os
+import socket
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -85,3 +86,48 @@ def _restore_environ() -> Iterator[None]:
     finally:
         os.environ.clear()
         os.environ.update(snapshot)
+
+
+@pytest.fixture(autouse=True)
+def _block_real_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Fail-closed guard against real DNS in tests (opt-out via env).
+
+    Set ``VPNPARSER_ALLOW_NET=1`` to disable. The guard patches
+    :func:`socket.getaddrinfo` only — tests that need DNS replace it again
+    with their own fake via ``monkeypatch`` (applied after this fixture).
+    Loopback, IP literals and locally-rejected hostnames (bad IDNA labels,
+    which raise before any DNS query) pass through to the real resolver;
+    everything else fails fast instead of hitting the network.
+    """
+    if os.environ.get("VPNPARSER_ALLOW_NET") == "1":
+        yield
+        return
+    original = socket.getaddrinfo
+
+    def _guarded(
+        host: object, *args: object, **kwargs: object
+    ) -> list[tuple[int, int, int, str, tuple[object, ...]]]:
+        assert isinstance(host, str)
+        if host in ("localhost", "127.0.0.1", "::1"):
+            return original(host, *args, **kwargs)  # type: ignore[arg-type]
+        try:
+            import ipaddress
+
+            ipaddress.ip_address(host.strip().strip("[]"))
+        except ValueError:
+            pass
+        else:
+            return original(host, *args, **kwargs)  # type: ignore[arg-type]
+        try:
+            host.encode("idna")
+        except UnicodeError:
+            # Rejected locally without a DNS query — let the real resolver
+            # raise it so callers see the genuine UnicodeError path.
+            return original(host, *args, **kwargs)  # type: ignore[arg-type]
+        raise RuntimeError(
+            f"real network blocked in tests: getaddrinfo({host!r}); "
+            "mock socket.getaddrinfo or set VPNPARSER_ALLOW_NET=1"
+        )
+
+    monkeypatch.setattr(socket, "getaddrinfo", _guarded)
+    yield

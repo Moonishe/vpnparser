@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from src.parsers.base import Config
-from src.scheduler.context import PipelineContext, PipelineState
+from src.scheduler.context import PipelineContext
 from src.scheduler.health_history import HealthHistory
 from src.scheduler.stages.base import PipelineStage
 
@@ -24,14 +24,6 @@ class QualityFilter(PipelineStage):
         self.context = context
         self.settings = context.settings
         self.health = health or HealthHistory(self.settings)
-
-    async def run(
-        self,
-        state: PipelineState,
-        context: PipelineContext | None = None,
-    ) -> PipelineState:
-        state.validated = self.apply(state.validated)
-        return state
 
     def apply(
         self,
@@ -77,6 +69,15 @@ class QualityFilter(PipelineStage):
                     minimum=0.0,
                 ),
             ),
+        )
+        # A config on its first-ever pass has no run-to-run history to be
+        # "unstable" against: with the gate unqualified it could never enter
+        # the subscription until it survived a second full run, which — with
+        # the TTL fast-path probing cheaply — starved new candidates. When
+        # enabled, only configs WITH history are judged by the streak.
+        stability_exempt_first_pass = self.settings.as_bool(
+            qcfg.get("stability_exempt_first_pass"),
+            True,
         )
         result: dict[str, list[Config]] = {}
         quality_stats: dict[str, Any] = {
@@ -127,19 +128,36 @@ class QualityFilter(PipelineStage):
             # The streak lives in the health history; without it (or when
             # the required streak cannot fit the recent-verdict window) the
             # gate would silently drop everything.
-            effective_min_passes = min(
-                min_consecutive_passes,
-                self.settings.as_int(
-                    qcfg.get("health_recent_window"),
-                    5,
-                    minimum=1,
-                ),
+            recent_window = self.settings.as_int(
+                qcfg.get("health_recent_window"),
+                5,
+                minimum=1,
             )
+            if min_consecutive_passes > recent_window:
+                logger.warning(
+                    "quality.min_consecutive_passes=%d exceeds "
+                    "health_recent_window=%d; using window as the effective "
+                    "floor so the stability gate cannot demand an "
+                    "unreachable streak.",
+                    min_consecutive_passes,
+                    recent_window,
+                )
+            effective_min_passes = min(min_consecutive_passes, recent_window)
             if effective_min_passes > 1 and self.health.is_enabled():
                 stable = [
                     cfg
                     for cfg in kept
-                    if self.health.consecutive_successes(cfg) >= effective_min_passes
+                    # A skipped candidate (budget/infra/DNS-pin: is_alive is
+                    # None) carries no fresh verdict this run — an old streak
+                    # must not pass it through the stability gate.
+                    if cfg.is_alive is not None
+                    and (
+                        self.health.consecutive_successes(cfg) >= effective_min_passes
+                        or (
+                            stability_exempt_first_pass
+                            and self.health.is_first_pass(cfg)
+                        )
+                    )
                 ]
                 enforce_floor = max(
                     stability_min_alive,

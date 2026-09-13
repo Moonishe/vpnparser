@@ -25,7 +25,7 @@ from src.parsers.base import Config
 from src.validators.address_guard import (
     filter_public_configs,
     is_blocked_literal,
-    resolve_pinned_address,
+    resolve_pinned_addresses,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ async def _open_connection_via_socks(
     host: str,
     port: int,
     proxy_url: str,
+    timeout: float | None = None,
 ) -> tuple[Any, Any]:
     """TCP connection routed through a SOCKS5 proxy.
 
@@ -54,10 +55,52 @@ async def _open_connection_via_socks(
     from python_socks.async_.asyncio import Proxy
 
     proxy = Proxy.from_url(proxy_url)
-    sock = await proxy.connect(dest_host=host, dest_port=port, timeout=None)
+    # Timeout inside Proxy.connect, not only in the outer wait_for: the
+    # outer cancellation abandoned the inner connect coroutine and leaked
+    # its socket FD on every mass-timeout wave.
+    sock = await proxy.connect(dest_host=host, dest_port=port, timeout=timeout)
     # python-socks returns a connected socket; wrap into streams.
-    reader, writer = await asyncio.open_connection(sock=sock)
+    # If the wrap raises (cancel/timeout), close the raw socket — otherwise
+    # long --continuous runs leak FDs on every mass-timeout wave.
+    try:
+        reader, writer = await asyncio.open_connection(sock=sock)
+    except BaseException:
+        with contextlib.suppress(Exception):
+            sock.close()
+        raise
     return reader, writer
+
+
+#: Per-stage counters for the refusal log. A run can refuse tens of thousands
+#: of dead/unresolvable addresses; one WARNING per address buried the useful
+#: log lines, so refusals count here and the stage summary emits one line.
+_refusals: dict[str, int] = {"non-public": 0, "unpinnable": 0}
+
+
+def _log_refusal(kind: str, host: str, port: int) -> None:
+    """Count a refused address; full detail goes to DEBUG only."""
+    _refusals[kind] = _refusals.get(kind, 0) + 1
+    logger.debug("Refusing %s TCP check of %s:%s.", kind, host, port)
+
+
+def log_refusal_summary() -> None:
+    """Emit one aggregate line for the refused addresses of this stage."""
+    refused = sum(_refusals.values())
+    if not refused:
+        return
+    logger.info(
+        "TCP stage refused %d address(s) (%s).",
+        refused,
+        ", ".join(f"{kind}: {count}" for kind, count in _refusals.items()),
+    )
+    for kind in _refusals:
+        _refusals[kind] = 0
+
+
+def reset_refusal_counters() -> None:
+    """Start a fresh refusal count — each stage invocation counts its own."""
+    for kind in _refusals:
+        _refusals[kind] = 0
 
 
 async def tcp_check(
@@ -65,7 +108,9 @@ async def tcp_check(
     port: int,
     timeout: float = 3.0,
     proxy_url: str | None = None,
-) -> tuple[bool, float | None]:
+    resolve_timeout: float = 5.0,
+    pin_address: bool = True,
+) -> tuple[bool | None, float | None]:
     """TCP connect to host:port, optionally through a SOCKS5 proxy.
 
     Args:
@@ -74,43 +119,80 @@ async def tcp_check(
         timeout: Connect timeout in seconds.
         proxy_url: Optional SOCKS5 proxy URL (e.g. ``socks5://host:port``).
             When provided, the connection is routed through the proxy.
+        pin_address: Resolve the host once and connect to the validated
+            literals (DNS rebinding guard). ``False`` honours the operator's
+            ``check_hostnames: false`` opt-out and dials the hostname
+            as-is — the OS/proxy resolves it, no DNS query is made here.
 
-    Returns (is_alive, latency_ms).
+    Returns (is_alive, latency_ms) where is_alive None means no verdict
+    (transient DNS-pin failure — must not count toward health bans,
+    unlike a refused/dead connection).
     """
     if is_blocked_literal(host):
-        logger.warning("Refusing TCP check of non-public address %s:%s.", host, port)
+        _log_refusal("non-public", host, port)
         return (False, None)
 
-    # Pin the connect target to the address the guard validated: connecting
+    # Pin the connect target to the addresses the guard validated: connecting
     # to the hostname would let the OS resolve it a second time, reopening
-    # the DNS-rebinding window between verdict and socket.
-    pinned = await resolve_pinned_address(host)
-    if pinned is None:
-        logger.warning("Refusing TCP check of unpinnable address %s:%s.", host, port)
-        return (False, None)
+    # the DNS-rebinding window between verdict and socket. The list is walked
+    # in order — a dual-stack host whose first answer is an unroutable AAAA
+    # used to die outright when only the first address survived.
+    if pin_address:
+        pinned = await resolve_pinned_addresses(host, timeout=resolve_timeout)
+        if not pinned:
+            _log_refusal("unpinnable", host, port)
+            return (None, None)
+    else:
+        # check_hostnames=false skips DNS entirely (same contract as the
+        # Xray stage's pin_address): no resolve, no pin, dial the name.
+        pinned = [host]
 
-    start = time.monotonic()
+    writer: asyncio.StreamWriter | None = None
+    attempt_start = time.monotonic()
     try:
-        if proxy_url:
-            reader, writer = await asyncio.wait_for(
-                _open_connection_via_socks(pinned, port, proxy_url),
-                timeout=timeout,
-            )
-        else:
-            reader, writer = await asyncio.wait_for(
-                _open_connection_direct(pinned, port),
-                timeout=timeout,
-            )
-    except (TimeoutError, ConnectionRefusedError, socket.gaierror, OSError):
-        return (False, None)
+        for address in pinned:
+            # The clock restarts per attempt: taken once before the loop, the
+            # successful attempt's latency also carried the timeouts of every
+            # earlier failed one (a dead AAAA eating 3 s before a fast A4
+            # connected reported ~3050 ms and dropped live servers in the
+            # quality stage).
+            attempt_start = time.monotonic()
+            try:
+                if proxy_url:
+                    # Inner timeout drives the SOCKS handshake; the outer
+                    # wait_for is only a safety net (timeout+5) for the
+                    # stream wrap, so a stuck handshake cannot leak an FD.
+                    reader, writer = await asyncio.wait_for(
+                        _open_connection_via_socks(
+                            address, port, proxy_url, timeout=timeout
+                        ),
+                        timeout=timeout + 5.0,
+                    )
+                else:
+                    reader, writer = await asyncio.wait_for(
+                        _open_connection_direct(address, port),
+                        timeout=timeout,
+                    )
+                break
+            except (TimeoutError, ConnectionRefusedError, socket.gaierror, OSError):
+                writer = None
+                continue
+            except Exception:
+                writer = None
+                continue
+        if writer is None:
+            return (False, None)
     except Exception:
         return (False, None)
 
-    latency_ms = (time.monotonic() - start) * 1000.0
-    with contextlib.suppress(OSError, Exception):
+    # attempt_start is the top of the iteration that connected: the successful
+    # attempt is the last one, since the loop breaks on success.
+    latency_ms = (time.monotonic() - attempt_start) * 1000.0
+    # Exception covers everything the narrower names would: close()/wait_closed()
+    # are best-effort teardown on a socket that just failed to connect.
+    with contextlib.suppress(Exception):
         writer.close()
-        with contextlib.suppress(OSError, Exception):
-            await writer.wait_closed()
+        await writer.wait_closed()
 
     return (True, latency_ms)
 
@@ -163,6 +245,7 @@ async def validate_configs_tcp(
     if not configs:
         return []
 
+    reset_refusal_counters()
     proxy_choices = [p for p in (proxy_urls or []) if p]
     if not proxy_choices and proxy_url:
         proxy_choices = [proxy_url]
@@ -191,19 +274,45 @@ async def validate_configs_tcp(
         async with semaphore:
             if done_event.is_set():
                 return
-            is_alive = False
-            latency_ms: float | None = None
-            candidate_proxy: str | None = None
-            candidates = _proxies_for(index)[:_MAX_ATTEMPTS_PER_CONFIG]
-            for candidate_proxy in candidates:
-                is_alive, latency_ms = await tcp_check(
+            # tcp_check never raises for ordinary network failures, but a
+            # bug or an unexpected OSError must not silently swallow the
+            # config: without this handler gather(return_exceptions=True)
+            # ate the exception and the config left the stage with neither
+            # a verdict nor a log line (the TLS/Xray stages both guard).
+            try:
+                is_alive: bool | None = False
+                latency_ms: float | None = None
+                candidate_proxy: str | None = None
+                candidates = _proxies_for(index)[:_MAX_ATTEMPTS_PER_CONFIG]
+                for candidate_proxy in candidates:
+                    is_alive, latency_ms = await tcp_check(
+                        cfg.address,
+                        cfg.port,
+                        timeout=timeout,
+                        proxy_url=candidate_proxy,
+                        resolve_timeout=resolve_timeout,
+                        pin_address=check_hostnames,
+                    )
+                    if is_alive is None:
+                        # Transient DNS-pin failure is deterministic per host:
+                        # retrying via the next proxy cannot help.
+                        break
+                    if is_alive:
+                        break
+            except asyncio.CancelledError:
+                # Early-stop cancel reached no verdict: do not leave a stale
+                # TCP True/False from a previous stage as a false verdict.
+                cfg.is_alive = None
+                raise
+            except Exception as exc:
+                logger.exception(
+                    "TCP check of %s:%s failed unexpectedly: %s",
                     cfg.address,
                     cfg.port,
-                    timeout=timeout,
-                    proxy_url=candidate_proxy,
+                    exc,
                 )
-                if is_alive:
-                    break
+                is_alive = False
+                latency_ms = None
             cfg.is_alive = is_alive
             if latency_ms is not None:
                 # Shed the proxy's own dial hop (mirrors validate_configs_xray):
@@ -225,26 +334,66 @@ async def validate_configs_tcp(
 
     tasks = [asyncio.create_task(_check_one(i, c)) for i, c in enumerate(configs)]
 
+    # Race the checks against the max_alive event instead of re-registering
+    # every pending task into asyncio.wait on each completion: the old loop
+    # re-bound done callbacks O(n²) times, and a cancellation arriving during
+    # the loop orphaned the per-config tasks entirely. gather() reaps the
+    # cancelled children; nothing stays detached.
+    gather_task: asyncio.Future[Any] = asyncio.gather(*tasks, return_exceptions=True)
     if max_alive > 0:
-        pending_tasks = set(tasks)
-        done_task = asyncio.create_task(done_event.wait())
-        while pending_tasks and not done_event.is_set():
-            done, _pending = await asyncio.wait(
-                [*pending_tasks, done_task],
+        done_task = asyncio.ensure_future(done_event.wait())
+        try:
+            await asyncio.wait(
+                [gather_task, done_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            pending_tasks -= done
-
-        if done_event.is_set():
-            for task in pending_tasks:
-                task.cancel()
-        if not done_task.done():
+        except asyncio.CancelledError:
+            # Outer cancellation during the wait: reap children before
+            # propagating, otherwise per-config tasks stay detached (FD leak).
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
             done_task.cancel()
-            await asyncio.gather(done_task, return_exceptions=True)
-
-    await asyncio.gather(*tasks, return_exceptions=True)
+            with contextlib.suppress(asyncio.CancelledError):
+                await gather_task
+            with contextlib.suppress(asyncio.CancelledError):
+                await done_task
+            raise
+        finally:
+            # Outer cancellation during the wait must still reap children
+            # (subprocess/ports), not leave them detached.
+            if done_task.done() and not done_event.is_set():
+                done_event.set()
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Cancelling an already-completed waiter is a no-op, so this is
+            # safe on both race outcomes.
+            done_task.cancel()
+    try:
+        results = await gather_task
+    except asyncio.CancelledError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await gather_task
+        raise
+    if max_alive > 0:
+        # Reap the watcher: cancel() only requests cancellation.
+        with contextlib.suppress(asyncio.CancelledError):
+            await done_task
+    for cfg, result in zip(configs, results, strict=False):
+        # Cancelled mid-connect: no verdict was reached (mirrors TLS/Xray).
+        if isinstance(result, asyncio.CancelledError):
+            cfg.is_alive = None
 
     alive_list.sort(
         key=lambda c: c.latency_ms if c.latency_ms is not None else float("inf"),
     )
+    # Contract parity with validate_configs_xray / singbox: racing tasks that
+    # grabbed the semaphore before the stop event can overshoot the cap.
+    if max_alive > 0 and len(alive_list) > max_alive:
+        del alive_list[max_alive:]
+    log_refusal_summary()
     return alive_list

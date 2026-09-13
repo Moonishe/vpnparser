@@ -16,7 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.aggregator.output import _watermark_link
 from src.parsers.base import Config
+from src.publisher.github import GitHubPublishError
 from src.scheduler.runner import PipelineRunner
+from src.scheduler.settings import load_settings
+from src.scheduler.stages.aggregate import Aggregator
+from src.scheduler.stages.filter import GarbageFilter
+from src.scheduler.stages.write import OutputWriter
 from src.utils.paths import resolve_safe_output_path
 
 # ---------------------------------------------------------------------------
@@ -57,15 +62,15 @@ def _make_runner(
 
 
 # ===================================================================
-# _load_settings  (line 105)
+# load_settings (src/scheduler/settings.py)
 # ===================================================================
 
 
 def test_load_settings_static(tmp_path: Path) -> None:
-    """_load_settings static method delegates to load_settings."""
+    """load_settings parses a YAML file into a mapping."""
     f = tmp_path / "s.yaml"
     f.write_text("key: value\n", encoding="utf-8")
-    result = PipelineRunner._load_settings(str(f))
+    result = load_settings(str(f))
     assert result == {"key": "value"}
 
 
@@ -87,20 +92,20 @@ def test_max_configs_none_value(tmp_path: Path) -> None:
 
 
 # ===================================================================
-# _filter_garbage  (line 314)
+# GarbageFilter.filter_garbage (src/scheduler/stages/filter.py)
 # ===================================================================
 
 
 def test_filter_garbage_static() -> None:
-    """_filter_garbage delegates to GarbageFilter."""
+    """filter_garbage removes placeholder configs."""
     c = _mk("1.2.3.4")
-    clean, removed = PipelineRunner._filter_garbage([c])
+    clean, removed = GarbageFilter.filter_garbage([c])
     assert len(clean) == 1
     assert removed == 0
 
 
 # ===================================================================
-# _xray_candidate_preselect  (lines 394-396)
+# Xray candidate preselect (whitelist vs. blacklist balancing)
 # ===================================================================
 
 
@@ -108,7 +113,7 @@ def test_xray_candidate_preselect_whitelist(tmp_path: Path) -> None:
     """Whitelist list_type uses _whitelist_balance."""
     r = _make_runner(tmp_path)
     cfgs = [_mk("a.ru", "RU"), _mk("b.de", "DE")]
-    result = r._xray_candidate_preselect(cfgs, 10, "whitelist")
+    result = r._whitelist_balance(cfgs, 10)
     assert len(result) <= 10
 
 
@@ -116,87 +121,67 @@ def test_xray_candidate_preselect_blacklist(tmp_path: Path) -> None:
     """Non-whitelist list_type uses _country_balanced_limit."""
     r = _make_runner(tmp_path)
     cfgs = [_mk("a.ru", "RU"), _mk("b.de", "DE")]
-    result = r._xray_candidate_preselect(cfgs, 10, "blacklist")
+    result = r._country_balanced_limit(cfgs, 10)
     assert len(result) <= 10
 
 
 # ===================================================================
-# _quality_cfg  (line 416)
+# quality collaborators (QualityFilter / HealthHistory)
 # ===================================================================
 
 
 def test_quality_cfg(tmp_path: Path) -> None:
-    """_quality_cfg returns quality section."""
+    """quality.settings.section('quality') returns the quality section."""
     r = _make_runner(tmp_path)
-    result = r._quality_cfg()
+    result = r._quality.settings.section("quality")
     assert isinstance(result, dict)
-
-
-# ===================================================================
-# _health_history_file  (line 419)
-# ===================================================================
 
 
 def test_health_history_file(tmp_path: Path) -> None:
-    """_health_history_file returns health file path."""
+    """health._file() returns the configured health file path."""
     r = _make_runner(tmp_path)
-    result = r._health_history_file()
+    result = r._quality.health._file()
     assert result is None or isinstance(result, str)
 
 
-# ===================================================================
-# _load_health_history  (line 423)
-# ===================================================================
-
-
 def test_load_health_history(tmp_path: Path) -> None:
-    """_load_health_history loads health data."""
+    """health.load() loads health data."""
     r = _make_runner(tmp_path)
-    result = r._load_health_history()
+    result = r._quality.health.load()
     assert isinstance(result, dict)
-
-
-# ===================================================================
-# _source_run_stats  (line 443)
-# ===================================================================
 
 
 def test_source_run_stats(tmp_path: Path) -> None:
-    """_source_run_stats returns source stats."""
+    """health.source_run_stats() returns per-source stats."""
     r = _make_runner(tmp_path)
     c = _mk("1.2.3.4")
     c.is_alive = True
-    result = r._source_run_stats([c])
+    result = r._quality.health.source_run_stats([c])
     assert isinstance(result, dict)
 
 
-# ===================================================================
-# _quality_score  (line 459)
-# ===================================================================
-
-
 def test_quality_score(tmp_path: Path) -> None:
-    """_quality_score returns a float score."""
+    """health.score() returns a float score."""
     r = _make_runner(tmp_path)
     c = _mk("1.2.3.4")
-    score = r._quality_score(c)
+    score = r._quality.health.score(c)
     assert isinstance(score, float)
 
 
 # ===================================================================
-# _take_unique_configs  (line 498)
+# Aggregator._take_unique_configs
 # ===================================================================
 
 
 def test_take_unique_configs_static(tmp_path: Path) -> None:
-    """_take_unique_configs delegates to Aggregator."""
+    """_take_unique_configs takes up to target unique configs."""
     cfgs = [_mk("a.de", "DE"), _mk("b.de", "DE")]
-    result = PipelineRunner._take_unique_configs(cfgs, 1, set())
+    result = Aggregator._take_unique_configs(cfgs, 1, set())
     assert len(result) == 1
 
 
 # ===================================================================
-# _write_plain_fallback  (line 809)
+# OutputWriter._write_plain_fallback
 # ===================================================================
 
 
@@ -204,7 +189,7 @@ def test_write_plain_fallback_static(tmp_path: Path) -> None:
     """_write_plain_fallback writes raw links."""
     out = tmp_path / "out.txt"
     c = _mk("1.2.3.4", "DE")
-    count = PipelineRunner._write_plain_fallback([c], str(out))
+    count = OutputWriter._write_plain_fallback([c], str(out))
     assert count == 1
     assert out.read_text(encoding="utf-8").strip() == c.raw_link
 
@@ -291,29 +276,29 @@ def test_mix_output_file_ok(tmp_path: Path) -> None:
 
 
 # ===================================================================
-# _location_output_config  (line 703)
+# OutputWriter._location_output_config
 # ===================================================================
 
 
 def test_location_output_config(tmp_path: Path) -> None:
-    """_location_output_config delegates to writer."""
+    """_location_output_config reads the publisher location settings."""
     r = _make_runner(tmp_path)
-    enabled, out_dir, limit = r._location_output_config()
+    enabled, out_dir, limit = r._writer._location_output_config()
     assert isinstance(enabled, bool)
     assert isinstance(out_dir, str)
     assert isinstance(limit, int)
 
 
 # ===================================================================
-# _build_location_outputs  (line 717)
+# OutputWriter._build_location_outputs
 # ===================================================================
 
 
 def test_build_location_outputs(tmp_path: Path) -> None:
-    """_build_location_outputs delegates to writer."""
+    """_build_location_outputs groups configs per country."""
     r = _make_runner(tmp_path)
     cfgs = [_mk("a.de", "DE"), _mk("b.fr", "FR")]
-    result = r._build_location_outputs(cfgs, 50)
+    result = r._writer._build_location_outputs(cfgs, 50)
     assert isinstance(result, dict)
     assert "DE" in result or "FR" in result or not result
 
@@ -417,6 +402,69 @@ def test_write_run_summary_success(tmp_path: Path) -> None:
     assert resolve_safe_output_path(result).exists()
 
 
+def test_degraded_reasons_flags_zero_alive_sweep(tmp_path: Path) -> None:
+    """A full Xray sweep with zero survivors is reported as degraded, and so
+    is a near-zero rate: 1/1668 alive has the same probe-infrastructure
+    signature (the pool died under the sweep)."""
+    r = _make_runner(tmp_path)
+    r._liveness_stats = {
+        "lists": {
+            "blacklist": {"xray_checked": 4343, "xray_alive": 0},
+            "whitelist": {"xray_checked": 1668, "xray_alive": 1},
+        },
+    }
+    reasons = r._degraded_reasons()
+    assert reasons == [
+        "blacklist: 0 alive from 4343 Xray-checked configs",
+        "whitelist: alive rate 1/1668 (0.1%) below 2% — suspected "
+        "probe-infrastructure failure",
+    ]
+
+
+def test_degraded_reasons_ignores_small_checked(tmp_path: Path) -> None:
+    """Below 50 checked configs a zero-alive list is not worth alarming."""
+    r = _make_runner(tmp_path)
+    r._liveness_stats = {
+        "lists": {"blacklist": {"xray_checked": 10, "xray_alive": 0}},
+    }
+    assert r._degraded_reasons() == []
+
+
+def test_run_summary_includes_generated_at_and_degraded(tmp_path: Path) -> None:
+    """The summary carries a timestamp and the degraded block when set."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  status_output_file: summary.json\n",
+    )
+    r._liveness_stats = {
+        "lists": {"whitelist": {"xray_checked": 100, "xray_alive": 0}},
+    }
+    path = r._write_run_summary("ok")
+    assert path is not None
+    payload = json.loads(resolve_safe_output_path(path).read_text(encoding="utf-8"))
+    assert payload.get("generated_at")
+    assert payload["degraded"] is True
+    assert payload["degraded_reasons"] == [
+        "whitelist: 0 alive from 100 Xray-checked configs",
+    ]
+
+
+def test_run_summary_healthy_run_has_no_degraded_block(tmp_path: Path) -> None:
+    """A normal run must not carry degraded fields (readers skip empty)."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  status_output_file: summary.json\n",
+    )
+    r._liveness_stats = {
+        "lists": {"whitelist": {"xray_checked": 100, "xray_alive": 20}},
+    }
+    path = r._write_run_summary("ok")
+    assert path is not None
+    payload = json.loads(resolve_safe_output_path(path).read_text(encoding="utf-8"))
+    assert "degraded" not in payload
+    assert "degraded_reasons" not in payload
+
+
 # ===================================================================
 # _finish_empty_run + publish  (line 690)
 # ===================================================================
@@ -440,7 +488,7 @@ def test_finish_empty_run_with_publish(
         f"  health_history_enabled: true\n",
     )
     # Load health history first so save() has a cache to persist.
-    r._load_health_history()
+    r._quality.health.load()
 
     calls: list[str] = []
 
@@ -448,8 +496,12 @@ def test_finish_empty_run_with_publish(
         calls.append("publish_called")
         # Check that the publish paths include summary and health
         assert any("status.json" in p for p in paths), f"no status in {paths}"
-        # Check that health file path is included (line 690)
-        assert any("health-history.json" in p for p in paths), f"no health in {paths}"
+        # health-history.json stays local-only: at 69k records the single
+        # Contents API PUT exceeded the practical body size and failed on
+        # every run, taking the whole publish batch (exit 3) with it.
+        assert not any("health-history.json" in p for p in paths), (
+            f"health must not be published: {paths}"
+        )
 
     monkeypatch.setattr(r, "_publish_files", fake_publish)
 
@@ -526,7 +578,9 @@ def test_publish_unsafe_path(
 
 
 def test_publish_file_not_found(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_publish handles FileNotFoundError (line 857-861)."""
     caplog.set_level(logging.ERROR)
@@ -536,7 +590,8 @@ def test_publish_file_not_found(
         extra_settings="publisher:\n  owner: test\n  repo: test\n",
     )
     missing = tmp_path / "nonexistent.txt"
-    asyncio.run(r._publish(str(missing)))
+    monkeypatch.chdir(tmp_path)
+    asyncio.run(r._publish("nonexistent.txt"))
     assert "does not exist" in caplog.text
 
 
@@ -550,7 +605,7 @@ def test_publish_read_error(
         github_token="gh_test",
         extra_settings="publisher:\n  owner: test\n  repo: test\n",
     )
-    out_file = tmp_path / "out.txt"
+    out_file = resolve_safe_output_path("out.txt")
     out_file.write_text("content", encoding="utf-8")
 
     # Mock read_text to raise an exception
@@ -558,11 +613,15 @@ def test_publish_read_error(
         raise PermissionError("access denied")
 
     monkeypatch.setattr(Path, "read_text", bad_read)
-    asyncio.run(r._publish(str(out_file)))
+    asyncio.run(r._publish("out.txt"))
     assert "Cannot read output file" in caplog.text
 
 
-def test_publish_import_error(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_publish_import_error(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """_publish handles ImportError for GitHubPublisher (lines 873-875)."""
     caplog.set_level(logging.ERROR)
     r = _make_runner(
@@ -570,7 +629,7 @@ def test_publish_import_error(tmp_path: Path, caplog: pytest.LogCaptureFixture) 
         github_token="gh_test",
         extra_settings="publisher:\n  owner: test\n  repo: test\n",
     )
-    out_file = tmp_path / "out.txt"
+    out_file = resolve_safe_output_path("out.txt")
     out_file.write_text("content", encoding="utf-8")
 
     # Trigger ImportError by removing the module from cache and patching __import__
@@ -585,7 +644,7 @@ def test_publish_import_error(tmp_path: Path, caplog: pytest.LogCaptureFixture) 
 
     try:
         builtins.__import__ = mock_import  # type: ignore[assignment]
-        asyncio.run(r._publish(str(out_file)))
+        asyncio.run(r._publish("out.txt"))
     finally:
         builtins.__import__ = original_import  # type: ignore[assignment]
 
@@ -593,7 +652,9 @@ def test_publish_import_error(tmp_path: Path, caplog: pytest.LogCaptureFixture) 
 
 
 def test_publish_publish_fails(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_publish handles publish_file returning not-ok (lines 886-889)."""
     caplog.set_level(logging.ERROR)
@@ -602,7 +663,7 @@ def test_publish_publish_fails(
         github_token="gh_test",
         extra_settings="publisher:\n  owner: test\n  repo: test\n",
     )
-    out_file = tmp_path / "out.txt"
+    out_file = resolve_safe_output_path("out.txt")
     out_file.write_text("content", encoding="utf-8")
 
     # Mock GitHubPublisher to return failure
@@ -612,12 +673,16 @@ def test_publish_publish_fails(
     mock_publisher.__aexit__ = AsyncMock(return_value=None)
 
     with patch("src.publisher.github.GitHubPublisher", return_value=mock_publisher):
-        asyncio.run(r._publish(str(out_file)))
+        asyncio.run(r._publish("out.txt"))
 
     assert "reported failure" in caplog.text
 
 
-def test_publish_exception(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_publish_exception(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """_publish handles generic exception during publish (lines 890-891)."""
     caplog.set_level(logging.ERROR)
     r = _make_runner(
@@ -625,7 +690,7 @@ def test_publish_exception(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> 
         github_token="gh_test",
         extra_settings="publisher:\n  owner: test\n  repo: test\n",
     )
-    out_file = tmp_path / "out.txt"
+    out_file = resolve_safe_output_path("out.txt")
     out_file.write_text("content", encoding="utf-8")
 
     mock_publisher = AsyncMock()
@@ -634,7 +699,7 @@ def test_publish_exception(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> 
     mock_publisher.__aexit__ = AsyncMock(return_value=None)
 
     with patch("src.publisher.github.GitHubPublisher", return_value=mock_publisher):
-        asyncio.run(r._publish(str(out_file)))
+        asyncio.run(r._publish("out.txt"))
 
     assert "Publish failed" in caplog.text
 
@@ -844,6 +909,127 @@ async def test_run_full_success_with_publish(
     combined = str(tmp_path / "combined.txt")
     count = await r.run(output_file=combined, publish=True)
     assert count > 0
+
+
+def _runner_with_min_publish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    min_publish: int,
+    *,
+    extra_publisher: str = "",
+) -> tuple[PipelineRunner, list[list[str]]]:
+    """Runner whose publish step records the files it was asked to publish."""
+    bl = str(tmp_path / "bl.txt")
+    wl = str(tmp_path / "wl.txt")
+    mix = str(tmp_path / "mix.txt")
+    combined = str(tmp_path / "combined.txt")
+    status = str(tmp_path / "status.json")
+    extra = (
+        f"aggregator:\n  max_configs_in_output: 100\n"
+        f"publisher:\n"
+        f"  output_file: {combined}\n"
+        f"  mix_output_file: {mix}\n"
+        f"  split_output_files:\n"
+        f"    blacklist: {bl}\n"
+        f"    whitelist: {wl}\n"
+        f"  status_output_file: {status}\n"
+        f"  owner: test_owner\n"
+        f"  repo: test_repo\n"
+        f"  min_publish_configs: {min_publish}\n"
+        f"{extra_publisher}"
+    )
+    r = _make_runner(tmp_path, extra_settings=extra)
+
+    async def fake_fetch() -> list[str]:
+        return ["data"]
+
+    async def fake_parse(results: object) -> dict[str, list[Config]]:
+        return {
+            "blacklist": [_mk("bl1.de", "DE"), _mk("bl2.fr", "FR")],
+            "whitelist": [_mk("wl1.ru", "RU"), _mk("wl2.de", "DE")],
+        }
+
+    async def fake_validate(data: dict[str, list[Config]]) -> dict[str, list[Config]]:
+        return data
+
+    monkeypatch.setattr(r, "_fetch_sources", fake_fetch)
+    monkeypatch.setattr(r, "_parse_all_by_list", fake_parse)
+    monkeypatch.setattr(r, "_preprocess_configs", lambda configs, **kw: list(configs))
+    monkeypatch.setattr(r, "_validate_liveness_by_list", fake_validate)
+    monkeypatch.setattr(r, "_apply_quality_filters", lambda data: data)
+
+    published: list[list[str]] = []
+
+    async def record_publish_files(output_files: list[str], **kwargs: object) -> bool:
+        published.append(list(output_files))
+        return True
+
+    monkeypatch.setattr(r, "_publish_files", record_publish_files)
+    return r, published
+
+
+@pytest.mark.asyncio
+async def test_run_publish_floor_skips_subscription_below_min(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Below min_publish_configs the subscription is not published (floor)."""
+    combined = str(tmp_path / "combined.txt")
+    status = str(tmp_path / "status.json")
+    r, published = _runner_with_min_publish(tmp_path, monkeypatch, min_publish=100)
+    count = await r.run(output_file=combined, publish=True)
+    assert count > 0  # 4 configs survive locally
+    assert published, "publish was not invoked"
+    sent = published[0]
+    # The near-empty combined subscription must NOT be published: publishing it
+    # would overwrite a working subscription with only 4 configs (< min 100).
+    assert combined not in sent
+    # Metadata (run summary) is still published so tooling sees the status.
+    assert status in sent
+
+
+@pytest.mark.asyncio
+async def test_run_publish_floor_disabled_when_min_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With min_publish_configs=0 the subscription is published normally."""
+    combined = str(tmp_path / "combined.txt")
+    r, published = _runner_with_min_publish(tmp_path, monkeypatch, min_publish=0)
+    count = await r.run(output_file=combined, publish=True)
+    assert count > 0
+    assert published, "publish was not invoked"
+    assert combined in published[0]
+
+
+def test_filter_empty_subscription_slices_skips_empty(
+    tmp_path: Path,
+) -> None:
+    """An empty split/mix slice is not published over a working file.
+
+    The combined floor already drops every subscription file when the whole
+    run is too small; this per-file floor stops a single empty slice (while
+    the combined output is fine) from wiping a previously published slice.
+    """
+    runner = _make_runner(tmp_path)
+    combined = tmp_path / "subscription.txt"
+    combined.write_text("vless://x@1.2.3.4:443#c\n", encoding="utf-8")
+    blacklist = tmp_path / "subscription-blacklist.txt"
+    blacklist.write_text("", encoding="utf-8")  # empty slice
+    whitelist = tmp_path / "subscription-whitelist.txt"
+    whitelist.write_text("vless://y@5.6.7.8:443#w\n", encoding="utf-8")
+    # Drive the helper with an explicit set of subscription slices so the test
+    # does not depend on the operator's split configuration.
+    runner._configured_subscription_output_paths = lambda _: [  # type: ignore[method-assign]
+        str(combined),
+        str(blacklist),
+        str(whitelist),
+    ]
+    out = runner._filter_empty_subscription_slices(
+        [str(combined), str(blacklist), str(whitelist)],
+        str(combined),
+    )
+    assert str(blacklist) not in out
+    assert str(combined) in out
+    assert str(whitelist) in out
 
 
 @pytest.mark.asyncio
@@ -1269,9 +1455,15 @@ async def test_publish_files_reuses_one_publisher(
         github_token="t",
     )
     created: list[MagicMock] = []
-    first = tmp_path / "first.txt"
+    # Repo paths must be project-relative: an absolute path outside the
+    # project root is refused (_repo_path_for) rather than committed as a
+    # garbage path like C:/Users/... The isolated project root (conftest)
+    # is where relative outputs resolve.
+    root = Path(resolve_safe_output_path("."))
+    (root / "out").mkdir()
+    first = root / "out" / "first.txt"
     first.write_text("data", encoding="utf-8")
-    second = tmp_path / "second.txt"
+    second = root / "out" / "second.txt"
     second.write_text("data", encoding="utf-8")
 
     def _factory(**_kwargs: object) -> MagicMock:
@@ -1387,7 +1579,9 @@ async def test_run_summary_reports_source_failures(
         tmp_path,
         "publisher:\n  status_output_file: output/status.json\n",
     )
-    r._context.source_stats = {
+    # The summary reads the per-run snapshot captured by _fetch_sources (the
+    # context attribute is cleared mid-run); set the snapshot directly here.
+    r._run_source_stats = {
         "total": 2,
         "ok": 1,
         "failed": 1,
@@ -1564,3 +1758,311 @@ async def test_published_source_results_skips_unusable_splits(tmp_path: Path) ->
 
     with pytest.raises(FileNotFoundError, match="unreadable or link-less"):
         r._published_source_results(str(tmp_path / "out.txt"))
+
+
+# ===================================================================
+# recent src/ changes: run-summary predicate, clash stats, publish floor
+# ===================================================================
+
+
+def test_record_output_stats_matches_writer_predicate(tmp_path: Path) -> None:
+    """The run summary counts exactly what the writer would write.
+
+    The writer skips dead configs (``is_alive is False``) and raw links
+    carrying control characters; counting them made a fail-open run report
+    more configs than the published file holds.
+    """
+    r = _make_runner(tmp_path)
+    alive = _mk("a.de", "DE")
+    dead = _mk("b.de", "DE")
+    dead.is_alive = False
+    injected = _mk("c.de", "DE")
+    injected.raw_link = "vless://x@5.6.7.8:443#bad\nvless://y@6.6.6.6:443#injected"
+    r._record_output_stats("combined", "out.txt", [alive, dead, injected])
+    assert r._output_stats["combined"]["count"] == 1
+
+
+def test_rerun_published_raises_when_nothing_to_revalidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Revalidating "nothing" must refuse, not publish an empty run."""
+    r = _make_runner(tmp_path)
+    monkeypatch.setattr(r, "_published_source_results", lambda _out: [])
+    with pytest.raises(FileNotFoundError, match="nothing to revalidate"):
+        asyncio.run(r.rerun_published(output_file=str(tmp_path / "out.txt")))
+
+
+@pytest.mark.asyncio
+async def test_run_records_clash_output_stats_on_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful run records the clash output like every other output.
+
+    Only _finish_empty_run used to record a clash entry, so the two summary
+    shapes were not comparable.
+    """
+    clash = str(tmp_path / "clash.yaml")
+    r, published = _runner_with_min_publish(
+        tmp_path,
+        monkeypatch,
+        min_publish=0,
+        extra_publisher=f"  clash_output_file: {clash}\n",
+    )
+    combined = str(tmp_path / "combined.txt")
+    count = await r.run(output_file=combined, publish=True)
+    assert count > 0
+    assert Path(clash).exists()
+    assert r._output_stats["clash"]["count"] == r._output_stats["combined"]["count"]
+    assert clash in published[0]
+
+
+@pytest.mark.asyncio
+async def test_run_publish_floor_drops_clash_below_min(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Below the publish floor the clash twin is not published either."""
+    clash = str(tmp_path / "clash.yaml")
+    status = str(tmp_path / "status.json")
+    r, published = _runner_with_min_publish(
+        tmp_path,
+        monkeypatch,
+        min_publish=100,
+        extra_publisher=f"  clash_output_file: {clash}\n",
+    )
+    combined = str(tmp_path / "combined.txt")
+    count = await r.run(output_file=combined, publish=True)
+    assert count > 0
+    assert published, "publish was not invoked"
+    sent = published[0]
+    assert clash not in sent
+    assert combined not in sent
+    assert status in sent
+
+
+def test_published_source_results_skips_non_split_lists(tmp_path: Path) -> None:
+    """Only blacklist/whitelist feed the fast-track revalidation."""
+    bl = tmp_path / "bl.txt"
+    wl = tmp_path / "wl.txt"
+    _write_b64_subscription(bl, [_ss_link("1.2.3.4", "DE-01")])
+    _write_b64_subscription(wl, [_ss_link("9.9.9.9", "RU-03")])
+    mix = tmp_path / "mix.txt"
+    mix.write_text("https://not-a-proxy.example/sub", encoding="utf-8")
+    r = _make_runner(tmp_path)
+    r._split_output_files = lambda _out: {  # type: ignore[method-assign]
+        "blacklist": str(bl),
+        "whitelist": str(wl),
+        "mix": str(mix),
+    }
+    results = r._published_source_results(str(tmp_path / "out.txt"))
+    assert {str(res.list_type) for res in results} == {"blacklist", "whitelist"}
+
+
+@pytest.mark.asyncio
+async def test_validate_liveness_by_list_binds_context_stats(tmp_path: Path) -> None:
+    """The runner's stats snapshot aliases the shared context dict."""
+    r = _make_runner(tmp_path)
+    configs = [_mk("a.de", "DE")]
+    result = await r._validate_liveness_by_list({"blacklist": configs})
+    # tcp/tls/xray are all off: fail-closed, nothing marked alive.
+    assert result["blacklist"] is configs
+    assert all(cfg.is_alive is False for cfg in configs)
+    assert r._liveness_stats is r._context.liveness_stats
+    assert r._liveness_stats["status"] == "disabled"
+
+
+def test_min_publish_configs_invalid_value(tmp_path: Path) -> None:
+    """_min_publish_configs falls back to the default 10 on a bad value."""
+    r = _make_runner(tmp_path, "publisher:\n  min_publish_configs: invalid\n")
+    assert r._min_publish_configs() == 10
+
+
+@pytest.mark.asyncio
+async def test_finish_empty_run_records_empty_clash_and_mix_stats(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty runs mirror the successful run's summary shape (clash + mix).
+
+    The clash twin is emptied locally, recorded in the summary, and — like
+    every subscription artifact — kept off the remote by the publish floor.
+    """
+    clash = str(tmp_path / "clash.yaml")
+    mix = str(tmp_path / "mix.txt")
+    status = str(tmp_path / "status.json")
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n"
+        f"  status_output_file: {status}\n"
+        f"  clash_output_file: {clash}\n"
+        f"  mix_output_file: {mix}\n"
+        # Invalid value exercises the fallback to the default floor (10).
+        "  min_publish_configs: invalid\n",
+    )
+    published: list[str] = []
+
+    async def fake_publish(paths: list[str], **_kwargs: object) -> bool:
+        published.extend(paths)
+        return True
+
+    monkeypatch.setattr(r, "_publish_files", fake_publish)
+    count = await r._finish_empty_run(
+        str(tmp_path / "combined.txt"),
+        status="no_sources",
+        publish=True,
+    )
+    assert count == 0
+    assert Path(clash).read_text(encoding="utf-8") == "proxies: []\n"
+    summary = json.loads(Path(status).read_text(encoding="utf-8"))
+    assert summary["outputs"]["clash"]["count"] == 0
+    assert summary["outputs"]["mix"]["count"] == 0
+    assert clash not in published
+    assert mix not in published
+    assert status in published
+
+
+def test_degraded_reasons_skips_non_dict_list_stats(tmp_path: Path) -> None:
+    """A malformed list entry is skipped instead of crashing the summary."""
+    r = _make_runner(tmp_path)
+    r._liveness_stats = {
+        "lists": {
+            "garbage": "not-a-dict",
+            "blacklist": {"xray_checked": 100, "xray_alive": 0},
+        },
+    }
+    assert r._degraded_reasons() == [
+        "blacklist: 0 alive from 100 Xray-checked configs",
+    ]
+
+
+def test_write_stats_history_writes_next_to_status_file(tmp_path: Path) -> None:
+    """Trend files live next to the run summary, not in default output/."""
+    r = _make_runner(
+        tmp_path,
+        "publisher:\n  status_output_file: output/status.json\n",
+    )
+    r._liveness_stats = {
+        "lists": {"blacklist": {"xray_alive": 3, "xray_checked": 5}},
+    }
+    files = r._write_stats_history("ok")
+    # str(Path("output") / name) uses the platform separator on Windows.
+    assert [f.replace("\\", "/") for f in files] == [
+        "output/stats-history.json",
+        "output/alive-trend.svg",
+    ]
+    assert resolve_safe_output_path("output/stats-history.json").exists()
+    assert resolve_safe_output_path("output/alive-trend.svg").exists()
+
+
+def test_write_stats_history_survives_write_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failing trend write is a warning, never a crash."""
+    caplog.set_level(logging.WARNING)
+    r = _make_runner(tmp_path)
+    r._liveness_stats = {
+        "lists": {"blacklist": {"xray_alive": 1, "xray_checked": 2}},
+    }
+
+    def boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr("src.scheduler.stats_history.append_run_stats", boom)
+    assert r._write_stats_history("ok") == []
+    assert "Stats history write failed" in caplog.text
+
+
+def test_rewrite_summary_status_unsafe_path(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An unsafe summary path is rejected with an error log, no crash."""
+    caplog.set_level(logging.ERROR)
+    r = _make_runner(tmp_path)
+    r._rewrite_summary_status("../escape.json", "publish_failed")
+    assert "Unsafe run summary path" in caplog.text
+
+
+def test_rewrite_summary_status_survives_read_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A corrupt summary file is left alone with a warning, no crash."""
+    caplog.set_level(logging.WARNING)
+    summary = resolve_safe_output_path("summary.json")
+    summary.write_text("{not json", encoding="utf-8")
+    r = _make_runner(tmp_path)
+    r._rewrite_summary_status("summary.json", "publish_failed")
+    assert "Could not rewrite run summary" in caplog.text
+
+
+def test_is_empty_output_file_handles_stat_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stat failure reads as "not empty" instead of crashing the filter."""
+    r = _make_runner(tmp_path)
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+
+    def boom(self: Path) -> object:
+        raise OSError("stat failed")
+
+    monkeypatch.setattr(Path, "stat", boom)
+    assert r._is_empty_output_file("whatever.txt") is False
+
+
+@pytest.mark.asyncio
+async def test_publish_propagates_githubpublisherror(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deliberate publisher abort must not be swallowed per file.
+
+    Swallowing the exception made every remaining file of the batch issue
+    GET+PUT pairs against an already exhausted rate limit; the exception IS
+    the batch abort.
+    """
+    r = _make_runner(tmp_path, "publisher:\n  owner: o\n  repo: r\n", github_token="t")
+    out_file = resolve_safe_output_path("out.txt")
+    out_file.write_text("content", encoding="utf-8")
+
+    mock_publisher = MagicMock()
+    mock_publisher.publish_file = AsyncMock(
+        side_effect=GitHubPublishError("rate limit exhausted; aborting publish"),
+    )
+    mock_publisher.__aenter__ = AsyncMock(return_value=mock_publisher)
+    mock_publisher.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("src.publisher.github.GitHubPublisher", return_value=mock_publisher):
+        with pytest.raises(GitHubPublishError):
+            await r._publish(str(out_file))
+
+
+class TestRepoPathFor:
+    """Publish paths must be repo-relative; absolute local paths are mapped
+    or refused — committing C:/Users/... garbage used to replace the real
+    subscription."""
+
+    def _make(self, tmp_path: Path) -> PipelineRunner:
+        return _make_runner(tmp_path, "publisher:\n  owner: o\n  repo: r\n")
+
+    def test_relative_passthrough(self, tmp_path: Path) -> None:
+        r = self._make(tmp_path)
+        assert r._repo_path_for("output/subscription.txt") == "output/subscription.txt"
+
+    def test_absolute_inside_root_is_mapped(self, tmp_path: Path) -> None:
+        r = self._make(tmp_path)
+        root = Path(resolve_safe_output_path("."))
+        target = root / "output" / "subscription-DE.txt"
+        result = r._repo_path_for(str(target))
+        assert result is not None
+        assert result.replace("\\", "/") == "output/subscription-DE.txt"
+
+    def test_absolute_outside_root_is_refused(self, tmp_path: Path) -> None:
+        r = self._make(tmp_path)
+        assert r._repo_path_for("C:/Windows/system32/evil.txt") is None
+
+    def test_traversal_is_refused(self, tmp_path: Path) -> None:
+        r = self._make(tmp_path)
+        assert r._repo_path_for("../evil.txt") is None
+
+    def test_backslashes_normalised(self, tmp_path: Path) -> None:
+        r = self._make(tmp_path)
+        assert r._repo_path_for("output\\subscription.txt") == (
+            "output/subscription.txt"
+        )

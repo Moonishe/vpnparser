@@ -26,7 +26,10 @@ from src.repo_info import (
     github_branch,
     github_repo_slug,
 )
+from src.scheduler.health_history import HealthHistory
 from src.scheduler.runner import PipelineRunner
+from src.scheduler.stages.filter import CountryFilter
+from src.scheduler.stages.liveness import LivenessValidator
 from src.sources.github import (
     GitHubClient,
     GitHubRateLimitError,
@@ -82,7 +85,12 @@ def test_telegram_subscription_urls_use_github_env(monkeypatch) -> None:
     monkeypatch.setenv("GITHUB_REPO", "repo")
     monkeypatch.setenv("GITHUB_BRANCH", "main")
 
-    urls = telegram_module._subscription_urls()
+    # Repo identity is injected since the report split (it lives in the
+    # telegram module the tests patch); empty summary falls back to defaults.
+    urls = telegram_module._subscription_urls(
+        repo_slug=telegram_module._repo_slug(),
+        repo_branch=telegram_module._repo_branch(),
+    )
 
     assert urls == {
         "combined": "https://raw.githubusercontent.com/owner/repo/main/output/subscription.txt",
@@ -311,9 +319,173 @@ publisher:
     assert data["outputs"]["whitelist"]["countries"] == {"RU": 1}
 
 
+async def test_run_summary_sources_survive_prepare_run_state(tmp_path) -> None:
+    """Regression: _prepare_run_state used to clear context.source_stats — the
+    fetch stage fills it BEFORE the pipeline (and thus before _prepare_run_state)
+    runs — so every run-summary reported "sources": {} and the Telegram
+    broken-source alert could never fire. The summary reads a per-run snapshot
+    captured in _fetch_sources instead.
+    """
+    status_file = tmp_path / "run-summary.json"
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  status_output_file: {status_file}
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+
+    async def _fake_fetch(state, context):
+        context.source_stats = {
+            "total": 2,
+            "ok": 1,
+            "failed": 1,
+            "errors": [{"source": "gone", "error": "empty or not found"}],
+        }
+        state.sources = [object(), object()]
+        return state
+
+    runner._fetcher.run = _fake_fetch
+    await runner._fetch_sources()
+    assert runner._run_source_stats["failed"] == 1
+
+    runner._prepare_run_state()
+    # The regression: this used to be {} because the reset ran after fetch.
+    assert runner._run_source_stats["failed"] == 1
+
+    runner._write_run_summary("ok")
+    data = json.loads(status_file.read_text(encoding="utf-8"))
+    assert data["sources"]["total"] == 2
+    assert data["sources"]["failed"] == 1
+    assert data["sources"]["errors"][0]["source"] == "gone"
+
+
+async def test_run_summary_sources_empty_for_fast_track(tmp_path) -> None:
+    """rerun_published never fetches: its summary must report an empty sources
+    block, not the previous run's stats."""
+    status_file = tmp_path / "run-summary.json"
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  status_output_file: {status_file}
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+    runner._context.source_stats = {"total": 9, "ok": 9, "failed": 0}
+    runner._prepare_run_state()
+    runner._write_run_summary("ok")
+    data = json.loads(status_file.read_text(encoding="utf-8"))
+    assert data["sources"] == {}
+
+
+def test_per_file_publish_floor_withholds_small_slices(tmp_path) -> None:
+    """A subscription slice with fewer than min_publish_configs configs is
+    withheld from publishing (it used to overwrite a working published file),
+    and the withholding is reported in run-summary.json."""
+    status_file = tmp_path / "run-summary.json"
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  status_output_file: {status_file}
+""",
+        encoding="utf-8",
+    )
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+
+    def _make(i: int) -> Config:
+        return Config(
+            "vless",
+            f"h{i}.example",
+            443,
+            "11111111-1111-4111-8111-111111111111",
+            raw_link="vless://11111111-1111-4111-8111-111111111111@h.example:443",
+        )
+
+    big = [_make(i) for i in range(12)]
+    small = [_make(i) for i in range(3)]
+    runner._record_output_stats("blacklist", "output/subscription-blacklist.txt", big)
+    runner._record_output_stats(
+        "location_nl", "output/locations/subscription-NL.txt", small
+    )
+    # Clash shrink: configs inexpressible in Mihomo put the YAML twin below
+    # the base64 twin's count — it is a per-file floor subject too.
+    runner._record_output_stats("clash", "output/subscription-clash.yaml", small)
+
+    kept = runner._filter_below_floor_subscription_slices(
+        [
+            "output/subscription-blacklist.txt",
+            "output/locations/subscription-NL.txt",
+            "output/subscription-clash.yaml",
+        ],
+        "output/subscription.txt",
+    )
+    assert kept == ["output/subscription-blacklist.txt"]
+    assert runner._publish_floor_applied == {
+        "output/locations/subscription-NL.txt": 3,
+        "output/subscription-clash.yaml": 3,
+    }
+
+    # A zero-count location placeholder is NOT this filter's concern: the
+    # empty-slice filter owns watermark placeholders (they must publish to
+    # retire a vanished country's stale file).
+    runner._record_output_stats(
+        "location_fi", "output/locations/subscription-FI.txt", []
+    )
+    kept2 = runner._filter_below_floor_subscription_slices(
+        ["output/locations/subscription-FI.txt"],
+        "output/subscription.txt",
+    )
+    assert kept2 == ["output/locations/subscription-FI.txt"]
+
+    # Combined itself is never floored here (it has its own floor).
+    runner._record_output_stats("combined", "output/subscription.txt", small)
+    kept3 = runner._filter_below_floor_subscription_slices(
+        ["output/subscription.txt"],
+        "output/subscription.txt",
+    )
+    assert kept3 == ["output/subscription.txt"]
+
+    runner._write_run_summary("ok")
+    data = json.loads(status_file.read_text(encoding="utf-8"))
+    assert data["publish_floor_applied"] == {
+        "output/locations/subscription-NL.txt": 3,
+        "output/subscription-clash.yaml": 3,
+    }
+
+
+def test_degraded_reasons_flag_low_alive_rate(tmp_path) -> None:
+    """A collapse to a near-zero alive rate is the same probe-infrastructure
+    signature as a collapse to zero: 1/100 alive used to report a healthy run."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text("publisher:\n  status_output_file: x.json\n", encoding="utf-8")
+    runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
+
+    runner._liveness_stats = {
+        "lists": {"blacklist": {"xray_checked": 200, "xray_alive": 1}}
+    }
+    reasons = runner._degraded_reasons()
+    assert any("below 2%" in reason for reason in reasons)
+
+    # A healthy rate is not flagged.
+    runner._liveness_stats = {
+        "lists": {"blacklist": {"xray_checked": 200, "xray_alive": 10}}
+    }
+    assert runner._degraded_reasons() == []
+
+
 def test_repo_info_parses_github_remote_and_ref(monkeypatch) -> None:
     assert _slug_from_remote_url("https://github.com/owner/repo.git") == "owner/repo"
     assert _slug_from_remote_url("git@github.com:owner/repo.git") == "owner/repo"
+    # urlsplit().hostname lowercases the host, so a mixed-case remote must
+    # still parse — a case-sensitive split("github.com") used to raise
+    # IndexError here and crash every watermark build.
+    assert _slug_from_remote_url("https://GitHub.com/owner/repo.git") == "owner/repo"
+    assert _slug_from_remote_url("git@GitHub.com:owner/repo.git") == "owner/repo"
 
     monkeypatch.delenv("GITHUB_BRANCH", raising=False)
     monkeypatch.delenv("GITHUB_REF_NAME", raising=False)
@@ -767,12 +939,15 @@ validator:
         remark="RU-02",
     )
 
-    assert runner._filter_countries([black_de, black_ru], list_type="blacklist") == [
-        black_de
-    ]
-    assert runner._filter_countries([white_de, white_ru], list_type="whitelist") == [
-        white_ru
-    ]
+    country_filter = CountryFilter(runner._context)
+    assert country_filter.filter_countries(
+        [black_de, black_ru],
+        list_type="blacklist",
+    ) == [black_de]
+    assert country_filter.filter_countries(
+        [white_de, white_ru],
+        list_type="whitelist",
+    ) == [white_ru]
 
 
 def test_runner_uses_source_default_country_when_detection_fails(tmp_path) -> None:
@@ -799,7 +974,10 @@ validator:
     )
     cfg.source_default_country = "RU"
 
-    result = runner._filter_countries([cfg], list_type="whitelist")
+    result = CountryFilter(runner._context).filter_countries(
+        [cfg],
+        list_type="whitelist",
+    )
 
     assert result == [cfg]
     assert cfg.country == "RU"
@@ -1077,7 +1255,7 @@ def test_tls_validator_marks_successful_tls_configs_alive(monkeypatch) -> None:
     monkeypatch.setattr(tls_module, "tls_check", fake_tls_check)
     cfg = Config(
         protocol="vless",
-        address="example.com",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -1249,7 +1427,7 @@ def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> No
     )
     monkeypatch.setattr(xray_module, "_https_probe_response", fake_probe)
 
-    assert asyncio.run(
+    result = asyncio.run(
         xray_module.xray_probe_check(
             cfg,
             xray_path="/usr/bin/xray",
@@ -1261,6 +1439,9 @@ def test_xray_probe_requires_multiple_successful_https_probes(monkeypatch) -> No
             min_probe_successes=2,
         )
     )
+    assert result is not None
+    assert isinstance(result, float)
+    assert result >= 0
     assert calls == [
         "https://ok-1.example/generate_204",
         "https://bad.example/generate_204",
@@ -1324,7 +1505,7 @@ def test_xray_probe_requires_distinct_outbound_ip(monkeypatch) -> None:
 
     monkeypatch.setattr(xray_module, "_https_probe_response", different_ip_probe)
 
-    assert asyncio.run(
+    result = asyncio.run(
         xray_module.xray_probe_check(
             cfg,
             xray_path="/usr/bin/xray",
@@ -1334,26 +1515,29 @@ def test_xray_probe_requires_distinct_outbound_ip(monkeypatch) -> None:
             reject_outbound_ips={"198.51.100.7"},
         )
     )
+    assert result is not None
+    assert isinstance(result, float)
+    assert result >= 0
 
 
 def test_xray_validation_requires_repeated_successful_attempts(monkeypatch) -> None:
     stable = Config(
         protocol="vless",
-        address="stable.example",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
     )
     flaky = Config(
         protocol="vless",
-        address="flaky.example",
+        address="93.184.216.35",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111112",
         security="tls",
     )
     outcomes = {
-        "stable.example": [0.5, 0.5, 0.5],
-        "flaky.example": [0.5, None],
+        "93.184.216.34": [0.5, 0.5, 0.5],
+        "93.184.216.35": [0.5, None],
     }
 
     async def fake_xray_probe_check(cfg, **_kwargs):
@@ -1374,13 +1558,13 @@ def test_xray_validation_requires_repeated_successful_attempts(monkeypatch) -> N
     assert result == [stable]
     assert stable.is_alive is True
     assert flaky.is_alive is False
-    assert outcomes == {"stable.example": [], "flaky.example": []}
+    assert outcomes == {"93.184.216.34": [], "93.184.216.35": []}
 
 
 def test_xray_validation_rejects_runner_and_proxy_public_ips(monkeypatch) -> None:
     cfg = Config(
         protocol="vless",
-        address="stable.example",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -1426,7 +1610,7 @@ def test_xray_validation_rotates_proxy_pool_and_stops_after_required_successes(
 ) -> None:
     cfg = Config(
         protocol="vless",
-        address="stable.example",
+        address="93.184.216.34",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -1466,14 +1650,14 @@ def test_xray_validation_does_not_mark_unchecked_max_alive_candidates(
 ) -> None:
     first = Config(
         protocol="vless",
-        address="first.example",
+        address="93.184.216.36",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
     )
     second = Config(
         protocol="vless",
-        address="second.example",
+        address="93.184.216.37",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111112",
         security="tls",
@@ -1497,7 +1681,7 @@ def test_xray_validation_does_not_mark_unchecked_max_alive_candidates(
     assert result == [first]
     assert first.is_alive is True
     assert first.xray_was_checked is True
-    assert second.is_alive is False
+    assert second.is_alive is None
     assert second.xray_was_checked is False
 
 
@@ -1506,7 +1690,7 @@ def test_xray_validation_relaxed_gate_allows_single_attempt(monkeypatch) -> None
     probe without requiring a distinct outbound IP or proxy-network success."""
     cfg = Config(
         protocol="vless",
-        address="relaxed.example",
+        address="93.184.216.38",
         port=443,
         uuid_or_password="11111111-1111-4111-8111-111111111111",
         security="tls",
@@ -1622,7 +1806,6 @@ def test_runner_proxy_search_expands_candidates_until_minimum(tmp_path) -> None:
     settings = tmp_path / "settings.yaml"
     settings.write_text("", encoding="utf-8")
     runner = PipelineRunner(settings_path=str(settings), sources_path="missing.json")
-    runner._liveness_stats = {}
     calls = []
 
     async def fake_load_proxy_pool(_sources, **kwargs):
@@ -1636,7 +1819,7 @@ def test_runner_proxy_search_expands_candidates_until_minimum(tmp_path) -> None:
         ]
 
     result = asyncio.run(
-        runner._search_validator_proxy_pool(
+        runner._liveness._search_validator_proxy_pool(
             fake_load_proxy_pool,
             ["https://first.example/list.txt"],
             {
@@ -1653,19 +1836,19 @@ def test_runner_proxy_search_expands_candidates_until_minimum(tmp_path) -> None:
     assert len(result) == 3
     assert [call["max_candidates"] for call in calls] == [10, 20]
     assert [call["max_candidates_per_source"] for call in calls] == [4, 8]
-    assert runner._liveness_stats["proxy_search_rounds"] == 2
+    assert runner._liveness.context.liveness_stats["proxy_search_rounds"] == 2
 
 
 def test_runner_redacts_proxy_urls_for_summary() -> None:
     assert (
-        PipelineRunner._redact_proxy_url("socks5://user:pass@1.2.3.4:1080")
+        LivenessValidator._redact_proxy_url("socks5://user:pass@1.2.3.4:1080")
         == "socks5://1.2.3.4:1080"
     )
     assert (
-        PipelineRunner._redact_proxy_url("http://[2001:db8::1]:8080")
+        LivenessValidator._redact_proxy_url("http://[2001:db8::1]:8080")
         == "http://[2001:db8::1]:8080"
     )
-    assert PipelineRunner._redact_proxy_url("socks5://1.2.3.4:bad") == (
+    assert LivenessValidator._redact_proxy_url("socks5://1.2.3.4:bad") == (
         "<invalid-proxy-url>"
     )
 
@@ -1673,15 +1856,17 @@ def test_runner_redacts_proxy_urls_for_summary() -> None:
 def test_tcp_validator_rotates_proxy_pool(monkeypatch) -> None:
     seen_proxy_urls = []
 
-    async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+    async def fake_tcp_check(
+        host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+    ):
         seen_proxy_urls.append(proxy_url)
         return (True, 10.0 + len(seen_proxy_urls))
 
     monkeypatch.setattr(tcp_module, "tcp_check", fake_tcp_check)
     configs = [
-        Config("vless", "a.example", 443, "11111111-1111-4111-8111-111111111111"),
-        Config("vless", "b.example", 443, "11111111-1111-4111-8111-111111111112"),
-        Config("vless", "c.example", 443, "11111111-1111-4111-8111-111111111113"),
+        Config("vless", "93.184.216.41", 443, "11111111-1111-4111-8111-111111111111"),
+        Config("vless", "93.184.216.42", 443, "11111111-1111-4111-8111-111111111112"),
+        Config("vless", "93.184.216.43", 443, "11111111-1111-4111-8111-111111111113"),
     ]
 
     result = asyncio.run(
@@ -1702,34 +1887,38 @@ def test_tcp_validator_rotates_proxy_pool(monkeypatch) -> None:
 def test_tcp_validator_waits_for_all_when_no_max_alive(monkeypatch) -> None:
     seen_hosts = []
 
-    async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+    async def fake_tcp_check(
+        host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+    ):
         seen_hosts.append(host)
-        await asyncio.sleep(0.01 if host == "a.example" else 0.03)
+        await asyncio.sleep(0.01 if host == "93.184.216.41" else 0.03)
         return (True, 10.0)
 
     monkeypatch.setattr(tcp_module, "tcp_check", fake_tcp_check)
     configs = [
-        Config("vless", "a.example", 443, "11111111-1111-4111-8111-111111111111"),
-        Config("vless", "b.example", 443, "11111111-1111-4111-8111-111111111112"),
+        Config("vless", "93.184.216.41", 443, "11111111-1111-4111-8111-111111111111"),
+        Config("vless", "93.184.216.42", 443, "11111111-1111-4111-8111-111111111112"),
     ]
 
     result = asyncio.run(tcp_module.validate_configs_tcp(configs, max_alive=0))
 
     assert result == configs
-    assert seen_hosts == ["a.example", "b.example"]
+    assert seen_hosts == ["93.184.216.41", "93.184.216.42"]
 
 
 def test_tcp_validator_retries_multiple_proxies_per_config(monkeypatch) -> None:
     seen_proxy_urls = []
 
-    async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+    async def fake_tcp_check(
+        host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+    ):
         seen_proxy_urls.append(proxy_url)
         return (proxy_url == "socks5://1.1.1.1:9050", 20.0)
 
     monkeypatch.setattr(tcp_module, "tcp_check", fake_tcp_check)
     cfg = Config(
         "vless",
-        "vpn.example",
+        "93.184.216.44",
         443,
         "11111111-1111-4111-8111-111111111111",
     )
@@ -1747,7 +1936,13 @@ def test_tcp_validator_retries_multiple_proxies_per_config(monkeypatch) -> None:
     assert seen_proxy_urls == ["socks5://8.8.8.8:1080", "socks5://1.1.1.1:9050"]
 
 
-def test_runner_liveness_required_proxy_pool_fail_open(tmp_path, monkeypatch) -> None:
+def test_runner_liveness_required_proxy_pool_drops_without_xray(
+    tmp_path, monkeypatch
+) -> None:
+    """Fail-closed: with proxy_pool.required=true, an empty pool, and Xray
+    disabled there is no validator left, so unvalidated configs must not be
+    published. The list is dropped (empty result) instead of being returned
+    unfiltered, which would push dead configs into the subscription."""
     settings = tmp_path / "settings.yaml"
     settings.write_text(
         """
@@ -1772,7 +1967,7 @@ validator:
     async def should_not_check(*args, **kwargs):
         raise AssertionError("liveness must be skipped without required proxies")
 
-    monkeypatch.setattr(runner, "_validator_proxy_urls", no_proxies)
+    runner._liveness._proxy_url_getter = no_proxies
     monkeypatch.setattr(
         "src.validators.tcp_check.validate_configs_tcp", should_not_check
     )
@@ -1784,7 +1979,7 @@ validator:
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             [cfg],
             label="blacklist",
             tcp_enabled=True,
@@ -1792,7 +1987,7 @@ validator:
         )
     )
 
-    assert result == [cfg]
+    assert result == []
 
 
 def test_runner_liveness_runs_required_xray_without_proxy_pool(
@@ -1835,7 +2030,7 @@ validator:
             item.is_alive = True
         return configs
 
-    monkeypatch.setattr(runner, "_validator_proxy_urls", no_proxies)
+    runner._liveness._proxy_url_getter = no_proxies
     monkeypatch.setattr(
         "src.validators.xray_probe.find_xray_executable",
         lambda explicit_path=None: "/usr/bin/xray",
@@ -1847,7 +2042,7 @@ validator:
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             [cfg],
             label="blacklist",
             tcp_enabled=False,
@@ -1857,7 +2052,8 @@ validator:
     )
 
     assert result == [cfg]
-    assert runner._liveness_stats["lists"]["blacklist"]["xray_checked"] == 1
+    stats = runner._liveness.context.liveness_stats["lists"]["blacklist"]
+    assert stats["xray_checked"] == 1
 
 
 def test_runner_liveness_uses_proxy_pool_and_filters_when_enough_alive(
@@ -1904,14 +2100,14 @@ validator:
         captured["proxy_urls"] = kwargs.get("proxy_urls")
         return [alive]
 
-    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    runner._liveness._proxy_url_getter = fake_proxy_urls
     monkeypatch.setattr(
         "src.validators.tcp_check.validate_configs_tcp",
         fake_validate_configs_tcp,
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             [dead, alive],
             label="blacklist",
             tcp_enabled=True,
@@ -1960,14 +2156,14 @@ validator:
         batch[0].is_alive = True
         return [batch[0]]
 
-    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    runner._liveness._proxy_url_getter = fake_proxy_urls
     monkeypatch.setattr(
         "src.validators.tcp_check.validate_configs_tcp",
         fake_validate_configs_tcp,
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             configs,
             label="blacklist",
             tcp_enabled=True,
@@ -1975,7 +2171,7 @@ validator:
         )
     )
 
-    stats = runner._liveness_stats["lists"]["blacklist"]
+    stats = runner._liveness.context.liveness_stats["lists"]["blacklist"]
     assert result == [configs[0], configs[2], configs[4]]
     assert call_sizes == [2, 2, 1]
     assert stats["tcp_checked"] == 5
@@ -1993,6 +2189,7 @@ validator:
   allowed_countries: []
   tcp_enabled: true
   min_alive_to_filter: 2
+  fail_open_on_low_alive: true
   proxy_pool:
     enabled: true
     required: true
@@ -2004,8 +2201,8 @@ validator:
         sources_path=str(tmp_path / "missing.json"),
     )
     configs = [
-        Config("vless", "a.example", 443, "11111111-1111-4111-8111-111111111111"),
-        Config("vless", "b.example", 443, "11111111-1111-4111-8111-111111111112"),
+        Config("vless", "93.184.216.41", 443, "11111111-1111-4111-8111-111111111111"),
+        Config("vless", "93.184.216.42", 443, "11111111-1111-4111-8111-111111111112"),
     ]
 
     async def fake_proxy_urls():
@@ -2014,14 +2211,14 @@ validator:
     async def fake_validate_configs_tcp(configs, **kwargs):
         return [configs[0]]
 
-    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    runner._liveness._proxy_url_getter = fake_proxy_urls
     monkeypatch.setattr(
         "src.validators.tcp_check.validate_configs_tcp",
         fake_validate_configs_tcp,
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             configs,
             label="blacklist",
             tcp_enabled=True,
@@ -2054,8 +2251,8 @@ validator:
         sources_path=str(tmp_path / "missing.json"),
     )
     configs = [
-        Config("vless", "a.example", 443, "11111111-1111-4111-8111-111111111111"),
-        Config("vless", "b.example", 443, "11111111-1111-4111-8111-111111111112"),
+        Config("vless", "93.184.216.41", 443, "11111111-1111-4111-8111-111111111111"),
+        Config("vless", "93.184.216.42", 443, "11111111-1111-4111-8111-111111111112"),
     ]
 
     async def fake_proxy_urls():
@@ -2064,14 +2261,14 @@ validator:
     async def fake_validate_configs_tcp(configs, **kwargs):
         return [configs[0]]
 
-    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    runner._liveness._proxy_url_getter = fake_proxy_urls
     monkeypatch.setattr(
         "src.validators.tcp_check.validate_configs_tcp",
         fake_validate_configs_tcp,
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             configs,
             label="blacklist",
             tcp_enabled=True,
@@ -2079,7 +2276,7 @@ validator:
         )
     )
 
-    stats = runner._liveness_stats["lists"]["blacklist"]
+    stats = runner._liveness.context.liveness_stats["lists"]["blacklist"]
     assert result == [configs[0]]
     assert stats["fail_open"] is False
     assert stats["reason"] == "below_min_alive"
@@ -2128,7 +2325,7 @@ validator:
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             [tls_cfg, tcp_only],
             label="blacklist",
             tcp_enabled=False,
@@ -2136,7 +2333,7 @@ validator:
         )
     )
 
-    stats = runner._liveness_stats["lists"]["blacklist"]
+    stats = runner._liveness.context.liveness_stats["lists"]["blacklist"]
     assert result == [tls_cfg]
     assert stats["tls_unchecked_passthrough"] == 1
     assert stats["tls_drop_unchecked"] is True
@@ -2212,7 +2409,7 @@ validator:
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             [alive, dead],
             label="blacklist",
             tcp_enabled=False,
@@ -2221,7 +2418,7 @@ validator:
         )
     )
 
-    stats = runner._liveness_stats["lists"]["blacklist"]
+    stats = runner._liveness.context.liveness_stats["lists"]["blacklist"]
     assert result == [alive]
     assert stats["xray_checked"] == 2
     assert stats["xray_alive"] == 1
@@ -2282,7 +2479,7 @@ validator:
             item.is_alive = True
         return configs
 
-    monkeypatch.setattr(runner, "_validator_proxy_urls", fake_proxy_urls)
+    runner._liveness._proxy_url_getter = fake_proxy_urls
     monkeypatch.setattr(
         "src.validators.xray_probe.find_xray_executable",
         lambda explicit_path=None: "/usr/bin/xray",
@@ -2294,7 +2491,7 @@ validator:
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             [cfg],
             label="blacklist",
             tcp_enabled=False,
@@ -2303,7 +2500,7 @@ validator:
         )
     )
 
-    stats = runner._liveness_stats["lists"]["blacklist"]
+    stats = runner._liveness.context.liveness_stats["lists"]["blacklist"]
     assert result == [cfg]
     assert stats["xray_proxy_checks"] == 3
     assert stats["xray_min_proxy_successes"] == 2
@@ -2341,10 +2538,10 @@ quality:
     runner._write_health_history()
 
     history = json.loads(health_file.read_text(encoding="utf-8"))
-    record = history["configs"][runner._config_health_key(cfg)]
+    record = history["configs"][HealthHistory.config_key(cfg)]
     assert record["consecutive_failures"] == 2
     assert record["banned_until"] > int(time.time())
-    assert runner._is_health_or_source_banned(cfg) is True
+    assert runner._quality.is_banned(cfg) is True
 
 
 def test_runner_quality_scores_and_drops_slow_configs(tmp_path) -> None:
@@ -2448,7 +2645,7 @@ aggregator:
     )
 
     result = asyncio.run(
-        runner._validate_liveness_configs(
+        runner._liveness.validate_configs(
             configs,
             label="blacklist",
             tcp_enabled=False,
@@ -2457,7 +2654,7 @@ aggregator:
         )
     )
 
-    stats = runner._liveness_stats["lists"]["blacklist"]
+    stats = runner._liveness.context.liveness_stats["lists"]["blacklist"]
     assert captured["checked"] == 200
     assert stats["xray_candidates"] == 300
     assert stats["xray_preselected"] == 200

@@ -352,6 +352,93 @@ class TestSave:
         assert result is None
         assert "Could not write health history" in caplog.text
 
+    def test_save_writes_compact_json(self, tmp_path: Path) -> None:
+        """Tens of thousands of records made indent=2 double the file per save."""
+        f = tmp_path / "health-history.json"
+        h = HealthHistory(_make_settings({"health_history_file": str(f)}))
+        h.load()
+        h._cache["configs"]["kept"] = {
+            "last_seen": int(time.time()),
+            "banned_until": 0,
+            "passes": 3,
+        }
+
+        assert h.save() is not None
+
+        content = f.read_text(encoding="utf-8")
+        assert "\n" not in content  # compact: one line, no indentation
+        assert json.loads(content)["configs"]["kept"]["passes"] == 3
+
+
+# ---------------------------------------------------------------------------
+# _prune_over_cap() — the hard record cap
+# ---------------------------------------------------------------------------
+
+
+class TestRecordCap:
+    """health_history_max_records bounds the file; banned records are exempt.
+
+    Age-based retention cannot bound a source that keeps rotating configs, so
+    the cap evicts the least-recently-seen records. A still-banned record is
+    never evicted: the ban is the reason the config is skipped, and dropping
+    it would silently unban it.
+    """
+
+    def _history(self, tmp_path: Path, cap: int) -> HealthHistory:
+        return HealthHistory(
+            _make_settings(
+                {
+                    "health_history_file": str(tmp_path / "cap.json"),
+                    "health_history_max_records": cap,
+                }
+            ),
+        )
+
+    def test_over_cap_evicts_oldest_non_banned(self, tmp_path: Path) -> None:
+        now = int(time.time())
+        h = self._history(tmp_path, cap=3)
+        h.load()
+        h._cache["configs"] = {
+            "oldest": {"last_seen": now - 5000, "banned_until": 0},
+            "older": {"last_seen": now - 4000, "banned_until": 0},
+            "mid": {"last_seen": now - 3000, "banned_until": 0},
+            # Oldest of all, but exempt: still banned.
+            "banned": {"last_seen": now - 9000, "banned_until": now + 3600},
+            "fresh": {"last_seen": now, "banned_until": 0},
+        }
+
+        # The return value counts only the age-based prunes; the cap eviction
+        # is observable through the cache.
+        assert h.prune(now=now) == 0
+        assert set(h._cache["configs"]) == {"mid", "banned", "fresh"}
+
+    def test_cap_zero_is_unlimited(self, tmp_path: Path) -> None:
+        now = int(time.time())
+        h = self._history(tmp_path, cap=0)
+        h.load()
+        h._cache["configs"] = {
+            f"c{i}": {"last_seen": now - i, "banned_until": 0} for i in range(5)
+        }
+
+        assert h.prune(now=now) == 0
+        assert len(h._cache["configs"]) == 5
+
+    def test_cap_keeps_everything_when_all_banned(self, tmp_path: Path) -> None:
+        now = int(time.time())
+        h = self._history(tmp_path, cap=2)
+        h.load()
+        h._cache["configs"] = {
+            f"b{i}": {"last_seen": now - i, "banned_until": now + 3600}
+            for i in range(4)
+        }
+
+        assert h.prune(now=now) == 0
+        assert len(h._cache["configs"]) == 4
+
+    def test_prune_without_loaded_cache_is_noop(self) -> None:
+        h = HealthHistory(_make_settings())
+        assert h.prune() == 0
+
 
 # ---------------------------------------------------------------------------
 # is_banned()
@@ -374,6 +461,32 @@ class TestIsBanned:
         h.load()["sources"]["bad_source"] = {"banned_until": 9_999_999_999}
         assert h.is_banned(cfg) is True
         assert cfg.quality_block_reason == "source_ban"
+
+    def test_is_config_banned_ignores_source_bans(self) -> None:
+        """The probe pre-filter must skip config bans only.
+
+        A source ban is a stale source-level verdict; a passing probe outranks
+        it (the post-Xray filter keeps fresh-alive configs from banned
+        sources), so pre-filtering on it would erase that escape hatch.
+        """
+        h = HealthHistory(_make_settings())
+        cfg = _make_config(source_name="bad_source")
+        h.load()["sources"]["bad_source"] = {"banned_until": 9_999_999_999}
+        assert h.is_config_banned(cfg) is False
+        assert h.is_banned(cfg) is True
+
+    def test_is_config_banned_sees_config_ban(self) -> None:
+        """A time-boxed config ban is visible to the pre-filter."""
+        h = HealthHistory(_make_settings())
+        cfg = _make_config()
+        h.load()["configs"][h.config_key(cfg)] = {"banned_until": 9_999_999_999}
+        assert h.is_config_banned(cfg) is True
+        assert cfg.quality_block_reason == "health_ban"
+
+    def test_is_config_banned_disabled(self) -> None:
+        """is_config_banned returns False when health history is disabled."""
+        h = HealthHistory(_make_settings({"health_history_enabled": False}))
+        assert h.is_config_banned(_make_config()) is False
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +521,121 @@ class TestUpdate:
         assert record["recent"] == [True]
         assert record["last_alive"] > 0
 
+    def test_update_no_verdict_is_not_a_failure(self) -> None:
+        """is_alive=None (budget skip, guard drop, infra failure) records nothing.
+
+        A healthy config must not drift towards a ban just because it was
+        never probed; bool(None) is False, which used to record a failure.
+        """
+        h = HealthHistory(
+            _make_settings({"ban_after_consecutive_failures": 2}),
+        )
+        # An existing failure streak must survive a no-verdict run untouched.
+        dead = _make_config(is_alive=False)
+        h.update([dead])
+        streak = dead.health_record["consecutive_failures"]
+        assert streak == 1
+        skipped = _make_config(is_alive=None, address="never-probed.example")
+        h.update([skipped])
+        assert skipped.health_record is None
+        assert h.config_key(skipped) not in h.load()["configs"]
+        h.update([dead])
+        record = h.load()["configs"][h.config_key(dead)]
+        # Two real verdicts (False, False) → ban; the None in between changed
+        # nothing (recent window holds only actual verdicts).
+        assert record["consecutive_failures"] == 2
+        assert record["recent"] == [False, False]
+        assert record["banned_until"] > 0
+
+    def test_save_merges_concurrent_disk_records(self, tmp_path) -> None:
+        """A full run and an hourly fast-track overlap; the last plain write
+        used to discard the other run's records. save() now re-reads the disk
+        file under the history lock and merges per-record winners."""
+        import json as _json
+
+        f = tmp_path / "hh.json"
+        s = _make_settings({"health_history_file": str(f)})
+
+        h1 = HealthHistory(s)
+        cfg_a = _make_config("a.example", is_alive=False)
+        h1.update([cfg_a])
+        h1.save()
+
+        # A second instance (the fast-track run) records a different config.
+        h2 = HealthHistory(s)
+        cfg_b = _make_config("b.example", is_alive=False)
+        h2.update([cfg_b])
+        h2.save()
+
+        # h1's stale cache must not erase h2's record on h1's next save.
+        cfg_a2 = _make_config("a2.example", is_alive=False)
+        h1.update([cfg_a2])
+        h1.save()
+
+        data = _json.loads(f.read_text(encoding="utf-8"))
+        keys = set(data["configs"])
+        assert h1.config_key(cfg_a) in keys
+        assert h1.config_key(cfg_b) in keys
+        assert h1.config_key(cfg_a2) in keys
+
+    def test_save_merge_tie_favors_later_observer(self, tmp_path) -> None:
+        """Same-second recency tie: a disk file written AFTER this cache was
+        loaded is the later observation, so its record wins over the stale
+        in-memory copy (h1 must not erase h2's fresh verdict/ban)."""
+        import json as _json
+
+        f = tmp_path / "hh.json"
+        s = _make_settings({"health_history_file": str(f)})
+
+        h1 = HealthHistory(s)
+        cfg = _make_config("tie.example", is_alive=True)
+        h1.update([cfg])
+        h1.save()
+
+        # A concurrent run records the same config as DEAD and saves.
+        h2 = HealthHistory(s)
+        h2.load()
+        cfg_dead = _make_config("tie.example", is_alive=False)
+        h2.update([cfg_dead])
+        h2.save()
+
+        # Force the SAME-recency-second tie deterministically (wall-clock
+        # seconds collide in a fast test): h1's snapshot predates h2's write,
+        # and both copies carry the same last_seen.
+        disk = _json.loads(f.read_text(encoding="utf-8"))
+        key = h1.config_key(cfg)
+        h1._cache_loaded_at = int(disk["updated_at"]) - 1
+        h1._cache["configs"][key]["last_seen"] = disk["configs"][key]["last_seen"]
+
+        # h1's stale cache saves: the tie must go to the disk (later observer).
+        h1.save()
+
+        record = _json.loads(f.read_text(encoding="utf-8"))["configs"][key]
+        assert record["recent"][-1] is False
+        assert record["consecutive_failures"] == 1
+
+    def test_save_merge_tie_favors_own_newer_record(self, tmp_path) -> None:
+        """A file this cache already reflects loses ties to the in-memory
+        record — repeated saves in one run must not lose the newest verdict."""
+        import json as _json
+
+        f = tmp_path / "hh.json"
+        s = _make_settings({"health_history_file": str(f)})
+        h = HealthHistory(s)
+
+        cfg = _make_config("own.example", is_alive=False)
+        h.update([cfg])
+        h.save()
+        cfg_pass = _make_config("own.example", is_alive=True)
+        h.update([cfg_pass])
+        h.save()
+
+        record = _json.loads(f.read_text(encoding="utf-8"))["configs"][
+            h.config_key(cfg)
+        ]
+        assert record["recent"] == [False, True]
+        assert record["consecutive_failures"] == 0
+
 
 # ---------------------------------------------------------------------------
 # update_sources()
@@ -416,6 +644,35 @@ class TestUpdate:
 
 class TestUpdateSources:
     """Cover lines 186, 226-228, 230-231."""
+
+    def test_update_sources_ignores_published_fast_track_sources(self) -> None:
+        """Synthetic fast-track sources never register source statistics.
+
+        rerun_published revalidates the published file under the synthetic
+        names "published-blacklist"/"published-whitelist". Accumulating stats
+        for them source-banned the pseudo-source, and every fast-track run
+        then wiped the whole freshly validated list.
+        """
+        h = HealthHistory(
+            _make_settings(
+                {
+                    "source_min_checked": 1,
+                    "source_bad_alive_rate": 0.02,
+                    "source_bad_runs_to_ban": 1,
+                }
+            ),
+        )
+        cfg = _make_config(
+            "h.example",
+            443,
+            is_alive=False,
+            source_name="published-whitelist",
+        )
+        list_stats: dict = {}
+        h.update_sources([cfg], list_stats)
+        # No record created, nothing annotated: a full no-op for source stats.
+        assert h.load()["sources"] == {}
+        assert list_stats["sources"] == {}
 
     def test_update_sources_disabled_returns_early(self) -> None:
         """update_sources returns early when source_health_enabled=False."""
@@ -454,6 +711,73 @@ class TestUpdateSources:
         history = h.load()
         assert history["sources"]["bad_src"]["bad_runs"] == 2
         assert history["sources"]["bad_src"]["banned_until"] > 0
+
+    def test_update_sources_permanent_disable_after_threshold(self) -> None:
+        """A source failing past source_bad_runs_to_disable is archived.
+
+        The ban must be effectively permanent (far-future banned_until) so a
+        trash source stops re-entering the pool every 12h cooldown.
+        """
+        h = HealthHistory(
+            _make_settings(
+                {
+                    "source_min_checked": 1,
+                    "source_bad_alive_rate": 0.5,
+                    "source_bad_runs_to_ban": 2,
+                    "source_bad_runs_to_disable": 3,
+                }
+            ),
+        )
+        cfg = _make_config(is_alive=False, source_name="trash_src")
+        for _ in range(3):
+            h.update_sources([cfg], {})
+        record = h.load()["sources"]["trash_src"]
+        assert record["bad_runs"] == 3
+        # Far-future: more than 5 years out, versus the ~12h of a normal ban.
+        assert record["banned_until"] > time.time() + 5 * 365 * 24 * 3600
+
+    def test_update_sources_disable_threshold_zero_keeps_time_boxed_ban(
+        self,
+    ) -> None:
+        """source_bad_runs_to_disable=0 (default) keeps the plain 12h ban."""
+        h = HealthHistory(
+            _make_settings(
+                {
+                    "source_min_checked": 1,
+                    "source_bad_alive_rate": 0.5,
+                    "source_bad_runs_to_ban": 2,
+                    "source_bad_runs_to_disable": 0,
+                }
+            ),
+        )
+        cfg = _make_config(is_alive=False, source_name="bad_src")
+        for _ in range(6):
+            h.update_sources([cfg], {})
+        record = h.load()["sources"]["bad_src"]
+        assert record["bad_runs"] == 6
+        # Time-boxed: within the 12h cooldown window, not a decade out.
+        assert record["banned_until"] <= time.time() + 24 * 3600
+
+    def test_update_sources_good_run_resets_disable_counter(self) -> None:
+        """A good cumulative sample clears bad_runs below the disable floor."""
+        h = HealthHistory(
+            _make_settings(
+                {
+                    "source_min_checked": 1,
+                    "source_bad_alive_rate": 0.5,
+                    "source_bad_runs_to_ban": 2,
+                    "source_bad_runs_to_disable": 2,
+                }
+            ),
+        )
+        dead = _make_config(is_alive=False, source_name="mixed_src")
+        alive = _make_config(is_alive=True, source_name="mixed_src")
+        h.update_sources([dead], {})
+        h.update_sources([dead], {})
+        h.update_sources([alive], {})
+        record = h.load()["sources"]["mixed_src"]
+        assert record["bad_runs"] == 0
+        assert record["banned_until"] == 0
 
     def test_update_sources_good_source_resets_bad_runs(self) -> None:
         """update_sources resets bad_runs for a good source (covers else branch)."""
@@ -794,3 +1118,25 @@ def test_consecutive_successes_trailing_streak(tmp_path) -> None:
     health.update([cfg])
     assert health.consecutive_successes(cfg) == 2
     assert health.last_pass_ts(cfg) >= first_pass
+
+
+def test_update_keeps_source_for_published_fast_track_names() -> None:
+    """Fast-track rides under synthetic published-* names (not real sources).
+
+    Overwriting the record source would detach the config from the healthy
+    source that found it and forfeit the source-health bonus.
+    """
+    import tempfile
+
+    from src.scheduler.health_history import HealthHistory
+
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = _make_settings({"health_history_file": f"{tmp}/health-history.json"})
+        history = HealthHistory(settings)
+        cfg = _make_config(is_alive=True, source_name="github-oak")
+        history.update([cfg])
+        record = history._config_record(cfg)
+        assert record["source"] == "github-oak"
+        cfg.source_name = "published-blacklist"
+        history.update([cfg])
+        assert history._config_record(cfg)["source"] == "github-oak"

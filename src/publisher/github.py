@@ -17,13 +17,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hashlib
 import logging
 import time
 from datetime import UTC
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
+
+from src.utils.net import is_safe_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +108,22 @@ class GitHubPublisher:
         }
 
     async def _get_client(self) -> httpx.AsyncClient:
+        # Fail closed: never send the GitHub token (Authorization bearer)
+        # to a host that is not a verified public https endpoint. An
+        # attacker-controlled or misconfigured ``github_api_base`` pointing
+        # at an internal service or the cloud metadata endpoint would
+        # otherwise exfiltrate the token. Validated on every call, not just
+        # once (mirrors src.sources.github): DNS rebinding (TTL 0) can swap
+        # the address between the first check and a later request, so a
+        # cached verdict would reopen the SSRF window.
+        parts = urlsplit(self.api_base)
+        if parts.scheme.lower() != "https":
+            raise ValueError(f"GitHub api_base must use https, got {parts.scheme!r}")
+        if not await is_safe_public_url(self.api_base, timeout=5.0):
+            raise ValueError(
+                "Refusing to send GitHub credentials to non-public "
+                f"api_base {parts.hostname!r}."
+            )
         if self._client is not None:
             return self._client
         async with self._lock:
@@ -145,6 +164,16 @@ class GitHubPublisher:
         client = await self._get_client()
         response = await client.get(url, params={"ref": self.branch})
 
+        # Transient 5xx -> one retry.
+        if response.status_code in (500, 502, 503, 504):
+            logger.warning(
+                "GitHub GET %s hit HTTP %s; retrying once.",
+                path,
+                response.status_code,
+            )
+            await asyncio.sleep(2.0)
+            response = await client.get(url, params={"ref": self.branch})
+
         if response.status_code == 404:
             logger.info(
                 "File %s does not exist yet in %s/%s — will create.",
@@ -154,8 +183,8 @@ class GitHubPublisher:
             )
             return None
 
-        # Rate-limited 403 -> wait & retry once.
-        if response.status_code == 403 and self._is_rate_limited(response):
+        # Rate-limited 403/429 -> wait & retry once.
+        if response.status_code in (403, 429) and self._is_rate_limited(response):
             await self._wait_for_rate_limit(response)
             response = await client.get(url, params={"ref": self.branch})
             if response.status_code == 404:
@@ -170,6 +199,12 @@ class GitHubPublisher:
             )
             return None
 
+        if response.status_code in (401, 403) and not self._is_rate_limited(response):
+            raise GitHubPublishError(
+                f"GitHub auth failed for {path}: HTTP {response.status_code} — "
+                "check GITHUB_TOKEN/owner/repo.",
+            )
+
         response.raise_for_status()
         data: Any = response.json()
         if isinstance(data, dict):
@@ -181,7 +216,11 @@ class GitHubPublisher:
 
     @staticmethod
     def _is_rate_limited(response: httpx.Response) -> bool:
-        """True when a 403 is due to a primary or secondary rate limit."""
+        """True when a 403/429 is due to a primary or secondary rate limit."""
+        # A bare 429 is always a rate limit, even without Retry-After
+        # (GitHub secondary limits sometimes omit the header).
+        if response.status_code == 429:
+            return True
         if response.headers.get("X-RateLimit-Remaining") == "0":
             return True
         # Secondary rate limit: GitHub sends Retry-After.
@@ -261,9 +300,27 @@ class GitHubPublisher:
             return False
         except GitHubPublishError:
             raise
+        except ValueError:
+            # A rejected api_base / SSRF guard must not be downgraded to a quiet
+            # recoverable failure — surface it so the caller fails closed.
+            raise
         except Exception:
             logger.exception("Unexpected error fetching SHA for %s", path)
             return False
+
+        # Step 1.5: skip unchanged files. Every run used to PUT every file,
+        # spawning ~13 "auto-update" commits per run even when the content was
+        # byte-identical (~11k commits in the publish repository). The SHA the
+        # Contents API reports for a file IS its git blob SHA, so comparing it
+        # with a locally computed blob hash is exact and needs no extra request.
+        # The hash is the git object hash GitHub itself reports (S324 is
+        # suppressed below) — not a security primitive.
+        local_blob_sha = hashlib.sha1(  # noqa: S324
+            b"blob %d\x00" % len(content_bytes) + content_bytes
+        ).hexdigest()
+        if sha == local_blob_sha:
+            logger.info("Unchanged, skipping %s (%s).", path, local_blob_sha[:8])
+            return True
 
         # Step 2: PUT the file.
         url = _contents_url(self.owner, self.repo, path)
@@ -274,6 +331,11 @@ class GitHubPublisher:
         }
         if sha:
             body["sha"] = sha
+        # Whether the file existed when we first looked: a 409-retry that
+        # re-GETs to None must not silently CREATE the file — it was
+        # deleted by a competing commit mid-publish, and resurrecting a
+        # deliberately removed subscription is worse than failing closed.
+        existed = sha is not None
 
         client = await self._get_client()
         try:
@@ -282,8 +344,22 @@ class GitHubPublisher:
             logger.exception("Network error publishing %s", path)
             return False
 
-        # Rate-limited 403 -> wait & retry once.
-        if response.status_code == 403 and self._is_rate_limited(response):
+        # Transient 5xx -> one retry (mirrors sources/github API client).
+        if response.status_code in (500, 502, 503, 504):
+            logger.warning(
+                "GitHub PUT %s hit HTTP %s; retrying once.",
+                path,
+                response.status_code,
+            )
+            await asyncio.sleep(2.0)
+            try:
+                response = await client.put(url, json=body)
+            except httpx.RequestError:
+                logger.exception("Network error on 5xx retry publishing %s", path)
+                return False
+
+        # Rate-limited 403/429 -> wait & retry once.
+        if response.status_code in (403, 429) and self._is_rate_limited(response):
             await self._wait_for_rate_limit(response)
             try:
                 response = await client.put(url, json=body)
@@ -318,11 +394,23 @@ class GitHubPublisher:
                 )
                 try:
                     sha = await self._get_file_sha(path)
+                except GitHubPublishError:
+                    # Rate-limit cap mid-recovery is a deliberate abort,
+                    # not a recoverable conflict — do not downgrade to False.
+                    raise
+                except ValueError:
+                    raise
                 except Exception:
                     logger.exception("Failed to GET %s for SHA after conflict", path)
                     break
                 if sha:
                     body["sha"] = sha
+                elif existed:
+                    logger.error(
+                        "File %s was deleted during publish; refusing to recreate it.",
+                        path,
+                    )
+                    return False
                 else:
                     # The file was deleted by a competing commit: PUT without
                     # a "sha" key creates it — "sha": null would 422 forever.
@@ -334,6 +422,22 @@ class GitHubPublisher:
                         "Network error on conflict retry publishing %s", path
                     )
                     return False
+                # A rate limit answered mid-conflict-recovery must go through
+                # the same wait path as the primary PUT: falling through to
+                # raise_for_status aborted the publish while GitHub had
+                # already told us when to retry.
+                if response.status_code in (403, 429) and self._is_rate_limited(
+                    response
+                ):
+                    await self._wait_for_rate_limit(response)
+                    try:
+                        response = await client.put(url, json=body)
+                    except httpx.RequestError:
+                        logger.exception(
+                            "Network error on rate-limit retry publishing %s",
+                            path,
+                        )
+                        return False
                 if response.status_code in (200, 201):
                     action = "updated" if sha else "created"
                     logger.info(
@@ -366,24 +470,56 @@ class GitHubPublisher:
             # recovers the 409-on-GET case where the file actually exists.
             try:
                 fresh_sha = await self._get_file_sha(path)
+            except GitHubPublishError:
+                raise
+            except ValueError:
+                raise
             except Exception:
                 logger.exception("Failed to GET %s for SHA after 422", path)
                 fresh_sha = None
             if fresh_sha:
                 body["sha"] = fresh_sha
+            elif existed:
+                # Same fail-closed rule as the 409 path: the file existed
+                # at GET time and is gone now — refusing to recreate a
+                # deliberately removed subscription.
+                logger.error(
+                    "File %s was deleted during publish; refusing to recreate it.",
+                    path,
+                )
+                return False
+            else:
+                # File deleted concurrently: retry as create (no sha).
+                body.pop("sha", None)
+            try:
+                response = await client.put(url, json=body)
+            except httpx.RequestError:
+                logger.exception("Network error on 422 retry publishing %s", path)
+                return False
+            if response.status_code in (403, 429) and self._is_rate_limited(response):
+                # Cap exhaustion raises GitHubPublishError (deliberate abort).
+                await self._wait_for_rate_limit(response)
                 try:
                     response = await client.put(url, json=body)
                 except httpx.RequestError:
-                    logger.exception("Network error on 422 retry publishing %s", path)
+                    logger.exception("Network error on 422 rate-limit retry %s", path)
                     return False
-                if response.status_code in (200, 201):
+            if response.status_code in (200, 201):
+                if fresh_sha:
                     logger.info(
                         "Successfully updated %s in %s/%s (after 422 race).",
                         path,
                         self.owner,
                         self.repo,
                     )
-                    return True
+                else:
+                    logger.info(
+                        "Successfully created %s in %s/%s (after 422 race).",
+                        path,
+                        self.owner,
+                        self.repo,
+                    )
+                return True
             try:
                 detail = response.json()
             except Exception:
@@ -391,6 +527,12 @@ class GitHubPublisher:
             logger.error("GitHub 422 publishing %s: %s", path, detail)
             return False
 
+        # Auth failures are config errors, not transient publish failures.
+        if response.status_code in (401, 403) and not self._is_rate_limited(response):
+            raise GitHubPublishError(
+                f"GitHub publish auth failed for {path}: HTTP "
+                f"{response.status_code} — check GITHUB_TOKEN/owner/repo.",
+            )
         # Any other non-2xx.
         try:
             response.raise_for_status()

@@ -7,12 +7,14 @@ import base64
 import contextlib
 import logging
 import time as _time
+from email.utils import formatdate
 from unittest import mock
 
 import httpx
 import pytest
 
 from src.sources.github import (
+    _SERVER_ERROR_RETRY_DELAY,
     GitHubClient,
     GitHubRateLimitError,
     _clean_repo_path,
@@ -190,6 +192,16 @@ class TestPathHelpers:
         url = _raw_url("  Owner ", " Repo ", " Feat ", " sub/file.txt ")
         assert url.startswith("https://raw.githubusercontent.com/")
 
+    def test_raw_url_keeps_branch_slash(self) -> None:
+        """A branch named ``feature/test`` keeps its slash in the raw URL.
+
+        The raw host does not decode %2F in the ref position, so a
+        percent-encoded slash made every file of such a branch 404.
+        """
+        url = _raw_url("owner", "repo", "feature/test", "dir/file.txt")
+        assert "/owner/repo/feature/test/dir/file.txt" in url
+        assert "%2F" not in url
+
 
 # ===================================================================
 # GitHubClient — __init__ / _headers / lifecycle
@@ -233,7 +245,11 @@ class TestInitAndHeaders:
         assert "Authorization" not in headers
         assert headers["Accept"] == "text/plain,*/*"
 
-    def test_get_client_lazy_creation(self) -> None:
+    def test_get_client_lazy_creation(self, monkeypatch) -> None:
+        async def _public(_url: str, *, timeout: float = 5.0) -> bool:
+            return True
+
+        monkeypatch.setattr("src.sources.github.is_safe_public_url", _public)
         client = GitHubClient()
         assert client._client is None
 
@@ -243,7 +259,11 @@ class TestInitAndHeaders:
         # second call returns same instance
         assert asyncio.run(client._get_client()) is c
 
-    def test_get_client_concurrent_safety(self) -> None:
+    def test_get_client_concurrent_safety(self, monkeypatch) -> None:
+        async def _public(_url: str, *, timeout: float = 5.0) -> bool:
+            return True
+
+        monkeypatch.setattr("src.sources.github.is_safe_public_url", _public)
         client = GitHubClient()
         results = []
 
@@ -258,7 +278,11 @@ class TestInitAndHeaders:
         # All coros got the same client instance
         assert len(set(id(r) for r in results)) == 1
 
-    def test_aclose(self) -> None:
+    def test_aclose(self, monkeypatch) -> None:
+        async def _public(_url: str, *, timeout: float = 5.0) -> bool:
+            return True
+
+        monkeypatch.setattr("src.sources.github.is_safe_public_url", _public)
         client = GitHubClient()
         c = asyncio.run(client._get_client())
         assert client._client is c
@@ -271,7 +295,12 @@ class TestInitAndHeaders:
         # no client yet, must not crash
         asyncio.run(client.aclose())
 
-    def test_async_context_manager(self) -> None:
+    def test_async_context_manager(self, monkeypatch) -> None:
+        async def _public(_url: str, *, timeout: float = 5.0) -> bool:
+            return True
+
+        monkeypatch.setattr("src.sources.github.is_safe_public_url", _public)
+
         async def test():
             async with GitHubClient() as client:
                 assert client._client is not None
@@ -292,6 +321,40 @@ class TestInitAndHeaders:
 
         result = asyncio.run(client._request("GET", "/repos/o/r/contents/f"))
         assert result == {"name": "test"}
+
+    def test_get_client_rejects_non_https_api_base(self, monkeypatch) -> None:
+        """http api_base must be rejected before any request is issued."""
+
+        async def _public(_url: str, *, timeout: float = 5.0) -> bool:
+            return True
+
+        monkeypatch.setattr("src.sources.github.is_safe_public_url", _public)
+        client = GitHubClient(api_base="http://example.com")
+        with pytest.raises(ValueError, match="must use https"):
+            asyncio.run(client._get_client())
+
+    def test_get_client_rejects_non_public_api_base(self, monkeypatch) -> None:
+        """An internal/loopback api_base must never receive the bearer token."""
+
+        async def _unsafe(_url: str, *, timeout: float = 5.0) -> bool:
+            return False
+
+        monkeypatch.setattr("src.sources.github.is_safe_public_url", _unsafe)
+        client = GitHubClient(api_base="https://127.0.0.1:8080")
+        with pytest.raises(ValueError, match="non-public"):
+            asyncio.run(client._get_client())
+
+    def test_get_client_accepts_public_https_api_base(self, monkeypatch) -> None:
+        """A verified public https api_base builds the client normally."""
+
+        async def _public(_url: str, *, timeout: float = 5.0) -> bool:
+            return True
+
+        monkeypatch.setattr("src.sources.github.is_safe_public_url", _public)
+        client = GitHubClient(api_base="https://api.github.com")
+        c = asyncio.run(client._get_client())
+        assert c is not None
+        assert client._api_base_checked is True
 
 
 # ===================================================================
@@ -406,7 +469,7 @@ class TestRequestRateLimit:
 
         result = asyncio.run(client._request("GET", "/url"))
         assert result == {"ok": True}
-        assert sleeps == [5.0]
+        assert sleeps and 5.0 <= sleeps[0] <= 5.0 * 1.25
 
     def test_403_retry_after_invalid_default_wait(self, monkeypatch) -> None:
         """Invalid Retry-After falls back to _DEFAULT_RATELIMIT_WAIT."""
@@ -427,8 +490,8 @@ class TestRequestRateLimit:
 
         result = asyncio.run(client._request("GET", "/url"))
         assert result == {"ok": True}
-        # default wait when retry-after is unparseable
-        assert sleeps == [pytest.approx(60.0, abs=5)]
+        # default wait when retry-after is unparseable (plus up to 25% jitter)
+        assert 60.0 <= sleeps[0] <= 60.0 * 1.25
 
     def test_403_rate_limit_exceeds_cap_raises(self, monkeypatch) -> None:
         """Wait > 300s raises GitHubRateLimitError."""
@@ -463,6 +526,62 @@ class TestRequestRateLimit:
                     status_code=403,
                     headers={"X-RateLimit-Remaining": "0"},
                 ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        async def fake_sleep(_secs):
+            pass
+
+        monkeypatch.setattr("src.sources.github.asyncio.sleep", fake_sleep)
+
+        with pytest.raises(GitHubRateLimitError, match="after retry"):
+            asyncio.run(client._request("GET", "/url"))
+
+    def test_429_retry_after_success(self, monkeypatch) -> None:
+        """A 429 (secondary rate limit) with Retry-After is waited out."""
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(status_code=429, headers={"Retry-After": "4"}),
+                _FakeResponse(json_data={"ok": True}),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+        sleeps = []
+
+        async def fake_sleep(secs):
+            sleeps.append(secs)
+
+        monkeypatch.setattr("src.sources.github.asyncio.sleep", fake_sleep)
+
+        result = asyncio.run(client._request("GET", "/url"))
+        assert result == {"ok": True}
+        assert sleeps and 4.0 <= sleeps[0] <= 4.0 * 1.25
+
+    def test_429_rate_limit_exceeds_cap_raises(self, monkeypatch) -> None:
+        """A 429 whose wait exceeds the cap raises GitHubRateLimitError."""
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(
+                    status_code=429,
+                    headers={"Retry-After": "999"},
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        with pytest.raises(GitHubRateLimitError, match=">300s cap"):
+            asyncio.run(client._request("GET", "/url"))
+
+    def test_429_after_retry_raises(self, monkeypatch) -> None:
+        """Retry still gets 429 -> GitHubRateLimitError."""
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(status_code=429, headers={"Retry-After": "1"}),
+                _FakeResponse(status_code=429, headers={"Retry-After": "1"}),
             ]
         )
         _patch_get_client(client, monkeypatch, fc)
@@ -716,8 +835,14 @@ class TestListRepoTree:
         result = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
         assert result is None
 
-    def test_truncated_tree_warns(self, monkeypatch, caplog) -> None:
-        """A truncated tree still serves its entries, with a warning."""
+    def test_truncated_tree_is_rejected(self, monkeypatch, caplog) -> None:
+        """A truncated tree returns None — the caller keeps its own listing.
+
+        The truncated listing can be missing the requested directory entirely
+        (the 1000-entry cap cuts wherever GitHub decides), so serving it
+        replaced a known-good partial Contents listing with a *smaller* one
+        and silently lost files.
+        """
         caplog.set_level(logging.WARNING)
         client = GitHubClient()
         fc = _FakeClient(
@@ -733,9 +858,48 @@ class TestListRepoTree:
         _patch_get_client(client, monkeypatch, fc)
 
         result = asyncio.run(client._list_repo_tree("owner", "repo", "", "main"))
-        assert result is not None
-        assert [e["name"] for e in result] == ["f.txt"]
+        assert result is None
         assert "truncated" in caplog.text
+
+    def test_capped_listing_falls_back_to_none_on_truncated_tree(
+        self, monkeypatch
+    ) -> None:
+        """At the cap a truncated tree leaves the Contents listing in place."""
+        client = GitHubClient()
+        capped = [
+            {"name": f"f{i}.txt", "path": f"dir/f{i}.txt", "type": "file"}
+            for i in range(1000)
+        ]
+        fc = _FakeClient(
+            [
+                _FakeResponse(json_data=capped),
+                _FakeResponse(
+                    json_data={
+                        "truncated": True,
+                        "tree": [{"path": "dir/f0.txt", "type": "blob"}],
+                    }
+                ),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+
+        result = asyncio.run(client.list_repo_contents("owner", "repo", "dir"))
+        # The (capped but known-good) Contents listing is kept as-is.
+        assert len(result) == 1000
+
+    def test_tree_skips_non_dict_entries(self, monkeypatch) -> None:
+        """Junk entries in a tree payload are skipped, not mapped."""
+        client = GitHubClient()
+
+        async def fetch_with_junk(owner, repo, branch):
+            # Bypasses _fetch_repo_tree's own non-dict filter, as a cached
+            # future from a differently-filtered path could.
+            return [{"path": "dir/a.txt", "type": "blob"}, "junk", None]
+
+        monkeypatch.setattr(client, "_fetch_repo_tree", fetch_with_junk)
+
+        result = asyncio.run(client._list_repo_tree("owner", "repo", "dir", "main"))
+        assert [e["name"] for e in result] == ["a.txt"]
 
     def test_tree_result_is_cached(self, monkeypatch) -> None:
         """The whole-branch tree is fetched once, not once per directory."""
@@ -971,6 +1135,33 @@ class TestFetchFile:
         result = asyncio.run(client.fetch_file("owner", "repo", "dir/f.txt", "feature"))
         assert result == "raw-content"
 
+    def test_fetch_file_rate_limit_fallback_failure_returns_empty(
+        self, monkeypatch
+    ) -> None:
+        """A raw fallback still failing (429/5xx) returns '' instead of raising.
+
+        fetch_file's contract is an empty string on failure — the Contents API
+        being rate-limited must not crash the whole fetch stage.
+        """
+        client = GitHubClient()
+
+        async def limited(*args, **kwargs):
+            raise GitHubRateLimitError("limited")
+
+        monkeypatch.setattr(client, "_request", limited)
+
+        async def failing_raw(url):
+            raise httpx.HTTPStatusError(
+                "429 still failing after retries",
+                request=mock.MagicMock(),
+                response=mock.MagicMock(status_code=429),
+            )
+
+        monkeypatch.setattr(client, "fetch_raw_file", failing_raw)
+
+        result = asyncio.run(client.fetch_file("owner", "repo", "dir/f.txt", "feature"))
+        assert result == ""
+
     def test_fetch_file_404_returns_empty(self, monkeypatch) -> None:
         client = GitHubClient()
         fc = _FakeClient([_FakeResponse(status_code=404)])
@@ -990,6 +1181,17 @@ class TestFetchRawFile:
         client = GitHubClient()
         result = asyncio.run(client.fetch_raw_file("https://evil.example.com/file.txt"))
         assert result == ""
+
+    def test_rejection_log_masks_query_token(self, caplog) -> None:
+        """A ``?token=`` download_url is logged redacted, never raw."""
+        client = GitHubClient()
+        secret_url = "https://evil.example.com/file.txt?token=ghp_ABCDEF0123456789"
+        with caplog.at_level(logging.WARNING, logger="src.sources.github"):
+            result = asyncio.run(client.fetch_raw_file(secret_url))
+        assert result == ""
+        logged = "\n".join(record.getMessage() for record in caplog.records)
+        assert "ghp_ABCDEF0123456789" not in logged
+        assert "token=***" in logged
 
     def test_rejects_http_scheme(self) -> None:
         client = GitHubClient()
@@ -1012,6 +1214,69 @@ class TestFetchRawFile:
         )
         assert result == ""
 
+    def test_raw_redirect_is_refused(self, monkeypatch, caplog) -> None:
+        """A redirect from the raw host is refused, never followed (SSRF).
+
+        The destination is not re-validated against the trusted-host
+        allow-list, so it could be any host.
+        """
+        caplog.set_level(logging.WARNING)
+        client = GitHubClient()
+        monkeypatch.setattr(
+            "src.sources.github.httpx.AsyncClient",
+            _raw_client(
+                lambda url: _FakeResponse(
+                    status_code=302,
+                    headers={"Location": "https://evil.example.com/f.txt"},
+                )
+            ),
+        )
+
+        result = asyncio.run(
+            client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/f.txt")
+        )
+        assert result == ""
+        assert "refusing to follow" in caplog.text
+
+    def test_retry_after_naive_http_date_is_parsed(self, monkeypatch) -> None:
+        """A Retry-After HTTP-date without a timezone becomes a UTC delay.
+
+        ``formatdate(usegmt=False)`` ends in ``-0000``, for which
+        parsedate_to_datetime returns a naive datetime.
+        """
+        client = GitHubClient()
+        attempt = {"count": 0}
+        future = _time.time() + 20
+
+        def throttled(url):
+            attempt["count"] += 1
+            if attempt["count"] == 1:
+                return _FakeResponse(
+                    status_code=429,
+                    headers={"Retry-After": formatdate(timeval=future)},
+                )
+            return _FakeResponse(text_data="after date throttle")
+
+        monkeypatch.setattr(
+            "src.sources.github.httpx.AsyncClient",
+            _raw_client(throttled),
+        )
+
+        slept: list[float] = []
+
+        async def fake_sleep(secs):
+            slept.append(secs)
+
+        monkeypatch.setattr("src.sources.github.asyncio.sleep", fake_sleep)
+
+        result = asyncio.run(
+            client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/f.txt")
+        )
+        assert result == "after date throttle"
+        assert attempt["count"] == 2
+        # The parsed date delay (~20s) is used, not the 0.5s attempt backoff.
+        assert 10 <= slept[0] <= 30
+
     def test_network_error_retry_then_empty(self, monkeypatch) -> None:
         client = GitHubClient()
 
@@ -1032,6 +1297,50 @@ class TestFetchRawFile:
             client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/f.txt")
         )
         assert result == ""
+
+    def test_read_timeout_returns_empty_after_retries(self, monkeypatch) -> None:
+        """A wall-clock budget expiry inside fetch_raw_file is caught: bare
+        TimeoutError is not an httpx.RequestError, so without its own handler
+        it used to escape and fail the WHOLE source in the manager."""
+        client = GitHubClient()
+
+        class _HangingStream:
+            async def __aenter__(self):
+                raise TimeoutError("wall budget expired")
+
+            async def __aexit__(self, *exc):
+                return False
+
+        class _HangingClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return None
+
+            def stream(self, method, url, **kwargs):
+                self.calls += 1
+                return _HangingStream()
+
+        hanging = _HangingClient()
+        monkeypatch.setattr(
+            "src.sources.github.httpx.AsyncClient",
+            lambda *a, **kw: hanging,
+        )
+
+        async def fake_sleep(_secs):
+            pass
+
+        monkeypatch.setattr("src.sources.github.asyncio.sleep", fake_sleep)
+
+        result = asyncio.run(
+            client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/f.txt")
+        )
+        assert result == ""
+        assert hanging.calls == 3  # _RAW_FETCH_ATTEMPTS
 
     def test_successful_raw_fetch(self, monkeypatch) -> None:
         client = GitHubClient()
@@ -1153,8 +1462,9 @@ class TestFetchRawFile:
         )
         assert result == "after throttle"
         assert attempt["count"] == 2
-        # Retry-After is honoured instead of the default backoff.
-        assert slept == [2.0]
+        # Retry-After is honoured instead of the default backoff (plus up to
+        # 25% jitter, like the API path).
+        assert len(slept) == 1 and 2.0 <= slept[0] <= 2.0 * 1.25
 
     def test_retry_after_garbage_falls_back_to_backoff(self, monkeypatch) -> None:
         """An unparsable Retry-After uses the attempt backoff."""
@@ -1186,7 +1496,7 @@ class TestFetchRawFile:
             client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/f.txt")
         )
         assert result == "recovered"
-        assert slept == [0.5]
+        assert len(slept) == 1 and 0.5 <= slept[0] <= 0.5 * 1.25
 
     def test_client_error_is_not_retried(self, monkeypatch) -> None:
         """403 is not transient: raise on the first attempt, without sleeping."""
@@ -1683,6 +1993,11 @@ class TestFetchRawFileEdge:
 class TestRequestIntegration:
     def test_request_with_real_client(self, monkeypatch) -> None:
         """Use a patched httpx.AsyncClient to test full request flow."""
+
+        async def _public(_url: str, *, timeout: float = 5.0) -> bool:
+            return True
+
+        monkeypatch.setattr("src.sources.github.is_safe_public_url", _public)
         client = GitHubClient()
 
         class FakeHttpxClient:
@@ -1703,3 +2018,156 @@ class TestRequestIntegration:
 
         result = asyncio.run(client._request("GET", "/repos/o/r/contents/f"))
         assert result == {"method": "GET", "url": "/repos/o/r/contents/f"}
+
+
+class TestServerErrorRetry:
+    """A transient 502/503/504 from the API is retried once with backoff."""
+
+    def test_502_retried_then_succeeds(self, monkeypatch) -> None:
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(status_code=502),
+                _FakeResponse(json_data={"ok": True}),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+        sleeps: list[float] = []
+
+        async def fake_sleep(secs):
+            sleeps.append(secs)
+
+        monkeypatch.setattr("src.sources.github.asyncio.sleep", fake_sleep)
+        result = asyncio.run(client._request("GET", "/url"))
+        assert result == {"ok": True}
+        assert len(sleeps) == 1
+        assert _SERVER_ERROR_RETRY_DELAY <= sleeps[0] <= _SERVER_ERROR_RETRY_DELAY + 1.0
+
+    def test_502_on_every_attempt_raises(self, monkeypatch) -> None:
+        """A 5xx that survives the retry surfaces as HTTPStatusError."""
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(status_code=503),
+                _FakeResponse(status_code=503),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+        with pytest.raises(httpx.HTTPStatusError):
+            asyncio.run(client._request("GET", "/url"))
+
+    def test_500_is_not_retried(self, monkeypatch) -> None:
+        """Only the transient 502/503/504 set retries; a plain 500 raises."""
+        client = GitHubClient()
+        fc = _FakeClient(
+            [
+                _FakeResponse(status_code=500),
+            ]
+        )
+        _patch_get_client(client, monkeypatch, fc)
+        with pytest.raises(httpx.HTTPStatusError):
+            asyncio.run(client._request("GET", "/url"))
+
+
+class TestRawClientAuthIsolation:
+    """Raw downloads must never carry the API bearer token.
+
+    The raw client is a SEPARATE client on purpose: httpx merges client-level
+    headers with per-request ones, so routing raw fetches through the API
+    client would send ``Authorization: Bearer <token>`` to
+    raw.githubusercontent.com.
+    """
+
+    def test_raw_request_carries_no_authorization(self, monkeypatch) -> None:
+        client = GitHubClient(token="tok123")
+        seen: dict[str, object] = {}
+
+        class _RecordingResponse:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            async def aiter_bytes(self):
+                yield b"content"
+
+        class _RecordingCtx:
+            async def __aenter__(self):
+                return _RecordingResponse()
+
+            async def __aexit__(self, *exc):
+                return False
+
+        class _RecordingRawClient:
+            def stream(self, method: str, url: str, **kwargs):
+                seen["headers"] = dict(kwargs.get("headers") or {})
+
+                class _Resp:
+                    status_code = 200
+
+                    def raise_for_status(self) -> None:
+                        return None
+
+                    async def aiter_bytes(self):
+                        yield b"content"
+
+                class _StreamCtx:
+                    async def __aenter__(self):
+                        return _Resp()
+
+                    async def __aexit__(self, *exc):
+                        return False
+
+                return _StreamCtx()
+
+        recording = _RecordingRawClient()
+
+        async def fake_get_raw():
+            return recording
+
+        monkeypatch.setattr(client, "_get_raw_client", fake_get_raw)
+
+        async def _fake_read(response, *, max_bytes: int):
+            return "content"
+
+        monkeypatch.setattr(
+            "src.sources.github.read_limited_text",
+            _fake_read,
+        )
+        body = asyncio.run(
+            client.fetch_raw_file("https://raw.githubusercontent.com/o/r/main/f.txt")
+        )
+        assert body == "content"
+        headers = seen["headers"]
+        assert isinstance(headers, dict)
+        assert "Authorization" not in headers
+        assert headers.get("User-Agent") == client.USER_AGENT
+
+    def test_raw_client_is_reused_across_attempts(self, monkeypatch) -> None:
+        """The raw client is created once, not per attempt/file."""
+        client = GitHubClient()
+        built: list[object] = []
+
+        class _NoopClient:
+            async def aclose(self) -> None:
+                return None
+
+        original = httpx.AsyncClient
+
+        def counting_client(**kwargs):
+            c = original(**kwargs)
+            built.append(c)
+            return c
+
+        monkeypatch.setattr("src.sources.github.httpx.AsyncClient", counting_client)
+
+        async def scenario():
+            c1 = await client._get_raw_client()
+            c2 = await client._get_raw_client()
+            assert c1 is c2
+            await client.aclose()
+            c3 = await client._get_raw_client()
+            assert c3 is not c1
+
+        asyncio.run(scenario())
+        assert len(built) == 2

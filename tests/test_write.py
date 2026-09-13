@@ -176,7 +176,7 @@ def test_location_output_config_limit_clamped(
     ],
 )
 def test_location_output_filename(country: str, expected: str) -> None:
-    assert PipelineRunner._location_output_filename(country) == expected
+    assert OutputWriter._location_output_filename(country) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +240,7 @@ def test_clear_location_outputs_skips_non_files(runner: PipelineRunner) -> None:
     loc_dir = resolve_safe_output_path("output/locations")
     (loc_dir / "subscription-DIR.txt").mkdir(parents=True)
 
-    assert runner._clear_location_outputs() == []
+    assert runner._writer._clear_location_outputs() == []
     assert (loc_dir / "subscription-DIR.txt").is_dir()
 
 
@@ -432,55 +432,61 @@ def test_write_location_outputs_disabled(
 
 
 # ---------------------------------------------------------------------------
-# _build_mix
+# _build_mixed_output (Aggregator, driven via the runner)
 # ---------------------------------------------------------------------------
 
 
 def test_build_mix_interleaves_black_and_white(runner: PipelineRunner) -> None:
-    configs = [
+    """The mix draws from both lists: blacklist half first, then whitelist."""
+    blacklist = [
         Config("vless", f"b{i}.example", 443, f"id{i}", country="DE") for i in range(4)
     ]
-    whitelist = [configs[0], configs[1]]
-    blacklist = [configs[2], configs[3]]
-    splits = {"blacklist": blacklist, "whitelist": whitelist}
-    pcfg = {"mix_blacklist_count": 2, "mix_whitelist_count": 2}
-    mixed = runner._writer._build_mix(configs, splits, pcfg)
-    # Interleaving: b0, w0, b1, w1
+    whitelist = [
+        Config("vless", f"w{i}.example", 443, f"wid{i}", country="RU") for i in range(4)
+    ]
+    max_total = 4  # 50/50 split of the runner default: 2 + 2
+    mixed = runner._build_mixed_output(
+        {"blacklist": blacklist, "whitelist": whitelist},
+        max_total,
+    )
     assert len(mixed) == 4
+    assert sum(1 for cfg in mixed if cfg.country == "DE") == 2
+    assert sum(1 for cfg in mixed if cfg.country == "RU") == 2
 
 
 def test_build_mix_empty_lists(runner: PipelineRunner) -> None:
-    mixed = runner._writer._build_mix([], {}, {})
+    mixed = runner._build_mixed_output({}, runner._max_configs())
     assert mixed == []
 
 
 def test_build_mix_one_side_exhausted(runner: PipelineRunner) -> None:
-    splits = {
-        "blacklist": [
-            Config(
-                "vless",
-                "b.example",
-                443,
-                "bid",
-                country="DE",
-                raw_link="vless://bid@b.example:443",
-            ),
-        ],
-        "whitelist": [
-            Config(
-                "vless",
-                f"w{i}.example",
-                443,
-                f"wid{i}",
-                country="FR",
-                raw_link=f"vless://wid{i}@w{i}.example:443",
-            )
-            for i in range(3)
-        ],
-    }
-    pcfg = {"mix_blacklist_count": 2, "mix_whitelist_count": 5}
-    mixed = runner._writer._build_mix([], splits, pcfg)
-    # black exhausted after 1, should get b0, w0, w1, w2
+    """A short blacklist does not stop the whitelist side from filling."""
+    blacklist = [
+        Config(
+            "vless",
+            "b.example",
+            443,
+            "bid",
+            country="DE",
+            raw_link="vless://bid@b.example:443",
+        ),
+    ]
+    whitelist = [
+        Config(
+            "vless",
+            f"w{i}.example",
+            443,
+            f"wid{i}",
+            country="RU",
+            raw_link=f"vless://wid{i}@w{i}.example:443",
+        )
+        for i in range(3)
+    ]
+    mixed = runner._build_mixed_output(
+        {"blacklist": blacklist, "whitelist": whitelist},
+        runner._max_configs(),
+    )
+    # black exhausted after 1, whitelist fills the rest
     assert len(mixed) == 4
 
 
@@ -560,16 +566,22 @@ def test_write_empty_output_creates_file(
 
 
 # ---------------------------------------------------------------------------
-# _write_split_outputs
+# split outputs (runner composition)
 # ---------------------------------------------------------------------------
 
 
 def test_write_split_outputs_writes_each_split(
     runner: PipelineRunner, tmp_path: Path
 ) -> None:
+    """Each configured split is written with its own list's configs."""
     bl_file = tmp_path / "blacklist.txt"
     wl_file = tmp_path / "whitelist.txt"
-    split_files = {"blacklist": str(bl_file), "whitelist": str(wl_file)}
+    runner.settings["publisher"]["split_output_files"] = {
+        "blacklist": str(bl_file),
+        "whitelist": str(wl_file),
+        # "mixed" normalizes away and must never be written
+        "mixed": str(tmp_path / "mixed.txt"),
+    }
     splits = {
         "blacklist": [
             Config(
@@ -602,10 +614,13 @@ def test_write_split_outputs_writes_each_split(
             ),
         ],
     }
-    files = runner._writer._write_split_outputs(splits, split_files)
-    assert len(files) == 2  # only configured splits returned
+    split_files = runner._split_output_files(str(tmp_path / "combined.txt"))
+    assert set(split_files) == {"blacklist", "whitelist"}
+    for list_type, split_file in split_files.items():
+        runner._write_output(splits[list_type], split_file)
     assert bl_file.exists()
     assert wl_file.exists()
+    assert not (tmp_path / "mixed.txt").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -614,8 +629,12 @@ def test_write_split_outputs_writes_each_split(
 
 
 def test_write_empty_split_outputs(runner: PipelineRunner, tmp_path: Path) -> None:
+    """The combined path derives every configured split file to empty."""
     bl_file = tmp_path / "empty-bl.txt"
-    runner._writer._write_empty_split_outputs({"blacklist": str(bl_file)})
+    runner.settings["publisher"]["split_output_files"] = {
+        "blacklist": str(bl_file),
+    }
+    runner._write_empty_split_outputs(str(tmp_path / "combined.txt"))
     assert bl_file.exists()
     # Should contain 0 configs (empty)
     content = bl_file.read_text(encoding="utf-8")
@@ -628,6 +647,7 @@ def test_write_empty_split_outputs(runner: PipelineRunner, tmp_path: Path) -> No
 
 
 def test_record_output_stats_tracks_count_and_countries(runner: PipelineRunner) -> None:
+    """Count follows the writer predicate: no raw_link means not counted."""
     configs = [
         Config(
             "vless",
@@ -653,14 +673,15 @@ def test_record_output_stats_tracks_count_and_countries(runner: PipelineRunner) 
             raw_link="vless://id@c.example:443",
             country="US",
         ),
-        # No raw_link — should be excluded from count
+        # No raw_link — excluded from the count by the writer predicate
         Config("vless", "d.example", 443, "id", country="FR"),
     ]
-    runner._writer._record_output_stats("test_out", "/tmp/out.txt", configs)
-    stats = runner._writer.context.output_stats["test_out"]
+    out_file = "/tmp/out.txt"
+    runner._record_output_stats("test_out", out_file, configs)
+    stats = runner._output_stats["test_out"]
     assert stats["count"] == 3  # only 3 have raw_link
     assert stats["countries"] == {"DE": 2, "US": 1}
-    assert stats["file"] == "/tmp/out.txt"
+    assert stats["file"] == out_file
 
 
 # ---------------------------------------------------------------------------
@@ -669,7 +690,7 @@ def test_record_output_stats_tracks_count_and_countries(runner: PipelineRunner) 
 
 
 def test_status_output_file(runner: PipelineRunner) -> None:
-    assert runner._writer._status_output_file() == "output/run-summary.json"
+    assert runner._status_output_file() == "output/run-summary.json"
 
 
 def test_status_output_file_none(runner: PipelineRunner, tmp_path: Path) -> None:
@@ -679,7 +700,7 @@ def test_status_output_file_none(runner: PipelineRunner, tmp_path: Path) -> None
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    assert r._writer._status_output_file() is None
+    assert r._status_output_file() is None
 
 
 def test_status_output_file_empty_string(
@@ -691,7 +712,7 @@ def test_status_output_file_empty_string(
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    assert r._writer._status_output_file() is None
+    assert r._status_output_file() is None
 
 
 def test_status_output_file_missing_section(
@@ -703,22 +724,40 @@ def test_status_output_file_missing_section(
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    assert r._writer._status_output_file() is None
+    assert r._status_output_file() is None
 
 
 # ---------------------------------------------------------------------------
-# _write_run_summary
+# _write_run_summary (runner)
 # ---------------------------------------------------------------------------
+
+
+def _runner_with_status_file(tmp_path: Path, status_file: Path) -> PipelineRunner:
+    """Runner whose run summary lands in the given tmp file."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"publisher:\n  status_output_file: {status_file}\n",
+        encoding="utf-8",
+    )
+    return PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
 
 
 def test_write_run_summary_creates_json(runner: PipelineRunner, tmp_path: Path) -> None:
     summary_file = tmp_path / "summary.json"
-    result = runner._writer._write_run_summary("success", str(summary_file))
+    r = _runner_with_status_file(tmp_path, summary_file)
+    result = r._write_run_summary("success")
     assert result == str(summary_file)
     data = json.loads(summary_file.read_text(encoding="utf-8"))
     assert data["status"] == "success"
+    # Richer runner payload: check the documented keys exist rather than
+    # exact dict equality (generated_at/sources change every run).
     assert "outputs" in data
     assert "validation" in data
+    assert "generated_at" in data
+    assert "sources" in data
 
 
 def test_write_run_summary_no_file(runner: PipelineRunner, tmp_path: Path) -> None:
@@ -728,7 +767,7 @@ def test_write_run_summary_no_file(runner: PipelineRunner, tmp_path: Path) -> No
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    result = r._writer._write_run_summary("success", None)
+    result = r._write_run_summary("success")
     assert result is None
 
 
@@ -736,15 +775,8 @@ def test_write_run_summary_uses_status_output_file(
     runner: PipelineRunner, tmp_path: Path
 ) -> None:
     summary_file = tmp_path / "status.json"
-    settings = tmp_path / "settings.yaml"
-    settings.write_text(
-        f"publisher:\n  status_output_file: {summary_file}\n", encoding="utf-8"
-    )
-    r = PipelineRunner(
-        settings_path=str(settings),
-        sources_path=str(tmp_path / "missing.json"),
-    )
-    result = r._writer._write_run_summary("empty_sources")
+    r = _runner_with_status_file(tmp_path, summary_file)
+    result = r._write_run_summary("empty_sources")
     assert result == str(summary_file)
     data = json.loads(summary_file.read_text(encoding="utf-8"))
     assert data["status"] == "empty_sources"
@@ -754,7 +786,8 @@ def test_write_run_summary_empty_outputs(
     runner: PipelineRunner, tmp_path: Path
 ) -> None:
     summary_file = tmp_path / "summary.json"
-    result = runner._writer._write_run_summary("no_sources", str(summary_file))
+    r = _runner_with_status_file(tmp_path, summary_file)
+    result = r._write_run_summary("no_sources")
     assert result == str(summary_file)
     data = json.loads(summary_file.read_text(encoding="utf-8"))
     assert data["status"] == "no_sources"
@@ -765,93 +798,15 @@ def test_write_run_summary_strips_proxy_urls_from_validation(
     runner: PipelineRunner, tmp_path: Path
 ) -> None:
     # With proxy_urls in liveness stats, they should be stripped
-    runner._writer.context.liveness_stats["proxy_urls"] = ["should:be:stripped"]
-    runner._writer.context.liveness_stats["tcp_enabled"] = True
     summary_file = tmp_path / "summary.json"
-    r = runner._writer._write_run_summary("success", str(summary_file))
-    assert r == str(summary_file)
+    r = _runner_with_status_file(tmp_path, summary_file)
+    r._liveness_stats["proxy_urls"] = ["should:be:stripped"]
+    r._liveness_stats["tcp_enabled"] = True
+    result = r._write_run_summary("success")
+    assert result == str(summary_file)
     data = json.loads(summary_file.read_text(encoding="utf-8"))
     assert "proxy_urls" not in data["validation"]
     assert data["validation"]["tcp_enabled"] is True
-
-
-# ---------------------------------------------------------------------------
-# _write_outputs (integration-light)
-# ---------------------------------------------------------------------------
-
-
-def test_write_outputs_returns_expected_files(
-    runner: PipelineRunner, tmp_path: Path
-) -> None:
-    settings = tmp_path / "settings.yaml"
-    settings.write_text(
-        f"""
-publisher:
-  output_file: {tmp_path / "combined.txt"}
-  mix_output_file: {tmp_path / "mix.txt"}
-  split_output_files:
-    blacklist: {tmp_path / "blacklist.txt"}
-  location_output_dir: {tmp_path / "locations"}
-  location_output_limit: 5
-  location_outputs_enabled: true
-aggregator:
-  max_per_country: 20
-  max_configs_in_output: 50
-""",
-        encoding="utf-8",
-    )
-    r = PipelineRunner(
-        settings_path=str(settings),
-        sources_path=str(tmp_path / "missing.json"),
-    )
-    configs = [
-        Config(
-            "vless",
-            f"a-{i}.example",
-            443,
-            f"id{i}",
-            raw_link=f"vless://id{i}@a-{i}.example:443",
-            country="DE" if i % 2 == 0 else "US",
-        )
-        for i in range(4)
-    ]
-    splits = {"blacklist": [configs[0]], "whitelist": [configs[1]]}
-    files = r._writer._write_outputs(configs, splits)
-    assert len(files) >= 3  # combined, mix, blacklist, + locations
-    for f in files:
-        assert Path(f).exists()
-
-
-# ---------------------------------------------------------------------------
-# _write_empty_outputs
-# ---------------------------------------------------------------------------
-
-
-def test_write_empty_outputs_creates_files(
-    runner: PipelineRunner, tmp_path: Path
-) -> None:
-    settings = tmp_path / "settings.yaml"
-    settings.write_text(
-        f"""
-publisher:
-  output_file: {tmp_path / "combined.txt"}
-  mix_output_file: {tmp_path / "mix.txt"}
-  split_output_files:
-    blacklist: {tmp_path / "bl.txt"}
-    whitelist: {tmp_path / "wl.txt"}
-  location_outputs_enabled: false
-""",
-        encoding="utf-8",
-    )
-    r = PipelineRunner(
-        settings_path=str(settings),
-        sources_path=str(tmp_path / "missing.json"),
-    )
-    files = r._writer._write_empty_outputs()
-    assert len(files) >= 2  # combined + mix + splits
-    for f in files:
-        p = Path(f)
-        assert p.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -859,33 +814,24 @@ publisher:
 # ---------------------------------------------------------------------------
 
 
-def test_run_method_returns_state_with_output_files(tmp_path: Path) -> None:
-    """Async run() should call _write_outputs and return state with output_files."""
+def test_run_method_raises_not_implemented(tmp_path: Path) -> None:
+    """OutputWriter.run is a stage-contract stub: the runner composes writes.
+
+    The generic ``run(state)`` form and the second output assembly it used to
+    carry were dead code; the end-to-end flow is covered by the runner's
+    ``run()`` (see test_runner_coverage.py::test_run_full_success).
+    """
     settings = tmp_path / "settings.yaml"
     settings.write_text(
-        f"""
-publisher:
-  output_file: {tmp_path / "combined.txt"}
-  mix_output_file: {tmp_path / "mix.txt"}
-  split_output_files:
-    blacklist: {tmp_path / "bl.txt"}
-  location_output_dir: {tmp_path / "locations"}
-  location_output_limit: 5
-  location_outputs_enabled: false
-aggregator:
-  max_per_country: 20
-  max_configs_in_output: 50
-""",
+        f"publisher:\n  output_file: {tmp_path / 'combined.txt'}\n",
         encoding="utf-8",
     )
     r = PipelineRunner(
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    state = PipelineState(aggregated=[], split_configs={}, summary_file=None)
-    result = asyncio.run(r._writer.run(state))
-    assert result is state
-    assert isinstance(result.output_files, list)
+    with pytest.raises(NotImplementedError):
+        asyncio.run(r._writer.run(PipelineState()))
 
 
 # ---------------------------------------------------------------------------
@@ -1047,11 +993,11 @@ def test_write_plain_fallback_exception_returns_zero(
         ),
     ]
 
-    def _raising_open(*args: object, **kwargs: object) -> object:
+    def _raising_write(*args: object, **kwargs: object) -> object:
         msg = "read-only filesystem"
         raise OSError(msg)
 
-    monkeypatch.setattr(Path, "open", _raising_open)
+    monkeypatch.setattr("src.scheduler.stages.write.write_text_atomic", _raising_write)
 
     count = OutputWriter._write_plain_fallback(configs, str(out))
     assert count == 0
@@ -1079,14 +1025,12 @@ def test_write_run_summary_exception_returns_none(
         msg = "disk full"
         raise OSError(msg)
 
-    monkeypatch.setattr(
-        "src.scheduler.stages.write.write_text_atomic", _raising_write_text
-    )
+    monkeypatch.setattr("src.scheduler.runner.write_text_atomic", _raising_write_text)
     r = PipelineRunner(
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    result = r._writer._write_run_summary("success", str(summary_file))
+    result = r._write_run_summary("success")
     assert result is None
 
 
@@ -1114,11 +1058,9 @@ def test_write_run_summary_rejects_traversal_path(
     def _record_write_text(_path: object, _content: str) -> None:
         written.append(_path)
 
-    monkeypatch.setattr(
-        "src.scheduler.stages.write.write_text_atomic", _record_write_text
-    )
+    monkeypatch.setattr("src.scheduler.runner.write_text_atomic", _record_write_text)
 
-    assert r._writer._write_run_summary("success") is None
+    assert r._write_run_summary("success") is None
     assert written == []
 
 
@@ -1216,8 +1158,14 @@ def test_write_location_outputs_records_retired_files(tmp_path: Path) -> None:
     )
     written = r._writer._write_location_outputs([])
 
-    assert written == [str(Path("output/locations") / "subscription-DE.txt")]
+    # Forward slashes even on Windows: location paths land in run-summary.json
+    # and must stay portable across platforms.
+    assert written == ["output/locations/subscription-DE.txt"]
     assert r._writer.context.output_stats["location_de"]["count"] == 0
+    assert (
+        r._writer.context.output_stats["location_de"]["file"]
+        == "output/locations/subscription-DE.txt"
+    )
 
 
 def test_reserved_output_paths_ignores_unsafe_entries(tmp_path: Path) -> None:
@@ -1248,6 +1196,7 @@ def test_reserved_output_paths_ignores_unsafe_entries(tmp_path: Path) -> None:
 def test_write_outputs_includes_clash_yaml(
     runner: PipelineRunner, tmp_path: Path
 ) -> None:
+    """The clash twin is written from the combined configs and stats-recorded."""
     settings = tmp_path / "settings.yaml"
     settings.write_text(
         f"""
@@ -1280,24 +1229,25 @@ aggregator:
         )
         for i in range(2)
     ]
-    files = r._writer._write_outputs(configs, {"blacklist": configs})
+    clash_file = r._writer._write_clash_output(configs)
     clash = tmp_path / "clash.yaml"
-    assert str(clash) in files
+    assert clash_file == str(clash)
     assert clash.exists()
     data = yaml.safe_load(clash.read_text(encoding="utf-8"))
     assert [p["type"] for p in data["proxies"]] == ["vless", "vless"]
-    assert r._writer.context.output_stats["clash"]["count"] == 2
+    r._record_output_stats("clash", clash_file, configs)
+    assert r._output_stats["clash"]["count"] == 2
 
 
-def test_write_empty_outputs_empties_clash_yaml(
+def test_write_empty_clash_output_writes_valid_placeholder(
     runner: PipelineRunner, tmp_path: Path
 ) -> None:
+    """_write_empty_clash_output leaves a valid empty YAML document behind."""
     settings = tmp_path / "settings.yaml"
     settings.write_text(
         f"""
 publisher:
   output_file: {tmp_path / "combined.txt"}
-  mix_output_file: {tmp_path / "mix.txt"}
   clash_output_file: {tmp_path / "clash.yaml"}
 """,
         encoding="utf-8",
@@ -1306,15 +1256,95 @@ publisher:
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    files = r._writer._write_empty_outputs()
+    r._writer._write_empty_clash_output()
     clash = tmp_path / "clash.yaml"
-    assert str(clash) in files
     assert yaml.safe_load(clash.read_text(encoding="utf-8")) == {"proxies": []}
+
+
+def test_write_clash_output_failure_returns_none(
+    runner: PipelineRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed Clash write must not hand the empty placeholder to publish.
+
+    Returning ``None`` keeps the placeholder out of the publish set so the
+    last good Clash twin stays on the remote instead of being wiped by an
+    empty one.
+    """
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  output_file: {tmp_path / "combined.txt"}
+  clash_output_file: {tmp_path / "clash.yaml"}
+""",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    configs = [
+        Config(
+            "vless",
+            "a.example",
+            443,
+            "id",
+            raw_link="vless://id@a.example:443",
+            country="DE",
+        ),
+    ]
+
+    def _raising_write(configs: object, path: object) -> int:
+        msg = "disk full"
+        raise OSError(msg)
+
+    monkeypatch.setattr("src.aggregator.clash.write_clash_subscription", _raising_write)
+
+    result = r._writer._write_clash_output(configs)
+    assert result is None
+    # The local placeholder is still written (a valid empty YAML document).
+    clash = tmp_path / "clash.yaml"
+    assert yaml.safe_load(clash.read_text(encoding="utf-8")) == {"proxies": []}
+    # The stats entry keeps the failure visible in the run summary.
+    assert r._writer.context.output_stats["clash"]["count"] == 0
+
+
+def test_write_clash_output_success_still_returns_path(
+    runner: PipelineRunner, tmp_path: Path
+) -> None:
+    """A successful Clash write keeps returning the path for publishing."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        f"""
+publisher:
+  output_file: {tmp_path / "combined.txt"}
+  clash_output_file: {tmp_path / "clash.yaml"}
+""",
+        encoding="utf-8",
+    )
+    r = PipelineRunner(
+        settings_path=str(settings),
+        sources_path=str(tmp_path / "missing.json"),
+    )
+    configs = [
+        Config(
+            "vless",
+            "a.example",
+            443,
+            "id",
+            raw_link="vless://id@a.example:443",
+            country="DE",
+        ),
+    ]
+    result = r._writer._write_clash_output(configs)
+    assert result == str(tmp_path / "clash.yaml")
+    assert r._writer.context.output_stats["clash"]["count"] == 1
 
 
 def test_write_outputs_without_clash_key_skips_yaml(
     runner: PipelineRunner, tmp_path: Path
 ) -> None:
+    """Without clash_output_file the clash stage writes nothing."""
     settings = tmp_path / "settings.yaml"
     settings.write_text(
         f"""
@@ -1331,5 +1361,4 @@ aggregator:
         settings_path=str(settings),
         sources_path=str(tmp_path / "missing.json"),
     )
-    files = r._writer._write_outputs([], {})
-    assert not any(f.endswith(".yaml") for f in files)
+    assert r._writer._write_clash_output([]) is None

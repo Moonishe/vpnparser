@@ -27,13 +27,16 @@ class SettingsParseError(RuntimeError):
 def load_settings(path: str) -> dict[str, Any]:
     """Load settings from a YAML file, returning an empty dict on failure."""
     try:
-        with open(path, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8-sig") as fh:
             data = yaml.safe_load(fh)
     except FileNotFoundError:
-        logger.exception("Settings file not found: %s — using defaults.", path)
+        logger.warning("Settings file not found: %s — using defaults.", path)
         return {}
     except yaml.YAMLError:
         logger.exception("Failed to parse settings %s — using defaults.", path)
+        return {}
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.warning("Cannot read settings %s (%s) — using defaults.", path, exc)
         return {}
     if data is None:
         return {}
@@ -57,7 +60,9 @@ def load_settings_strict(path: str) -> dict[str, Any]:
         msg = f"Settings file not found: {path}"
         raise FileNotFoundError(msg)
     try:
-        with open(path, encoding="utf-8") as fh:
+        # utf-8-sig like the lenient loader: a BOM must not fail strict
+        # while passing lenient.
+        with open(path, encoding="utf-8-sig") as fh:
             data = yaml.safe_load(fh)
     except yaml.YAMLError as exc:
         msg = (
@@ -94,9 +99,27 @@ class Settings:
     @staticmethod
     def as_int(value: Any, default: int, *, minimum: int | None = None) -> int:
         """Coerce ``value`` to int, falling back to ``default`` and optional bound."""
+        # None = the key is simply absent (absent-key readers pass their
+        # .get() default through here): silence, not garbage. Warning on it
+        # used to fire three times per quality-section read and drown the
+        # real typos.
+        if value is None:
+            return int(default)
+        # bool is an int subclass (True == 1): accept it only when already a
+        # bool-shaped default is impossible — a `max_configs: true` typo must
+        # not silently become 1 (mirrors source_options._int_source_value).
+        if isinstance(value, bool):
+            return int(default)
         try:
             result = int(value)
         except (TypeError, ValueError):
+            # Garbage in the YAML must not pass silently: an operator typo
+            # would otherwise read exactly like the default in the logs.
+            logger.warning(
+                "settings: non-integer value %r — using default %d",
+                value,
+                int(default),
+            )
             result = int(default)
         if minimum is not None and result < minimum:
             result = minimum
@@ -105,9 +128,22 @@ class Settings:
     @staticmethod
     def as_float(value: Any, default: float, *, minimum: float | None = None) -> float:
         """Coerce ``value`` to float, falling back to ``default`` and optional bound."""
+        import math
+
+        if value is None:
+            return float(default)
+        if isinstance(value, bool):
+            return float(default)
         try:
             result = float(value)
         except (TypeError, ValueError):
+            logger.warning(
+                "settings: non-numeric value %r — using default %s",
+                value,
+                float(default),
+            )
+            result = float(default)
+        if not math.isfinite(result):
             result = float(default)
         if minimum is not None and result < minimum:
             result = minimum
@@ -119,7 +155,19 @@ class Settings:
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
-            return value.strip().lower() in {"true", "1", "yes", "on"}
+            norm = value.strip().lower()
+            if norm in {"true", "1", "yes", "on"}:
+                return True
+            if norm in {"false", "0", "no", "off", ""}:
+                return False
+            # Typo ("flase", "ture", "enabled") used to silently become
+            # False and quietly disable validators (fail-open). Warn loudly.
+            logger.warning(
+                "Unrecognized boolean string %r — treating as False. "
+                "Expected one of true/false/1/0/yes/no/on/off.",
+                value,
+            )
+            return False
         if value is None:
             return default
         return bool(value)

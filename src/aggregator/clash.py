@@ -14,18 +14,33 @@ from typing import Any
 
 import yaml
 
-from src.parsers.base import Config
+from src.parsers.base import _UUID_RE, Config
+from src.utils.paths import write_text_atomic
 
 logger = logging.getLogger(__name__)
 
 #: Networks Mihomo expresses via <network>-opts; anything else falls back to
 #: plain TCP transport. httpupgrade is translated to ws with
 #: ``v2ray-http-upgrade`` (Mihomo has no network of its own for it).
-_SUPPORTED_NETWORKS = {"ws", "grpc", "h2", "httpupgrade", "xhttp"}
+#:
+#: The allowed set is per protocol, per the Mihomo proxy docs
+#: (wiki.metacubex.one/en/config/proxies/{vless,vmess,trojan}): vless rides
+#: ws/h2/grpc/xhttp, vmess ws/h2/grpc (no xhttp), trojan only ws/grpc. An
+#: unsupported value is silently ignored by Mihomo ("TCP is used"), i.e. a
+#: dead entry — so it must be skipped here. httpupgrade is listed wherever the
+#: ws transport it compiles to is allowed.
+_SUPPORTED_NETWORKS_BY_PROTOCOL: dict[str, set[str]] = {
+    "vless": {"ws", "grpc", "h2", "xhttp", "httpupgrade"},
+    "vmess": {"ws", "grpc", "h2", "httpupgrade"},
+    "trojan": {"ws", "grpc", "httpupgrade"},
+}
 
 
 def _name(cfg: Config, used: set[str]) -> str:
     base = str(cfg.remark or "").strip() or f"{cfg.address}:{cfg.port}"
+    # Remarks come from untrusted subscription links: an embedded CR/LF
+    # would break the YAML line (or inject a second key) via safe_dump.
+    base = base.replace("\r", " ").replace("\n", " ")
     name = base
     suffix = 2
     while name in used:
@@ -35,12 +50,22 @@ def _name(cfg: Config, used: set[str]) -> str:
     return name
 
 
-def _tls_fields(cfg: Config, proxy: dict[str, Any]) -> bool:
+def _tls_fields(
+    cfg: Config,
+    proxy: dict[str, Any],
+    *,
+    sni_key: str = "servername",
+) -> bool:
     """Fill TLS/Reality fields; ``False`` = not expressible (skip the config).
 
     Reality without a public key cannot be expressed in Mihomo: publishing
     it as plain TLS would hand out an entry that can never handshake, while
     the Xray probe fail-closes the same case.
+
+    ``sni_key`` names the SNI field of the target Mihomo option: vless/vmess
+    use ``servername``, while trojan uses ``sni`` (its ``TrojanOption`` has no
+    ``servername``; unknown keys are silently dropped, which used to lose the
+    SNI for every trojan entry).
     """
     security = str(cfg.security or "").lower()
     if security not in ("tls", "reality"):
@@ -48,10 +73,10 @@ def _tls_fields(cfg: Config, proxy: dict[str, Any]) -> bool:
     if security == "reality" and not cfg.pbk:
         return False
     proxy["tls"] = True
-    if cfg.sni:
-        proxy["servername"] = cfg.sni
-    elif cfg.host:
-        proxy["servername"] = str(cfg.host).split(",")[0].strip()
+    if cfg.sni and str(cfg.sni).strip():
+        proxy[sni_key] = str(cfg.sni).strip()
+    elif cfg.host and str(cfg.host).split(",")[0].strip():
+        proxy[sni_key] = str(cfg.host).split(",")[0].strip()
     if cfg.alpn:
         alpn = [
             part.strip()
@@ -72,12 +97,25 @@ def _tls_fields(cfg: Config, proxy: dict[str, Any]) -> bool:
     return True
 
 
-def _transport_fields(cfg: Config, proxy: dict[str, Any]) -> None:
+def _transport_fields(cfg: Config, proxy: dict[str, Any], protocol: str) -> bool:
+    """Fill transport opts; ``False`` = not expressible (skip the config).
+
+    Plain ``tcp`` needs no key (Mihomo default). Unknown non-TCP networks
+    (legacy ``kcp``/``http``) used to fall through as plain TCP and hand
+    out dead entries — skip them instead. The same holds for a network the
+    protocol does not carry (``xhttp`` on vmess/trojan): Mihomo ignores the
+    value and dials plain TCP, so publishing it hands out a dead entry.
+    """
     network = str(cfg.network or "tcp").lower()
     if network == "splithttp":
         network = "xhttp"
-    if network not in _SUPPORTED_NETWORKS:
-        return
+    if network == "tcp":
+        return True
+    allowed = _SUPPORTED_NETWORKS_BY_PROTOCOL.get(str(protocol or "").lower())
+    # A protocol missing from the table has no known-good network: skip
+    # rather than guess.
+    if allowed is None or network not in allowed:
+        return False
     if network == "httpupgrade":
         # Mihomo rides httpupgrade on the ws transport behind a flag.
         proxy["network"] = "ws"
@@ -87,7 +125,7 @@ def _transport_fields(cfg: Config, proxy: dict[str, Any]) -> None:
         if cfg.host:
             opts["headers"] = {"Host": str(cfg.host).split(",")[0].strip()}
         proxy["ws-opts"] = opts
-        return
+        return True
     proxy["network"] = network
     if network == "ws":
         opts = {}
@@ -98,8 +136,8 @@ def _transport_fields(cfg: Config, proxy: dict[str, Any]) -> None:
         proxy["ws-opts"] = opts
     elif network == "grpc":
         opts = {}
-        if cfg.path:
-            opts["grpc-service-name"] = cfg.path.lstrip("/")
+        if cfg.path and str(cfg.path).lstrip("/").strip():
+            opts["grpc-service-name"] = str(cfg.path).lstrip("/").strip()
         proxy["grpc-opts"] = opts
     elif network == "h2":
         opts = {}
@@ -121,6 +159,7 @@ def _transport_fields(cfg: Config, proxy: dict[str, Any]) -> None:
         if cfg.host:
             opts["host"] = str(cfg.host).split(",")[0].strip()
         proxy["xhttp-opts"] = opts
+    return True
 
 
 def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] | None:
@@ -131,11 +170,17 @@ def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] |
     """
     if not cfg.address or not cfg.port or not cfg.uuid_or_password:
         return None
+    try:
+        port = int(cfg.port)
+    except (TypeError, ValueError):
+        return None
     protocol = str(cfg.protocol or "").lower()
+    # "name" is reserved LAST, at the return sites below: an inexpressible
+    # config must not burn a name — skipped proxies used to leave holes in
+    # the "base #2, #3, …" numbering.
     proxy: dict[str, Any] = {
-        "name": _name(cfg, used_names),
         "server": cfg.address,
-        "port": int(cfg.port),
+        "port": port,
     }
     if protocol == "vless":
         proxy["type"] = "vless"
@@ -147,7 +192,10 @@ def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] |
     elif protocol == "vmess":
         proxy["type"] = "vmess"
         proxy["uuid"] = cfg.uuid_or_password
-        proxy["alterId"] = int(cfg.alter_id or 0)
+        try:
+            proxy["alterId"] = int(cfg.alter_id or 0)
+        except (TypeError, ValueError):
+            return None
         proxy["cipher"] = "auto"
         if cfg.fp:
             # The probe validated the config with this uTLS fingerprint;
@@ -164,45 +212,131 @@ def config_to_clash_proxy(cfg: Config, used_names: set[str]) -> dict[str, Any] |
         proxy["type"] = "ss"
         proxy["cipher"] = cfg.ss_method
         proxy["password"] = cfg.uuid_or_password
+        # NOTE: a non-tcp `network` falls through to _transport_fields, which
+        # has no "ss" row — on purpose. Mihomo's ShadowsocksOption carries no
+        # `network` field (ws/grpc ride the `plugin` v2ray-plugin instead, a
+        # different Config shape), so any transport value would be silently
+        # ignored and the entry would dial plain TCP: skip rather than publish
+        # a dead entry. The base64 twin keeps the link untouched.
     elif protocol in ("hysteria2", "hy2"):
         proxy["type"] = "hysteria2"
         proxy["password"] = cfg.uuid_or_password
         # Hysteria2Option/TuicOption take "sni"; they have no "tls"/
         # "servername" fields (unknown keys are silently dropped, which
         # used to lose the SNI for every QUIC entry).
-        if cfg.sni:
-            proxy["sni"] = cfg.sni
+        if cfg.sni and str(cfg.sni).strip():
+            proxy["sni"] = str(cfg.sni).strip()
+        # Salamander obfuscation fields: without them a server that requires
+        # obfs rejects every client packet, i.e. the entry is dead on arrival.
+        obfs = getattr(cfg, "obfs", None)
+        if obfs:
+            proxy["obfs"] = str(obfs)
+        obfs_password = getattr(cfg, "obfs_password", None)
+        if obfs_password:
+            proxy["obfs-password"] = str(obfs_password)
+        if cfg.alpn:
+            alpn = [
+                part.strip()
+                for part in str(cfg.alpn).replace(";", ",").split(",")
+                if part.strip()
+            ]
+            if alpn:
+                proxy["alpn"] = alpn
         proxy["skip-cert-verify"] = True
-        return proxy
+        return {"name": _name(cfg, used_names), **proxy}
     elif protocol == "tuic":
         credential = str(cfg.uuid_or_password or "")
         uuid_part, separator, password_part = credential.partition(":")
-        if not separator:
+        if not separator or not password_part.strip():
+            # A separator-less v4 token has no uuid:password halves for
+            # Mihomo (kept in the base64 twin for v4 clients).
+            return None
+        # A v4 token containing ":" is opaque, not a v5 uuid:password pair:
+        # Mihomo needs a real uuid, so only UUID heads are expressible.
+        if _UUID_RE.match(uuid_part.strip()) is None:
             return None
         proxy["type"] = "tuic"
         proxy["uuid"] = uuid_part.strip()
         proxy["password"] = password_part.strip()
-        if cfg.sni:
-            proxy["sni"] = cfg.sni
+        if cfg.sni and str(cfg.sni).strip():
+            proxy["sni"] = str(cfg.sni).strip()
+        # Mihomo TuicOption accepts alpn; the parser stores it (tuic.py) and
+        # dropping it here made the tuic entry the only one losing ALPN.
+        if cfg.alpn:
+            alpn = [
+                part.strip()
+                for part in str(cfg.alpn).replace(";", ",").split(",")
+                if part.strip()
+            ]
+            if alpn:
+                proxy["alpn"] = alpn
+        # Mihomo TuicOption carries both; parse stores them since 0.2.0.
+        cc = getattr(cfg, "congestion_control", None)
+        if cc:
+            proxy["congestion-controller"] = str(cc)
+        urm = getattr(cfg, "udp_relay_mode", None)
+        if urm:
+            proxy["udp-relay-mode"] = str(urm)
         proxy["skip-cert-verify"] = True
-        return proxy
+        return {"name": _name(cfg, used_names), **proxy}
+    elif protocol == "shadowtls":
+        # No standalone `shadowtls` proxy type in Mihomo: ShadowTLS there is
+        # `type: ss + plugin: shadow-tls` (needs an inner SS cipher/password
+        # this Config does not carry) or `shadow-tls-opts`. Emitting
+        # `type: shadowtls` produced entries Mihomo drops (or a broken file),
+        # so skip like other inexpressible protocols (wireguard, ...).
+        return None
+    elif protocol == "anytls":
+        proxy["type"] = "anytls"
+        proxy["password"] = cfg.uuid_or_password
+        if cfg.sni and str(cfg.sni).strip():
+            proxy["sni"] = str(cfg.sni).strip()
+        if cfg.alpn:
+            alpn = [
+                part.strip()
+                for part in str(cfg.alpn).replace(";", ",").split(",")
+                if part.strip()
+            ]
+            if alpn:
+                proxy["alpn"] = alpn
+        proxy["skip-cert-verify"] = True
+        return {"name": _name(cfg, used_names), **proxy}
     else:
         return None
 
-    if not _tls_fields(cfg, proxy):
+    # trojan's Mihomo option names the SNI ``sni``; vless/vmess use
+    # ``servername``. The QUIC-family branches above return early and write
+    # ``sni`` themselves.
+    sni_key = "sni" if protocol == "trojan" else "servername"
+    if not _tls_fields(cfg, proxy, sni_key=sni_key):
         return None
-    _transport_fields(cfg, proxy)
-    return proxy
+    if not _transport_fields(cfg, proxy, protocol):
+        return None
+    return {"name": _name(cfg, used_names), **proxy}
 
 
 def configs_to_clash(configs: list[Config]) -> list[dict[str, Any]]:
-    """Convert configs to Mihomo proxy entries, skipping inexpressible ones."""
+    """Convert configs to Mihomo proxy entries, skipping inexpressible ones.
+
+    Dead configs (``is_alive is False``) are skipped for the same reason
+    ``write_subscription`` skips them: the base64 twin must never publish a
+    config the YAML twin refuses, and vice versa.
+    """
     used: set[str] = set()
     proxies: list[dict[str, Any]] = []
     for cfg in configs:
-        if not cfg.raw_link:
+        if not cfg.raw_link or cfg.is_alive is False:
             continue
-        proxy = config_to_clash_proxy(cfg, used)
+        try:
+            proxy = config_to_clash_proxy(cfg, used)
+        except (ValueError, TypeError, AttributeError) as exc:
+            logger.warning(
+                "Skipping Clash-inexpressible config %s:%s (%s).",
+                cfg.address,
+                cfg.port,
+                exc,
+            )
+            continue
         if proxy is not None:
             proxies.append(proxy)
     return proxies
@@ -212,15 +346,20 @@ def write_clash_subscription(configs: list[Config], output_file: str) -> int:
     """Write the Mihomo YAML document; returns the proxy count."""
     proxies = configs_to_clash(configs)
     document: dict[str, Any] = {"proxies": proxies}
+    # Serialize then delegate to the atomic writer so a crash mid-write cannot
+    # publish a broken YAML file.
     try:
-        with open(output_file, "w", encoding="utf-8", newline="\n") as fh:
-            yaml.safe_dump(
-                document,
-                fh,
-                allow_unicode=True,
-                sort_keys=False,
-                default_flow_style=False,
-            )
+        payload = yaml.safe_dump(
+            document,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+        )
+    except (OSError, ValueError) as exc:
+        logger.warning("Cannot serialize Clash subscription %s: %s", output_file, exc)
+        return 0
+    try:
+        write_text_atomic(output_file, payload, encoding="utf-8")
     except OSError as exc:
         logger.warning("Cannot write Clash subscription %s: %s", output_file, exc)
         return 0

@@ -7,6 +7,8 @@ import logging
 import time
 from unittest.mock import MagicMock
 
+import pytest
+
 from src.parsers.base import Config
 from src.scheduler.context import PipelineContext, PipelineState
 from src.scheduler.health_history import HealthHistory
@@ -90,16 +92,14 @@ async def _mock_validate_tls_returns(configs_to_return: list[Config] | None = No
 
 
 class TestRun:
-    """Cover lines 48-49."""
+    """The generic ``run(state)`` form is not part of the liveness contract."""
 
-    async def test_run_calls_validate_by_list(self) -> None:
-        """run() delegates to validate_by_list and sets validated state."""
+    async def test_default_run_raises_not_implemented(self) -> None:
+        """The runner calls validate_by_list directly; run() must not pretend otherwise."""
         lv = _make_liveness()
         state = PipelineState(preprocessed={"blacklist": []})
-        result = await lv.run(state)
-        assert result is state
-        # Default config: all validators disabled → configs pass through
-        assert result.validated == {"blacklist": []}
+        with pytest.raises(NotImplementedError):
+            await lv.run(state)
 
 
 # ============================================================================
@@ -134,6 +134,129 @@ class TestSourceList:
 # ============================================================================
 # _liveness_min_alive (line 81)
 # ============================================================================
+
+
+class TestBanPrefilter:
+    """Configs with an active health ban are skipped before any probing."""
+
+    def _seed_health(self, tmp_path, configs_to_ban):
+        settings = Settings(
+            {
+                "quality": {
+                    "health_history_enabled": True,
+                    "health_history_file": str(tmp_path / "health.json"),
+                    "source_health_enabled": False,
+                    "ban_after_consecutive_failures": 2,
+                },
+            },
+        )
+        health = HealthHistory(settings)
+        for cfg in configs_to_ban:
+            cfg.is_alive = False
+            # Two consecutive failed runs is the ban threshold (see settings).
+            health.update([cfg])
+            health.update([cfg])
+        return health
+
+    async def test_banned_configs_skipped_before_tcp(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A config-level ban keeps the config out of the TCP batch entirely."""
+        banned = _make_config("banned.example", 443, protocol="vless")
+        health = self._seed_health(tmp_path, [banned])
+        assert health.is_config_banned(banned) is True
+
+        lv = LivenessValidator(
+            _make_context(
+                {
+                    "validator": {
+                        "tcp_enabled": True,
+                        "tcp_candidate_limit": 0,
+                    },
+                    "quality": {
+                        # Exempt the small-list guard so the two-config list
+                        # still exercises the pre-filter.
+                        "health_ban_min_alive": 0,
+                    },
+                },
+            ),
+            health=health,
+            proxy_url_getter=_empty_proxy_list,
+        )
+        seen_batches: list[list[Config]] = []
+
+        async def mock_tcp(batch, **kwargs):
+            seen_batches.append(list(batch))
+            return list(batch)
+
+        monkeypatch.setattr(
+            "src.validators.tcp_check.validate_configs_tcp",
+            mock_tcp,
+        )
+
+        fresh = _make_config("fresh.example", 443, protocol="vless")
+        result = await lv.validate_configs(
+            [banned, fresh],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        assert all(banned not in batch for batch in seen_batches)
+        assert fresh in seen_batches[0]
+        assert fresh in result
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["ban_prefiltered"] == 1
+
+    async def test_source_banned_configs_are_not_prefiltered(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A source ban must not pre-filter: a live probe outranks it."""
+        health = HealthHistory(
+            Settings(
+                {
+                    "quality": {
+                        "health_history_enabled": True,
+                        "health_history_file": str(tmp_path / "health.json"),
+                        "source_health_enabled": True,
+                        "source_health_history_file": str(tmp_path / "health.json"),
+                    },
+                },
+            ),
+        )
+        health.load()["sources"]["dead_src"] = {"banned_until": 9_999_999_999}
+
+        lv = LivenessValidator(
+            _make_context(
+                {
+                    "validator": {
+                        "tcp_enabled": True,
+                        "tcp_candidate_limit": 0,
+                    },
+                },
+            ),
+            health=health,
+            proxy_url_getter=_empty_proxy_list,
+        )
+        seen: list[Config] = []
+
+        async def mock_tcp(batch, **kwargs):
+            seen.extend(batch)
+            return list(batch)
+
+        monkeypatch.setattr(
+            "src.validators.tcp_check.validate_configs_tcp",
+            mock_tcp,
+        )
+
+        cfg = _make_config("from-banned-source.example", 443, source_name="dead_src")
+        await lv.validate_configs(
+            [cfg],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        assert cfg in seen
+        assert "ban_prefiltered" not in lv.context.liveness_stats["lists"]["blacklist"]
 
 
 class TestLivenessMinAlive:
@@ -299,7 +422,9 @@ class TestSearchValidatorProxyPool:
             call_count += 1
             if call_count == 1:
                 return []
-            return ["socks5://p1:1080"] * 10
+            # Distinct URLs: the real loader deduplicates, and the search's
+            # monotonic merge keeps first-seen order per unique proxy.
+            return [f"socks5://p{i}:1080" for i in range(10)]
 
         sleep_log: list[float] = []
         original_sleep = asyncio.sleep
@@ -368,6 +493,133 @@ class TestSearchValidatorProxyPool:
 # ============================================================================
 # _validator_proxy_urls (lines 266, 277, 289-306, 311)
 # ============================================================================
+
+
+class TestXrayPoolRefill:
+    """A depleted probe pool is rebuilt from fresh sources before Xray."""
+
+    async def test_refill_when_fewer_than_half_alive(self, monkeypatch) -> None:
+        """Recheck leaving <probe_count/2 alive triggers a pool rebuild."""
+        calls: list[str] = []
+
+        async def _pool() -> list[str]:
+            calls.append("getter")
+            return [f"socks5://fresh{i}:1080" for i in range(8)]
+
+        async def _fake_revalidate(proxies, *, max_proxies, history=None, **kwargs):
+            # Only 2 of 8 rechecked proxies survive (< half of probe_count=8).
+            return proxies[:2]
+
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "xray_enabled": True,
+                    "xray_executable": "/usr/bin/xray",
+                    "xray_probe_via_proxies": True,
+                    "xray_proxy_probe_count": 8,
+                },
+                "proxy_pool": {"enabled": True, "required": True},
+            },
+            proxy_url_getter=_pool,
+        )
+        lv._validator_proxy_urls_cache = [f"socks5://stale{i}:1080" for i in range(8)]
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.validate_proxy_candidates",
+            _fake_revalidate,
+        )
+
+        async def mock_xray(configs, **kwargs):
+            # The stage must probe through the REFILLED pool slice.
+            assert list(kwargs.get("probe_proxy_urls") or []) == [
+                f"socks5://fresh{i}:1080" for i in range(8)
+            ]
+            return []
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+
+        configs = [_make_config("h.example", 443, protocol="vless")]
+        await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert calls == ["getter", "getter"]  # resolve + refill
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["xray_pool_refilled"] == 8
+        assert lv._pool_refetch_used is True
+
+    async def test_no_refill_when_pool_healthy(self, monkeypatch) -> None:
+        """A recheck keeping >= half the probes never triggers a rebuild."""
+        calls: list[str] = []
+
+        async def _pool() -> list[str]:
+            calls.append("getter")
+            return [f"socks5://p{i}:1080" for i in range(8)]
+
+        async def _fake_revalidate(proxies, *, max_proxies, history=None, **kwargs):
+            # 8 of 8 alive — healthy, no refill needed.
+            return proxies[:8]
+
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "xray_enabled": True,
+                    "xray_executable": "/usr/bin/xray",
+                    "xray_probe_via_proxies": True,
+                    "xray_proxy_probe_count": 8,
+                },
+                "proxy_pool": {"enabled": True, "required": True},
+            },
+            proxy_url_getter=_pool,
+        )
+        lv._validator_proxy_urls_cache = [f"socks5://p{i}:1080" for i in range(8)]
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.validate_proxy_candidates",
+            _fake_revalidate,
+        )
+
+        async def mock_xray(configs, **kwargs):
+            return []
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+
+        configs = [_make_config("h.example", 443, protocol="vless")]
+        await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert len(calls) == 1  # pool resolve only — no refill getter call
+        assert (
+            "xray_pool_refilled"
+            not in (lv.context.liveness_stats["lists"]["blacklist"])
+        )
 
 
 class TestValidatorProxyUrls:
@@ -474,6 +726,101 @@ class TestValidatorProxyUrls:
         assert "<explicit-proxy-hidden>" in stats_urls
         assert "socks5://secret:1080" not in str(stats_urls)
 
+    async def test_pool_search_is_monotonic_across_rounds(self) -> None:
+        """A wider later round that validates FEWER proxies must not erase the
+        earlier round's working set (used to end the widest search with the
+        poorest pool)."""
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "proxy_pool": {
+                        "enabled": True,
+                        "sources": ["test"],
+                        "min_proxies": 10,
+                        "max_proxies": 20,
+                        "retry_delay_seconds": 0,
+                    },
+                },
+            }
+        )
+        lv._proxy_health_history = None
+
+        async def fake_load(
+            sources,
+            *,
+            max_candidates,
+            max_candidates_per_source,
+            **_kwargs,
+        ):
+            if max_candidates <= 200:
+                return [
+                    "socks5://p1:1080",
+                    "socks5://p2:1080",
+                    "socks5://p3:1080",
+                    "socks5://p4:1080",
+                    "socks5://p5:1080",
+                ]
+            return ["socks5://p9:1080"]
+
+        pool = await lv._search_validator_proxy_pool(
+            fake_load,
+            ["test"],
+            dict(
+                lv._proxy_pool_config(),
+                min_proxies=10,
+                max_proxies=20,
+                retry_delay_seconds=0,
+            ),
+        )
+        assert set(pool) == {
+            "socks5://p1:1080",
+            "socks5://p2:1080",
+            "socks5://p3:1080",
+            "socks5://p4:1080",
+            "socks5://p5:1080",
+            "socks5://p9:1080",
+        }
+
+    async def test_pool_recovery_self_check_uses_configured_target(
+        self, monkeypatch
+    ) -> None:
+        """The mid-run recovery check must probe the same configured target as
+        the initial search — the hardcoded api.github.com default disagreed
+        with it and could invalidate a pool the search had just proven."""
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "proxy_url": "socks5://explicit:1080",
+                    "proxy_pool": {
+                        "enabled": True,
+                        "sources": ["test"],
+                        "probe_host": "probe.example",
+                        "probe_port": 8443,
+                        "probe_extra_targets": [["alt.example", 8080]],
+                    },
+                },
+            }
+        )
+        lv._proxy_health_history = None
+        lv._validator_proxy_urls_cache = [
+            "socks5://p1:1080",
+            "socks5://p2:1080",
+        ]
+        seen: list[dict] = []
+
+        async def fake_connects(proxy_url, **kwargs):
+            seen.append(kwargs)
+            return proxy_url == "socks5://p1:1080"
+
+        monkeypatch.setattr("src.validators.proxy_pool.proxy_connects", fake_connects)
+        await lv._pool_died_after_empty_list("whitelist")
+        assert seen and all(
+            kwargs.get("probe_host") == "probe.example"
+            and kwargs.get("probe_port") == 8443
+            and kwargs.get("extra_probe_targets") == [("alt.example", 8080)]
+            for kwargs in seen
+        )
+
 
 # ============================================================================
 # validate_by_list (lines 325-374)
@@ -483,13 +830,20 @@ class TestValidatorProxyUrls:
 class TestValidateByList:
     """Cover lines 325-374."""
 
-    async def test_all_disabled_returns_as_is(self) -> None:
-        """When all validators disabled, configs pass through unchanged."""
+    async def test_all_disabled_marks_configs_not_alive(self) -> None:
+        """When all validators disabled, configs are marked not-alive (fail-closed).
+
+        Publishing unverified configs would put dead/N-A entries in the
+        subscription, so a fully-disabled validation stage refuses to vouch for
+        any config: each is marked ``is_alive=False`` and dropped downstream.
+        """
         lv = _make_liveness()
-        configs = {"whitelist": [_make_config("a.com")]}
+        config = _make_config("a.com")
+        configs = {"whitelist": [config]}
         result = await lv.validate_by_list(configs)
-        assert result == configs
+        assert result is configs
         assert lv.context.liveness_stats["status"] == "disabled"
+        assert config.is_alive is False
 
     async def test_enabled_loops_over_lists(self, monkeypatch) -> None:
         """Enabled validation iterates over lists and returns alive only."""
@@ -1247,6 +1601,10 @@ class TestValidateConfigsXray:
         """A fresh Xray pass overrides stale bans even above the threshold."""
         mock_health = MagicMock(spec=HealthHistory)
         mock_health.is_banned.return_value = True
+        # The pre-filter runs on config-level bans only; this scenario keeps
+        # the configs in the probe batch (e.g. source-level bans), so it must
+        # not short-circuit the stage before Xray.
+        mock_health.is_config_banned.return_value = False
         mock_health.update.return_value = None
         mock_health.update_sources.return_value = None
 
@@ -1356,6 +1714,174 @@ class TestValidateConfigsXray:
             "socks5://p3:1080",
         ]
         stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["xray_probe_via_proxies"] is True
+
+    @pytest.mark.parametrize(
+        ("label", "expected"),
+        [("whitelist", False), ("blacklist", True)],
+    )
+    async def test_xray_probe_via_proxies_by_list_override(
+        self,
+        monkeypatch,
+        label: str,
+        expected: bool,
+    ) -> None:
+        """The per-list map overrides the global via-proxy flag per list."""
+
+        async def _pool() -> list[str]:
+            return [
+                "socks5://p1:1080",
+                "socks5://p2:1080",
+                "socks5://p3:1080",
+            ]
+
+        captured: dict = {}
+
+        async def mock_xray(configs, **kwargs):
+            captured.update(kwargs)
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_probe_via_proxies_by_list={"whitelist": False},
+                xray_proxy_probe_count=3,
+            ),
+            proxy_url_getter=_pool,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+
+        result = await lv.validate_configs(
+            [_make_config("h1.com", 4001)],
+            label=label,
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert len(result) == 1
+        assert captured["probe_via_proxies"] is expected
+        assert captured["probe_proxy_urls"] == [
+            "socks5://p1:1080",
+            "socks5://p2:1080",
+            "socks5://p3:1080",
+        ]
+        stats = lv.context.liveness_stats["lists"][label]
+        assert stats["xray_probe_via_proxies"] is expected
+
+    async def test_xray_probe_via_proxies_by_list_uppercase_key(
+        self, monkeypatch
+    ) -> None:
+        """Override keys are case-insensitive: YAML ``WHITELIST: false`` used
+        to configure nothing (the lookup key is the lowercase list name)."""
+
+        async def _pool() -> list[str]:
+            return ["socks5://p1:1080"]
+
+        captured: dict = {}
+
+        async def mock_xray(configs, **kwargs):
+            captured.update(kwargs)
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_probe_via_proxies_by_list={"WHITELIST": False},
+                xray_proxy_probe_count=1,
+            ),
+            proxy_url_getter=_pool,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        await lv.validate_configs(
+            [_make_config("h1.com", 4001)],
+            label="whitelist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert captured["probe_via_proxies"] is False
+
+    @pytest.mark.parametrize("empty_map", [False, True])
+    async def test_xray_probe_via_proxies_by_list_missing_keeps_global(
+        self,
+        monkeypatch,
+        empty_map: bool,
+    ) -> None:
+        """A missing or empty per-list map leaves the global flag untouched."""
+
+        async def _pool() -> list[str]:
+            return ["socks5://p1:1080", "socks5://p2:1080"]
+
+        captured: dict = {}
+
+        async def mock_xray(configs, **kwargs):
+            captured.update(kwargs)
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        extra = {
+            "xray_probe_via_proxies": True,
+            "xray_proxy_probe_count": 2,
+        }
+        if empty_map:
+            extra["xray_probe_via_proxies_by_list"] = {}
+        lv = _make_liveness(
+            _xray_settings(**extra),
+            proxy_url_getter=_pool,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+
+        result = await lv.validate_configs(
+            [_make_config("w1.com", 4101)],
+            label="whitelist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert len(result) == 1
+        assert captured["probe_via_proxies"] is True
+        stats = lv.context.liveness_stats["lists"]["whitelist"]
         assert stats["xray_probe_via_proxies"] is True
 
     async def test_xray_pool_required_no_proxies(
@@ -1491,7 +2017,7 @@ class TestRemainingLines:
     # ---- pool required + no proxies + xray disabled (lines 415-420) ----
 
     async def test_pool_required_no_proxies_no_xray(self, monkeypatch, caplog) -> None:
-        """pool_required, no proxies, xray disabled returns configs."""
+        """pool_required, no proxies, xray disabled drops configs (fail-closed)."""
         lv = _make_liveness(
             {
                 "validator": {
@@ -1519,8 +2045,12 @@ class TestRemainingLines:
             tls_enabled=False,
             xray_enabled=False,
         )
-        assert len(result) == 1
-        assert "no proxies are available" in caplog.text
+        # Fail-closed: with no proxy pool and Xray disabled there is no
+        # validator left, so unvalidated configs must not be published.
+        assert len(result) == 0
+        assert (
+            "dropping the list instead of publishing unvalidated configs" in caplog.text
+        )
 
     # ---- TLS drop_unchecked_after_tls with checkable configs (line 575) ----
 
@@ -2384,11 +2914,12 @@ class TestHealthHistoryWithoutXray:
         stats = lv.context.liveness_stats["lists"]["blacklist"]
         assert stats["sources"]["src-a"] == {"checked": 3, "alive": 1}
 
-    async def test_tcp_only_run_applies_bans(self, monkeypatch) -> None:
-        """Recorded bans must also be enforced when Xray never runs.
+    async def test_source_ban_keeps_freshly_probed_configs(self, monkeypatch) -> None:
+        """A source ban must not erase configs probed alive in this pass.
 
-        ``is_banned`` was called only in the Xray branch, so a banned source
-        kept publishing every config it produced on TCP/TLS-only runs.
+        ``_drop_banned`` used to feed every survivor — including configs that
+        had just passed their TCP probe — through ``is_banned``, so one
+        source-level ban wiped an entire freshly validated list.
         """
         lv = _make_liveness(
             {
@@ -2421,8 +2952,57 @@ class TestHealthHistoryWithoutXray:
             tcp_enabled=True,
             tls_enabled=False,
         )
-        assert result == []
-        assert configs[0].quality_block_reason == "source_ban"
+        # Fresh evidence outranks the stale source-level ban.
+        assert [cfg.address for cfg in result] == ["h0.com", "h1.com", "h2.com"]
+        assert configs[0].quality_block_reason is None
+
+    async def test_source_ban_still_drops_unprobed_configs(self, monkeypatch) -> None:
+        """Recorded bans stay enforced for configs the probes never judged.
+
+        The fresh-verdict exemption covers configs probed in this pass only:
+        an unprobed config (here: a TCP skip-list protocol riding through as
+        passthrough) from a banned source is still dropped.
+        """
+        lv = _make_liveness(
+            {
+                "validator": {"tcp_enabled": True, "min_alive_to_filter": 1},
+                "quality": {
+                    "health_history_enabled": True,
+                    "health_ban_min_alive": 0,
+                },
+            },
+            proxy_url_getter=_empty_proxy_list,
+        )
+        lv.health._cache = {
+            "configs": {},
+            "sources": {"bad-src": {"banned_until": 4102444800}},
+        }
+
+        async def mock_tcp(batch, **kwargs):
+            for cfg in batch:
+                if cfg.protocol == "vless":
+                    cfg.is_alive = True
+            return [cfg for cfg in batch if cfg.protocol == "vless"]
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+
+        configs = [
+            _make_config("fresh.com", 4000, source_name="bad-src"),
+            _make_config(
+                "unprobed.com",
+                4001,
+                protocol="hysteria2",
+                source_name="bad-src",
+            ),
+        ]
+        result = await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        assert [cfg.address for cfg in result] == ["fresh.com"]
+        assert configs[1].quality_block_reason == "source_ban"
 
     async def test_health_updates_go_through_injected_callbacks(
         self,
@@ -2583,7 +3163,7 @@ class TestLivenessReportingRegressions:
         )
         stats = lv.context.liveness_stats["lists"]["blacklist"]
         assert stats["tcp_checked"] == 2
-        assert stats["min_alive_to_filter"] == 2
+        assert stats["min_alive_to_filter_tcp"] == 2
         assert stats["fail_open"] is False
         assert len(result) == 2
 
@@ -2836,7 +3416,7 @@ class TestVerificationTtl:
             lambda cfg: True,
         )
         # Record a pass "just now" for one config.
-        fresh_cfg = _make_config("fresh.com", 4000)
+        fresh_cfg = _make_config("fresh.com", 4000, is_alive=True)
         stale_cfg = _make_config("stale.com", 4001)
         lv.health.update([fresh_cfg])
         record = lv.health.load()["configs"][lv.health.config_key(fresh_cfg)]
@@ -2883,7 +3463,7 @@ class TestVerificationTtl:
             "src.validators.xray_probe.is_xray_supported",
             lambda cfg: True,
         )
-        fresh_cfg = _make_config("fresh.com", 4000)
+        fresh_cfg = _make_config("fresh.com", 4000, is_alive=True)
         stale_cfg = _make_config("stale.com", 4001)
         lv.health.update([fresh_cfg])
         record = lv.health.load()["configs"][lv.health.config_key(fresh_cfg)]
@@ -2926,7 +3506,7 @@ class TestVerificationTtl:
             "src.validators.xray_probe.is_xray_supported",
             lambda cfg: True,
         )
-        fresh_cfg = _make_config("fresh.com", 4000)
+        fresh_cfg = _make_config("fresh.com", 4000, is_alive=True)
         lv.health.update([fresh_cfg])
 
         calls: list[list[str]] = []
@@ -2975,7 +3555,7 @@ class TestVerificationTtl:
             "src.validators.xray_probe.is_xray_supported",
             lambda cfg: True,
         )
-        fresh_cfg = _make_config("fresh.com", 4000)
+        fresh_cfg = _make_config("fresh.com", 4000, is_alive=True)
         lv.health.update([fresh_cfg])
         record = lv.health.load()["configs"][lv.health.config_key(fresh_cfg)]
         record["last_alive"] = int(time.time())
@@ -3185,3 +3765,879 @@ class TestPoolDiedAfterEmptyList:
         )
         await lv._pool_died_after_empty_list("blacklist")
         assert lv._validator_proxy_urls_cache == ["socks5://10.0.0.2:1080"]
+
+
+# ============================================================================
+# _extra_probe_targets (lines 324-332)
+# ============================================================================
+
+
+class TestExtraProbeTargets:
+    def test_valid_and_invalid_entries(self) -> None:
+        """Failover targets parse [[host, port], ...] and skip unusable rows."""
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "proxy_pool": {
+                        "probe_extra_targets": [
+                            ["h1.example", 443],
+                            ["bad.example", "notaport"],
+                            ["", 443],
+                            ["h2.example", 0],
+                            ["h3.example", 70000],
+                            ["h4.example"],
+                            ["h5.example", 8443],
+                        ],
+                    },
+                },
+            },
+        )
+        targets = lv._extra_probe_targets(lv._proxy_pool_config())
+        assert targets == [("h1.example", 443), ("h5.example", 8443)]
+
+    def test_non_list_raw_yields_no_targets(self) -> None:
+        lv = _make_liveness(
+            {"validator": {"proxy_pool": {"probe_extra_targets": "nope"}}},
+        )
+        assert lv._extra_probe_targets(lv._proxy_pool_config()) == []
+
+
+# ============================================================================
+# _validator_proxy_urls — single-network warning (line 391)
+# ============================================================================
+
+
+class TestValidatorProxyNetworkWarning:
+    async def test_all_proxies_in_one_network_warns(
+        self,
+        monkeypatch,
+        caplog,
+    ) -> None:
+        """A pool sitting in one /16 is one network event away from empty."""
+        lv = _make_liveness(
+            {
+                "validator": {
+                    "proxy_url": "socks5://10.0.0.1:1080",
+                    "proxy_pool": {"enabled": True, "sources": ["test"]},
+                },
+            },
+        )
+
+        async def mock_search(*args, **kwargs):
+            return ["socks5://10.0.0.2:1080", "socks5://10.0.0.3:1080"]
+
+        monkeypatch.setattr(lv, "_search_validator_proxy_pool", mock_search)
+        caplog.set_level(logging.WARNING)
+        await lv._validator_proxy_urls()
+        assert "one network event empties the subscription" in caplog.text
+        assert lv.context.liveness_stats["proxy_networks"] == 1
+
+
+# ============================================================================
+# validate_by_list — empty list triggers the pool-death check (line 484)
+# ============================================================================
+
+
+class TestEmptyListPoolDeathCheck:
+    async def test_list_validating_to_zero_notifies_pool_watchdog(
+        self,
+        monkeypatch,
+    ) -> None:
+        lv = _make_liveness(
+            {"validator": {"tcp_enabled": True, "tcp_candidate_limit": 0}},
+            proxy_url_getter=_empty_proxy_list,
+        )
+        labels: list[str] = []
+
+        async def mock_tcp(batch, **kwargs):
+            return []
+
+        async def fake_pool_death(label: str) -> None:
+            labels.append(label)
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+        monkeypatch.setattr(lv, "_pool_died_after_empty_list", fake_pool_death)
+        result = await lv.validate_by_list(
+            {"blacklist": [_make_config("h.com", 443)]},
+        )
+        assert result == {}
+        assert labels == ["blacklist"]
+
+
+# ============================================================================
+# _pool_died_after_empty_list — refetch already spent (lines 559-563)
+# ============================================================================
+
+
+class TestPoolDeathRefetchSpent:
+    async def test_fully_dead_pool_keeps_cache_when_refetch_already_used(
+        self,
+        monkeypatch,
+        caplog,
+    ) -> None:
+        """A second full pool death in one run must not re-fetch again."""
+        lv = _make_liveness({"validator": {"proxy_pool": {"enabled": True}}})
+        lv._pool_refetch_used = True
+        lv._validator_proxy_urls_cache = ["socks5://10.0.0.1:1080"]
+
+        async def fake_connects(proxy_url, **kwargs):
+            return False
+
+        monkeypatch.setattr("src.validators.proxy_pool.proxy_connects", fake_connects)
+        caplog.set_level(logging.WARNING)
+        await lv._pool_died_after_empty_list("blacklist")
+        assert lv._validator_proxy_urls_cache == ["socks5://10.0.0.1:1080"]
+        assert lv._pool_refetch_used is True
+        assert "already rebuilt once this run" in caplog.text
+
+
+# ============================================================================
+# _record_probe_health — one verdict per config per run (lines 656, 660)
+# ============================================================================
+
+
+class TestProbeHealthDedup:
+    async def test_two_lists_sharing_a_config_get_one_verdict(
+        self,
+        monkeypatch,
+    ) -> None:
+        """A server riding in two lists produces one `recent` entry per run."""
+        recorded: list[list[str]] = []
+        lv = _make_liveness(
+            {"validator": {"tcp_enabled": True, "tcp_candidate_limit": 0}},
+            proxy_url_getter=_empty_proxy_list,
+            update_health_callback=lambda cfgs: recorded.append(
+                [c.address for c in cfgs],
+            ),
+            update_source_health_callback=lambda cfgs, stats: None,
+        )
+
+        async def mock_tcp(batch, **kwargs):
+            for cfg in batch:
+                cfg.is_alive = True
+            return list(batch)
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+
+        shared = _make_config("shared.example", 443)
+        await lv.validate_configs(
+            [shared, _make_config("a.example", 443)],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        await lv.validate_configs(
+            [shared, _make_config("b.example", 443)],
+            label="whitelist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        # A fresh object with the same identity is recognised as already seen.
+        await lv.validate_configs(
+            [_make_config("shared.example", 443)],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        assert recorded[0] == ["shared.example", "a.example"]
+        assert recorded[1] == ["b.example"]
+        # The third run recorded nothing new: every verdict was already given.
+        assert len(recorded) == 2
+
+
+# ============================================================================
+# TCP stage — pool latency baselines (lines 860-865)
+# ============================================================================
+
+
+async def _pooled_proxy_list() -> list[str]:
+    return ["socks5://p1:1080"]
+
+
+async def _two_proxy_list() -> list[str]:
+    return ["socks5://p1:1080", "socks5://p2:1080"]
+
+
+class TestTcpProxyLatencyBaseline:
+    async def test_pool_average_latency_reaches_tcp_validator(
+        self,
+        monkeypatch,
+    ) -> None:
+        lv = _make_liveness(
+            {"validator": {"tcp_enabled": True, "tcp_candidate_limit": 0}},
+            proxy_url_getter=_pooled_proxy_list,
+        )
+        fake_history = MagicMock()
+        fake_history.average_latency.return_value = 123.0
+        lv._proxy_health_history = fake_history
+
+        seen: dict = {}
+
+        async def mock_tcp(batch, **kwargs):
+            seen.update(kwargs)
+            return list(batch)
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+        await lv.validate_configs(
+            [_make_config("h.com", 443)],
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+        )
+        assert seen["proxy_latency_ms"] == {"socks5://p1:1080": 123.0}
+
+
+# ============================================================================
+# Xray pool refill — failure paths (lines 1408-1411, 1429-1430)
+# ============================================================================
+
+
+class TestXrayPoolRefillFailures:
+    """A failed pool rebuild must not leave the cache empty or lie in stats."""
+
+    _SETTINGS = {
+        "validator": {
+            "xray_enabled": True,
+            "xray_executable": "/usr/bin/xray",
+            "xray_probe_via_proxies": True,
+            "xray_proxy_probe_count": 8,
+        },
+        "proxy_pool": {"enabled": True, "required": True},
+    }
+
+    @staticmethod
+    def _patch_revalidate(monkeypatch) -> None:
+        async def fake_revalidate(proxies, **kwargs):
+            return list(proxies[:2])
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.validate_proxy_candidates",
+            fake_revalidate,
+        )
+
+    @staticmethod
+    def _patch_xray_stage(monkeypatch) -> list[list[str]]:
+        seen_slices: list[list[str]] = []
+
+        async def mock_xray(configs, **kwargs):
+            seen_slices.append(list(kwargs.get("probe_proxy_urls") or []))
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        return seen_slices
+
+    async def test_refill_invalidates_cache_before_getter(
+        self,
+        monkeypatch,
+    ) -> None:
+        """The refill getter must run against an invalidated cache."""
+        stale = [f"socks5://stale{i}:1080" for i in range(8)]
+        cache_states: list = []
+
+        async def _pool() -> list[str]:
+            cache_states.append(lv._validator_proxy_urls_cache)
+            return [f"socks5://fresh{i}:1080" for i in range(8)]
+
+        lv = _make_liveness(self._SETTINGS, proxy_url_getter=_pool)
+        lv._validator_proxy_urls_cache = list(stale)
+        self._patch_xray_stage(monkeypatch)
+        self._patch_revalidate(monkeypatch)
+
+        await lv.validate_configs(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        # Initial resolve rides the stale cache; the refill getter runs only
+        # after reset_proxy_cache() — otherwise it would return the corpses.
+        assert cache_states[0] == stale
+        assert cache_states[1] is None
+        assert lv._pool_refetch_used is True
+
+    async def test_refill_getter_returning_empty_restores_stale_pool(
+        self,
+        monkeypatch,
+    ) -> None:
+        stale = [f"socks5://stale{i}:1080" for i in range(8)]
+        cache_states: list = []
+
+        async def _pool() -> list[str]:
+            cache_states.append(lv._validator_proxy_urls_cache)
+            return list(stale) if len(cache_states) == 1 else []
+
+        lv = _make_liveness(self._SETTINGS, proxy_url_getter=_pool)
+        lv._validator_proxy_urls_cache = list(stale)
+        seen_slices = self._patch_xray_stage(monkeypatch)
+        self._patch_revalidate(monkeypatch)
+
+        await lv.validate_configs(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert cache_states[1] is None
+        # The failed rebuild restored the stale pool and claimed no refill.
+        assert lv._validator_proxy_urls_cache == stale
+        assert lv._pool_refetch_used is False
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert "xray_pool_refilled" not in stats
+        # Without an applied refill the rechecked survivors are probed.
+        assert seen_slices == [stale[:2]]
+
+    async def test_refill_getter_raising_restores_stale_pool(
+        self,
+        monkeypatch,
+        caplog,
+    ) -> None:
+        stale = [f"socks5://stale{i}:1080" for i in range(8)]
+        cache_states: list = []
+
+        async def _pool() -> list[str]:
+            cache_states.append(lv._validator_proxy_urls_cache)
+            if len(cache_states) > 1:
+                raise RuntimeError("pool source exploded")
+            return list(stale)
+
+        lv = _make_liveness(self._SETTINGS, proxy_url_getter=_pool)
+        lv._validator_proxy_urls_cache = list(stale)
+        seen_slices = self._patch_xray_stage(monkeypatch)
+        self._patch_revalidate(monkeypatch)
+        caplog.set_level(logging.WARNING)
+
+        await lv.validate_configs(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert cache_states[1] is None
+        assert lv._validator_proxy_urls_cache == stale
+        assert "pool refill failed" in caplog.text
+        assert seen_slices == [stale[:2]]
+
+    async def test_recheck_failure_keeps_preselected_slice(
+        self,
+        monkeypatch,
+        caplog,
+    ) -> None:
+        pool = [f"socks5://p{i}:1080" for i in range(8)]
+
+        async def _pool() -> list[str]:
+            return list(pool)
+
+        lv = _make_liveness(self._SETTINGS, proxy_url_getter=_pool)
+        seen_slices = self._patch_xray_stage(monkeypatch)
+
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("recheck exploded")
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.validate_proxy_candidates",
+            _boom,
+        )
+        caplog.set_level(logging.WARNING)
+        await lv.validate_configs(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert "Xray probe recheck failed" in caplog.text
+        assert seen_slices == [pool[:8]]
+
+
+# ============================================================================
+# Xray stage — probe-proxy latency baselines (lines 1450-1463)
+# ============================================================================
+
+
+class TestXrayProxyLatencyBaselines:
+    @staticmethod
+    def _patch_xray_stage(monkeypatch) -> dict:
+        captured: dict = {}
+
+        async def mock_xray(configs, **kwargs):
+            captured.update(kwargs)
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        return captured
+
+    async def test_baselines_come_from_in_memory_history(
+        self,
+        monkeypatch,
+    ) -> None:
+        """Baselines read the in-memory history, not a fresh disk load.
+
+        The in-memory instance already carries the recheck verdicts recorded
+        seconds earlier; re-reading the file per list both dropped those and
+        re-parsed the JSON on every list.
+        """
+        captured = self._patch_xray_stage(monkeypatch)
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_proxy_probe_count=2,
+                proxy_pool={"health": {"health_history_file": "unused.json"}},
+            ),
+            proxy_url_getter=_two_proxy_list,
+        )
+
+        class FakePoolHistory:
+            def average_latency(self, proxy_url: str):
+                return 250.0
+
+        lv._proxy_health_history = FakePoolHistory()
+        await lv.validate_configs(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert captured["proxy_latency_ms"] == {
+            "socks5://p1:1080": 250.0,
+            "socks5://p2:1080": 250.0,
+        }
+
+    async def test_baseline_history_failure_is_logged(
+        self,
+        monkeypatch,
+        caplog,
+    ) -> None:
+        """A failing in-memory history degrades to no baselines, loudly."""
+        self._patch_xray_stage(monkeypatch)
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_proxy_probe_count=2,
+                proxy_pool={"health": {"health_history_file": "unused.json"}},
+            ),
+            proxy_url_getter=_two_proxy_list,
+        )
+
+        class _ExplodingHistory:
+            def average_latency(self, *args, **kwargs):
+                raise OSError("disk gone")
+
+        lv._proxy_health_history = _ExplodingHistory()
+        caplog.set_level(logging.WARNING)
+        await lv.validate_configs(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert "Cannot load proxy latency baselines" in caplog.text
+
+    async def test_baseline_fallback_builds_empty_history(self, monkeypatch) -> None:
+        """Without any loaded history the baselines dict stays empty, not None."""
+        captured = self._patch_xray_stage(monkeypatch)
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_proxy_probe_count=2,
+            ),
+            proxy_url_getter=_two_proxy_list,
+        )
+        lv._proxy_health_history = None
+        await lv.validate_configs(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert captured["proxy_latency_ms"] == {}
+
+
+# ============================================================================
+# Alive budget full — fresh retry and stale pass skipped (lines 1577-1579,
+# 1625-1626)
+# ============================================================================
+
+
+class TestAliveBudgetFullSkips:
+    async def test_fresh_retry_and_stale_pass_skipped_when_budget_full(
+        self,
+        monkeypatch,
+    ) -> None:
+        """A saturated alive budget must not re-probe or run the stale pass."""
+        lv = _make_liveness(
+            _xray_settings(verification_ttl_minutes=60, xray_max_alive=1),
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        calls: list[list[str]] = []
+
+        async def mock_xray(configs, **kwargs):
+            calls.append([c.address for c in configs])
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            # The alive budget (1) is filled by the first config.
+            return list(configs[:1])
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        fresh1 = _make_config("fresh1.example", 4001, is_alive=True)
+        fresh2 = _make_config("fresh2.example", 4002, is_alive=True)
+        stale = _make_config("stale.example", 4003)
+        lv.health.update([fresh1])
+        lv.health.update([fresh2])
+        for cfg in (fresh1, fresh2):
+            lv.health.load()["configs"][lv.health.config_key(cfg)]["last_alive"] = int(
+                time.time()
+            )
+
+        result = await lv.validate_configs(
+            [fresh1, fresh2, stale],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        stats = lv.context.liveness_stats["lists"]["blacklist"]
+        assert stats["xray_fresh_verified"] == 2
+        # The retry pass must not run: the alive budget is already full.
+        assert stats["xray_fresh_retry_skipped"] == "budget_full"
+        assert stats["xray_fresh_retried"] == 0
+        assert stats["xray_stale_skipped"] == "budget_full"
+        assert calls == [["fresh1.example", "fresh2.example"]]
+        assert [c.address for c in result] == ["fresh1.example"]
+
+
+# ============================================================================
+# Xray branch — one health verdict per config across lists (line 1753)
+# ============================================================================
+
+
+class TestXrayHealthDedupAcrossLists:
+    async def test_shared_config_gets_one_xray_verdict(
+        self,
+        tmp_path,
+        monkeypatch,
+    ) -> None:
+        settings = {
+            "validator": {
+                "xray_enabled": True,
+                "xray_executable": "/usr/bin/xray",
+                "xray_probe_url": "https://example.com/probe",
+                "xray_timeout_seconds": 12.0,
+                "xray_startup_timeout_seconds": 4.0,
+                "xray_concurrency": 6,
+            },
+            "quality": {
+                "health_history_enabled": True,
+                "health_history_file": str(tmp_path / "health.json"),
+                "source_health_enabled": False,
+            },
+        }
+        lv = _make_liveness(settings, proxy_url_getter=_empty_proxy_list)
+        _patch_xray(monkeypatch, alive_prefix="shared")
+
+        await lv.validate_configs(
+            [_make_config("shared.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        await lv.validate_configs(
+            [_make_config("shared.example", 443)],
+            label="whitelist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        history = lv.health.load()
+        assert len(history["configs"]) == 1
+        record = next(iter(history["configs"].values()))
+        # Two lists riding the same server must not double its `recent` log.
+        assert record["recent"].count(True) == 1
+
+
+# ============================================================================
+# Xray enabled but binary missing — TCP verdicts still recorded and bans
+# still applied (the validate_configs finally path)
+# ============================================================================
+
+
+class TestXrayMissingBinaryStillRecords:
+    async def test_tcp_verdicts_recorded_and_bans_applied_without_xray(
+        self,
+        tmp_path,
+        monkeypatch,
+        caplog,
+    ) -> None:
+        settings = Settings(
+            {
+                "validator": {
+                    "tcp_enabled": True,
+                    "tcp_candidate_limit": 0,
+                    "xray_enabled": True,
+                    "xray_required": False,
+                },
+                "quality": {
+                    "health_history_enabled": True,
+                    "health_history_file": str(tmp_path / "health.json"),
+                    "source_health_enabled": True,
+                    "source_health_history_file": str(tmp_path / "health.json"),
+                    "health_ban_min_alive": 0,
+                },
+            },
+        )
+        health = HealthHistory(settings)
+        health.load()["sources"]["bad-src"] = {"banned_until": 9_999_999_999}
+        lv = LivenessValidator(
+            _make_context(settings),
+            health=health,
+            proxy_url_getter=_empty_proxy_list,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: None,
+        )
+
+        async def mock_tcp(batch, **kwargs):
+            for cfg in batch:
+                cfg.is_alive = True
+            return list(batch)
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+        caplog.set_level(logging.WARNING)
+        configs = [
+            _make_config(f"bad{i}.example", 4000 + i, source_name="bad-src")
+            for i in range(2)
+        ]
+        unprobed = _make_config(
+            "unprobed.example",
+            4002,
+            protocol="hysteria2",
+            source_name="bad-src",
+        )
+        configs += [
+            unprobed,
+            _make_config("good.example", 4003, source_name="good-src"),
+        ]
+        result = await lv.validate_configs(
+            configs,
+            label="blacklist",
+            tcp_enabled=True,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        # The Xray branch never consumed the probe log, so the finally block
+        # recorded the TCP verdicts in the health history...
+        assert len(lv.health.load()["configs"]) == 3
+        # ...the freshly probed configs outrank the stale source ban...
+        assert [c.address for c in result] == [
+            "bad0.example",
+            "bad1.example",
+            "good.example",
+        ]
+        # ...and the run still ban-filtered the config no probe ever judged.
+        assert unprobed.quality_block_reason == "source_ban"
+        assert "Xray validation skipped" in caplog.text
+
+
+# ============================================================================
+# Xray enabled — TCP/TLS verdicts still reach health.update (idempotent per
+# run via _health_update_seen)
+# ============================================================================
+
+
+class TestTcpVerdictsRecordedWithXray:
+    async def test_tcp_dead_config_accumulates_failures_and_bans(
+        self,
+        tmp_path,
+        monkeypatch,
+    ) -> None:
+        """A config killed at the TCP stage bans even when Xray is enabled.
+
+        The old gate skipped _record_probe_health whenever the Xray branch
+        had consumed the probe log, and that branch only records its own
+        attempted subset: TCP-dead configs never reached health.update(),
+        consecutive_failures never grew and bans never fired for them.
+        """
+        settings = {
+            "validator": {
+                "tcp_enabled": True,
+                "tcp_candidate_limit": 0,
+                "xray_enabled": True,
+                "xray_executable": "/usr/bin/xray",
+                "xray_probe_url": "https://example.com/probe",
+            },
+            "quality": {
+                "health_history_enabled": True,
+                "health_history_file": str(tmp_path / "health.json"),
+                "source_health_enabled": False,
+                "ban_after_consecutive_failures": 2,
+            },
+        }
+        lv = _make_liveness(settings, proxy_url_getter=_empty_proxy_list)
+
+        async def mock_tcp(batch, **kwargs):
+            for cfg in batch:
+                cfg.is_alive = cfg.address == "alive.example"
+            return [cfg for cfg in batch if cfg.is_alive]
+
+        monkeypatch.setattr("src.validators.tcp_check.validate_configs_tcp", mock_tcp)
+
+        async def mock_xray(configs, **kwargs):
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+
+        # Run 1: dead.example fails the TCP check and never reaches Xray;
+        # alive.example passes TCP and gets its verdict from the Xray branch.
+        dead = _make_config("dead.example", 4000)
+        alive = _make_config("alive.example", 4001)
+        await lv.validate_by_list({"blacklist": [dead, alive]})
+        history = lv.health.load()
+        dead_record = history["configs"][lv.health.config_key(dead)]
+        # The TCP verdict was recorded although the Xray branch consumed the
+        # probe log for its own subset.
+        assert dead_record["fails"] == 1
+        assert dead_record["recent"] == [False]
+        # One verdict per config per run: TCP and Xray must not both append.
+        assert history["configs"][lv.health.config_key(alive)]["recent"] == [True]
+
+        # Run 2: the second consecutive TCP failure triggers the ban.
+        dead2 = _make_config("dead.example", 4000)
+        await lv.validate_by_list({"blacklist": [dead2]})
+        dead_record = lv.health.load()["configs"][lv.health.config_key(dead2)]
+        assert dead_record["fails"] == 2
+        assert dead_record["consecutive_failures"] == 2
+        assert dead_record["banned_until"] > 0
+
+
+# ============================================================================
+# Xray pool refill — fully dead pool probes directly (audit round 2)
+# ============================================================================
+
+
+class TestXrayPoolFullyDeadProbesDirectly:
+    """An empty recheck must not fall back to the pre-selected corpses."""
+
+    _SETTINGS = {
+        "validator": {
+            "xray_enabled": True,
+            "xray_executable": "/usr/bin/xray",
+            "xray_probe_via_proxies": True,
+            "xray_proxy_probe_count": 8,
+        },
+        "proxy_pool": {"enabled": True, "required": True},
+    }
+
+    @staticmethod
+    def _patch_xray_stage(monkeypatch) -> list[list[str]]:
+        seen_slices: list[list[str]] = []
+
+        async def mock_xray(configs, **kwargs):
+            seen_slices.append(list(kwargs.get("probe_proxy_urls") or []))
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        return seen_slices
+
+    async def test_empty_recheck_probes_directly(self, monkeypatch) -> None:
+        """Every pre-selected proxy failed and no refill applied: probing
+        through known-dead proxies records false deaths (+health bans), so
+        the stage must hand over an empty pool (direct probing)."""
+        stale = [f"socks5://stale{i}:1080" for i in range(8)]
+
+        async def _pool() -> list[str]:
+            return []
+
+        lv = _make_liveness(self._SETTINGS, proxy_url_getter=_pool)
+        lv._validator_proxy_urls_cache = list(stale)
+        seen_slices = self._patch_xray_stage(monkeypatch)
+
+        async def _all_dead(proxies, **kwargs):
+            return []
+
+        monkeypatch.setattr(
+            "src.validators.proxy_pool.validate_proxy_candidates",
+            _all_dead,
+        )
+        await lv.validate_configs(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            tcp_enabled=False,
+            tls_enabled=False,
+            xray_enabled=True,
+        )
+        assert seen_slices == [[]]

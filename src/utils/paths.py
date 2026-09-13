@@ -11,17 +11,84 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import sys
 import tempfile
+import time
+from collections.abc import Iterator
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def _find_project_root(anchor: str = "pyproject.toml") -> Path:
-    """Walk up from the current working directory looking for ``anchor``.
+@contextlib.contextmanager
+def history_file_lock(target: Path) -> Iterator[None]:
+    """Best-effort advisory lock for a run-history JSON file next to *target*.
 
-    Falls back to the current working directory when the anchor is not found.
+    A full run and an hourly fast-track can both append to the same history
+    file (the Actions cache hands the same file to consecutive runs); without
+    a lock the second writer's read-modify-write silently dropped the first
+    writer's entries.
+
+    Best effort: if the lock file cannot be created or the lock cannot be
+    acquired in time, the caller proceeds unlocked — a rare lost entry is
+    preferable to a lost history write. Callers doing read-modify-write
+    should still re-read the file *inside* the lock and merge, because the
+    lock only serializes the write itself.
+    """
+    lock_path = target.with_name(target.name + ".lock")
+    with contextlib.ExitStack() as stack:
+        try:
+            fh = stack.enter_context(open(lock_path, "a+"))
+        except OSError:
+            yield
+            return
+        if sys.platform == "win32":
+            import msvcrt
+
+            deadline = time.monotonic() + 10.0
+            locked = False
+            while True:
+                try:
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                    locked = True
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        logger.warning(
+                            "History lock %s busy for 10s — proceeding "
+                            "unlocked (a concurrent writer may race).",
+                            lock_path,
+                        )
+                        break
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                if locked:
+                    with contextlib.suppress(OSError):
+                        fh.seek(0)
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        else:  # pragma: no cover — POSIX-only branch, unexercised on Windows
+            import fcntl
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+@lru_cache(maxsize=8)
+def _walk_for_anchor(anchor: str) -> Path:
+    """Walk up from the CWD looking for *anchor* (cached).
+
+    Split out of :func:`_find_project_root` so the cheap
+    ``VPNPARSER_PROJECT_ROOT`` env lookup stays uncached (a late
+    ``os.environ`` change is honoured) while the expensive ~50-stat walk
+    is still done once. Tests clear this cache, not the wrapper's.
     """
     cwd = Path.cwd()
     for parent in [cwd, *cwd.parents]:
@@ -33,6 +100,35 @@ def _find_project_root(anchor: str = "pyproject.toml") -> Path:
         cwd,
     )
     return cwd
+
+
+def _find_project_root(anchor: str = "pyproject.toml") -> Path:
+    """Return the project root, in order of authority:
+
+    1. ``VPNPARSER_PROJECT_ROOT`` env — an explicit override for the
+       installed ``vpnparser`` console script, which otherwise resolves the
+       containment base from whatever directory it happens to be launched in.
+    2. Walk up from the current working directory looking for ``anchor``.
+    3. The current working directory when the anchor is not found.
+
+    The env override is read fresh on every call (an env lookup plus one
+    ``is_dir`` stat is cheap) — only the directory walk above is cached, so
+    a late ``os.environ`` change is honoured. An override pointing at a
+    missing path or a file is refused with a warning instead of silently
+    re-basing every path onto garbage. The test suite monkeypatches this
+    function attribute itself (conftest), which bypasses any cache, so
+    isolation is unaffected.
+    """
+    override = os.environ.get("VPNPARSER_PROJECT_ROOT") or ""
+    if override.strip():
+        candidate = Path(override.strip()).resolve()
+        if candidate.is_dir():
+            return candidate
+        logger.warning(
+            "VPNPARSER_PROJECT_ROOT=%r is not a directory; ignoring.",
+            override.strip(),
+        )
+    return _walk_for_anchor(anchor)
 
 
 def resolve_safe_output_path(
@@ -187,7 +283,11 @@ def write_text_atomic(
     Raises:
         OSError: If the write fails; the temp file is cleaned up.
     """
-    target = Path(path)
+    # Enforce the same containment rules as every other writer: reject path
+    # traversal ('..') and relative paths that escape the base directory.
+    # Absolute paths outside the base are allowed with a warning (operator-
+    # supplied output locations, pytest tmp_path), matching resolve_safe_output_path.
+    target = resolve_safe_output_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
     try:

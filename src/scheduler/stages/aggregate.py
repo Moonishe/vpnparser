@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from src.parsers.base import Config
-from src.scheduler.context import PipelineContext, PipelineState
+from src.scheduler.context import PipelineContext
 from src.scheduler.stages.base import PipelineStage
 from src.scheduler.stages.filter import DedupFilter
 
@@ -14,25 +14,16 @@ logger = logging.getLogger(__name__)
 
 
 class Aggregator(PipelineStage):
-    """Sort, dedup (cross-list), and limit configs into the final combined output."""
+    """Sort, dedup (cross-list), and limit configs into the final combined output.
+
+    The runner calls the explicit methods (``_dedup_only``,
+    ``_sort_and_limit``, ``_country_balanced_limit``) directly — the generic
+    ``run(state)`` form is not part of this stage's contract.
+    """
 
     def __init__(self, context: PipelineContext) -> None:
         self.context = context
         self.settings = context.settings
-
-    async def run(
-        self,
-        state: PipelineState,
-        context: PipelineContext | None = None,
-    ) -> PipelineState:
-        """Aggregate preprocessed lists into a single combined list."""
-        max_total = self._max_configs()
-        combined: list[Config] = []
-        for configs in state.preprocessed.values():
-            combined.extend(configs)
-        all_live = self._dedup_only(combined)
-        state.aggregated = self._country_balanced_limit(all_live, max_total)
-        return state
 
     def _max_configs(self) -> int:
         return self.settings.as_int(
@@ -68,9 +59,17 @@ class Aggregator(PipelineStage):
         intent for that output, and letting the combined-output quota cap the
         RU bucket silently shrank the share to ~67/33 instead of the
         configured 80/20.
+
+        ``max_total <= 0`` means unlimited (one semantic across the codebase:
+        ``max_configs_to_validate: 0`` and ``merge_and_filter(max_total=0)``
+        behave the same way) — previously the stage returned ``[]`` here while
+        the merger treated 0 as "no limit", so an operator expecting the
+        documented "0 = unlimited" emptied every output file.
         """
-        if max_total <= 0 or not configs:
+        if not configs:
             return []
+        if max_total <= 0:
+            return list(configs)
 
         acfg = self.settings.section("aggregator")
         sort_by = str(acfg.get("sort_by", "country"))
@@ -229,10 +228,9 @@ class Aggregator(PipelineStage):
 
         The split defaults to 50/50 of ``max_total`` and is overridden by
         ``publisher.mix_blacklist_count`` / ``publisher.mix_whitelist_count``.
-        Those keys are documented (and read by ``OutputWriter._build_mix``,
-        which the runner does not call), so honouring them here is what makes
-        the documented "100 + 100" mix reachable at all — previously the mix
-        was always ``max_configs_in_output`` halved, no matter what was
+        This is the only reader of those keys, so honouring them here is what
+        makes the documented "100 + 100" mix reachable at all - previously the
+        mix was always ``max_configs_in_output`` halved, no matter what was
         configured.
 
         Candidates come from the same sorted, limited list the split output

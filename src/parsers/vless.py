@@ -27,16 +27,22 @@ Param           Config field          Notes
 
 from __future__ import annotations
 
+import logging
 from typing import ClassVar
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from src.parsers.base import (
+    _ALLOWED_NETWORKS,
+    _ALLOWED_SECURITIES,
     _UUID_RE,
     BaseParser,
     Config,
     extract_remark,
+    is_valid_host,
     parse_qs_single,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class VlessParser(BaseParser):
@@ -56,10 +62,22 @@ class VlessParser(BaseParser):
                 return None
 
             parsed = urlparse(stripped)
-            uuid = (parsed.username or "").strip()
+            # Percent-decode before validating: some sources percent-encode the
+            # uuid (``%31%31…``), and an encoded uuid failed the _UUID_RE check
+            # below and dropped the link.  Same treatment as the trojan /
+            # hysteria2 / tuic credentials.  A whitespace-only userinfo still
+            # fails the emptiness check after decoding+stripping.
+            uuid = unquote(parsed.username or "").strip()
             host = parsed.hostname
             port = parsed.port
             if not uuid or not host or port is None:
+                return None
+            if not is_valid_host(host):
+                return None
+            # A trailing ":garbage" userinfo means the link is malformed —
+            # silently keeping the username part would publish a config whose
+            # credential was truncated.
+            if parsed.password is not None:
                 return None
             # Explicit port range check (defence in depth). CPython's urlparse
             # raises for out-of-range ports, but relying on that is implicit
@@ -78,23 +96,41 @@ class VlessParser(BaseParser):
             # ``headerType`` is intentionally not read: Config has no field for
             # the transport header type. ``encryption`` is always "none" for
             # vless and is therefore ignored.
+            def _clean(key: str) -> str | None:
+                raw = query.get(key)
+                return raw.strip() if raw and raw.strip() else None
+
+            # Blank values fall back to defaults: "?type=%20" is a missing
+            # type (tcp), not an empty-string network that no client knows.
+            network = (query.get("type") or "").strip().lower() or "tcp"
+            security = (query.get("security") or "").strip().lower() or "none"
+            # Unknown transports/securities cannot be probed or expressed by
+            # the writers: reset to the default with a warning instead of
+            # dropping the server outright.
+            if network not in _ALLOWED_NETWORKS:
+                logger.warning("vless unknown network %r, reset to tcp.", network)
+                network = "tcp"
+            if security not in _ALLOWED_SECURITIES:
+                logger.warning("vless unknown security %r, reset to none.", security)
+                security = "none"
             return Config(
                 protocol=self.protocol,
                 address=host,
                 port=port,
                 uuid_or_password=uuid,
-                network=query.get("type") or "tcp",
-                security=query.get("security") or "none",
-                path=query.get("path") or None,
-                host=query.get("host") or None,
-                sni=query.get("sni") or None,
-                alpn=query.get("alpn") or None,
-                fp=query.get("fp") or None,
-                pbk=query.get("pbk") or None,
-                sid=query.get("sid") or None,
-                flow=query.get("flow") or None,
+                network=network,
+                security=security,
+                path=((query.get("path") or query.get("servicename")) or "").strip()
+                or None,
+                host=_clean("host"),
+                sni=_clean("sni"),
+                alpn=_clean("alpn"),
+                fp=_clean("fp"),
+                pbk=_clean("pbk"),
+                sid=_clean("sid"),
+                flow=_clean("flow"),
                 remark=extract_remark(parsed.fragment),
-                raw_link=link,
+                raw_link=stripped,
             )
         except Exception:
             # Never raise on malformed input — fail soft to None.

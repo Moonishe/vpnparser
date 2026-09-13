@@ -74,39 +74,39 @@ def test_deduplicate_all_unique() -> None:
 
 
 def test_deduplicate_keeps_lower_latency() -> None:
-    """Same (address, port) — keep the one with lowest latency."""
-    high = make_config(address="same.com", uuid="id-high", latency_ms=100.0)
-    low = make_config(address="same.com", uuid="id-low", latency_ms=10.0)
+    """Same key (addr/port/credential) — keep the one with lowest latency."""
+    high = make_config(address="same.com", uuid="id-same", latency_ms=100.0)
+    low = make_config(address="same.com", uuid="id-same", latency_ms=10.0)
     result = deduplicate([high, low])
     assert len(result) == 1
-    assert result[0].uuid_or_password == "id-low"
+    assert result[0].uuid_or_password == "id-same"
 
 
 def test_deduplicate_keeps_first_when_latency_equal() -> None:
-    """Same (address, port), same latency — keep first seen."""
-    a = make_config(address="same.com", uuid="id-a", latency_ms=50.0)
-    b = make_config(address="same.com", uuid="id-b", latency_ms=50.0)
+    """Same key, same latency — keep first seen."""
+    a = make_config(address="same.com", uuid="id-same", latency_ms=50.0)
+    b = make_config(address="same.com", uuid="id-same", latency_ms=50.0)
     result = deduplicate([a, b])
     assert len(result) == 1
-    assert result[0].uuid_or_password == "id-a"
+    assert result[0].uuid_or_password == "id-same"
 
 
 def test_deduplicate_none_latency_replaced_by_real() -> None:
     """Config with None latency is replaced by one with real latency."""
-    none_lat = make_config(address="host.com", uuid="id-none", latency_ms=None)
-    real_lat = make_config(address="host.com", uuid="id-real", latency_ms=30.0)
+    none_lat = make_config(address="host.com", uuid="id-same", latency_ms=None)
+    real_lat = make_config(address="host.com", uuid="id-same", latency_ms=30.0)
     result = deduplicate([none_lat, real_lat])
     assert len(result) == 1
-    assert result[0].uuid_or_password == "id-real"
+    assert result[0].uuid_or_password == "id-same"
 
 
 def test_deduplicate_real_not_replaced_by_none() -> None:
     """Config with real latency is NOT replaced by one with None latency."""
-    none_lat = make_config(address="host.com", uuid="id-none", latency_ms=None)
-    real_lat = make_config(address="host.com", uuid="id-real", latency_ms=30.0)
+    none_lat = make_config(address="host.com", uuid="id-same", latency_ms=None)
+    real_lat = make_config(address="host.com", uuid="id-same", latency_ms=30.0)
     result = deduplicate([real_lat, none_lat])
     assert len(result) == 1
-    assert result[0].uuid_or_password == "id-real"
+    assert result[0].uuid_or_password == "id-same"
 
 
 def test_deduplicate_key_includes_protocol() -> None:
@@ -121,17 +121,64 @@ def test_deduplicate_key_includes_protocol() -> None:
     assert [cfg.protocol for cfg in result] == ["vless", "trojan"]
 
 
-def test_deduplicate_collapses_different_credentials() -> None:
-    """Credentials are not part of the key — the better latency wins.
+def test_deduplicate_keeps_different_credentials() -> None:
+    """Different credentials on one server:port are distinct configs.
 
-    Documented consequence: two accounts on one server:port collapse into a
-    single config.
+    The credential hash is part of dedup_key, so two accounts on the same node
+    are both kept (collapsing them would silently drop a working config).
     """
     first = make_config(address="host.com", uuid="id-first", latency_ms=80.0)
     second = make_config(address="host.com", uuid="id-second", latency_ms=20.0)
     result = deduplicate([first, second])
+    assert len(result) == 2
+    assert {cfg.uuid_or_password for cfg in result} == {"id-first", "id-second"}
+
+
+def test_deduplicate_keeps_same_credential_different_transport() -> None:
+    """Same credential on one server:port but a different transport is kept.
+
+    The transport fields (ws path here) are part of the dedup_key hash: two
+    links sharing a credential but reaching different endpoints over it — a
+    different ws path, another SNI — are different servers, and collapsing
+    them kept only whichever arrived first.
+    """
+    first = make_config(address="host.com", uuid="id-same", latency_ms=80.0)
+    first.path = "/websocket-one"
+    second = make_config(address="host.com", uuid="id-same", latency_ms=20.0)
+    second.path = "/websocket-two"
+    result = deduplicate([first, second])
+    assert len(result) == 2
+    assert {cfg.path for cfg in result} == {"/websocket-one", "/websocket-two"}
+
+
+def test_deduplicate_keeps_same_credential_different_sni() -> None:
+    first = make_config(address="host.com", uuid="id-same", latency_ms=80.0)
+    first.sni = "one.example.com"
+    second = make_config(address="host.com", uuid="id-same", latency_ms=20.0)
+    second.sni = "two.example.com"
+    result = deduplicate([first, second])
+    assert len(result) == 2
+    assert {cfg.sni for cfg in result} == {"one.example.com", "two.example.com"}
+
+
+def test_deduplicate_still_collapses_remark_only_difference() -> None:
+    """Only the remark/raw_link differ: still the same config, still deduped."""
+    first = make_config(address="host.com", uuid="id-same", latency_ms=80.0)
+    first.remark = "Display Name One"
+    second = make_config(address="host.com", uuid="id-same", latency_ms=20.0)
+    second.remark = "Display Name Two"
+    result = deduplicate([first, second])
     assert len(result) == 1
-    assert result[0].uuid_or_password == "id-second"
+    assert result[0].uuid_or_password == "id-same"
+
+
+def test_deduplicate_collapses_same_credentials() -> None:
+    """Two identical credentials on one server:port collapse to one (best latency)."""
+    first = make_config(address="host.com", uuid="id-same", latency_ms=80.0)
+    second = make_config(address="host.com", uuid="id-same", latency_ms=20.0)
+    result = deduplicate([first, second])
+    assert len(result) == 1
+    assert result[0].uuid_or_password == "id-same"
 
 
 def test_deduplicate_preserves_order() -> None:
@@ -326,8 +373,8 @@ def test_merge_and_filter_per_country_with_mixed_countries() -> None:
 
 def test_deduplicate_nan_latency_treated_as_worst() -> None:
     """A NaN latency never wins dedup against a real one."""
-    nan_first = make_config(address="x.com", uuid="a", latency_ms=float("nan"))
-    real = make_config(address="x.com", uuid="b", latency_ms=10.0)
+    nan_first = make_config(address="x.com", uuid="id-same", latency_ms=float("nan"))
+    real = make_config(address="x.com", uuid="id-same", latency_ms=10.0)
     result = deduplicate([nan_first, real])
     assert len(result) == 1
     assert result[0].latency_ms == 10.0

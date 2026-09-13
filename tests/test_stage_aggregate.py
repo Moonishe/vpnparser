@@ -57,59 +57,53 @@ def _make_config(
 
 
 class TestRun:
-    """Cover lines 29-35 of aggregate.py."""
+    """run() is not part of the stage contract; the runner composes it."""
 
-    async def test_run_basic(self) -> None:
-        """run() chains dedup + country-balanced-limit."""
+    async def test_run_raises_not_implemented(self) -> None:
+        """Aggregator has no run() — the runner calls the explicit methods."""
+        agg = Aggregator(_make_context())
+        with pytest.raises(NotImplementedError):
+            await agg.run(PipelineState())
+
+    def test_dedup_plus_country_limit_composes_run_flow(self) -> None:
+        """The composition run() used: dedup then country-balanced-limit."""
         context = _make_context(
             {
                 "aggregator": {"max_configs_in_output": 10, "sort_by": "country"},
             }
         )
         agg = Aggregator(context)
-        state = PipelineState(
-            preprocessed={
-                "blacklist": [
-                    _make_config("a.com", 443, country="DE"),
-                    _make_config("b.com", 443, country="FI"),
-                    _make_config("a.com", 443, country="DE"),  # duplicate
-                ],
-            },
-        )
-        result = await agg.run(state)
+        configs = [
+            _make_config("a.com", 443, country="DE"),
+            _make_config("b.com", 443, country="FI"),
+            _make_config("a.com", 443, country="DE"),  # duplicate
+        ]
+        result = agg._country_balanced_limit(agg._dedup_only(configs), 10)
         # dedup removes the duplicate, then country-balanced-limit
-        assert len(result.aggregated) == 2
-        assert result.aggregated[0].country == "DE"
-        assert result.aggregated[1].country == "FI"
+        assert len(result) == 2
+        assert result[0].country == "DE"
+        assert result[1].country == "FI"
 
-    async def test_run_empty_preprocessed(self) -> None:
-        """run() with no preprocessed configs returns empty list."""
+    def test_dedup_plus_country_limit_empty_input(self) -> None:
+        """Empty preprocessed input yields an empty aggregate."""
         agg = Aggregator(_make_context())
-        state = PipelineState(preprocessed={})
-        result = await agg.run(state)
-        assert result.aggregated == []
+        assert agg._country_balanced_limit(agg._dedup_only([]), 10) == []
 
-    async def test_run_multiple_lists(self) -> None:
-        """run() merges configs from multiple preprocessed lists."""
+    def test_dedup_plus_country_limit_multiple_lists(self) -> None:
+        """Configs from multiple lists merge before dedup + limit."""
         context = _make_context(
             {
                 "aggregator": {"max_configs_in_output": 100, "sort_by": "country"},
             }
         )
         agg = Aggregator(context)
-        state = PipelineState(
-            preprocessed={
-                "blacklist": [
-                    _make_config("bl-1.com", 443, country="DE"),
-                    _make_config("bl-2.com", 444, country="FI"),
-                ],
-                "whitelist": [
-                    _make_config("wl-1.com", 445, country="RU"),
-                ],
-            },
-        )
-        result = await agg.run(state)
-        assert len(result.aggregated) == 3
+        combined = [
+            _make_config("bl-1.com", 443, country="DE"),
+            _make_config("bl-2.com", 444, country="FI"),
+            _make_config("wl-1.com", 445, country="RU"),
+        ]
+        result = agg._country_balanced_limit(agg._dedup_only(combined), 100)
+        assert len(result) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -185,12 +179,19 @@ class TestSortAndLimit:
 class TestCountryBalancedLimit:
     """Cover lines 63-64, 70-71, 75-77, 91-92, 96, 99-111."""
 
-    def test_max_total_zero(self) -> None:
-        """max_total <= 0 returns []. (lines 63-64)"""
+    def test_max_total_zero_is_unlimited(self) -> None:
+        """max_total <= 0 means unlimited — one semantic across the codebase.
+
+        ``max_configs_to_validate: 0`` = "process all" and
+        ``merge_and_filter(max_total=0)`` = "no limit"; the old stage
+        behaviour ([] for 0) emptied every output for an operator who
+        expected the documented "0 = unlimited".
+        """
         agg = Aggregator(_make_context())
         configs = [_make_config(country="DE")]
-        assert agg._country_balanced_limit(configs, 0) == []
-        assert agg._country_balanced_limit(configs, -1) == []
+        limited = agg._country_balanced_limit(configs, 0)
+        assert len(limited) == 1
+        assert agg._country_balanced_limit(configs, -1) == configs
 
     def test_empty_configs(self) -> None:
         """Empty configs returns []. (lines 63-64)"""
@@ -765,16 +766,19 @@ class TestTakeUniqueConfigs:
 
     def test_used_keys_skipped(self) -> None:
         """Configs with dedup_key already in used_keys are skipped. (line 258)"""
-        used = {("vless", "a.com", 443, "")}
         configs = [
             _make_config("a.com", 443, country="DE"),  # skipped
             _make_config("b.com", 444, country="FI"),  # taken
             _make_config("a.com", 443, country="RU"),  # skipped (duplicate key)
         ]
+        # dedup_key (a property) now includes a credential hash for all
+        # protocols, so build the "already seen" set from the real key rather
+        # than a literal tuple.
+        used = {configs[0].dedup_key}
         result = Aggregator._take_unique_configs(configs, 5, used)
         assert len(result) == 1
         assert result[0].address == "b.com"
-        assert ("vless", "b.com", 444, "") in used
+        assert configs[1].dedup_key in used
 
     def test_take_all(self) -> None:
         """Take up to target unique configs."""
@@ -919,7 +923,7 @@ class TestMixOutputCounts:
         """The mix was always max_configs_in_output halved.
 
         ``mix_blacklist_count``/``mix_whitelist_count`` were only read by
-        ``OutputWriter._build_mix``, which the pipeline never calls, so setting
+        the mix builder honours, so setting
         them had no effect on the published mix file.
         """
         agg = Aggregator(self._context())

@@ -26,14 +26,24 @@
       "list_type": "blacklist",
       "type": "url",
       "url": "https://cdn.jsdelivr.net/gh/V2RayRoot/V2RayConfig@main/Config/vless.txt",
-      "enabled": true
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive 0/51 last run over 444 runs, 4 bad runs, 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "sakha1370-openray-valid",
       "list_type": "blacklist",
       "type": "url",
       "url": "https://cdn.jsdelivr.net/gh/sakha1370/OpenRay@main/output/all_valid_proxies.txt",
-      "enabled": true
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive 0/36 over 445 runs, never met min_checked floor, 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "igareck-white-vless-reality-mobile",
@@ -49,7 +59,12 @@
       "type": "url",
       "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
       "default_country": "RU",
-      "enabled": true
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "404 upstream (file removed from source repo), 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "igareck-white-cidr-checked",
@@ -57,7 +72,12 @@
       "type": "url",
       "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-checked.txt",
       "default_country": "RU",
-      "enabled": false
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "disabled earlier by operator (candidate for re-enable: whitelist lives)",
+        "auto": false
+      }
     },
     {
       "name": "igareck-white-cidr-all",
@@ -65,7 +85,12 @@
       "type": "url",
       "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-all.txt",
       "default_country": "RU",
-      "enabled": false
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "disabled earlier by operator (candidate for re-enable: whitelist lives)",
+        "auto": false
+      }
     },
     {
       "name": "igareck-white-sni-all",
@@ -73,7 +98,12 @@
       "type": "url",
       "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-SNI-RU-all.txt",
       "default_country": "RU",
-      "enabled": false
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "disabled earlier by operator (candidate for re-enable: whitelist lives)",
+        "auto": false
+      }
     },
     {
       "name": "jsxta-whitelist-russia-subscription",
@@ -81,7 +111,12 @@
       "type": "url",
       "url": "https://gbr.mydan.online/configs",
       "default_country": "RU",
-      "enabled": false
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "disabled earlier by operator (candidate for re-enable: whitelist lives)",
+        "auto": false
+      }
     },
     {
       "name": "darkroyalty-shnajder-githubmirror-26",
@@ -89,7 +124,12 @@
       "type": "url",
       "url": "https://raw.githubusercontent.com/DarkRoyalty/shnajder-vpn-configs/refs/heads/main/githubmirror/26.txt",
       "default_country": "RU",
-      "enabled": true
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive_rate 0.019 over 445 runs, 3 bad runs, banned repeatedly, 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "kort0881-mermeroo-only-new",
@@ -98,8 +138,13 @@
       "url": "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/mermeroo_only_new_for_mirror.txt",
       "max_files": 50,
       "max_concurrent_urls": 20,
-      "enabled": true,
-      "timeout": 10
+      "enabled": false,
+      "timeout": 10,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive 0/3 last runs; url-list inner urls mostly dropped by SSRF guard, 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "kort0881-mermeroo-extra",
@@ -108,8 +153,13 @@
       "url": "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/mermeroo_extra_sources.txt",
       "max_files": 50,
       "max_concurrent_urls": 20,
-      "enabled": true,
-      "timeout": 10
+      "enabled": false,
+      "timeout": 10,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive 0/3 last runs; url-list inner urls mostly dropped by SSRF guard, 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "kort0881-proxy-collect-only-new",
@@ -118,8 +168,13 @@
       "url": "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/proxy_collect_only_new_for_mirror.txt",
       "max_files": 50,
       "max_concurrent_urls": 20,
-      "enabled": true,
-      "timeout": 10
+      "enabled": false,
+      "timeout": 10,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive 0/8 last runs over 253 runs, 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "kort0881-proxy-collect-extra",
@@ -128,8 +183,13 @@
       "url": "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/proxy_collect_extra_sources.txt",
       "max_files": 50,
       "max_concurrent_urls": 20,
-      "enabled": true,
-      "timeout": 10
+      "enabled": false,
+      "timeout": 10,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive 0/3 last runs; url-list inner urls mostly dropped by SSRF guard, 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "flaafix-aetris-white-list-lite",
@@ -150,14 +210,24 @@
       "list_type": "blacklist",
       "type": "url",
       "url": "https://raw.githubusercontent.com/hiztin/VLESS-PO-GRIBI/main/deploy/sub.txt",
-      "enabled": true
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive 1/11 last run, 2 bad runs, 2026-08-30",
+        "auto": false
+      }
     },
     {
       "name": "solovyov-all-subs-final",
       "list_type": "blacklist",
       "type": "url",
       "url": "https://raw.githubusercontent.com/solovyov-jenya2004/all_subs/main/final_sorted",
-      "enabled": true
+      "enabled": false,
+      "disabled": {
+        "at": "2026-08-30",
+        "reason": "alive 0/3 last run, 4 bad runs, 2026-08-30",
+        "auto": false
+      }
     }
   ]
 }

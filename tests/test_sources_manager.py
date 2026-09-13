@@ -14,6 +14,31 @@ from src.sources.list_types import DEFAULT_LIST_TYPE
 from src.sources.manager import SourceManager, SourceResult
 
 # ===================================================================
+# _redact_url / _safe_error_message
+# ===================================================================
+
+
+def test_redact_url_masks_query_token() -> None:
+    """``?token=`` query values are masked, not only userinfo credentials."""
+    assert (
+        manager_module._redact_url("https://raw.example.com/f?token=SECRET123")
+        == "https://raw.example.com/f?token=***"
+    )
+    assert (
+        manager_module._redact_url("https://u:p@host.example/f")
+        == "https://***@host.example/f"
+    )
+
+
+def test_safe_error_message_masks_query_token() -> None:
+    """Error strings land in run-summary.json; tokens must not survive."""
+    exc = ValueError("fetch of https://raw.example.com/f?token=SECRET123 failed")
+    message = manager_module._safe_error_message(exc)
+    assert "SECRET123" not in message
+    assert "token=***" in message
+
+
+# ===================================================================
 # _FakeResponse helper
 # ===================================================================
 
@@ -1072,6 +1097,44 @@ class TestFetchDirectUrl:
         with pytest.raises(ValueError, match="absolute HTTP/HTTPS"):
             asyncio.run(sm._fetch_direct_url("ftp://example.com/f.txt"))
 
+    def test_fetch_direct_url_gate_time_excluded_from_budget(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Gate wait must not be charged against the fetch budget.
+
+        A slow gate that alone exceeds ``timeout * DOWNLOAD_TIMEOUT_FACTOR``
+        must not time out the validated fetch itself — the gate is acquired
+        outside the wall-clock budget so queue time is not the host's fault.
+        """
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(lambda url: _FakeResponse(text="hello world")),
+        )
+        monkeypatch.setattr(
+            SourceManager,
+            "_get_validated",
+            mock.AsyncMock(return_value="ok"),
+        )
+
+        class _SlowGate:
+            async def __aenter__(self) -> None:
+                await asyncio.sleep(1.0)
+
+            async def __aexit__(self, *exc) -> bool:
+                return False
+
+        monkeypatch.setattr("src.sources.manager._download_gate", lambda: _SlowGate())
+
+        # budget = 0.1 * 4.0 = 0.4s, far below the 1.0s gate wait.
+        result = asyncio.run(
+            sm._fetch_direct_url("https://example.com/f.txt", timeout=0.1)
+        )
+        assert result == "ok"
+
     def test_fetch_direct_url_retry_then_success(self, tmp_path, monkeypatch) -> None:
         sm = SourceManager(
             sources_file=str(tmp_path / "missing.json"),
@@ -1198,10 +1261,40 @@ class TestFetchDirectUrl:
             _streaming_client(redirector, requested),
         )
 
-        with pytest.raises(ValueError, match="non-public url"):
+        # The redirect is both a https->http downgrade and non-public; the
+        # downgrade guard fires first and must refuse it either way.
+        with pytest.raises(ValueError, match="https->http redirect refused"):
             asyncio.run(sm._fetch_direct_url("https://example.com/redirect"))
         # Only the first hop is requested, and it goes to the validated address.
         assert requested == [f"https://{PUBLIC_IP}/redirect"]
+
+    def test_fetch_direct_url_https_to_http_downgrade_refused(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """An https source redirecting to a *public* http URL is still refused."""
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        requested: list[str] = []
+
+        def redirector(url):
+            if "example.org" in url:  # pragma: no cover - must never happen
+                return _FakeResponse(text="plaintext payload")
+            return _FakeResponse(
+                status_code=302,
+                headers={"location": "http://example.org/payload"},
+            )
+
+        _patch_url_guard(monkeypatch)
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(redirector, requested),
+        )
+
+        with pytest.raises(ValueError, match="https->http redirect refused"):
+            asyncio.run(sm._fetch_direct_url("https://example.com/start"))
+        assert requested == [f"https://{PUBLIC_IP}/start"]
 
     def test_fetch_direct_url_follows_public_redirect(
         self, tmp_path, monkeypatch
@@ -1734,6 +1827,53 @@ class TestFetchUrlList:
         ]
         assert "Dropped non-public source url" in caplog.text
 
+    def test_url_list_keeps_commas_inside_urls(self, tmp_path, monkeypatch) -> None:
+        """A comma is a legal URL character: only a comma BEFORE another
+        scheme:// splits a line into two URLs. The old blanket
+        replace(",", " ") truncated "…/list?alpn=h3,h2" and silently fetched
+        the wrong address."""
+        sm = SourceManager(
+            sources_file=str(tmp_path / "missing.json"),
+            settings_file=str(tmp_path / "missing.yaml"),
+        )
+        index = "\n".join(
+            [
+                "https://example.com/list?alpn=h3,h2",
+                "https://example.com/path,with,commas.txt",
+            ]
+        )
+        requested: list[str] = []
+
+        def handler(url):
+            if url.endswith("index.txt"):
+                return _FakeResponse(text=index)
+            return _FakeResponse(text="vless://ok")
+
+        _patch_url_guard(monkeypatch, blocked=set())
+        monkeypatch.setattr(
+            "src.sources.manager.httpx.AsyncClient",
+            _streaming_client(handler, requested),
+        )
+
+        result = asyncio.run(
+            sm._fetch_url_list(
+                {"name": "index", "url": "https://example.com/index.txt"},
+                "index",
+                DEFAULT_LIST_TYPE,
+                None,
+            )
+        )
+        assert result.ok is True
+        assert result.files == [
+            ("list", "vless://ok"),
+            ("path,with,commas.txt", "vless://ok"),
+        ]
+        assert requested == [
+            f"https://{PUBLIC_IP}/index.txt",
+            f"https://{PUBLIC_IP}/list?alpn=h3,h2",
+            f"https://{PUBLIC_IP}/path,with,commas.txt",
+        ]
+
 
 # ===================================================================
 # SourceResult properties
@@ -2259,8 +2399,11 @@ class TestPerSourceFetchOptions:
             "https://example.com/index.txt",
             {"timeout": 10.0, "attempts": 2},
         )
-        # The URLs listed inside it keep getting the same settings.
-        assert calls[1][1] == {"timeout": 10.0, "attempts": 2}
+        # The URLs listed inside it keep getting the same settings
+        # (plus the batch-shared httpx client introduced with client reuse).
+        assert calls[1][1]["timeout"] == 10.0
+        assert calls[1][1]["attempts"] == 2
+        assert calls[1][1].get("client") is not None
 
     def test_url_list_without_overrides_passes_none(
         self, tmp_path, monkeypatch
@@ -2278,10 +2421,9 @@ class TestPerSourceFetchOptions:
             )
         )
         assert calls[0] == ("https://example.com/index.txt", {})
-        assert calls[1][1] == {
-            "timeout": manager_module.DEFAULT_FETCH_TIMEOUT,
-            "attempts": manager_module.DEFAULT_LISTED_URL_ATTEMPTS,
-        }
+        assert calls[1][1]["timeout"] == manager_module.DEFAULT_FETCH_TIMEOUT
+        assert calls[1][1]["attempts"] == manager_module.DEFAULT_LISTED_URL_ATTEMPTS
+        assert calls[1][1].get("client") is not None
 
     def test_url_source_honours_the_configured_timeout(
         self, tmp_path, monkeypatch
@@ -2331,3 +2473,46 @@ class TestPerSourceFetchOptions:
                 },
             ),
         ]
+
+
+class TestTransientResolverRetry:
+    """``None`` from resolve_global_ips = transient failure: retried once.
+
+    A dropped URL is final for the whole run, so one slow answer used to cost
+    an entire upstream index. A ``[]`` verdict (resolved into private space)
+    is terminal and must never retry.
+    """
+
+    async def test_none_then_public_succeeds(self, monkeypatch) -> None:
+        sm = SourceManager()
+        calls: list[str] = []
+
+        async def flaky(host: str, **kwargs) -> list[str] | None:
+            calls.append(host)
+            return ["93.184.216.34"] if len(calls) > 1 else None
+
+        monkeypatch.setattr(
+            "src.sources.manager.resolve_global_ips",
+            flaky,
+        )
+        url = "https://example.com/f.txt"
+        pinned = await sm._pin_public_target(url)
+        assert calls == ["example.com", "example.com"]
+        assert pinned.connect_urls
+
+    async def test_private_verdict_never_retries(self, monkeypatch) -> None:
+        sm = SourceManager()
+        calls: list[str] = []
+
+        async def private(host: str, **kwargs) -> list[str] | None:
+            calls.append(host)
+            return []
+
+        monkeypatch.setattr(
+            "src.sources.manager.resolve_global_ips",
+            private,
+        )
+        url = "https://internal.example/f.txt"
+        with pytest.raises(ValueError, match="non-public"):
+            await sm._pin_public_target(url)
+        assert calls == ["internal.example"]

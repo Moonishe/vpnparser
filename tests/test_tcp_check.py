@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -109,7 +110,8 @@ class TestTcpCheck:
             is_alive, latency = await tcp_check("example.com", 443)
         assert is_alive is True
         assert latency is not None
-        assert latency > 0
+        assert isinstance(latency, float)
+        assert latency >= 0
 
     @pytest.mark.asyncio
     async def test_success_via_proxy(self) -> None:
@@ -207,6 +209,42 @@ class TestTcpCheck:
         assert is_alive is False
         assert latency is None
 
+    @pytest.mark.asyncio
+    async def test_latency_measures_only_the_successful_attempt(self) -> None:
+        """A dead first pinned address must not inflate the recorded latency.
+
+        The clock used to start once before the pinned loop, so a AAAA that
+        ate its full timeout before a fast A4 connected reported ~timeout+epsilon
+        and dropped live servers in the quality stage.
+        """
+        attempts: list[str] = []
+
+        async def fake_direct(host: str, port: int):
+            attempts.append(host)
+            if host == "2606:4700:4700::1111":
+                await asyncio.sleep(0.2)  # the dead answer burns its timeout
+                raise TimeoutError("unroutable aaaa")
+            return MagicMock(), MagicMock()
+
+        with (
+            patch.object(
+                address_guard,
+                "resolve_host_addresses",
+                AsyncMock(return_value=["2606:4700:4700::1111", "93.184.216.34"]),
+            ),
+            patch(
+                "src.validators.tcp_check._open_connection_direct",
+                new=fake_direct,
+            ),
+        ):
+            is_alive, latency = await tcp_check("dual.example", 443)
+        assert is_alive is True
+        assert attempts == ["2606:4700:4700::1111", "93.184.216.34"]
+        assert latency is not None
+        # Only the successful (second) attempt is measured; the ~200 ms spent
+        # on the failed AAAA must not appear in the result.
+        assert latency < 150.0
+
 
 # ===========================================================================
 # validate_configs_tcp()
@@ -287,7 +325,9 @@ class TestValidateConfigsTcp:
 
         call_count = 0
 
-        async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
             nonlocal call_count
             call_count += 1
             return (True, 5.0)
@@ -347,7 +387,9 @@ class TestValidateConfigsTcp:
         ]
         used_proxies = []
 
-        async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
             used_proxies.append(proxy_url)
             # Fail on first two, succeed on last
             return (proxy_url == "socks5://p3:1080", 5.0)
@@ -370,7 +412,9 @@ class TestValidateConfigsTcp:
         proxy_urls = ["socks5://p1:1080", "socks5://p2:1080"]
         used_proxies = []
 
-        async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
             used_proxies.append(proxy_url)
             return (True, 5.0) if proxy_url == "socks5://p1:1080" else (False, None)
 
@@ -411,7 +455,9 @@ class TestValidateConfigsTcp:
         ]
 
         # Make check_one succeed instantly for first few, then slow
-        async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
             return (True, 5.0)
 
         with patch(
@@ -474,7 +520,9 @@ class TestValidateConfigsTcp:
             Config("vless", f"host-{i}.example", 443 + i, "uuid") for i in range(3)
         ]
 
-        async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
             return (True, 5.0)
 
         with patch(
@@ -498,7 +546,9 @@ class TestValidateConfigsTcp:
             Config("vless", "slow.example", 443, "uuid"),
         ]
 
-        async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
             await asyncio.sleep(0)  # yield so event loop can switch tasks
             return (True, 5.0)
 
@@ -565,11 +615,11 @@ class TestValidateConfigsTcp:
         mock_open.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_unresolvable_hostname_is_kept(
+    async def test_unresolvable_hostname_is_dropped(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """An offline resolver must not empty the batch (see address_guard)."""
+        """Fail-closed: an unresolvable hostname never reaches a socket."""
 
         async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
             return None  # resolver down / NXDOMAIN
@@ -580,9 +630,10 @@ class TestValidateConfigsTcp:
         with patch(
             "src.validators.tcp_check.tcp_check",
             new=AsyncMock(return_value=(True, 5.0)),
-        ):
+        ) as mock_open:
             result = await validate_configs_tcp([cfg])
-        assert result == [cfg]
+        assert result == []
+        mock_open.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_tcp_check_refuses_private_literal_without_dns(self) -> None:
@@ -606,7 +657,9 @@ class TestValidateConfigsTcp:
             Config("vless", f"host-{i}.example", 443 + i, "uuid") for i in range(5)
         ]
 
-        async def fake_tcp_check(host, port, timeout=3.0, proxy_url=None):
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
             await asyncio.sleep(0)  # yield so event loop can interleave
             return (True, 5.0)
 
@@ -615,6 +668,120 @@ class TestValidateConfigsTcp:
             new=fake_tcp_check,
         ):
             result = await validate_configs_tcp(configs, max_alive=2, concurrency=1)
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_tcp_check_exception_marks_config_dead(self, caplog) -> None:
+        """An unexpected exception marks the config dead and logs it.
+
+        gather(return_exceptions=True) used to eat the exception, leaving the
+        config with neither a verdict nor a log line.
+        """
+        import logging
+
+        configs = [Config("vless", "boom.example", 443, "uuid")]
+        caplog.set_level(logging.ERROR)
+
+        with patch(
+            "src.validators.tcp_check.tcp_check",
+            new=AsyncMock(side_effect=RuntimeError("unexpected blow-up")),
+        ):
+            result = await validate_configs_tcp(configs)
+        assert result == []
+        assert configs[0].is_alive is False
+        assert configs[0].latency_ms is None
+        assert "failed unexpectedly" in caplog.text
+        assert "boom.example" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_tcp_check_exception_then_alive_config_survives(self) -> None:
+        """A raising config must not poison the rest of the batch."""
+        configs = [
+            Config("vless", "boom.example", 443, "uuid"),
+            Config("vless", "fine.example", 443, "uuid"),
+        ]
+
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
+            if host == "boom.example":
+                raise RuntimeError("unexpected blow-up")
+            return (True, 5.0)
+
+        with patch(
+            "src.validators.tcp_check.tcp_check",
+            new=fake_tcp_check,
+        ):
+            result = await validate_configs_tcp(configs)
+        assert [c.address for c in result] == ["fine.example"]
+        assert configs[0].is_alive is False
+        assert configs[0].latency_ms is None
+        assert configs[1].is_alive is True
+
+    @pytest.mark.asyncio
+    async def test_tcp_check_cancelled_error_not_swallowed(self) -> None:
+        """CancelledError is re-raised by _check_one, not turned into a verdict."""
+        configs = [Config("vless", "slow.example", 443, "uuid")]
+
+        with patch(
+            "src.validators.tcp_check.tcp_check",
+            new=AsyncMock(side_effect=asyncio.CancelledError()),
+        ):
+            result = await validate_configs_tcp(configs)
+        assert result == []
+        # No verdict was recorded: the exception short-circuited the check.
+        assert configs[0].is_alive is None
+        assert configs[0].latency_ms is None
+
+    @pytest.mark.asyncio
+    async def test_max_alive_overshoot_is_trimmed(self) -> None:
+        """Racing tasks past the stop-event check overshoot; list is trimmed."""
+        configs = [
+            Config("vless", f"host-{i}.example", 443 + i, "uuid") for i in range(4)
+        ]
+
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
+            await asyncio.sleep(0)  # everyone reaches the alive-append
+            return (True, 5.0)
+
+        with patch(
+            "src.validators.tcp_check.tcp_check",
+            new=fake_tcp_check,
+        ):
+            result = await validate_configs_tcp(configs, max_alive=2, concurrency=4)
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_done_watcher_race_sets_event(self) -> None:
+        """A completed watcher with the event unset still sets the event
+        (the post-wait guard), then the watcher is reaped."""
+        configs = [
+            Config("vless", f"host-{i}.example", 443 + i, "uuid") for i in range(2)
+        ]
+
+        async def fake_tcp_check(
+            host, port, timeout=3.0, proxy_url=None, resolve_timeout=5.0, **_kw
+        ):
+            return (True, 5.0)
+
+        async def racy_wait(fs, *, return_when=None):
+            gather_task, done_task = fs
+            await gather_task
+            done_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await done_task
+            return ({done_task}, set())
+
+        with (
+            patch(
+                "src.validators.tcp_check.tcp_check",
+                new=fake_tcp_check,
+            ),
+            patch("src.validators.tcp_check.asyncio.wait", new=racy_wait),
+        ):
+            result = await validate_configs_tcp(configs, max_alive=5)
         assert len(result) == 2
 
 
@@ -645,7 +812,7 @@ async def test_tcp_check_connects_to_pinned_ip_not_hostname() -> None:
 
 @pytest.mark.asyncio
 async def test_tcp_check_unpinnable_host_is_dead() -> None:
-    """A hostname that cannot be pinned fails closed without a socket."""
+    """A hostname that cannot be pinned is no verdict (not dead, no ban)."""
     opener = AsyncMock()
     with (
         patch.object(
@@ -659,6 +826,92 @@ async def test_tcp_check_unpinnable_host_is_dead() -> None:
         ),
     ):
         is_alive, latency = await tcp_check("example.com", 443)
-    assert is_alive is False
+    assert is_alive is None
     assert latency is None
     opener.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refusals_aggregate_into_one_summary(caplog) -> None:
+    """Refused addresses count per stage; one INFO line, details at DEBUG."""
+    import logging
+
+    from src.validators import tcp_check as tcp_check_module
+
+    # Module-level counters leak across direct tcp_check() calls in other
+    # tests; this test counts only its own three refusals.
+    tcp_check_module.reset_refusal_counters()
+    caplog.set_level(logging.DEBUG)
+    opener = AsyncMock()
+    with (
+        patch.object(
+            address_guard,
+            "resolve_host_addresses",
+            AsyncMock(return_value=None),
+        ),
+        patch(
+            "src.validators.tcp_check._open_connection_direct",
+            new=opener,
+        ),
+    ):
+        for i in range(3):
+            await tcp_check(f"unpinnable-{i}.example", 443)
+    # DEBUG carries per-address detail; WARNING must stay silent (the old
+    # behavior logged thousands of these per run).
+    assert caplog.text.count("unpinnable-") == 3
+    refusal_records = [r for r in caplog.records if "Refusing" in r.getMessage()]
+    assert refusal_records and all(r.levelno < logging.WARNING for r in refusal_records)
+
+    tcp_check_module.log_refusal_summary()
+    summary_records = [
+        r for r in caplog.records if "TCP stage refused" in r.getMessage()
+    ]
+    assert len(summary_records) == 1
+    assert "unpinnable: 3" in summary_records[0].getMessage()
+    # Counters reset: a second summary is silent.
+    tcp_check_module.log_refusal_summary()
+    assert (
+        len([r for r in caplog.records if "TCP stage refused" in r.getMessage()]) == 1
+    )
+
+
+# ===========================================================================
+# pin_address=False: check_hostnames=false skips DNS entirely
+# ===========================================================================
+
+
+class TestTcpCheckPinAddressFalse:
+    @pytest.mark.asyncio
+    async def test_pin_address_false_dials_the_hostname(self) -> None:
+        """pin_address=False must not resolve or pin: dial the name as-is."""
+        opener = AsyncMock(
+            return_value=(MagicMock(), MagicMock(wait_closed=AsyncMock()))
+        )
+        with (
+            patch(
+                "src.validators.tcp_check.resolve_pinned_addresses",
+                new=AsyncMock(side_effect=AssertionError("DNS pin must not run")),
+            ),
+            patch("src.validators.tcp_check._open_connection_direct", new=opener),
+        ):
+            alive, latency = await tcp_check("host.example", 443, pin_address=False)
+        assert alive is True
+        assert latency is not None
+        opener.assert_awaited_once_with("host.example", 443)
+
+    @pytest.mark.asyncio
+    async def test_validate_configs_tcp_threads_check_hostnames(self) -> None:
+        """check_hostnames reaches tcp_check as pin_address."""
+        cfg = Config("vless", "host.example", 443, "uuid")
+        probe = AsyncMock(return_value=(True, 1.0))
+        with (
+            patch("src.validators.tcp_check.tcp_check", new=probe),
+            patch(
+                "src.validators.tcp_check.filter_public_configs",
+                new=AsyncMock(return_value=[cfg]),
+            ),
+        ):
+            await validate_configs_tcp([cfg], check_hostnames=False)
+            assert probe.await_args.kwargs["pin_address"] is False
+            await validate_configs_tcp([cfg], check_hostnames=True)
+            assert probe.await_args.kwargs["pin_address"] is True

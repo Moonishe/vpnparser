@@ -12,7 +12,6 @@ from src.scheduler.stages.filter import (
     DedupFilter,
     GarbageFilter,
     PreprocessFilter,
-    Sampler,
 )
 
 # ---------------------------------------------------------------------------
@@ -55,68 +54,32 @@ def _make_config(
 
 
 class TestGarbageFilterRun:
-    """Cover lines 28-39."""
+    """The runner calls filter_garbage directly; run() is not implemented."""
 
-    async def test_run_filters_garbage(self) -> None:
-        """GarbageFilter.run() removes garbage configs from all lists."""
+    async def test_default_run_raises_not_implemented(self) -> None:
         gf = GarbageFilter(_make_context())
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config("real.server", 443, remark="DE-01"),
-                    Config(
-                        "vless",
-                        "placeholder.test",
-                        443,
-                        "11111111-1111-4111-8111-111111111111",
-                        remark="nope",
-                        sni="SERVER_IP",  # triggers garbage detection
-                    ),
-                ],
-            },
+        with pytest.raises(NotImplementedError):
+            await gf.run(PipelineState(parsed={}))
+
+    def test_filters_garbage(self) -> None:
+        """filter_garbage removes garbage configs."""
+        gf = GarbageFilter(_make_context())
+        clean, count = gf.filter_garbage(
+            [
+                _make_config("real.server", 443, remark="DE-01"),
+                Config(
+                    "vless",
+                    "placeholder.test",
+                    443,
+                    "11111111-1111-4111-8111-111111111111",
+                    remark="nope",
+                    sni="SERVER_IP",  # triggers garbage detection
+                ),
+            ],
         )
-        result = await gf.run(state)
-        assert len(result.parsed["blacklist"]) == 1
-        assert result.parsed["blacklist"][0].address == "real.server"
-
-    async def test_run_all_garbage(self) -> None:
-        """All configs garbage -> empty list."""
-        gf = GarbageFilter(_make_context())
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    Config(
-                        "vless",
-                        "example.com",
-                        443,
-                        "11111111-1111-4111-8111-111111111111",
-                        remark="join t.me/channel",
-                    ),
-                ],
-            },
-        )
-        result = await gf.run(state)
-        assert result.parsed["blacklist"] == []
-
-    async def test_run_no_garbage(self) -> None:
-        """No garbage configs -> unchanged."""
-        gf = GarbageFilter(_make_context())
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config("real.com", 443, country="DE"),
-                ],
-            },
-        )
-        result = await gf.run(state)
-        assert len(result.parsed["blacklist"]) == 1
-
-    async def test_run_empty_dict(self) -> None:
-        """Empty parsed dict -> unchanged."""
-        gf = GarbageFilter(_make_context())
-        state = PipelineState(parsed={})
-        result = await gf.run(state)
-        assert result.parsed == {}
+        assert count == 1
+        assert len(clean) == 1
+        assert clean[0].address == "real.server"
 
 
 class TestFilterGarbage:
@@ -176,16 +139,14 @@ class TestFilterGarbage:
 
 
 class TestCountryFilterRun:
-    """Cover lines 73-76."""
+    """The runner calls filter_countries directly; run() is not implemented."""
 
-    async def test_run_filters_by_country(self) -> None:
-        """CountryFilter.run() calls filter_countries for each list.
+    async def test_default_run_raises_not_implemented(self) -> None:
+        cf = CountryFilter(_make_context())
+        with pytest.raises(NotImplementedError):
+            await cf.run(PipelineState(parsed={}))
 
-        Note: the current implementation calculates a ``filtered`` dict but does
-        NOT assign it back to ``state.parsed``, so the returned state retains
-        the original ``parsed``.  Tests verify the method is exercised and
-        returns the state object correctly.
-        """
+    def test_filters_by_allowed_countries(self) -> None:
         cf = CountryFilter(
             _make_context(
                 {
@@ -195,35 +156,15 @@ class TestCountryFilterRun:
                 }
             )
         )
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config("de.com", 443, country="DE"),
-                    _make_config("ru.com", 444, country="RU"),
-                ],
-            },
-        )
-        result = await cf.run(state)
-        # run() now updates state.parsed with filtered list
-        assert result is state
-        assert len(result.parsed["blacklist"]) == 1
-        assert result.parsed["blacklist"][0].country == "DE"
+        configs = [
+            _make_config("de.com", 443, country="DE"),
+            _make_config("ru.com", 444, country="RU"),
+        ]
+        result = cf.filter_countries(configs, list_type="blacklist")
+        assert len(result) == 1
+        assert result[0].country == "DE"
 
-    async def test_run_no_allowed(self) -> None:
-        """No allowed countries -> run() still returns state unchanged."""
-        cf = CountryFilter(_make_context())
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config("de.com", 443, country="DE"),
-                    _make_config("ru.com", 444, country="RU"),
-                ],
-            },
-        )
-        result = await cf.run(state)
-        assert result is state
-
-    async def test_run_unknown_country_retry_detect(self) -> None:
+    def test_detect_retry_for_unknown_country(self) -> None:
         """Configs with country=None get detect_country retry."""
         cf = CountryFilter(
             _make_context(
@@ -232,24 +173,10 @@ class TestCountryFilterRun:
                 }
             )
         )
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config("de.com", 443, country=None, remark="DE-01"),
-                ],
-            },
-        )
-        result = await cf.run(state)
-        # country should be detected from remark "DE-01"
-        assert len(result.parsed["blacklist"]) == 1
-        assert result.parsed["blacklist"][0].country == "DE"
-
-    async def test_run_empty_parsed(self) -> None:
-        """Empty parsed dict -> unchanged."""
-        cf = CountryFilter(_make_context())
-        state = PipelineState(parsed={})
-        result = await cf.run(state)
-        assert result.parsed == {}
+        configs = [_make_config("de.com", 443, country=None, remark="DE-01")]
+        result = cf.filter_countries(configs)
+        assert len(result) == 1
+        assert result[0].country == "DE"
 
 
 class TestFilterCountries:
@@ -395,31 +322,12 @@ class TestFilterCountries:
 
 
 class TestDedupFilterRun:
-    """Cover lines 133-138."""
+    """The runner calls dedup_only directly; run() is not implemented."""
 
-    async def test_run_dedup(self, caplog: pytest.LogCaptureFixture) -> None:
-        """DedupFilter.run() deduplicates all lists."""
-        caplog.set_level("INFO")
+    async def test_default_run_raises_not_implemented(self) -> None:
         df = DedupFilter()
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config("same.com", 443),
-                    _make_config("same.com", 443),  # duplicate
-                    _make_config("other.com", 444),
-                ],
-            },
-        )
-        result = await df.run(state)
-        assert len(result.parsed["blacklist"]) == 2
-        assert "after dedup" in caplog.text
-
-    async def test_run_empty(self) -> None:
-        """Empty parsed dict -> unchanged."""
-        df = DedupFilter()
-        state = PipelineState(parsed={})
-        result = await df.run(state)
-        assert result.parsed == {}
+        with pytest.raises(NotImplementedError):
+            await df.run(PipelineState(parsed={}))
 
 
 class TestDedupOnly:
@@ -478,152 +386,25 @@ class TestDedupOnly:
 
 
 # ---------------------------------------------------------------------------
-# Sampler
-# ---------------------------------------------------------------------------
-
-
-class TestSamplerRun:
-    """Cover lines 167-186."""
-
-    async def test_run_samples(self) -> None:
-        """Sampler.run() samples when configs exceed max_to_process."""
-        sampler = Sampler(
-            _make_context(
-                {
-                    "validator": {"max_configs_to_validate": 2},
-                }
-            )
-        )
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config(f"host-{i}.com", 4000 + i) for i in range(10)
-                ],
-            },
-        )
-        result = await sampler.run(state)
-        assert len(result.parsed["blacklist"]) == 2
-
-    async def test_run_below_limit(self) -> None:
-        """When configs <= max_to_process, no sampling."""
-        sampler = Sampler(
-            _make_context(
-                {
-                    "validator": {"max_configs_to_validate": 100},
-                }
-            )
-        )
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config("a.com", 443),
-                    _make_config("b.com", 444),
-                ],
-            },
-        )
-        result = await sampler.run(state)
-        assert len(result.parsed["blacklist"]) == 2
-
-    async def test_run_zero_limit(self) -> None:
-        """max_to_process=0 means no limit, no sampling."""
-        sampler = Sampler(
-            _make_context(
-                {
-                    "validator": {"max_configs_to_validate": 0},
-                }
-            )
-        )
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config(f"host-{i}.com", 4000 + i) for i in range(10)
-                ],
-            },
-        )
-        result = await sampler.run(state)
-        assert len(result.parsed["blacklist"]) == 10
-
-    async def test_run_empty(self) -> None:
-        """Empty parsed dict -> unchanged."""
-        sampler = Sampler(_make_context())
-        state = PipelineState(parsed={})
-        result = await sampler.run(state)
-        assert result.parsed == {}
-
-    async def test_run_multiple_lists(self) -> None:
-        """Multiple lists sampled independently."""
-        sampler = Sampler(
-            _make_context(
-                {
-                    "validator": {"max_configs_to_validate": 1},
-                }
-            )
-        )
-        blacklist = [_make_config(f"bl-{i}.com", 4000 + i) for i in range(5)]
-        whitelist = [_make_config(f"wl-{i}.com", 5000 + i) for i in range(5)]
-        state = PipelineState(
-            parsed={"blacklist": blacklist, "whitelist": whitelist},
-        )
-        result = await sampler.run(state)
-        assert len(result.parsed["blacklist"]) == 1
-        assert len(result.parsed["whitelist"]) == 1
-
-
-# ---------------------------------------------------------------------------
 # PreprocessFilter
 # ---------------------------------------------------------------------------
 
 
 class TestPreprocessFilterRun:
-    """Cover lines 205-209."""
+    """run() preprocesses every parsed list into state.preprocessed."""
 
-    async def test_run(self) -> None:
-        """PreprocessFilter.run() preprocesses all lists."""
+    async def test_run_preprocesses_each_parsed_list(self) -> None:
         pf = PreprocessFilter(
-            _make_context(
-                {
-                    "validator": {
-                        "allowed_countries": ["DE"],
-                    },
-                }
-            )
+            _make_context({"validator": {"allowed_countries": ["DE"]}})
         )
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    _make_config("de.com", 443, country="DE"),
-                    _make_config("ru.com", 444, country="RU"),
-                ],
-            },
-        )
+        de = _make_config("de.com", 443, country="DE")
+        ru = _make_config("ru.com", 444, country="RU")
+        state = PipelineState(parsed={"blacklist": [de, ru]})
         result = await pf.run(state)
-        assert len(result.preprocessed["blacklist"]) == 1
 
-    async def test_run_empty_parsed(self) -> None:
-        """Empty parsed dict -> empty preprocessed."""
-        pf = PreprocessFilter(_make_context())
-        state = PipelineState(parsed={})
-        result = await pf.run(state)
-        assert result.preprocessed == {}
-
-    async def test_run_all_garbage(self) -> None:
-        """All configs garbage -> empty list."""
-        pf = PreprocessFilter(_make_context())
-        state = PipelineState(
-            parsed={
-                "blacklist": [
-                    Config(
-                        "vless",
-                        "example.com",
-                        443,
-                        "11111111-1111-4111-8111-111111111111",
-                        remark="buy vpn .ru",
-                    ),
-                ],
-            },
-        )
-        result = await pf.run(state)
-        assert result.preprocessed["blacklist"] == []
+        assert result is state
+        assert state.preprocessed["blacklist"] == [de]
+        assert all(cfg.country == "DE" for cfg in state.preprocessed["blacklist"])
 
 
 class TestPreprocess:

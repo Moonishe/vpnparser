@@ -2,31 +2,21 @@
 
 from __future__ import annotations
 
-from src.scheduler.context import PipelineContext, PipelineState
+import pytest
+
+from src.scheduler.context import PipelineState
 from src.scheduler.stages.base import PipelineStage
 
 
-class _ConcreteStage(PipelineStage):
-    """Minimal concrete subclass that delegates to the parent ``run``."""
+async def test_default_run_raises_not_implemented() -> None:
+    """A stage dispatched through run() without an override is a wiring bug.
 
-    async def run(
-        self,
-        state: PipelineState,
-        context: PipelineContext | None = None,
-    ) -> PipelineState:
-        return await super().run(state, context=context)
-
-
-async def test_abstract_run_body_executes() -> None:
-    """Cover the ``...`` body of PipelineStage.run via super().run().
-
-    The abstract method body is ``...`` (Ellipsis) on line 26 of base.py.
-    Calling it through ``super()`` from a concrete subclass executes that
-    line and implicitly returns ``None`` because there is no explicit
-    ``return`` statement.
+    The base body raises instead of silently returning None: a None would
+    surface much later as an AttributeError on the returned state.
     """
-    state = PipelineState()
-    stage = _ConcreteStage()
-    result = await stage.run(state)
-    # The abstract body (``...``) has no return, so the coroutine returns None.
-    assert result is None
+
+    class _BareStage(PipelineStage):
+        pass
+
+    with pytest.raises(NotImplementedError, match="_BareStage does not implement run"):
+        await _BareStage().run(PipelineState())

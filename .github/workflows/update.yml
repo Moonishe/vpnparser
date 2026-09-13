@@ -5,15 +5,20 @@ name: Update Configs
 
 on:
   schedule:
-    # Hourly, at minute 11. Minute-0 crons hit GitHub Actions' congestion
-    # window and regularly start 15-30+ min late (observed: scheduled 09:00,
-    # started 09:19). An off-minute slot starts within a couple of minutes,
-    # which is the cheapest way to publish earlier without extra runners.
-    - cron: "11 * * * *"
-    # Fast-track revalidation of the already published set, half an hour
-    # after the full run. A full run takes ~2h while published keys die
-    # within hours; this re-probes only the current subscription and
-    # republishes the survivors in minutes.
+    # Full discovery run every 3 hours (at minute 11; minute-0 crons hit
+    # GitHub Actions' congestion window and regularly start 15-30+ min late).
+    # The cadence matches the measured ~2-3h runtime: GitHub keeps at most
+    # one PENDING run per concurrency group and supersedes older ones, so a
+    # cron faster than the job's own duration silently skipped starts —
+    # and starved the minute-41 fast-track below, which could almost never
+    # find the queue empty.
+    - cron: "11 */3 * * *"
+    # Fast-track revalidation of the already published set: re-probes only
+    # the current subscription and republishes the survivors in minutes.
+    # A pending run exists only after its own trigger fired, so with the
+    # full run moved to every 3h there is no permanently-pending full run
+    # ahead of this one: the fast-track starts immediately (or right after
+    # the in-flight full run finishes) instead of being superseded forever.
     - cron: "41 * * * *"
   workflow_dispatch:
     inputs:
@@ -31,11 +36,17 @@ on:
           - full
           - fast
 
-# Queue runs on the same ref instead of cancelling them: publishing walks the
-# output files one Contents API commit at a time, so a cancelled run can leave
-# the repo with a half-updated set of subscriptions.
+# Queue runs on the publish branch instead of cancelling them: publishing
+# walks the output files one Contents API commit at a time, so a cancelled
+# run can leave the repo with a half-updated set of subscriptions. Grouping
+# by ref let a feature-ref dispatch race the scheduled main run on the same
+# PUBLISH_BRANCH, so group by the branch we actually commit to. The env
+# context is NOT available at workflow level — it used to evaluate to the
+# literal "update-configs-" for every run — hence the same payload-safe
+# `|| 'main'` fallback PUBLISH_BRANCH itself uses (scheduled events carry
+# no repository.default_branch).
 concurrency:
-  group: update-configs-${{ github.ref }}
+  group: update-configs-${{ github.event.repository.default_branch || 'main' }}
   cancel-in-progress: false
 
 permissions:
@@ -52,14 +63,20 @@ env:
   # links to the dispatch ref, where nothing was published. The `|| 'main'`
   # mirrors that fallback, so an empty payload field cannot split the two again.
   PUBLISH_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+  # Keep in sync with validator.geoip_mmdb_sha256 in config/settings.yaml: the
+  # pipeline verifies the downloaded file against that pin, so a mismatched
+  # cache key just means a fresh download, never a bad file.
+  MMDB_SHA256: "ba9a33b56e4c3b61a8df00757e925aac7c59afe757534cf0a32d2f9c6399c9e3"
 
 jobs:
   update-configs:
     runs-on: ubuntu-latest
     # Candidate limits are 0 (= check everything) and the Xray stage probes
     # through the SOCKS pool: a full run is bounded by xray_max_alive early
-    # stops, not by the 45-minute default. One observed worst case: ~3h.
-    timeout-minutes: 180
+    # stops, not by the 45-minute default. One observed worst case: ~3h —
+    # leave ~30 min of headroom above it so a slow run fails on its own
+    # merits instead of a runner timeout with no artifacts.
+    timeout-minutes: 210
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,24 +88,60 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: requirements-dev.lock
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          # -e . verifies pyproject constraints; the lock file pins the
+          # RESOLVED versions so a new ruff minor or a fresh advisory cannot
+          # silently change what an hourly run executes.
+          pip install -r requirements-dev.lock
+          pip install -e . --no-deps
 
-      - name: Run lint/typecheck/security checks
-        run: |
-          ruff check --no-cache src tests
-          ruff format --check --no-cache src tests
-          mypy --no-incremental src
-          bandit -c pyproject.toml -r src
-          pip-audit --desc
+      # Binaries and the GeoIP database are pinned by version/checksum, so a
+      # cache hit is equivalent to a fresh download and saves ~2 downloads
+      # (and the mmdb's ~50MB) every hour. A miss falls through to the
+      # checksum-verified install below.
+      - name: Restore Xray binary cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: bin/xray
+          key: xray-${{ env.XRAY_VERSION }}
+
+      - name: Restore sing-box binary cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: bin/singbox
+          key: singbox-${{ env.SINGBOX_VERSION }}
+
+      - name: Restore GeoIP database cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: data
+          key: geoip-mmdb-${{ env.MMDB_SHA256 }}
+
+      # No lint/typecheck/bandit/pip-audit gate here: this workflow publishes
+      # on a schedule against a commit that ci.yml already validated. Dev
+      # tooling is pinned with open lower bounds, so a new ruff minor or a
+      # fresh advisory in any transitive dep would silently stop publishing
+      # unchanged, working code. The xray/sing-box checksum pins below are
+      # the real supply-chain gate for this job.
 
       - name: Install Xray core
+        env:
+          WORKSPACE: ${{ github.workspace }}
         run: |
           set -euo pipefail
+          if [ -x bin/xray/xray ]; then
+            echo "Xray ${XRAY_VERSION} restored from cache — skipping download"
+            echo "${WORKSPACE}/bin/xray" >> "$GITHUB_PATH"
+            bin/xray/xray version
+            exit 0
+          fi
           asset="Xray-linux-64.zip"
           url="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${asset}"
           curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 300 -o "/tmp/${asset}" "$url"
@@ -102,7 +155,7 @@ jobs:
           mkdir -p bin/xray
           unzip -q "/tmp/${asset}" -d bin/xray
           chmod +x bin/xray/xray
-          echo "${{ github.workspace }}/bin/xray" >> "$GITHUB_PATH"
+          echo "${WORKSPACE}/bin/xray" >> "$GITHUB_PATH"
           bin/xray/xray version
 
       # QUIC protocols (hysteria2/tuic) get their L3 probe from sing-box;
@@ -111,6 +164,11 @@ jobs:
       - name: Install sing-box
         run: |
           set -euo pipefail
+          if [ -x bin/singbox/sing-box ]; then
+            echo "sing-box ${SINGBOX_VERSION} restored from cache — skipping download"
+            bin/singbox/sing-box version
+            exit 0
+          fi
           # Release tag carries the "v", the asset file name does not.
           asset="sing-box-${SINGBOX_VERSION#v}-linux-amd64.tar.gz"
           url="https://github.com/SagerNet/sing-box/releases/download/${SINGBOX_VERSION}/${asset}"
@@ -132,6 +190,7 @@ jobs:
 
       - name: Restore facts cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
         with:
           path: facts_history.json
           key: facts-history
@@ -140,6 +199,7 @@ jobs:
 
       - name: Restore health-history cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
         with:
           path: output/health-history.json
           key: health-history
@@ -153,6 +213,7 @@ jobs:
       # proxies get retried forever. The Actions cache is private to the repo.
       - name: Restore proxy-health cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
         with:
           path: output/proxy-health-history.json
           key: proxy-health
@@ -161,30 +222,101 @@ jobs:
 
       - name: Run pipeline
         id: pipeline
+        # ONE env block: the step used to carry a second env after `run:`,
+        # a duplicate YAML key — strict parsers reject the workflow outright
+        # and last-wins parsers silently dropped INPUT_MODE/INPUT_SKIP_PUBLISH/
+        # EVENT_SCHEDULE, breaking fast-track detection and skip_publish.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          # No GITHUB_REPO here on purpose: the scheduled payload has no
+          # github.event.repository, so this used to be empty on the main
+          # trigger and every scheduled publish exited 3. The pipeline
+          # resolves the slug from the always-exported GITHUB_REPOSITORY
+          # (src.scheduler.runner._publish_owner_repo) instead.
+          GITHUB_BRANCH: ${{ env.PUBLISH_BRANCH }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
+          XRAY_EXECUTABLE: ${{ github.workspace }}/bin/xray/xray
+          XRAY_LOCATION_ASSET: ${{ github.workspace }}/bin/xray
+          SINGBOX_EXECUTABLE: ${{ github.workspace }}/bin/singbox/sing-box
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_SKIP_PUBLISH: ${{ inputs.skip_publish }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
         run: |
           set +e
           # Fast-track mode re-probes the published set (minutes) instead of a
-          # full ~2h discovery run; scheduled via the minute-41 cron or by
-          # choosing mode=fast on workflow_dispatch. skip_publish only makes
-          # sense for the full run — a fast-track that publishes nothing has
-          # no reason to exist.
-          if [ "${{ inputs.mode }}" = "fast" ]; then
-            python -m src.main --revalidate-published --publish
+          # full ~2h discovery run. Scheduled via the minute-41 cron or by
+          # choosing mode=fast on workflow_dispatch. Schedule events cannot
+          # carry workflow_dispatch inputs, so the mode is derived from which
+          # cron fired (EVENT_SCHEDULE holds the cron expression);
+          # without this, the minute-41 run silently executed FULL mode.
+          # Inputs arrive via env (not ${{ }} in bash) so a future free-text
+          # input cannot inject shell.
+          mode="${INPUT_MODE}"
+          if [ -z "${mode}" ]; then
+            # The fast-track fires on cron "41 * * * *" (see the schedule
+            # block); keep the two in sync.
+            case "${EVENT_SCHEDULE}" in
+              "41 "*) mode="fast" ;;
+              *) mode="full" ;;
+            esac
+          fi
+          echo "mode=${mode}" >> "$GITHUB_STEP_SUMMARY"
+          # skip_publish only makes sense for the full run — a fast-track that
+          # publishes nothing has no reason to exist.
+          # The exit status is captured on the SAME line as the invocation:
+          # with `published=true` as the branch's last command, `code=$?`
+          # below always read 0 and every pipeline failure (exit 1 crash,
+          # exit 3 stale publish) reported green.
+          if [ "${mode}" = "fast" ]; then
+            python -m src.main --revalidate-published --publish; code=$?
             published=true
-          elif [ "${{ inputs.skip_publish }}" = "true" ]; then
-            python -m src.main --run
+          elif [ "${INPUT_SKIP_PUBLISH}" = "true" ]; then
+            python -m src.main --run; code=$?
             published=false
           else
-            python -m src.main --run --publish
+            python -m src.main --run --publish; code=$?
             published=true
           fi
-          code=$?
           set -e
           echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
           # The notification announces "the subscription changed" and links to
           # the files in the repo. A skip_publish run leaves the repo untouched,
           # and run-summary.json carries no publish flag, so the notify step can
-          # only tell the two runs apart through this output.
+          # only tell the two runs apart through this output. A fast-track
+          # whose pipeline republished metadata only (0 survivors) must NOT
+          # advertise "published" — the run summary records exactly what the
+          # last publish covered.
+          if [ "${published}" = "true" ] && [ -f output/run-summary.json ]; then
+            # "ok" is the only status under which subscription files actually
+            # enter the publish set; every other status ("no_sources",
+            # "validation_disabled", "publish_failed", ...) is metadata-only.
+            # The floor below min_publish_configs keeps status "ok" but drops
+            # subscription paths — compare against the floor, not just >0.
+            files_published=$(python3 -c "
+          import json, yaml
+          summary = json.load(open('output/run-summary.json', encoding='utf-8-sig'))
+          status = summary.get('status')
+          outputs = summary.get('outputs') or {}
+          try:
+              combined = int((outputs.get('combined') or {}).get('count') or 0)
+          except (TypeError, ValueError):
+              combined = 0
+          try:
+              floor = int((yaml.safe_load(open('config/settings.yaml', encoding='utf-8-sig')).get('publisher') or {}).get('min_publish_configs', 10))
+          except (TypeError, ValueError):
+              floor = 10
+          if floor < 0:
+              floor = 10
+          print(1 if status == 'ok' and combined >= floor else 0)
+          ")
+            if [ "${files_published}" != "1" ]; then
+              status_now=$(python3 -c "import json; print(json.load(open('output/run-summary.json', encoding='utf-8-sig')).get('status','status-missing'))")
+              published=false
+              echo "::warning::pipeline reported no publishable run (status=${status_now}); suppressing the published flag"
+            fi
+          fi
           echo "published=${published}" >> "$GITHUB_OUTPUT"
           # Exit 3 (src.main EXIT_PUBLISH_FAILED) means the pipeline ran fine but
           # publishing to the repo failed. Keep going so the local output still
@@ -195,16 +327,6 @@ jobs:
           if [ "${code}" -ne 0 ] && [ "${code}" -ne 3 ]; then
             exit "${code}"
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
-          GITHUB_BRANCH: ${{ env.PUBLISH_BRANCH }}
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          VALIDATOR_PROXY: ${{ secrets.VALIDATOR_PROXY }}
-          XRAY_EXECUTABLE: ${{ github.workspace }}/bin/xray/xray
-          XRAY_LOCATION_ASSET: ${{ github.workspace }}/bin/xray
-          SINGBOX_EXECUTABLE: ${{ github.workspace }}/bin/singbox/sing-box
 
       - name: Verify output
         id: verify
@@ -216,24 +338,36 @@ jobs:
           test -f output/subscription-whitelist.txt || { echo "ERROR: output/subscription-whitelist.txt not created!"; exit 1; }
           test -f output/run-summary.json || { echo "ERROR: output/run-summary.json not created!"; exit 1; }
           CONFIGS=$(python3 -c "
-          import base64
+          import base64, json
           data = open('output/subscription.txt').read().strip()
           try:
-              decoded = base64.b64decode(data).decode()
+              decoded = base64.b64decode(data, validate=True).decode()
               lines = [l for l in decoded.strip().split('\n') if '://' in l]
-              if lines and lines[0].startswith('vmess://'):
-                  lines = lines[1:]
+              # Watermark is structural (0.0.0.0), not positional: drop it
+              # wherever it sits instead of blindly dropping line 0.
+              from src.aggregator.output import is_watermark_vmess
+              lines = [l for l in lines if not is_watermark_vmess(l.strip())]
               print(len(lines))
           except Exception:
               print(0)
           ")
           echo "configs_count=$CONFIGS" >> "$GITHUB_ENV"
           echo "Output: $CONFIGS configs"
-          STATUS=$(python3 -c "import json; print(json.load(open('output/run-summary.json')).get('status',''))")
+          STATUS=$(python3 -c "import json; print(json.load(open('output/run-summary.json', encoding='utf-8-sig')).get('status',''))")
           echo "run_status=$STATUS" >> "$GITHUB_ENV"
           echo "Run status: $STATUS"
-          if [ "$CONFIGS" -lt 10 ]; then
-            echo "::error::Pipeline produced critically low output ($CONFIGS configs). Aborting publish."
+          MIN_PUBLISH=$(python3 -c "
+          import yaml
+          try:
+              floor = int((yaml.safe_load(open('config/settings.yaml', encoding='utf-8-sig')).get('publisher') or {}).get('min_publish_configs', 10))
+          except (TypeError, ValueError):
+              floor = 10
+          if floor < 0:
+              floor = 10
+          print(floor)
+          ")
+          if [ "$CONFIGS" -lt "$MIN_PUBLISH" ]; then
+            echo "::error::Pipeline produced critically low output ($CONFIGS < $MIN_PUBLISH configs). Aborting publish."
             exit 1
           fi
 
@@ -245,17 +379,17 @@ jobs:
 
       - name: Telegram notify
         if: env.configs_count != '' && steps.pipeline.outputs.published == 'true'
-        run: python -m src.notify.telegram --configs "${{ env.configs_count }}" --file output/subscription.txt --status-file output/run-summary.json
+        run: python -m src.notify.telegram --configs "$configs_count" --file output/subscription.txt --status-file output/run-summary.json
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
           GITHUB_BRANCH: ${{ env.PUBLISH_BRANCH }}
 
       - name: Save facts cache
         if: always() && hashFiles('facts_history.json') != ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
         with:
           path: facts_history.json
           key: facts-history-${{ github.run_id }}
@@ -263,6 +397,7 @@ jobs:
       - name: Save health-history cache
         if: always() && hashFiles('output/health-history.json') != ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
         with:
           path: output/health-history.json
           key: health-history-${{ github.run_id }}
@@ -270,9 +405,51 @@ jobs:
       - name: Save proxy-health cache
         if: always() && hashFiles('output/proxy-health-history.json') != ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
         with:
           path: output/proxy-health-history.json
           key: proxy-health-${{ github.run_id }}
+
+      - name: Save Xray binary cache
+        if: always() && hashFiles('bin/xray/xray') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: bin/xray
+          key: xray-${{ env.XRAY_VERSION }}
+
+      - name: Save sing-box binary cache
+        if: always() && hashFiles('bin/singbox/sing-box') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: bin/singbox
+          key: singbox-${{ env.SINGBOX_VERSION }}
+
+      - name: Save GeoIP database cache
+        if: always() && hashFiles('data/*.mmdb') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: data
+          key: geoip-mmdb-${{ env.MMDB_SHA256 }}
+
+      # Post-mortem material for a failed run: the summary (degraded reasons,
+      # per-source stats), the health history behind them and the trend file.
+      # proxy-health-history.json is deliberately excluded — it holds the
+      # SOCKS pool and must stay out of anything beyond the private cache.
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: failure-artifacts-${{ github.run_id }}
+          path: |
+            output/run-summary.json
+            output/health-history.json
+            output/stats-history.json
+            output/subscription-clash.yaml
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Alert on failure
         if: failure()

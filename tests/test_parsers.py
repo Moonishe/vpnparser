@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 import pytest
 
+from src.aggregator.clash import config_to_clash_proxy
 from src.aggregator.output import generate_base64
 from src.parsers import PARSER_BY_SCHEME
 from src.parsers.base import (
@@ -339,9 +340,21 @@ def test_tuic_parse_no_credentials() -> None:
 
 def test_tuic_parse_with_trailing_path() -> None:
     """line 84: trailing /path stripped from host:port."""
-    cfg = TuicParser().parse("tuic://uuid:pass@example.com:443/path")
+    cfg = TuicParser().parse(f"tuic://{_GOOD_UUID}:pass@example.com:443/path")
     assert cfg is not None
     assert cfg.port == 443
+
+
+def test_tuic_parse_non_uuid_credential_is_v4_token() -> None:
+    """A non-UUID head is not a v5 pair: the credential stays a v4 token.
+
+    v4 tokens are opaque and may contain ":" — dropping them lost live
+    configs; the probe decides whether the server accepts the token.
+    """
+    cfg = TuicParser().parse("tuic://uuid:pass@example.com:443")
+    assert cfg is not None and cfg.uuid_or_password == "uuid:pass"
+    cfg2 = TuicParser().parse("tuic://not-a-uuid:pass@example.com:443")
+    assert cfg2 is not None and cfg2.uuid_or_password == "not-a-uuid:pass"
 
 
 # ========================================================================
@@ -352,20 +365,6 @@ def test_tuic_parse_with_trailing_path() -> None:
 def test_vless_parse_rejects_wrong_scheme() -> None:
     """line 56: non-vless:// link returns None."""
     assert VlessParser().parse("vmess://abc") is None
-
-
-def test_vless_parse_scheme_mismatch() -> None:
-    """line 60: scheme mismatch after urlparse.
-
-    ``urlparse`` always extracts ``scheme='vless'`` for any string that
-    starts with ``vless://`` (checked at line 55), so this branch is
-    practically unreachable through normal input.  We still exercise the
-    parser to ensure the code path is sound.
-    """
-    # The guard at line 55 already ensures the link starts with "vless://",
-    # and urlparse will always report scheme="vless" for such strings.
-    # This test exists for completeness; the branch is dead code.
-    assert True  # line 60 is unreachable via normal test inputs
 
 
 # ========================================================================
@@ -452,6 +451,33 @@ def test_vmess_tls_field_case_insensitive() -> None:
     assert cfg is not None and cfg.security == "none"
 
 
+def test_vmess_network_field_is_normalised() -> None:
+    """``"net": "ws "`` must reach Config as ``"ws"``, not a lost transport.
+
+    clash.py matches Config.network against its supported set exactly, so a
+    raw value used to publish the config as plain TCP without transport.
+    """
+    payload = json.dumps(
+        {
+            "add": "a.com",
+            "port": "443",
+            "id": _GOOD_UUID,
+            "net": "ws ",
+            "path": "/ws",
+            "host": "a.com",
+        }
+    )
+    encoded = base64.b64encode(payload.encode()).decode()
+    cfg = VmessParser().parse(f"vmess://{encoded}")
+    assert cfg is not None
+    assert cfg.network == "ws"
+    proxy = config_to_clash_proxy(cfg, set())
+    assert proxy is not None
+    assert proxy["network"] == "ws"
+    assert proxy["ws-opts"]["path"] == "/ws"
+    assert proxy["ws-opts"]["headers"]["Host"] == "a.com"
+
+
 def test_parse_qs_single_keeps_plus_literal() -> None:
     """``+`` in a query value stays literal (base64 pbk corruption guard)."""
     from src.parsers.base import parse_qs_single
@@ -459,6 +485,19 @@ def test_parse_qs_single_keeps_plus_literal() -> None:
     parsed = parse_qs_single("pbk=Ym9i+abc/def&sni=a.com")
     assert parsed["pbk"] == "Ym9i+abc/def"
     assert parsed["sni"] == "a.com"
+
+
+def test_parse_qs_single_decodes_key_before_first_occurrence_check() -> None:
+    """``ab=1&a%62=2`` must keep the first value regardless of pair order.
+
+    The membership check used the still-encoded key while storage used the
+    decoded one, so an encoded duplicate slipped past it and the surviving
+    value depended on ordering.
+    """
+    from src.parsers.base import parse_qs_single
+
+    assert parse_qs_single("ab=1&a%62=2") == {"ab": "1"}
+    assert parse_qs_single("a%62=2&ab=1") == {"ab": "2"}
 
 
 def test_split_host_port_rejects_unicode_and_underscore_ports() -> None:
@@ -546,8 +585,8 @@ def test_parser_rejects_malformed_inputs_found_by_debug() -> None:
     - vmess: bool/non-integral-float port, whitespace address, non-UUID id
     - vless: whitespace/percent-encoded UUID, non-UUID userinfo
     - trojan: whitespace-only password after percent-decoding
-    Valid links (including IPv6 hosts, non-hyphenated UUIDs and percent-encoded
-    passwords) must still parse successfully.
+    Valid links (including IPv6 hosts, non-hyphenated UUIDs, percent-encoded
+    passwords and a percent-encoded vless uuid) must still parse successfully.
     """
     vm, vl, tr = VmessParser(), VlessParser(), TrojanParser()
 
@@ -605,6 +644,11 @@ def test_parser_rejects_malformed_inputs_found_by_debug() -> None:
     assert vl_ipv6 is not None and vl_ipv6.address == "2001:db8::1"
     tr_enc = tr.parse("trojan://p%40ss%21word@example.com:443")
     assert tr_enc is not None and tr_enc.uuid_or_password == "p@ss!word"
+    # A percent-encoded vless uuid decodes before the UUID validation
+    # ("vless whitespace uuid" above must keep failing the same way: decode +
+    # strip still leaves an empty credential).
+    vl_enc = vl.parse(f"vless://{quote(_GOOD_UUID, safe='')}@example.com:443")
+    assert vl_enc is not None and vl_enc.uuid_or_password == _GOOD_UUID
 
 
 def test_tuic_shadowtls_anytls_debug_pass() -> None:
@@ -628,11 +672,19 @@ def test_tuic_shadowtls_anytls_debug_pass() -> None:
     reject = [
         ("tuic empty cred", tuic, "tuic://@real-server.com:443"),
         ("tuic ws-only cred", tuic, "tuic://%20%20@real-server.com:443"),
-        ("tuic v5 empty pass", tuic, "tuic://uuid:@real-server.com:443"),
+        ("tuic v5 empty pass", tuic, f"tuic://{_GOOD_UUID}:@real-server.com:443"),
         ("tuic v5 empty uuid", tuic, "tuic://:pass@real-server.com:443"),
-        ("tuic port 0", tuic, "tuic://uuid:pass@real-server.com:0"),
-        ("tuic port 99999", tuic, "tuic://uuid:pass@real-server.com:99999"),
-        ("tuic bare ipv6", tuic, "tuic://uuid:pass@2001:db8::1:443"),
+        ("tuic port 0", tuic, f"tuic://{_GOOD_UUID}:pass@real-server.com:0"),
+        (
+            "tuic port 99999",
+            tuic,
+            f"tuic://{_GOOD_UUID}:pass@real-server.com:99999",
+        ),
+        (
+            "tuic bare ipv6",
+            tuic,
+            f"tuic://{_GOOD_UUID}:pass@2001:db8::1:443",
+        ),
         ("shadowtls ws-only", stls, "shadowtls://%20@real-server.com:443"),
         ("shadowtls no-pass", stls, "shadowtls://real-server.com:443"),
         ("shadowtls port 0", stls, "shadowtls://pass@real-server.com:0"),
@@ -646,15 +698,17 @@ def test_tuic_shadowtls_anytls_debug_pass() -> None:
         assert parser.parse(link) is None, f"{name} should be rejected"
 
     # --- whitespace stripped after percent-decoding ---
-    tuic_ws = tuic.parse("tuic://%20uuid:pass@real-server.com:443")
-    assert tuic_ws is not None and tuic_ws.uuid_or_password == "uuid:pass"
+    tuic_ws = tuic.parse(f"tuic://%20{_GOOD_UUID}:pass@real-server.com:443")
+    assert tuic_ws is not None and tuic_ws.uuid_or_password == f"{_GOOD_UUID}:pass"
     stls_ws = stls.parse("shadowtls://%20pass@real-server.com:443")
     assert stls_ws is not None and stls_ws.uuid_or_password == "pass"
     atls_ws = atls.parse("anytls://%20pass@real-server.com:443")
     assert atls_ws is not None and atls_ws.uuid_or_password == "pass"
     # trailing whitespace also stripped
-    tuic_trail = tuic.parse("tuic://uuid:pass%20@real-server.com:443")
-    assert tuic_trail is not None and tuic_trail.uuid_or_password == "uuid:pass"
+    tuic_trail = tuic.parse(f"tuic://{_GOOD_UUID}:pass%20@real-server.com:443")
+    assert (
+        tuic_trail is not None and tuic_trail.uuid_or_password == f"{_GOOD_UUID}:pass"
+    )
 
     # --- valid v4 (TOKEN) and v5 (UUID:PASSWORD) ---
     v4 = tuic.parse("tuic://mytoken@real-server.com:443?sni=x#NL-01")
@@ -662,9 +716,13 @@ def test_tuic_shadowtls_anytls_debug_pass() -> None:
     assert v4.network == "quic" and v4.security == "tls"
     v5 = tuic.parse(f"tuic://{_GOOD_UUID}:pass@real-server.com:443?sni=x")
     assert v5 is not None and v5.uuid_or_password == f"{_GOOD_UUID}:pass"
+    # A non-UUID head is not a v5 pair — the whole credential stays a v4
+    # token instead of being dropped (v4 tokens may contain ":").
+    v4colon = tuic.parse("tuic://uuid:pass@real-server.com:443")
+    assert v4colon is not None and v4colon.uuid_or_password == "uuid:pass"
 
     # --- IPv6 and path stripping ---
-    ipv6 = tuic.parse("tuic://uuid:pass@[2001:db8::1]:443?sni=x")
+    ipv6 = tuic.parse(f"tuic://{_GOOD_UUID}:pass@[2001:db8::1]:443?sni=x")
     assert ipv6 is not None and ipv6.address == "2001:db8::1" and ipv6.port == 443
     path = stls.parse("shadowtls://pass@real-server.com:443/extra/path?sni=x")
     assert path is not None and path.address == "real-server.com"
@@ -702,9 +760,18 @@ def test_base64_output_contains_raw_links() -> None:
 
 
 def test_config_dedup_key() -> None:
-    """line 71: dedup_key returns (protocol, address, port[, cred])."""
+    """line 71: dedup_key returns (protocol, address, port, cred_hash)."""
     cfg = Config(protocol="vmess", address="a.com", port=443, uuid_or_password="u")
-    assert cfg.dedup_key == ("vmess", "a.com", 443, "")
+    assert cfg.dedup_key[:3] == ("vmess", "a.com", 443)
+    # The credential distinguishes the config, so the hash is never empty.
+    assert cfg.dedup_key[3] != ""
+
+
+def test_config_dedup_key_distinguishes_credentials() -> None:
+    """Different uuid on the same node are distinct configs, not duplicates."""
+    first = Config(protocol="vmess", address="a.com", port=443, uuid_or_password="u1")
+    second = Config(protocol="vmess", address="a.com", port=443, uuid_or_password="u2")
+    assert first.dedup_key != second.dedup_key
 
 
 def test_config_dedup_key_reality_includes_credentials() -> None:
@@ -727,6 +794,21 @@ def test_config_dedup_key_reality_includes_credentials() -> None:
     )
     assert first.dedup_key != second.dedup_key
     assert first.dedup_key[:3] == second.dedup_key[:3]
+
+
+def test_config_dedup_key_includes_hysteria2_obfs() -> None:
+    """Hysteria2 obfs settings select the endpoint, not presentation metadata.
+
+    ``hy2://pass@h:443?obfs=salamander&obfs-password=x`` and the bare
+    ``hy2://pass@h:443`` used to collapse into one dedup key, silently
+    dropping one of the two configs.
+    """
+    parser = Hysteria2Parser()
+    plain = parser.parse("hy2://pass@h.example:443")
+    obfs = parser.parse("hy2://pass@h.example:443?obfs=salamander&obfs-password=x")
+    assert plain is not None and obfs is not None
+    assert plain.dedup_key[:3] == obfs.dedup_key[:3]
+    assert plain.dedup_key != obfs.dedup_key
 
 
 def test_config_to_dict_excludes_none_and_metadata() -> None:
@@ -883,7 +965,7 @@ def test_is_garbage_config_vmess_non_uuid() -> None:
 
 
 def test_is_garbage_config_tuic_placeholder_uuid_part() -> None:
-    """lines 444-448: tuic UUID:PASSWORD with placeholder/non-UUID uuid half."""
+    """lines 444-448: tuic UUID:PASSWORD with a literal placeholder head."""
     cfg1 = Config(
         protocol="tuic",
         address="real-server.net",
@@ -891,13 +973,15 @@ def test_is_garbage_config_tuic_placeholder_uuid_part() -> None:
         uuid_or_password="UUID:realpass",
     )
     assert is_garbage_config(cfg1) is True
+    # A non-UUID head is a v4 token, not a placeholder — only the literal
+    # "UUID"/"PASSWORD" heads are garbage.
     cfg2 = Config(
         protocol="tuic",
         address="real-server.net",
         port=443,
         uuid_or_password="not-a-uuid:realpass",
     )
-    assert is_garbage_config(cfg2) is True
+    assert is_garbage_config(cfg2) is False
 
 
 def test_is_garbage_config_empty_credential_vless_vmess_tuic() -> None:
@@ -998,3 +1082,100 @@ def test_trojan_parse_port_out_of_range_explicit(
 
     monkeypatch.setattr("src.parsers.trojan.urlparse", lambda _url: _MockParseResult())
     assert TrojanParser().parse("trojan://secret@example.com:99999") is None
+
+
+# --- audit regressions ------------------------------------------------------
+
+
+def test_find_all_links_strips_sentence_trailing_dot() -> None:
+    """'...:443.' ends a sentence: the dot must not ride onto the port.
+
+    The old rstrip set had no dot, so the port arrived as "443.",
+    split_host_port rejected it, and the whole config was lost.
+    """
+    link = "vless://11111111-1111-4111-8111-111111111111@example.com:443"
+    text = f"Connect to {link}."
+    assert find_all_links(text) == [link]
+
+
+def test_ss_accepts_chacha20_poly1305_alias() -> None:
+    """chacha20-poly1305 is a common panel alias for chacha20-ietf-poly1305."""
+    import base64
+
+    from src.parsers.shadowsocks import ShadowsocksParser
+
+    userinfo = base64.b64encode(b"chacha20-poly1305:pw").decode()
+    cfg = ShadowsocksParser().parse(f"ss://{userinfo}@example.com:8388#alias")
+    assert cfg is not None
+    assert cfg.ss_method == "chacha20-poly1305"
+
+
+def test_uuid_validation_rejects_hybrid_hyphenation() -> None:
+    """Only the 8-4-4-4-12 hyphenated or the bare 32-hex forms are UUIDs.
+
+    Per-group optional hyphens used to accept hybrid shapes like
+    8-8-4-4-4-12, which no client treats as a valid UUID.
+    """
+    hybrid = "12345678-12341234-1234-1234-123456789012"
+    assert is_garbage_config(Config("vless", "a.com", 443, hybrid)) is True
+    assert is_garbage_config(Config("vless", "a.com", 443, _GOOD_UUID)) is False
+    assert (
+        is_garbage_config(Config("vless", "a.com", 443, _GOOD_UUID.replace("-", "")))
+        is False
+    )
+
+
+# --- audit round 2 regressions ------------------------------------------------
+
+
+def test_trojan_empty_username_keeps_bare_password() -> None:
+    """trojan://:pass@host must parse with password "pass", not ":pass"."""
+    from src.parsers.trojan import TrojanParser
+
+    cfg = TrojanParser().parse("trojan://:pass@real-server.com:443")
+    assert cfg is not None
+    assert cfg.uuid_or_password == "pass"
+
+
+def test_trojan_password_with_colons_survives() -> None:
+    from src.parsers.trojan import TrojanParser
+
+    cfg = TrojanParser().parse("trojan://user:pa:ss@real-server.com:443")
+    assert cfg is not None
+    assert cfg.uuid_or_password == "user:pa:ss"
+
+
+def test_hysteria2_obfs_none_means_no_obfs() -> None:
+    """obfs=none is explicit "no obfuscation", not an unknown obfs type."""
+    from src.parsers.hysteria2 import Hysteria2Parser
+
+    cfg = Hysteria2Parser().parse("hy2://secret@real-server.com:443?obfs=none#x")
+    assert cfg is not None
+    assert cfg.obfs is None
+
+
+def test_tuic_v4_token_with_colon_survives() -> None:
+    """A v4 token containing ":" (e.g. %3A-decoded) is one credential."""
+    from src.parsers.tuic import TuicParser
+
+    cfg = TuicParser().parse("tuic://token%3Awith%3Acolons@real-server.com:443")
+    assert cfg is not None
+    assert cfg.uuid_or_password == "token:with:colons"
+
+
+def test_tuic_v5_still_requires_both_halves() -> None:
+    from src.parsers.tuic import TuicParser
+
+    assert TuicParser().parse(f"tuic://{_GOOD_UUID}:@real-server.com:443") is None
+    assert TuicParser().parse("tuic://:pass@real-server.com:443") is None
+
+
+def test_safe_b64decode_rejects_shifted_garbage() -> None:
+    """Without validate=True, junk chars are dropped and bytes shift."""
+    from src.parsers.base import safe_b64decode
+
+    assert safe_b64decode("!!!not-base64!!!") == ""
+    assert safe_b64decode(None) == ""
+    import base64
+
+    assert safe_b64decode(base64.b64encode(b"hello").decode()) == "hello"

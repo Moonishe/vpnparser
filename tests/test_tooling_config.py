@@ -259,7 +259,10 @@ def test_mypy_hook_has_runtime_stub_dependencies(precommit: dict[str, Any]) -> N
         h for h in _repo(precommit, "mirrors-mypy")["hooks"] if h["id"] == "mypy"
     )
     deps = " ".join(str(d) for d in hook["additional_dependencies"]).lower()
-    for package in ("httpx", "pyyaml", "python-socks", "python-dotenv"):
+    # maxminddb is imported by src/validators/geoip.py under strict=true: a
+    # missing entry passed here failed every commit hook on geoip.py while
+    # CI (which installs [dev]) passed.
+    for package in ("httpx", "pyyaml", "python-socks", "python-dotenv", "maxminddb"):
         assert package in deps, f"mypy hook is missing {package}"
 
 
@@ -420,16 +423,26 @@ def test_skip_publish_run_sends_no_notification(
     assert 'echo "published=' in script, "the pipeline step exports no publish flag"
     # Three branches now: fast-track (always publishes), skip_publish (never
     # publishes) and the full-run default (publishes). Check each explicitly.
+    # Schedule events cannot carry dispatch inputs, so the mode is derived
+    # from which cron fired before the branch block. Inputs arrive via env
+    # (not ${{ }} in bash) to avoid script injection.
+    assert "INPUT_MODE" in str(pipeline.get("env", "")) or "INPUT_MODE" in script
+    assert "EVENT_SCHEDULE" in script, (
+        "schedule-triggered runs must derive the mode from the cron expression"
+    )
+    assert "${{ inputs." not in script, "inputs must go through env, not bash"
     fast = script[
-        script.index('inputs.mode }}" = "fast"') : script.index(
-            'inputs.skip_publish }}" = "true"'
+        script.index('if [ "${mode}" = "fast" ]') : script.index(
+            'INPUT_SKIP_PUBLISH}" = "true"'
         )
     ]
     assert "--revalidate-published" in fast
     assert "--publish" in fast
     assert "published=true" in fast
 
-    skipped = script[script.index('skip_publish }}" = "true"') : script.index("\nelse")]
+    skipped = script[
+        script.index('INPUT_SKIP_PUBLISH}" = "true"') : script.index("\nelse")
+    ]
     assert "python -m src.main --run" in skipped
     assert "--publish" not in skipped
     assert "published=false" in skipped
@@ -439,6 +452,88 @@ def test_skip_publish_run_sends_no_notification(
     assert "published=true" in default_branch
     condition = str(notify.get("if", ""))
     assert f"steps.{pipeline['id']}.outputs.published" in condition
+
+
+def test_pipeline_exit_code_is_captured_on_the_invocation_line(
+    update_workflow: dict[str, Any],
+) -> None:
+    """code=$? must read the interpreter, not a trailing assignment.
+
+    With `published=true` as the branch's last command, `code=$?` after the
+    if/else block always read 0: every pipeline failure (exit 1 crash, exit 3
+    stale publish) reported green, "Fail on stale publish" was dead code, and
+    a notification advertised an update that never landed.
+    """
+    script = str(_named_step(update_workflow, "Run pipeline")["run"])
+    body = "\n".join(
+        line for line in script.splitlines() if not line.strip().startswith("#")
+    )
+    # After the closing fi of the if/elif/else block the exit code must
+    # already be captured: no bare `code=$?` may follow it.
+    tail = body[body.rindex("\nfi") :]
+    assert "code=$?" not in tail, "exit code read after the branch block"
+    for invocation in (
+        "python -m src.main --revalidate-published --publish; code=$?",
+        "python -m src.main --run; code=$?",
+        "python -m src.main --run --publish; code=$?",
+    ):
+        assert invocation in body, f"missing exit-code capture: {invocation}"
+
+
+def test_full_run_cron_cannot_starve_the_fast_track(
+    update_workflow: dict[str, Any],
+) -> None:
+    """The full-run cadence must leave queue slots for the fast-track cron.
+
+    A pending run exists only once its own trigger fired, and GitHub
+    supersedes older pending runs: with an hourly full run there was ALWAYS
+    a pending full run ahead of the minute-41 fast-track, which could
+    therefore almost never start. With the full run at every 3h the fast
+    track starts immediately (or right after the in-flight run).
+    """
+    on = update_workflow.get("on") or update_workflow[True]
+    crons = [
+        str(entry["cron"])
+        for entry in on["schedule"]
+        if isinstance(entry, dict) and "cron" in entry
+    ]
+    full = next(c for c in crons if not c.startswith("41 "))
+    fast = next(c for c in crons if c.startswith("41 "))
+    # Full run: every 3 hours (field 2 = "*/3"), not hourly.
+    assert full.split()[1] == "*/3", f"full-run cadence too fast: {full}"
+    assert fast.split()[1] == "*", f"fast track is not hourly: {fast}"
+
+
+def test_mmdb_checksum_matches_between_workflow_and_settings(
+    update_workflow: dict[str, Any],
+    settings: dict[str, Any],
+) -> None:
+    """The GeoIP pin lives in two files and must never drift.
+
+    ``update.yml`` keys the database cache on the checksum while
+    ``settings.yaml`` is what ``ensure_geoip_database`` verifies the download
+    against: a drift means the cache serves a file the pipeline then rejects
+    (or the other way round), and the run silently loses GeoIP enrichment.
+    """
+    workflow_sha = str(update_workflow["env"]["MMDB_SHA256"]).strip().lower()
+    settings_sha = str(settings["validator"]["geoip_mmdb_sha256"]).strip().lower()
+    assert workflow_sha, "update.yml does not pin MMDB_SHA256"
+    assert workflow_sha == settings_sha, (
+        "MMDB_SHA256 in update.yml and validator.geoip_mmdb_sha256 in "
+        "settings.yaml have drifted apart"
+    )
+
+
+def test_codeowners_covers_the_binary_checksum_pins() -> None:
+    """The checksum files are the supply-chain gate for the executed binaries.
+
+    ``update.yml`` refuses to install Xray/sing-box without a matching
+    ``.github/*.sha256``, so an unreviewed edit to those files is equivalent
+    to executing an unverified binary.
+    """
+    text = (_ROOT / "CODEOWNERS").read_text(encoding="utf-8")
+    for path in (".github/xray.sha256", ".github/singbox.sha256"):
+        assert path in text, f"CODEOWNERS does not protect {path}"
 
 
 # ---------------------------------------------------------------------------
@@ -609,16 +704,36 @@ def test_gitignore_covers_secret_files_and_not_docs() -> None:
 #: (settings section, key) pairs whose default the README quotes verbatim.
 _DOCUMENTED_SETTINGS = [
     ("sources", "max_concurrent_fetches"),
+    ("validator", "allowed_countries"),
+    ("validator", "whitelist_ru_ratio"),
     ("validator", "max_configs_to_validate"),
+    ("validator", "tcp_enabled"),
+    ("validator", "tls_enabled"),
+    ("validator", "xray_enabled"),
+    ("validator", "proxy_attempts_per_config"),
+    ("validator", "tls_proxy_attempts_per_config"),
     ("validator", "xray_concurrency"),
     ("validator", "xray_required"),
+    ("validator", "xray_stage_budget_minutes"),
+    ("validator", "xray_per_config_timeout_seconds"),
+    ("validator", "verification_ttl_minutes"),
+    ("validator", "xray_require_distinct_outbound_ip"),
+    ("validator", "min_alive_to_filter"),
+    ("validator", "fail_open_on_low_alive"),
     ("validator", "geoip_enabled"),
     ("validator", "geoip_requests_per_minute"),
     ("validator", "geoip_max_lookups"),
-    ("validator", "xray_require_distinct_outbound_ip"),
     ("aggregator", "max_configs_in_output"),
     ("aggregator", "max_per_country"),
+    ("publisher", "output_file"),
     ("publisher", "location_output_limit"),
+    ("quality", "health_history_enabled"),
+    ("quality", "health_history_retention_days"),
+    ("quality", "health_history_max_records"),
+    ("quality", "min_consecutive_passes"),
+    ("quality", "stability_min_alive"),
+    ("llm", "enabled"),
+    ("llm", "max_calls_per_run"),
 ]
 
 
@@ -787,3 +902,88 @@ def test_per_list_overrides_do_not_shadow_the_default(
             f"validator.{base_key} = {validator[base_key]!r} never applies: "
             f"every configured list pins {name} to {values[0]!r}"
         )
+
+
+def test_update_workflow_uses_the_dev_lockfile(update_workflow: dict[str, Any]) -> None:
+    """The hourly publish job installs from the pinned lock, not fresh [dev].
+
+    A new ruff minor or a fresh advisory in any transitive dep would
+    otherwise silently change what an hourly run executes. ci.yml keeps
+    fresh [dev] resolution on purpose: it is where new versions get
+    exercised before the lock is regenerated.
+    """
+    install = _named_step(update_workflow, "Install dependencies")
+    script = str(install["run"])
+    assert "requirements-dev.lock" in script, (
+        "update.yml must install from requirements-dev.lock"
+    )
+    assert "--no-deps" in script, (
+        "the -e . install must not re-resolve deps on top of the lock"
+    )
+
+
+def test_dev_lockfile_covers_the_runtime_and_dev_deps(
+    pyproject: dict[str, Any],
+) -> None:
+    """Every [project] dependency and dev tool must appear in the lock."""
+    lock = (_ROOT / "requirements-dev.lock").read_text(encoding="utf-8")
+    # pip freeze emits underscore spellings (pre_commit); dependency names
+    # in pyproject use dashes — normalise both sides.
+    lock_names = {
+        line.split("==")[0].strip().lower().replace("_", "-")
+        for line in lock.splitlines()
+        if "==" in line and not line.startswith("#")
+    }
+
+    def _dist_name(spec: str) -> str:
+        # Strip extras (python-socks[asyncio]), version bounds and markers.
+        base = re.split(r"[<>=!~\[;\s]", spec, maxsplit=1)[0].strip()
+        return base.lower().replace("_", "-")
+
+    expected = {_dist_name(s) for s in pyproject["project"]["dependencies"]}
+    expected.update(
+        _dist_name(s) for s in pyproject["project"]["optional-dependencies"]["dev"]
+    )
+    assert expected, "pyproject declares no dependencies"
+    for dep in sorted(expected):
+        assert dep in lock_names, f"requirements-dev.lock misses {dep}"
+
+
+def test_packaging_ships_src_root_and_entry_point(pyproject: dict[str, Any]) -> None:
+    """A real install must not squat generic top-level names.
+
+    `where = ["src"]` shipped aggregator/notify/parsers/publisher/scheduler/
+    sources/utils/validators as GENERIC top-level packages (colliding with
+    any other distribution's `utils`) and omitted src/main.py entirely — the
+    documented `python -m src.main` was unimportable outside the repo.
+    """
+    packages = pyproject["tool"]["setuptools"]["packages"]
+    assert "src" in packages
+    assert "src.main" not in packages  # modules ride in the src package
+    for pkg in packages:
+        assert pkg == "src" or pkg.startswith("src."), (
+            f"non-namespaced package {pkg!r} would squat site-packages"
+        )
+    scripts = pyproject["project"].get("scripts") or {}
+    assert scripts.get("vpnparser") == "src.main:main"
+
+
+def test_packaging_list_covers_every_src_subpackage(
+    pyproject: dict[str, Any],
+) -> None:
+    """The hardcoded ``packages`` list must not miss a new subpackage.
+
+    The explicit list (instead of ``[tool.setuptools.packages.find]``) is
+    intentional: ``where = ["src"]`` flattened the tree and shipped generic
+    top-level names (``utils``, ``parsers``, ...). This test is the safety
+    net for the list — adding ``src/foo/__init__.py`` without listing
+    ``src.foo`` fails here instead of silently shipping a broken wheel.
+    """
+    packages = set(pyproject["tool"]["setuptools"]["packages"])
+    found: set[str] = set()
+    for init in (_ROOT / "src").rglob("__init__.py"):
+        rel = init.parent.relative_to(_ROOT)
+        found.add(".".join(rel.parts))
+    assert "src" in found, "src/__init__.py is missing"
+    missing = found - packages
+    assert not missing, f"packages list misses subpackages: {sorted(missing)}"

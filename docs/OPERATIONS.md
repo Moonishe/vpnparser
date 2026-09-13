@@ -9,12 +9,21 @@
    jq '.outputs.combined.count' output/run-summary.json      # configs in subscription.txt
    jq '.outputs | map_values(.count)' output/run-summary.json
    jq '.validation.lists | map_values(.output_after_xray)' output/run-summary.json
+   # When Xray is disabled, the xray_* counters stay 0 by design — read the
+   # branch that actually ran instead:
+   jq '.validation.lists | map_values({tcp: .tcp_alive, tls: .tls_alive})' output/run-summary.json
    ```
    - `.outputs.combined.count` > 0
    - `.validation.lists.<list>.xray_alive` / `.output_after_xray` reasonable for
-     the list; per-source counters are `.validation.lists.<list>.sources.<source>`
+     the list when `validator.xray_enabled: true`; with Xray off, judge by
+     `.tcp_alive` / `.output_after_tcp` (or `.tls_alive` /
+     `.output_after_tls` when `tls_enabled` ran) — not by `xray_alive`
+     (always 0 in that mode); per-source counters are `.validation.lists.<list>.sources.<source>`
      with `checked`/`alive`
    - No source banned > 1 run in a row
+   - `output/health-history.json` and `output/proxy-health-history.json` are
+     local-only state, restored via the workflow cache (never published):
+     a missing file on a fresh runner is normal, not data loss.
 3. Review Telegram notification (if enabled) for the fun fact and counts. A
    `skip_publish: true` dispatch sends none on purpose -- it publishes nothing,
    so there is no update to announce.
@@ -26,7 +35,7 @@
 | Code | Meaning | Action |
 |------|---------|--------|
 | `0` | Run finished; publish either succeeded or was not requested | none |
-| `1` | Pipeline crashed, or `PipelineRunner` could not be imported | read the traceback in the logs |
+| `1` | Pipeline crashed, or `PipelineRunner` could not be imported | a scrubbed one-line error is in the step log — no traceback is logged for pipeline crashes (tokens/URLs are stripped before logging); import failures DO print the full traceback |
 | `2` | Bad invocation (no `--run`, or `--publish` without `--run`) | fix the command |
 | `3` | Pipeline succeeded but publishing failed -- **the subscription in the repo is stale** | see below |
 | `130` | Interrupted (Ctrl-C) | none |
@@ -61,7 +70,8 @@ the repository. A red "Verify output" CI step after such a run means the run
 was empty, not that the published subscription was destroyed.
 
 1. Open `output/run-summary.json` and read `status` and failure reasons.
-2. Check `pipeline.log` / GitHub Actions logs for:
+2. Check the `Run pipeline` step log in GitHub Actions (the pipeline logs to
+   stdout only — there is no `pipeline.log` file) for:
    - Proxy pool empty (no free SOCKS5 proxies survived self-check)
    - Xray failures (binary missing, timeout, unsupported configs)
    - All sources dead (fetch failures)
@@ -78,8 +88,11 @@ was empty, not that the published subscription was destroyed.
 
 The publisher writes each output file with its own Contents API call, so **one
 run produces one commit per file** -- 13+ commits in a normal run
-(`subscription.txt`, `-mix`, `-blacklist`, `-whitelist`, every
-`locations/subscription-XX.txt`, `run-summary.json`, `health-history.json`).
+(`subscription.txt`, `-mix`, `-blacklist`, `-whitelist`,
+`subscription-clash.yaml`, every `locations/subscription-XX.txt`,
+`run-summary.json`, `stats-history.json`, `alive-trend.svg`;
+`health-history.json` is local-only and is restored by the workflow cache,
+not by commits).
 Reverting a single commit therefore restores a single file and leaves the rest
 of the bad run in place.
 
@@ -109,12 +122,12 @@ git commit -m "restore output/ from <last-good-commit>"
 git push origin main
 ```
 
-For a faster revert without history pollution (force-push only if safe):
-
-```bash
-git reset --hard <last-good-commit>
-git push --force-with-lease origin main
-```
+The two recipes above cover every realistic case and work with the scheduled
+workflow still enabled. A history rewrite (`git reset --hard` + `git push
+--force-with-lease`) additionally requires disabling the schedule first — the
+scheduled workflow (3h full + hourly fast-track) commits to this branch with
+`contents: write` and would race the rewrite (and it contradicts this repo's
+own commit discipline).
 
 ## Source health
 
@@ -131,7 +144,7 @@ To unban a source manually, remove its bad history from the cache file or wait f
 
 ### Binary missing
 
-CI downloads Xray-core on every run. If download fails:
+CI downloads Xray-core on a cache miss and reuses the cache otherwise. If download fails:
 
 - Check the pinned `XRAY_VERSION` in `.github/workflows/update.yml` and the
   expected digest in `.github/xray.sha256`.
@@ -154,18 +167,14 @@ locally but fine in CI.
 Never run a downloaded Xray binary without verifying it:
 
 ```bash
-sha256sum /tmp/xray/xray
+sha256sum /tmp/Xray-linux-64.zip
 cat .github/xray.sha256
 # compare
 ```
 
-To update the pinned version, run the helper:
-
-```bash
-python scripts/update_xray_checksum.py --version <TAG>
-```
-
-(Helper script is planned; until then fetch the checksum manually from the release page.)
+To update the pinned version, download the new release checksum manually
+from the release page and replace the value in `.github/xray.sha256` (keep
+the `<sha256>  Xray-linux-64.zip` format the install step expects).
 
 ## Secrets rotation
 
@@ -197,8 +206,22 @@ python -m pytest -q -p no:cacheprovider
 ## Disaster recovery checklist
 
 - [ ] Stop the scheduled workflow (disable in GitHub Actions UI).
-- [ ] Revert the last publish commit.
+- [ ] Revert the publish range (`<oldest-publish>^..<newest-publish>` — one run commits ~13 files, not one commit).
 - [ ] Restore `output/` from the last known-good commit.
 - [ ] Rotate any potentially exposed secrets.
 - [ ] Run pipeline locally with `-v` to reproduce the issue.
 - [ ] Re-enable the workflow only after a successful local run.
+
+## Xray stage wall-clock knobs
+
+- `xray_stage_budget_minutes` (default 45) — ONE absolute deadline per list,
+  shared by the fresh, retry, stale and sing-box passes. Candidates arriving
+  after it get NO verdict (the health history records nothing) and are probed
+  first next run. Before this was per-pass, three passes each started their
+  own clock (up to 3x the budget) and the sing-box pass was unbounded.
+- `xray_per_config_timeout_seconds` (default 120, 0 = off) — hard ceiling for
+  one config's whole probe (all URL attempts + the subprocess), so a slow
+  chain cannot pin a concurrency-slot for `attempts x (startup + urls x
+  timeout)` seconds.
+- Skipped-over-budget candidates show up as `xray_was_checked: false` — the
+  run summary lists them as not checked, not as dead.

@@ -38,6 +38,7 @@ import time
 from typing import TYPE_CHECKING, Any, TextIO
 
 from src.env import load_dotenv_if_available
+from src.sources.manager import _safe_error_message
 
 #: Returned when the pipeline itself succeeded but the requested publish did
 #: not — a stale subscription must not look like a green run in CI.
@@ -233,6 +234,21 @@ def _notify(
         logger.warning("Telegram notification failed: %s", exc)
 
 
+def _notify_crash(exc: BaseException, logger: logging.Logger) -> None:
+    """Send the Telegram crash alert for a pipeline that died mid-run.
+
+    A crash produces no run summary to report, so the regular notification
+    cannot fire; without this, every crash was invisible in --continuous mode
+    (the loop logs and retries, the chat hears nothing).
+    """
+    try:
+        from src.notify import telegram as tg
+
+        tg.send_crash_notification(_safe_error_message(exc))
+    except Exception as notify_exc:
+        logger.warning("Telegram crash notification failed: %s", notify_exc)
+
+
 def _run_once(
     args: argparse.Namespace,
     github_token: str | None,
@@ -273,7 +289,14 @@ def _run_once(
                 "Publish was requested but failed — check logs above for details."
             )
     else:
-        logger.warning("Pipeline completed but produced 0 configs.")
+        # Exit 0 is intentional here (an empty run still wrote its metadata
+        # and, with the publish floor, kept the last good subscription live
+        # instead of wiping it) — but it must be loud: a silent 0 reads as
+        # "healthy empty" to operators.
+        logger.warning(
+            "Pipeline completed but produced 0 configs. Nothing published — "
+            "the last good subscription stays live (stale)."
+        )
         if args.publish:
             logger.info(
                 "Empty-run artifacts were handed to the publisher — see the "
@@ -329,14 +352,20 @@ def main() -> int:
             logger.warning("Interrupted by user.")
             return 130, False
         except Exception as exc:
-            logger.error("Pipeline crashed: %s", exc, exc_info=True)
+            # Scrub tokens/URLs/PII from the exception before logging: this is
+            # the top-level handler and the traceback would otherwise re-embed
+            # source URLs with embedded credentials from lower-level failures.
+            logger.error("Pipeline crashed: %s", _safe_error_message(exc))
+            if args.notify:
+                _notify_crash(exc, logger)
             return 1, False
         # _run_once returns the config count, but the process exit code must be
         # 0 on success - returning the count makes shells/CI mark runs failed.
-        # A requested-but-failed publish is a real failure: the pipeline wrote
-        # local files while the published subscription stayed stale.
+        # A requested-but-failed publish is always a real failure: the published
+        # subscription would be left stale (or, on an empty run, the publish step
+        # itself errored and must not be hidden as success).
         if not publish_ok:
-            return EXIT_PUBLISH_FAILED, count > 0
+            return EXIT_PUBLISH_FAILED, True
         return 0, count > 0
 
     if not args.continuous:
@@ -353,7 +382,15 @@ def main() -> int:
                 return 130
             if exit_code == 0 and produced:
                 backoff = _CONTINUOUS_BACKOFF_START
-                logger.info("Run finished (exit=0). Starting next run immediately.")
+                # Successful runs pause too: a fast (minutes-long) mode that
+                # restarts immediately busy-loops the loop — hammering sources
+                # and, with --publish, the GitHub API — at full speed. A full
+                # ~2h run barely notices the few seconds.
+                logger.info(
+                    "Run finished (exit=0). Waiting %.0fs before the next run.",
+                    backoff,
+                )
+                time.sleep(backoff)
                 continue
             if exit_code == 0:
                 # A run that reaches no source at all (unreadable sources.json,

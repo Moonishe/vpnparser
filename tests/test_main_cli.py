@@ -306,6 +306,78 @@ def test_main_notify_status_file_from_settings(monkeypatch) -> None:
     assert captured["status"] == "output/custom.json"
 
 
+# --- crash notification -----------------------------------------------------
+
+
+def test_main_crash_with_notify_sends_crash_notification(monkeypatch) -> None:
+    """A --notify run that crashes mid-pipeline must still alert Telegram.
+
+    A crash produces no run summary, so the regular notification cannot fire;
+    without the crash alert every crash stayed invisible in --continuous mode.
+    """
+    monkeypatch.setattr(sys, "argv", ["main.py", "--run", "--notify"])
+    monkeypatch.setattr(main_module, "load_dotenv_if_available", lambda: True)
+    monkeypatch.setattr(main_module, "_setup_logging", lambda verbose: None)
+
+    def crashing_run_once(args, github_token, logger):
+        raise RuntimeError("pipeline exploded")
+
+    monkeypatch.setattr(main_module, "_run_once", crashing_run_once)
+    captured: dict[str, object] = {}
+
+    def fake_crash(message: str) -> bool:
+        captured["message"] = message
+        return True
+
+    monkeypatch.setattr("src.notify.telegram.send_crash_notification", fake_crash)
+    assert main() == 1
+    assert "pipeline exploded" in str(captured["message"])
+
+
+def test_main_crash_notification_failure_is_not_fatal(monkeypatch) -> None:
+    """A broken Telegram must not change the crash exit code."""
+    monkeypatch.setattr(sys, "argv", ["main.py", "--run", "--notify"])
+    monkeypatch.setattr(main_module, "load_dotenv_if_available", lambda: True)
+    monkeypatch.setattr(main_module, "_setup_logging", lambda verbose: None)
+
+    def crashing_run_once(args, github_token, logger):
+        raise RuntimeError("pipeline exploded")
+
+    monkeypatch.setattr(main_module, "_run_once", crashing_run_once)
+
+    def broken_crash(_message: str) -> bool:
+        raise RuntimeError("telegram down")
+
+    monkeypatch.setattr("src.notify.telegram.send_crash_notification", broken_crash)
+    assert main() == 1
+
+
+# --- --revalidate-published -------------------------------------------------
+
+
+def test_main_revalidate_published_uses_rerun(monkeypatch) -> None:
+    """--revalidate-published drives rerun_published, not run()."""
+
+    class _RevalRunner(_FakeRunner):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+            self.rerun_calls: list[tuple[str, bool]] = []
+            self.rerun_return: int = 6
+
+        async def rerun_published(self, output_file, publish) -> int:
+            self.rerun_calls.append((output_file, publish))
+            return self.rerun_return
+
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_valid")
+    runner = _stub_main(
+        monkeypatch, ["--revalidate-published", "--publish"], _RevalRunner()
+    )
+    runner._publish_ok = True
+    assert main() == 0
+    assert runner.rerun_calls == [("output/subscription.txt", True)]
+    assert runner.run_calls == []
+
+
 # --- --continuous loop -----------------------------------------------------
 
 
@@ -363,18 +435,20 @@ def test_continuous_backoff_is_capped(monkeypatch) -> None:
     assert slept == [5.0, 6.0, 6.0]
 
 
-def test_continuous_successful_run_restarts_immediately(monkeypatch) -> None:
-    """Successful runs keep the old behaviour: no delay between them."""
+def test_continuous_successful_run_pauses_between_runs(monkeypatch) -> None:
+    """Successful runs pause too: a fast mode restarting immediately
+    busy-looped sources (and, with --publish, the GitHub API) at full
+    speed. A full ~2h run barely notices the few seconds."""
     _calls, slept = _stub_continuous(
         monkeypatch,
         [(5, True), (7, True), KeyboardInterrupt()],
     )
     assert main() == 130
-    assert slept == []
+    assert slept == [5.0, 5.0]
 
 
 def test_continuous_backoff_resets_after_success(monkeypatch) -> None:
-    """A successful run clears the accumulated backoff."""
+    """A successful run clears the accumulated backoff (then pauses too)."""
     _calls, slept = _stub_continuous(
         monkeypatch,
         [
@@ -386,7 +460,7 @@ def test_continuous_backoff_resets_after_success(monkeypatch) -> None:
         ],
     )
     assert main() == 130
-    assert slept == [5.0, 10.0, 5.0]
+    assert slept == [5.0, 10.0, 5.0, 5.0]
 
 
 def test_continuous_backs_off_after_empty_runs(monkeypatch) -> None:
@@ -414,7 +488,7 @@ def test_continuous_backoff_resets_after_a_productive_run(monkeypatch) -> None:
         [(0, True), (0, True), (9, True), (0, True), KeyboardInterrupt()],
     )
     assert main() == 130
-    assert slept == [5.0, 10.0, 5.0]
+    assert slept == [5.0, 10.0, 5.0, 5.0]
 
 
 def test_continuous_interrupt_between_runs_exits_130(monkeypatch) -> None:

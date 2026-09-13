@@ -41,6 +41,12 @@ class SourceFetcher(PipelineStage):
         became empty, and the run still finished with status ``ok`` and no
         warning anywhere.
 
+        The published error text is sanitised: ``SourceResult.error`` embeds
+        attacker-influenced URLs (a hostile redirect Location header, a
+        hostile index URL). The raw text stays in the log; the summary
+        carries a printable-ASCII-only, line-stripped version so a crafted
+        URL cannot inject prose into the committed run-summary.json.
+
         Args:
             results: Whatever ``SourceManager.fetch_all()`` returned.
 
@@ -54,7 +60,14 @@ class SourceFetcher(PipelineStage):
             if not error:
                 continue
             name = str(getattr(result, "source_name", None) or "<unnamed>")
-            errors.append({"source": name, "error": str(error)})
+            raw = str(error)
+            # Printable ASCII single-line only: source-influenced URLs and
+            # redirect targets cannot inject newlines or non-ASCII prose
+            # into the committed run-summary.json. Full detail stays in logs.
+            lines = raw.splitlines()
+            first = lines[0] if lines else ""
+            safe = "".join(ch if 0x20 <= ord(ch) < 0x7F else "?" for ch in first)[:300]
+            errors.append({"source": name, "error": safe})
             logger.warning("Source %r produced no configs: %s", name, error)
         logger.info(
             "Fetched %d source results (%d ok, %d failed).",

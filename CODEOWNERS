@@ -1,7 +1,12 @@
 * @Moonishe
 
 # CI/CD and security-sensitive files require review.
-.github/workflows/ @Moonishe
+.github/workflows/* @Moonishe
+# The checksum pins are the only thing between a release tag and an
+# unverified binary being executed (see update.yml "Install Xray core").
+.github/xray.sha256 @Moonishe
+.github/singbox.sha256 @Moonishe
+.github/dependabot.yml @Moonishe
 SECURITY.md @Moonishe
 pyproject.toml @Moonishe
 config/sources.json @Moonishe

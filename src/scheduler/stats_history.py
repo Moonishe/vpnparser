@@ -8,9 +8,12 @@ diff the current run against the previous one.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from src.utils.paths import resolve_safe_output_path, write_text_atomic
@@ -37,7 +40,12 @@ def load_stats_history(path: str = DEFAULT_STATS_HISTORY_FILE) -> list[dict[str,
         return []
     try:
         raw = json.loads(target.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+        # UnicodeDecodeError (a ValueError) must be caught explicitly: one
+        # corrupted byte used to raise past this loader forever — the file
+        # survives in the Actions cache and every later run silently
+        # stopped appending. Returning [] here also self-heals: the next
+        # append overwrites the corrupt file with a fresh history.
         logger.warning("Cannot read stats history %s: %s", path, exc)
         return []
     if not isinstance(raw, list):
@@ -52,23 +60,54 @@ def run_stats_entry(
     now: int | None = None,
 ) -> dict[str, Any]:
     """Build one history entry out of the liveness stage statistics."""
+
+    def _num(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError, OverflowError):
+            try:
+                return int(float(value))
+            except (TypeError, ValueError, OverflowError):
+                return 0
+
     lists_raw = liveness_stats.get("lists")
     lists: dict[str, dict[str, int]] = {}
     if isinstance(lists_raw, dict):
         for list_type, item in lists_raw.items():
             if not isinstance(item, dict):
                 continue
+            # xray stays the canonical alive/checked pair (badge + legacy
+            # readers), but TCP/TLS-only runs never set xray_* — without
+            # their own counters the trend history recorded zeros and the
+            # Telegram diff-alert cried collapse on healthy runs.
             lists[str(list_type)] = {
-                "alive": int(item.get("xray_alive") or 0),
-                "checked": int(item.get("xray_checked") or 0),
+                "alive": _num(item.get("xray_alive")),
+                "checked": _num(item.get("xray_checked")),
+                "tcp_alive": _num(item.get("tcp_alive")),
+                "tcp_checked": _num(item.get("tcp_checked")),
+                "tls_alive": _num(item.get("tls_alive")),
+                "tls_checked": _num(item.get("tls_checked")),
             }
     return {
-        "ts": int(now if now is not None else time.time()),
+        "ts": _num(now if now is not None else time.time()),
         "status": str(status),
-        "proxy_count": int(liveness_stats.get("proxy_count") or 0),
-        "proxy_networks": int(liveness_stats.get("proxy_networks") or 0),
+        "proxy_count": _num(liveness_stats.get("proxy_count")),
+        "proxy_networks": _num(liveness_stats.get("proxy_networks")),
         "lists": lists,
     }
+
+
+@contextlib.contextmanager
+def _history_file_lock(target: Path) -> Iterator[None]:
+    """Deprecated alias for :func:`src.utils.paths.history_file_lock`.
+
+    The implementation moved there so the health-history writer shares the
+    same cross-process exclusion; kept as an alias for compatibility.
+    """
+    from src.utils.paths import history_file_lock
+
+    with history_file_lock(target):
+        yield
 
 
 def append_run_stats(
@@ -79,23 +118,31 @@ def append_run_stats(
 ) -> tuple[list[dict[str, Any]], str | None]:
     """Append *entry* to the history file (atomic write).
 
+    The load-append-write sequence runs under a best-effort cross-process
+    lock so two overlapping runs cannot lose each other's entries.
+
     Returns the full (capped) history and the written path — ``None`` for the
     path when the write failed, so the caller does not publish a ghost file.
     """
-    history = load_stats_history(path)
-    history.append(entry)
-    if limit > 0 and len(history) > limit:
-        history = history[-limit:]
     try:
         target = resolve_safe_output_path(path)
-        write_text_atomic(
-            target,
-            json.dumps(history, ensure_ascii=False, indent=1),
-        )
     except Exception as exc:
         logger.warning("Cannot write stats history %s: %s", path, exc)
-        return history, None
-    return history, path
+        return [entry], None
+    with _history_file_lock(target):
+        history = load_stats_history(path)
+        history.append(entry)
+        if limit > 0 and len(history) > limit:
+            history = history[-limit:]
+        try:
+            write_text_atomic(
+                target,
+                json.dumps(history, ensure_ascii=False, indent=1),
+            )
+        except Exception as exc:
+            logger.warning("Cannot write stats history %s: %s", path, exc)
+            return history, None
+        return history, path
 
 
 def _series_points(
@@ -108,7 +155,17 @@ def _series_points(
     for entry in history[-points:]:
         lists = entry.get("lists")
         item = lists.get(key, {}) if isinstance(lists, dict) else {}
-        values.append(int(item.get("alive") or 0) if isinstance(item, dict) else 0)
+        if not isinstance(item, dict):
+            values.append(0)
+            continue
+        try:
+            values.append(int(item.get("alive") or 0))
+        except (TypeError, ValueError, OverflowError):
+            try:
+                raw_alive: Any = item.get("alive")
+                values.append(int(float(raw_alive)))
+            except (TypeError, ValueError, OverflowError):
+                values.append(0)
     return values
 
 

@@ -2,6 +2,10 @@
 
 Wraps the GitHub Contents API (https://docs.github.com/rest/repos/contents).
 Handles authentication, rate limits, and 404s gracefully.
+
+GitHub Enterprise is out of scope: ``api_base`` is configurable, but raw
+downloads are pinned to ``_TRUSTED_RAW_HOSTS`` (a fixed literal), which is the
+entire SSRF guard for that path.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ import asyncio
 import base64
 import contextlib
 import logging
+import random
 import time
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -19,12 +24,16 @@ from urllib.parse import quote, urlparse
 import httpx
 
 from src.utils.http import read_limited_text
+from src.utils.net import is_safe_public_url, redact_proxy_url
 
 logger = logging.getLogger(__name__)
 
 # Seconds to wait when primary rate limit is exhausted (fallback, normally
 # derived from X-RateLimit-Reset header).
 _DEFAULT_RATELIMIT_WAIT = 60.0
+
+#: Pause before the single 5xx retry (see ``_request``).
+_SERVER_ERROR_RETRY_DELAY = 2.0
 _TRUSTED_RAW_HOSTS = {"raw.githubusercontent.com"}
 _RAW_FETCH_ATTEMPTS = 3
 
@@ -47,10 +56,15 @@ _MAX_RETRY_AFTER = 30.0
 #: while streaming, so an oversized body is never fully buffered.
 MAX_RAW_FILE_BYTES = 12 * 1024 * 1024
 
-#: Statuses followed manually so each redirect hop can be re-validated against
-#: the trusted-host allow-list (see fetch_raw_file).
-_RAW_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
-_MAX_RAW_REDIRECTS = 5
+#: Statuses treated as a refusal in fetch_raw_file: the trusted-host allow-list
+#: below is the whole SSRF guard for raw downloads, and a redirect destination
+#: cannot be re-validated against it without re-entering the fetch path, so raw
+#: redirects are rejected rather than followed. (GitHub Enterprise is out of
+#: scope: its raw host would have to join _TRUSTED_RAW_HOSTS, which is
+#: deliberately a fixed literal.) 300/305/306 are included for completeness
+#: (httpx would otherwise treat them as a normal body); 304 (Not Modified)
+#: is deliberately excluded — it is not a redirect.
+_RAW_REDIRECT_STATUSES = frozenset({300, 301, 302, 303, 305, 306, 307, 308})
 
 
 def _retry_after_delay(header_value: str | None, fallback: float) -> float:
@@ -59,6 +73,11 @@ def _retry_after_delay(header_value: str | None, fallback: float) -> float:
     ``Retry-After`` may be a delta in seconds or an absolute HTTP-date (RFC 7231).
     Only the numeric form used to be parsed; the date form fell back to a short
     backoff and could hammer a throttled endpoint.
+
+    Raises:
+        GitHubRateLimitError: if the requested wait exceeds 300s — fail fast
+            instead of parking the pipeline (mirrors the ``>300s`` cap in
+            :meth:`GitHubClient._request`).
     """
     if not header_value:
         return fallback
@@ -74,6 +93,10 @@ def _retry_after_delay(header_value: str | None, fallback: float) -> float:
             seconds = (parsed - datetime.now(UTC)).total_seconds()
         except (TypeError, ValueError, OverflowError):
             return fallback
+    if seconds > 300:
+        raise GitHubRateLimitError(
+            f"GitHub rate limit wait {seconds:.0f}s exceeds >300s cap.",
+        )
     return min(max(0.0, seconds), _MAX_RETRY_AFTER)
 
 
@@ -107,7 +130,10 @@ def _raw_url(owner: str, repo: str, branch: str, path: str) -> str:
     """Build a safe raw.githubusercontent.com URL."""
     owner_q = quote(str(owner).strip(), safe="")
     repo_q = quote(str(repo).strip(), safe="")
-    branch_q = quote(str(branch).strip(), safe="")
+    # Branch names may contain "/" (feature/test): the raw host does NOT
+    # decode %2F in the ref position, so percent-encoding the slash made the
+    # URL 404 for every file of such a branch.
+    branch_q = quote(str(branch).strip(), safe="/")
     path_q = _quote_path(path)
     return f"https://raw.githubusercontent.com/{owner_q}/{repo_q}/{branch_q}/{path_q}"
 
@@ -143,13 +169,18 @@ class GitHubClient:
         self.token = token
         self.api_base = api_base.rstrip("/")
         self._client: httpx.AsyncClient | None = None
+        #: Separate client for raw downloads — never carries auth headers.
+        self._raw_client: httpx.AsyncClient | None = None
+        self._api_base_checked = False
         self._timeout = timeout
         # Lock to avoid creating multiple clients on concurrent first calls.
         self._lock = asyncio.Lock()
         # Semaphore to bound concurrent HTTP requests across all operations
         # (file fetches, directory listings).  Prevents overwhelming the API
-        # when fetch_directory recurses into a large repo tree.
-        self._api_semaphore = asyncio.Semaphore(max(1, max_concurrent_api))
+        # when fetch_directory recurses into a large repo tree. Capped at 50:
+        # a caller-supplied burst must not trip the secondary rate limit on
+        # its own.
+        self._api_semaphore = asyncio.Semaphore(max(1, min(max_concurrent_api, 50)))
         #: Repo tree cache: (owner, repo, branch) -> in-flight or settled fetch.
         #: A settled future carries the recursive Trees API listing (or
         #: ``None``); failed fetches are removed again so a transient error
@@ -179,6 +210,23 @@ class GitHubClient:
         }
 
     async def _get_client(self) -> httpx.AsyncClient:
+        # Fail closed: never issue requests (and, when a token is set,
+        # never send the bearer credential) to a host that is not a
+        # verified public https endpoint. A misconfigured or
+        # attacker-controlled ``github_api_base`` could otherwise be an
+        # SSRF pivot into internal services or the cloud metadata API.
+        # Validated on every call, not just once: DNS rebinding (TTL 0)
+        # can swap the address between the first check and a later
+        # request, so a cached verdict would reopen the SSRF window.
+        parts = urlparse(self.api_base)
+        if parts.scheme.lower() != "https":
+            raise ValueError(f"GitHub api_base must use https, got {parts.scheme!r}")
+        if not await is_safe_public_url(self.api_base, timeout=5.0):
+            raise ValueError(
+                "Refusing to send GitHub requests to non-public "
+                f"api_base {parts.hostname!r}."
+            )
+        self._api_base_checked = True
         if self._client is not None:
             return self._client
         async with self._lock:
@@ -191,10 +239,35 @@ class GitHubClient:
                 )
         return self._client
 
+    async def _get_raw_client(self) -> httpx.AsyncClient:
+        """Lazily create the client for raw.githubusercontent.com fetches.
+
+        A SECOND client, deliberately: the API client's default headers carry
+        ``Authorization: Bearer <token>``, and httpx merges client headers
+        with per-request ones — routing raw fetches through it would leak the
+        token to the raw host. The raw client has no base_url and no auth
+        headers at all (see ``_raw_headers``), and shares the API's semaphore
+        so raw downloads cannot burst past the same limit.
+        """
+        if self._raw_client is not None:
+            return self._raw_client
+        async with self._lock:
+            if self._raw_client is None:
+                self._raw_client = httpx.AsyncClient(
+                    timeout=self._timeout,
+                    follow_redirects=False,
+                )
+        return self._raw_client
+
     async def aclose(self) -> None:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+        if self._raw_client is not None:
+            await self._raw_client.aclose()
+            self._raw_client = None
+        # Drop the cached validation so a reused instance re-checks api_base.
+        self._api_base_checked = False
 
     async def __aenter__(self) -> GitHubClient:
         await self._get_client()
@@ -209,6 +282,37 @@ class GitHubClient:
         await self.aclose()
 
     # --- low-level request helper ---
+
+    @staticmethod
+    def _check_no_redirect(response: httpx.Response, url: str) -> None:
+        """Reject 3xx explicitly: the client never follows redirects."""
+        status = getattr(response, "status_code", 0)
+        if 300 <= status < 400:
+            msg = f"Unexpected redirect {status} for {url!r} — refusing to follow"
+            raise ValueError(msg)
+
+    @staticmethod
+    def _check_response_size(response: httpx.Response, url: str) -> None:
+        """Reject API bodies larger than 10 MiB before parsing."""
+        headers = getattr(response, "headers", {}) or {}
+        get_header = getattr(headers, "get", None)
+        length_raw = None
+        if callable(get_header):
+            length_raw = get_header("Content-Length")
+            if length_raw is None:
+                length_raw = get_header("content-length")
+        if length_raw is not None:
+            try:
+                length = int(str(length_raw))
+            except (TypeError, ValueError):
+                length = None
+            if length is not None and length > 10 * 1024 * 1024:
+                msg = f"GitHub API response too large for {url!r}"
+                raise ValueError(msg)
+        content = getattr(response, "content", None)
+        if isinstance(content, (bytes, bytearray)) and len(content) > 10 * 1024 * 1024:
+            msg = f"GitHub API response too large for {url!r}"
+            raise ValueError(msg)
 
     async def _request(
         self,
@@ -228,67 +332,134 @@ class GitHubClient:
         Raises:
             GitHubRateLimitError: if rate limited and wait time exceeds a sane bound.
             httpx.HTTPStatusError: for other non-2xx statuses.
+            ValueError: on an unexpected redirect or an oversized body.
         """
         client = await self._get_client()
-        # Bound concurrent API calls globally (see _api_semaphore).  Acquiring
-        # per-request (rather than per caller) means list_repo_contents,
-        # fetch_file and retries are all bounded even when fetch_directory
-        # recurses concurrently.
-        async with self._api_semaphore:
-            response = await client.request(method, url, params=params)
+        # Wall-clock budget for the whole request chain (mirrors the manager's
+        # timeout*DOWNLOAD_TIMEOUT_FACTOR): httpx timeouts restart per chunk.
+        budget = self._timeout * 4 or 120
+        async with asyncio.timeout(budget):
+            # Bound concurrent API calls globally (see _api_semaphore).
+            # Acquiring per-request (rather than per caller) means
+            # list_repo_contents, fetch_file and retries are all bounded even
+            # when fetch_directory recurses concurrently.
+            async with self._api_semaphore:
+                response = await client.request(method, url, params=params)
+            self._check_no_redirect(response, url)
+            self._check_response_size(response, url)
 
-        # --- rate limit handling ---
-        # Primary limit: 403 + X-RateLimit-Remaining: "0".
-        # Secondary limit (abuse detection): 403 + Retry-After, often with
-        # remaining > 0.  Without the Retry-After branch a secondary limit
-        # surfaces as HTTPStatusError and silently drops files/dirs.
-        if response.status_code == 403:
-            remaining = response.headers.get("X-RateLimit-Remaining")
-            retry_after = response.headers.get("Retry-After")
-            if remaining == "0" or retry_after:
-                if retry_after:
-                    try:
-                        wait = max(1.0, float(retry_after))
-                    except (TypeError, ValueError):
+            # --- rate limit handling ---
+            # Primary limit: 403 + X-RateLimit-Remaining: "0".
+            # Secondary limit (abuse detection): 403 or 429, often with
+            # Retry-After and remaining > 0.  Without the 429 branch a secondary
+            # limit surfaces as HTTPStatusError and silently drops files/dirs.
+            # The wait carries jitter: every in-flight request derives the same
+            # wait from the same X-RateLimit-Reset, and retrying in lockstep is
+            # exactly the burst that trips the secondary limit a second time.
+            if response.status_code in (403, 429):
+                remaining = response.headers.get("X-RateLimit-Remaining")
+                retry_after = response.headers.get("Retry-After")
+                if remaining == "0" or retry_after:
+                    raw_wait: float | None = None
+                    if retry_after:
+                        try:
+                            raw_wait = max(1.0, float(retry_after))
+                        except (TypeError, ValueError):
+                            raw_wait = None
+                            wait = _DEFAULT_RATELIMIT_WAIT
+                        else:
+                            # Hard cap: a hostile Retry-After must fail fast
+                            # instead of parking the pipeline for minutes.
+                            if raw_wait > 300:
+                                raise GitHubRateLimitError(
+                                    f"GitHub rate limit wait {raw_wait:.0f}s "
+                                    "exceeds >300s cap.",
+                                )
+                            wait = min(raw_wait, _MAX_RETRY_AFTER)
+                    else:
                         wait = _DEFAULT_RATELIMIT_WAIT
-                else:
-                    wait = _DEFAULT_RATELIMIT_WAIT
-                    reset = response.headers.get("X-RateLimit-Reset")
-                    if reset:
-                        with contextlib.suppress(TypeError, ValueError):
-                            # X-RateLimit-Reset is a unix timestamp (UTC, in seconds).
-                            wait = max(1.0, float(reset) - time.time())
-                # Cap the wait so we never block forever in a pipeline.
-                if wait > 300:
-                    raise GitHubRateLimitError(
-                        f"GitHub rate limit exhausted; reset in {wait:.0f}s (>300s cap).",  # noqa: E501
+                        reset = response.headers.get("X-RateLimit-Reset")
+                        if reset:
+                            with contextlib.suppress(TypeError, ValueError):
+                                # X-RateLimit-Reset is a unix timestamp (UTC).
+                                # Capped like Retry-After: never park the
+                                # pipeline for hours on a hostile header.
+                                raw_wait = max(1.0, float(reset) - time.time())
+                                if raw_wait > 300:
+                                    raise GitHubRateLimitError(
+                                        f"GitHub rate limit wait {raw_wait:.0f}s "
+                                        "exceeds >300s cap.",
+                                    )
+                                wait = min(
+                                    raw_wait,
+                                    _MAX_RETRY_AFTER,
+                                )
+                    wait *= 1.0 + random.random() * 0.25
+                    logger.warning(
+                        "GitHub rate limit hit; sleeping %.1fs before retrying %s",
+                        wait,
+                        url,
                     )
+                    await asyncio.sleep(wait)
+                    async with self._api_semaphore:
+                        response = await client.request(method, url, params=params)
+                    self._check_no_redirect(response, url)
+                    self._check_response_size(response, url)
+                    if response.status_code in (403, 429):
+                        remaining = response.headers.get("X-RateLimit-Remaining")
+                        retry_after = response.headers.get("Retry-After")
+                        if remaining == "0" or retry_after:
+                            raise GitHubRateLimitError(
+                                "GitHub rate limit exhausted after retry.",
+                            )
+
+            # --- 404: not found → graceful empty result ---
+            if response.status_code == 404:
+                logger.debug("GitHub 404 for %s?%s", url, params)
+                return [] if parse_json else ""
+
+            # --- transient 5xx: one retry with a short backoff ---
+            # A 502/503/504 from api.github.com used to surface as
+            # HTTPStatusError and cost the file (or the whole directory) for the
+            # run; GitHub's own status page documents these as transient. A plain
+            # 500 is deliberately NOT retried here (unlike the publisher/raw
+            # clients): for the Contents/Trees API it usually signals a problem
+            # with the request itself, not a blip. The retried answer is re-run
+            # through the SAME handling (404-empty, rate-limit wait): a 503
+            # flipping to 404 must read as "gracefully empty", not as a failure,
+            # and a flip to 429 must be waited out.
+            if response.status_code in (502, 503, 504):
                 logger.warning(
-                    "GitHub rate limit hit; sleeping %.1fs before retrying %s",
-                    wait,
+                    "GitHub %d for %s; retrying once after backoff.",
+                    response.status_code,
                     url,
                 )
-                await asyncio.sleep(wait)
+                delay = min(
+                    _SERVER_ERROR_RETRY_DELAY * (2**0) + random.uniform(0, 1), 30.0
+                )
+                await asyncio.sleep(delay)
                 async with self._api_semaphore:
                     response = await client.request(method, url, params=params)
-                if response.status_code == 403:
+                self._check_no_redirect(response, url)
+                self._check_response_size(response, url)
+                if response.status_code == 404:
+                    logger.debug("GitHub 404 for %s?%s", url, params)
+                    return [] if parse_json else ""
+                if response.status_code in (403, 429):
                     remaining = response.headers.get("X-RateLimit-Remaining")
                     retry_after = response.headers.get("Retry-After")
                     if remaining == "0" or retry_after:
                         raise GitHubRateLimitError(
-                            "GitHub rate limit exhausted after retry.",
+                            "GitHub rate limit hit on a retried (5xx) request.",
                         )
 
-        # --- 404: not found → graceful empty result ---
-        if response.status_code == 404:
-            logger.debug("GitHub 404 for %s?%s", url, params)
-            return [] if parse_json else ""
+            self._check_no_redirect(response, url)
+            self._check_response_size(response, url)
+            response.raise_for_status()
 
-        response.raise_for_status()
-
-        if parse_json:
-            return response.json()
-        return response.text
+            if parse_json:
+                return response.json()
+            return response.text
 
     # --- public API ---
 
@@ -315,7 +486,12 @@ class GitHubClient:
             # Single file returned (path points to a file, not a dir).
             data = [data]
         if not isinstance(data, list):
-            logger.warning("Unexpected GitHub contents response for %s: %r", url, data)
+            logger.warning(
+                "Unexpected GitHub contents response for %s: %s",
+                url,
+                # download_url entries may carry ?token= for private repos.
+                redact_proxy_url(repr(data)[:1000]),
+            )
             return []
         if len(data) >= _CONTENTS_LISTING_LIMIT:
             # Likely truncated: the only complete view of a directory this size
@@ -453,7 +629,12 @@ class GitHubClient:
             )
             return None
         if not isinstance(data, dict):
-            logger.warning("Unexpected GitHub trees response for %s: %r", url, data)
+            logger.warning(
+                "Unexpected GitHub trees response for %s: %s",
+                url,
+                # Tree payloads may embed URLs with ?token= for private repos.
+                redact_proxy_url(repr(data)[:1000]),
+            )
             return None
         if data.get("truncated"):
             logger.warning(
@@ -462,6 +643,11 @@ class GitHubClient:
                 owner,
                 repo,
             )
+            # The truncated listing must NOT replace the Contents listing it
+            # is a fallback for: the requested directory may have been cut
+            # off entirely, so returning it silently *lost* files. The
+            # caller keeps its (capped but known-good) listing instead.
+            return None
         entries = data.get("tree")
         if not isinstance(entries, list):
             return None
@@ -484,22 +670,26 @@ class GitHubClient:
             httpx.HTTPStatusError: for non-retriable statuses, and for
                 retriable ones that were still failing on the last attempt.
         """
+        # Private repos get a ``?token=...`` on every Contents API download_url;
+        # it authenticates the raw download, so no log line may carry it.
+        log_url = redact_proxy_url(download_url)
         parsed = urlparse(download_url)
         if parsed.scheme != "https" or parsed.netloc.lower() not in _TRUSTED_RAW_HOSTS:
-            logger.warning("Rejected untrusted raw download URL: %s", download_url)
+            logger.warning("Rejected untrusted raw download URL: %s", log_url)
             return ""
 
         for attempt in range(1, _RAW_FETCH_ATTEMPTS + 1):
             backoff = 0.5 * attempt
             retry_delay: float | None = None
             try:
+                # One client per instance, not per attempt: a fresh
+                # AsyncClient re-parses the CA bundle (~blocking) and
+                # re-handshakes on every attempt of every file. The client is
+                # the raw one — no auth headers, see _get_raw_client.
+                client = await self._get_raw_client()
                 # Bound concurrent raw downloads too — raw hosts also
                 # rate-limit, and a burst of parallel fetches can trigger it.
                 async with (
-                    httpx.AsyncClient(
-                        timeout=self._timeout,
-                        follow_redirects=False,
-                    ) as client,
                     self._api_semaphore,
                     client.stream(
                         "GET",
@@ -508,7 +698,7 @@ class GitHubClient:
                     ) as response,
                 ):
                     if response.status_code == 404:
-                        logger.debug("404 fetching raw file %s", download_url)
+                        logger.debug("404 fetching raw file %s", log_url)
                         return ""
                     if response.status_code in _RAW_REDIRECT_STATUSES:
                         # Never follow a redirect from the trusted host here: the
@@ -516,49 +706,79 @@ class GitHubClient:
                         # (SSRF). Raw file URLs do not legitimately redirect.
                         logger.warning(
                             "Raw download %s redirects (%d) - refusing to follow.",
-                            download_url,
+                            log_url,
                             response.status_code,
                         )
                         return ""
                     if response.status_code in _RETRIABLE_RAW_STATUSES:
+                        # May raise GitHubRateLimitError for a hostile
+                        # Retry-After (>300s): it is not an httpx error, so it
+                        # bypasses the handlers below and fails fast.
                         retry_delay = _retry_after_delay(
                             response.headers.get("Retry-After"),
                             backoff,
                         )
                     response.raise_for_status()
-                    body = await read_limited_text(
-                        response,
-                        max_bytes=MAX_RAW_FILE_BYTES,
-                    )
+                    # Wall-clock budget: httpx read timeouts restart per chunk,
+                    # so a 1-byte/29s slow drip held the connection for hours.
+                    async with asyncio.timeout(self._timeout * 4 or 120):
+                        body = await read_limited_text(
+                            response,
+                            max_bytes=MAX_RAW_FILE_BYTES,
+                        )
             except httpx.HTTPStatusError as exc:
                 if retry_delay is None or attempt >= _RAW_FETCH_ATTEMPTS:
                     raise
+                # Jitter like the API path: parallel fetches derive the same
+                # delay from the same Retry-After and must not retry in lockstep.
+                sleep_delay = retry_delay * (1.0 + random.random() * 0.25)
                 logger.warning(
                     "Raw fetch of %s got HTTP %d (attempt %d/%d) — retry in %.1fs",
-                    download_url,
+                    log_url,
                     exc.response.status_code,
                     attempt,
                     _RAW_FETCH_ATTEMPTS,
-                    retry_delay,
+                    sleep_delay,
                 )
-                await asyncio.sleep(retry_delay)
+                await asyncio.sleep(sleep_delay)
                 continue
             except httpx.RequestError as exc:
                 if attempt < _RAW_FETCH_ATTEMPTS:
-                    await asyncio.sleep(backoff)
+                    delay = min(2.0 * (2 ** (attempt - 1)) + random.uniform(0, 1), 30.0)
+                    await asyncio.sleep(delay)
                     continue
                 logger.warning(
                     "Failed to fetch raw file %s after %d attempts: %s: %s",
-                    download_url,
+                    log_url,
                     _RAW_FETCH_ATTEMPTS,
                     type(exc).__name__,
+                    # httpx error strings embed the full request URL, token
+                    # included — redact the message as well as the URL.
+                    redact_proxy_url(str(exc)),
+                )
+                return ""
+            except TimeoutError as exc:
+                # The wall-clock budget (asyncio.timeout above) expired
+                # mid-body: a slow drip that outlived every chunk read
+                # timeout. Bare TimeoutError is NOT an httpx.RequestError,
+                # so without this handler it used to escape fetch_raw_file
+                # entirely — failing the WHOLE source in the manager instead
+                # of degrading this one file to "".
+                if attempt < _RAW_FETCH_ATTEMPTS:
+                    delay = min(2.0 * (2 ** (attempt - 1)) + random.uniform(0, 1), 30.0)
+                    await asyncio.sleep(delay)
+                    continue
+                logger.warning(
+                    "Raw fetch of %s timed out after %d attempt(s): %s",
+                    log_url,
+                    _RAW_FETCH_ATTEMPTS,
                     exc,
                 )
                 return ""
             if body is None:
                 logger.warning(
                     "Raw file %s exceeded the %d byte limit — discarded.",
-                    download_url,
+                    log_url,
                     MAX_RAW_FILE_BYTES,
                 )
                 return ""
@@ -610,7 +830,12 @@ class GitHubClient:
                 )
                 return ""
         if not isinstance(data, dict):
-            logger.warning("Unexpected GitHub file response for %s: %r", url, data)
+            logger.warning(
+                "Unexpected GitHub file response for %s: %s",
+                url,
+                # download_url may carry ?token= for private repos.
+                redact_proxy_url(repr(data)[:1000]),
+            )
             return ""
         # Preferred: base64-encoded content payload.
         content_b64 = data.get("content")
@@ -710,10 +935,21 @@ class GitHubClient:
                 try:
                     content = await self.fetch_raw_file(download_url)
                 except Exception as exc:
-                    logger.warning("Failed to fetch raw %s: %s", download_url, exc)
+                    logger.warning(
+                        "Failed to fetch raw %s: %s",
+                        redact_proxy_url(download_url),
+                        redact_proxy_url(str(exc)),
+                    )
                     return None
             if content:
                 return (file_path, content)
+            logger.warning(
+                "Fetched empty content for %s/%s/%s (download_url=%s)",
+                owner,
+                repo,
+                file_path,
+                redact_proxy_url(str(download_url)) if download_url else "<none>",
+            )
             return None
 
         # Respect max_files: only fetch up to the remaining budget.

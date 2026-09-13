@@ -9,11 +9,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import ipaddress
+import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, ClassVar
 from urllib.parse import unquote
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -43,6 +47,22 @@ class Config:
     ss_method: str | None = None  # aes-256-gcm, chacha20-ietf-poly1305, etc.
     # vmess specific
     alter_id: int | None = None  # vmess "aid"; ignored by Xray >= 1.8.5
+    # hysteria2 specific (salamander obfuscation). Stored so the Clash writer
+    # and the sing-box probe can dial an obfs-required server; excluded from
+    # is_garbage_config and detect_country inputs by the parsers.
+    obfs: str | None = None  # "salamander"
+    obfs_password: str | None = None
+    # tuic v5 specific. Stored so the Clash writer can express them (Mihomo
+    # TuicOption accepts both); Xray cannot dial tuic at all, so only the
+    # sing-box probe consumes them — via the raw_link, which carries them.
+    congestion_control: str | None = None  # "bbr" / "cubic" / "new_reno"
+    udp_relay_mode: str | None = None  # "native" / "quic"
+    # hysteria2 port-hopping range (e.g. "443-500" or "443,8443"). The Config
+    # port holds the first port clients dial; the full spec selects the
+    # endpoint, so it is part of the dedup hash (see dedup_key). Stored
+    # explicitly instead of reparsing raw_link so authority-range and mport
+    # forms survive _collapse_port_hopping.
+    hopping_port_range: str | None = None
     # metadata
     remark: str = ""  # server display name (from # fragment or ps field)
     raw_link: str = ""  # original link for output generation
@@ -70,11 +90,25 @@ class Config:
         """Key for deduplication: (protocol, address, port, cred_hash).
 
         Different protocols or credentials on the same address:port are
-        independent configs (e.g. VLESS + Trojan on one server).  The
-        protocol is included so they are not merged. For REALITY configs the
-        credential hash is part of the key: several independent Reality
-        endpoints routinely share one address:port (CDN fronting with
-        different public keys), and collapsing them kept only one.
+        independent configs (e.g. VLESS + Trojan on one server, or two user
+        accounts with different uuid/password on the same node).  The protocol
+        and credential hash are both part of the key so they are never merged:
+        collapsing distinct credentials silent-dropped working configs (e.g. an
+        alive uuid next to a dead one on the same node). For REALITY the ``pbk``
+        identifies the endpoint and is included in the hash, so several
+        independent Reality endpoints still sharing one address:port survive.
+
+        The transport fields (``network``, ``path``, ``host``, ``sni``,
+        ``alpn``, ``fp``, ``sid``, ``flow``, ``alter_id``) are part of the hash
+        too: two links that share a credential but reach different endpoints
+        over it — a different ws path, a different SNI, a different REALITY
+        shortId — are different servers, and collapsing them kept only whichever
+        arrived first.  The same holds for hysteria2's ``obfs``/
+        ``obfs_password``: an obfs-required server and the bare endpoint behind
+        the same address:port are not interchangeable, so both fields are
+        hashed as well.  Only presentation metadata (``remark``, ``raw_link``)
+        and validation bookkeeping stay out of the key, so the same link from
+        several sources still dedups.
 
         Hostnames are case-insensitive and an IPv6 literal has many textual
         spellings, so the address is normalised (lowercased; IPv6 collapsed)
@@ -84,17 +118,120 @@ class Config:
         """
         address = str(self.address or "")
         try:
-            address_key = str(ipaddress.ip_address(address.strip("[]")))
+            address_key = str(ipaddress.ip_address(address.strip().strip("[]")))
         except ValueError:
-            address_key = address.lower()
-        cred = ""
-        if str(self.security or "").lower() == "reality":
-            # pbk identifies the endpoint; the uuid identifies the user, and
-            # one server legitimately issues many user uuids.
+            address_key = address.strip().lower()
+
+        # Credential identity distinguishes configs on the same node: the
+        # user credential (uuid/password), the transport/tls/reality fields
+        # that select the endpoint behind address:port, and the shadowsocks
+        # method.  Hashing keeps the key short and avoids echoing secrets
+        # into the (sometimes logged) key.  Fields are length-prefixed
+        # instead of joined with a plain separator: a "\x00" is impossible
+        # inside the encoded field value but was plausible inside a raw
+        # credential ("%7C" == "|"), so "a|b"+"c" and "a"+"b|c" used to
+        # collide. host/sni are lowercased like the address — the same
+        # endpoint spelled differently is one config.
+        def _part(value: Any) -> str:
+            part = str(value or "")
+            return f"{len(part)}\x00{part}" if part else ""
+
+        # security/network are case-insensitive ("TLS" == "tls"); UUID hex
+        # is case-insensitive per RFC 4122 but passwords are not — lower
+        # the credential only for UUID-based protocols.
+        protocol_lc = str(self.protocol or "").lower()
+        security_norm = str(self.security or "").strip().lower()
+        network_norm = str(self.network or "").strip().lower()
+        ss_method_norm = str(self.ss_method or "").strip().lower()
+        sid_norm = str(self.sid or "").strip().lower()
+        uuid_part = str(self.uuid_or_password or "")
+        if protocol_lc in ("vless", "vmess"):
+            uuid_part = uuid_part.strip().lower()
+        # Hysteria2 port-hopping range selects the endpoint: two links
+        # that differ only by mport / authority range must not collapse.
+        # The parser stores the original spec in hopping_port_range; older
+        # Configs (or hand-built ones) fall back to raw_link parsing so the
+        # same links still separate. A plain (non-range) mport is ignored by
+        # the parser and stays out of the key.
+        hopping_part = str(self.hopping_port_range or "").strip()
+        if not hopping_part and protocol_lc == "hysteria2":
+            try:
+                _raw = str(self.raw_link or "")
+                _no_frag = _raw.split("#", 1)[0]
+                _qs = _no_frag.split("?", 1)[1] if "?" in _no_frag else ""
+                _mport = str(parse_qs_single(_qs).get("mport") or "").strip()
+                _authority: str = (
+                    _no_frag.split("://", 1)[1] if "://" in _no_frag else _no_frag
+                )
+                _authority = _authority.split("?", 1)[0]
+                if "@" in _authority:
+                    _authority = _authority.rsplit("@", 1)[1]
+                if "/" in _authority:
+                    _authority = _authority.split("/", 1)[0]
+                _auth_range = ""
+                if _authority.startswith("["):
+                    _close = _authority.find("]")
+                    if _close != -1 and _authority[_close + 1 :].startswith(":"):
+                        _cand = _authority[_close + 2 :]
+                        if _HOPPING_RANGE_RE.fullmatch(_cand):
+                            _auth_range = _cand
+                elif ":" in _authority:
+                    _cand = _authority.rpartition(":")[2]
+                    if _HOPPING_RANGE_RE.fullmatch(_cand):
+                        _auth_range = _cand
+                if _auth_range:
+                    hopping_part = _auth_range
+                elif _mport and _HOPPING_RANGE_RE.fullmatch(_mport):
+                    hopping_part = _mport
+                else:
+                    hopping_part = ""
+            except Exception:
+                hopping_part = ""
+        cred_parts = [
+            _part(security_norm),
+            _part(network_norm),
+            _part(self.path),
+            _part(str(self.host or "").strip().lower()),
+            _part(str(self.sni or "").strip().lower()),
+            _part(self.alpn),
+            _part(self.fp),
+            _part(self.pbk),
+            _part(sid_norm),
+            _part(self.flow),
+            _part(ss_method_norm),
+            _part(self.alter_id),
+            # Hysteria2 obfuscation selects the endpoint as much as a ws path
+            # or a REALITY shortId does: without it an obfs-required server
+            # and the bare endpoint collapsed into one dedup key and one of
+            # the two configs was dropped.
+            _part(self.obfs),
+            _part(self.obfs_password),
+            # TUIC v5 congestion control / relay mode select the endpoint
+            # like a ws path does: same addr:port with different cc/urm are
+            # different servers, collapsing them lost one.
+            _part(str(self.congestion_control or "").strip().lower()),
+            _part(str(self.udp_relay_mode or "").strip().lower()),
+            _part(hopping_part),
+            _part(uuid_part),
+        ]
+        # errors="ignore": a lone surrogate smuggled through a crafted vmess JSON
+        # payload made .encode() raise UnicodeEncodeError — one link crashed the run
+        # (and permanently disabled dedup in the filter stage). Malformed characters
+        # are dropped instead of becoming a crash primitive.
+        cred = hashlib.sha256(
+            "".join(cred_parts).encode(errors="ignore"),
+        ).hexdigest()
+        try:
+            port_int = int(self.port)
+        except (TypeError, ValueError):
+            # Total function: a malformed port must not disable dedup for
+            # the whole batch (filter stage fail-open). The raw value still
+            # separates keys via the credential hash.
             cred = hashlib.sha256(
-                str(self.pbk or self.uuid_or_password or "").encode()
-            ).hexdigest()[:8]
-        return (str(self.protocol).lower(), address_key, int(self.port), cred)
+                ("".join(cred_parts) + f"\x00port:{self.port}").encode(errors="ignore"),
+            ).hexdigest()
+            port_int = 0
+        return (protocol_lc, address_key, port_int, cred)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -145,24 +282,42 @@ class BaseParser(ABC):
 # ``\s`` and NOT removed by ``str.strip()``, yet sources routinely carry one at
 # the start of a file (``src/sources/github.py`` decodes bytes to text, keeping
 # it), so it has to be listed explicitly.
-_B64_NOISE_RE = re.compile(r"[\s\ufeff]+")
+_B64_NOISE_RE = re.compile(
+    r"[\s\ufeff\u200b\u200c\u200d\u200e\u200f\u202a-\u202e\u2060]+"
+)
 
 
-def safe_b64decode(data: str) -> str:
-    """Base64 decode with padding fix and utf-8 fallback."""
+def safe_b64decode(data: str | None) -> str:
+    """Base64 decode with padding fix, percent-decoding and utf-8 fallback."""
+    if data is None:
+        return ""
+    try:
+        text = unquote(data)
+    except Exception:
+        return ""
+    # Some sources percent-encode the base64 (most visibly the padding:
+    # "…fQ%3D%3D"), which plain b64decode rejects. unquote() is safe here:
+    # the base64 alphabet contains no "%", and unlike unquote_plus it does
+    # not turn "+" into a space. (The shadowsocks parser normalises the same
+    # way for the same reason.)
     # Drop ALL noise (not just the outer edges) and normalize URL-safe chars.
     # Interior newlines are ignored by b64decode but would corrupt the padding
-    # arithmetic below — a MIME-wrapped payload (64/76 chars per line, no "=")
+    # arithmetic below - a MIME-wrapped payload (64/76 chars per line, no "=")
     # then decoded to "" and the whole subscription was lost.  A leading BOM
     # shifted the length to 4n+1 (padding 3, never valid) and lost it the same
     # way.
-    cleaned = _B64_NOISE_RE.sub("", data).replace("-", "+").replace("_", "/")
+    cleaned = _B64_NOISE_RE.sub("", text).replace("-", "+").replace("_", "/")
     # fix padding
     padding = 4 - (len(cleaned) % 4)
     if padding != 4:
         cleaned += "=" * padding
     try:
-        return base64.b64decode(cleaned).decode("utf-8", errors="replace")
+        # validate=True: without it, non-alphabet characters are silently
+        # dropped and the remaining bytes decode SHIFTED — garbage that can
+        # still parse as JSON downstream. Reject the payload instead.
+        return base64.b64decode(cleaned, validate=True).decode(
+            "utf-8", errors="replace"
+        )
     except Exception:
         return ""
 
@@ -183,9 +338,14 @@ def parse_qs_single(query_string: str) -> dict[str, str]:
             continue
         key, _, value = pair.partition("=")
         # unquote_plus would turn "+" into a space; plain unquote keeps it.
-        # First occurrence wins, matching the previous parse_qs-based behaviour.
+        # The key is decoded BEFORE the membership check: storage uses the
+        # decoded key, so comparing the still-encoded form let an encoded
+        # duplicate slip past it ("ab=1&a%62=2" kept whichever pair came
+        # last-ish depending on order).  First occurrence still wins,
+        # matching the previous parse_qs-based behaviour.
+        key = unquote(key).strip().lower()
         if key not in result:
-            result[unquote(key)] = unquote(value)
+            result[key] = unquote(value)
     return result
 
 
@@ -248,6 +408,14 @@ def split_host_port(hostport: str) -> tuple[str, int] | None:
         rest = hostport[close + 1 :]
         if not rest.startswith(":"):
             return None  # no port separator after bracket
+        # Brackets mark an IPv6 literal per RFC 2732: the inside must be a
+        # valid IP containing ':' (a bracketed hostname or IPv4 is malformed).
+        if ":" not in host:
+            return None
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            return None
         port_str = rest[1:]
     else:
         # Regular hostname:port.  A bare IPv6 address (more than one colon,
@@ -257,7 +425,7 @@ def split_host_port(hostport: str) -> tuple[str, int] | None:
         host, port_str = hostport.rsplit(":", 1)
         host = host.strip()
 
-    if not host:
+    if not is_valid_host(host):
         return None
 
     if not port_str.isascii() or not port_str.isdigit():
@@ -353,6 +521,10 @@ def parse_password_host_port(
 
         query = parse_qs_single(query_str)
 
+        def _clean(key: str) -> str | None:
+            raw = query.get(key)
+            return raw.strip() if raw and raw.strip() else None
+
         return Config(
             protocol=protocol,
             address=host,
@@ -360,10 +532,10 @@ def parse_password_host_port(
             uuid_or_password=password,
             network=network,
             security="tls",
-            sni=query.get("sni"),
-            alpn=query.get("alpn"),
+            sni=_clean("sni"),
+            alpn=_clean("alpn"),
             remark=remark,
-            raw_link=link,
+            raw_link=link.strip(),
         )
     except Exception:
         return None
@@ -375,29 +547,71 @@ def parse_password_host_port(
 # with no parser here). "hy2" is the short alias and must be listed explicitly
 # — otherwise hy2:// links in source text are silently dropped by
 # find_all_links and never reach the parser.
+# wireguard:// is deliberately NOT here: there is no WireGuard parser (and no
+# end-to-end support in probes/outputs), so extracting such links only burned
+# parse budget on configs that were silently discarded afterwards.
+# Scheme alternatives appear in three places below; keep them in sync.
+_SCHEME_ALT = r"(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)"
+# A link body must STOP before the next link: sources routinely join links
+# with "," or ";" and a plain character class glued both into one
+# unparseable match (both configs lost). The negative lookahead ends the run
+# before a following scheme while still allowing commas inside query values
+# ("alpn=h3,h2" has no "://" behind it).
+# The backtick is excluded too: GitHub READMEs (the primary source) wrap
+# links in markdown code spans, and a glued trailing "```" corrupted the port
+# past parsing (vless://…:443` -> int("443`") raised) — whole configs lost.
+_BEFORE_NEXT_SCHEME = rf"(?!\b{_SCHEME_ALT}://)"
+# Not-a-link-character run with the next-scheme lookahead folded in.
+_BODY_RUN = rf"(?:{_BEFORE_NEXT_SCHEME}[^\s<>'\"()\[\]{{}}`])+"
+
 PROTOCOL_PATTERN = re.compile(
     # Leading \b: scheme names all start with a word char, so \b anchors the
     # match to a scheme boundary.  Without it, substrings matched the ``ss``
     # alternative inside unrelated words — e.g. ``boss://x``, ``sss://x`` and
     # ``less://x`` were all extracted as ``ss://x`` false positives.
-    r"\b(?:vmess|vless|trojan|ss|hysteria2|hy2|tuic|shadowtls|anytls)://"
+    rf"\b{_SCHEME_ALT}://"
     # Optional userinfo terminated by "@".  "?" and "#" are excluded so a
     # remark containing "@" (ad remarks do) is not mistaken for userinfo.
-    r"(?:[^\s<>'\"()\[\]{}@?#]*@)?"
+    # "/" is excluded as well — userinfo never spans a path — and the run is
+    # POSSESSIVE (*+).  Both keep the scan linear: with "/" allowed, a source
+    # file of repeated "scheme://" made this group walk the entire tail hunting
+    # for "@" at every match start — O(n²) overall (measured: 240 KB of filler
+    # probed for 54 s; a 12 MB download would have burned hours of CPU).  The
+    # possessive only cuts the failure-path re-scan; on the success path the
+    # class already stops at the first "@", so extraction is unchanged
+    # (byte-identical over the whole parser test corpus).
+    r"(?:[^/\s<>'\"()\[\]{}@?#]*+@)?"
     # Either a bracketed IPv6 literal in the host position followed by the
     # rest of the link, or a plain (bracket-free) remainder.  Brackets are
     # accepted ONLY in the host position: allowing them anywhere would make
     # ``[vless://a@b:443]`` and markdown links swallow the closing bracket.
-    r"(?:\[[0-9A-Fa-f:.]+\][^\s<>'\"()\[\]{}]*|[^\s<>'\"()\[\]{}]+)",
+    rf"(?:\[[0-9A-Fa-f:.]+\](?:{_BEFORE_NEXT_SCHEME}[^\s<>'\"()\[\]{{}}`])*|{_BODY_RUN})",
     re.IGNORECASE,
 )
 
 
-def find_all_links(text: str) -> list[str]:
+def find_all_links(text: str | None) -> list[str]:
     """Find all proxy links in arbitrary text."""
+    if not text or not isinstance(text, str):
+        return []
     links = PROTOCOL_PATTERN.findall(text)
-    # Strip trailing prose punctuation that may have been captured.
-    return [link.rstrip(".,;:!?)]}>") for link in links]
+    # Strip trailing characters that real sources glue onto a link without
+    # being part of it: prose punctuation, closing markup (markdown links,
+    # ``</code>``/template braces), and the markdown inline-code backtick —
+    # GitHub READMEs routinely wrap links in ``…``, and a trailing backtick
+    # used to ride onto the port ("8388`"), fail split_host_port and silently
+    # drop the config (vmess/vless still parsed but published the polluted
+    # raw_link). Trailing "*" / "~" are prose/emphasis leftovers around a
+    # link. '=' is deliberately NOT stripped: it is legitimate base64 padding
+    # at the end of vmess/ss payloads, and safe_b64decode re-pads anyway; the
+    # reported prose case ('#X =') is separated by a space, where the body
+    # class already stops.
+    # Trailing "." is sentence punctuation ("…:443." ends a sentence) and
+    # never payload: base64 alphabets contain no dots, and a fully-qualified
+    # root dot ("host.example.com.") is equivalent to none once split.
+    # Without it the port arrived as "443.", failed int() inside
+    # split_host_port, and the whole config was lost.
+    return [link.rstrip(",;:.?)]}>`*~") for link in links]
 
 
 # --- garbage / placeholder detection ---
@@ -474,16 +688,87 @@ _AD_PATTERNS = re.compile(
 # config no matter what a source ships.
 _MAX_AD_SCAN_CHARS = 512
 
-# Valid UUID format (8-4-4-4-12 hex, hyphens optional). Module-level so it is
-# compiled once, not looked up in re's internal cache on every is_garbage_config()
-# call.  Accepts both hyphenated (b831381d-4cfa-...) and non-hyphenated
-# (b831381d4cfa...) forms — some vmess/vless sources emit 32 hex chars without
-# hyphens, which is a valid RFC 4122 representation.  ``\Z`` (not ``$``) so a
-# trailing newline — e.g. from ``json.loads`` of a vmess "id" field — cannot
-# sneak past validation.
+# Valid UUID format: either the hyphenated 8-4-4-4-12 form or 32 hex chars
+# with NO hyphens at all. Module-level so it is compiled once, not looked up
+# in re's internal cache on every is_garbage_config() call. Both are valid
+# RFC 4122 representations that vmess/vless sources emit. Mixed hyphenation
+# ("8-4-4 4-12" variants) is not an RFC 4122 representation — accepting it
+# used to let hybrid-shaped garbage through and publish dead configs.
+# ``\Z`` (not ``$``) so a trailing newline — e.g. from ``json.loads`` of a
+# vmess "id" field — cannot sneak past validation.
 _UUID_RE = re.compile(
-    r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}\Z",
+    r"(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"|[0-9a-fA-F]{32})\Z",
 )
+
+# Port-hopping spec shared with hysteria2.py: at least two ASCII ports joined
+# by "-" (range) or "," (list). ASCII digits only — ``\d`` would also match
+# e.g. Arabic-Indic numerals, which no client accepts.
+_HOPPING_RANGE_RE = re.compile(r"[0-9]{1,5}(?:[-,][0-9]{1,5})+")
+
+# Transports/securities the downstream writers and probes can express. Clash
+# knows tcp/ws/grpc/h2/httpupgrade/xhttp(+splithttp alias); Xray knows
+# tcp/ws/grpc/httpupgrade/xhttp. Anything else (legacy kcp, quic on a
+# vless link, typos) is reset to the protocol default with a warning instead
+# of being dropped — dropping would lose live servers behind a renamed type,
+# while the writers/probes still skip what they cannot express.
+_ALLOWED_NETWORKS = frozenset(
+    {"tcp", "ws", "grpc", "h2", "http", "httpupgrade", "xhttp", "splithttp"}
+)
+_ALLOWED_SECURITIES = frozenset({"none", "tls", "reality"})
+
+
+def is_valid_host(host: str | None) -> bool:
+    """Return ``True`` when *host* is a plausible DNS name / IP literal.
+
+    Rejects empty values, whitespace, path separators, control characters
+    (``ord < 33`` or ``127``) and URL delimiters that would split the link
+    differently downstream. A ``:`` is only allowed inside a valid IP literal
+    (bracketless IPv6 such as ``2001:db8::1``) — the port travels separately,
+    so any other colon means the authority was mis-split.
+    """
+    if not isinstance(host, str):
+        return False
+    if not host or not host.strip():
+        return False
+    if "/" in host or "\\" in host:
+        return False
+    if any(ord(c) < 33 or ord(c) == 127 for c in host):
+        return False
+    if ":" in host:
+        try:
+            ipaddress.ip_address(host.strip().strip("[]"))
+        except ValueError:
+            return False
+    bad_host_chars = (
+        "!",
+        "?",
+        "#",
+        "@",
+        "(",
+        ")",
+        "[",
+        "]",
+        "{",
+        "}",
+        "<",
+        ">",
+        '"',
+        "'",
+        "`",
+        ";",
+        ",",
+        "%",
+        "$",
+        "&",
+        "+",
+        "*",
+        "=",
+        "~",
+        "|",
+        "^",
+    )
+    return not any(c in host for c in bad_host_chars)
 
 
 def _split_link_userinfo(body: str) -> tuple[str, str]:
@@ -552,7 +837,7 @@ def _is_garbage_credential(protocol: str, credential: str) -> bool:
     Returns:
         ``True`` when the credential cannot belong to a real server.
     """
-    proto = protocol.lower()
+    proto = str(protocol or "").lower()
     if not credential:
         # These three protocols cannot work without a credential.
         return proto in ("vless", "vmess", "tuic")
@@ -564,15 +849,12 @@ def _is_garbage_credential(protocol: str, credential: str) -> bool:
     # optional), not literal "UUID" or arbitrary text.
     if proto in ("vless", "vmess"):
         return _UUID_RE.match(credential) is None
-    # TUIC v5 uses ``UUID:PASSWORD`` — the uuid half before the first colon must
-    # be a real UUID.  Without this, a placeholder like ``UUID:pass`` slipped
-    # through (exact-match only ever saw the whole string).  TUIC v4 uses a bare
-    # token (no colon) which is arbitrary, so it is not format-validated.
+    # TUIC v5 uses ``UUID:PASSWORD`` — but a non-UUID head is a v4 token
+    # (opaque, colons allowed), not garbage: the parser keeps it and the
+    # probe decides. Only literal placeholders ("UUID:pass") are rejected.
     if proto == "tuic" and ":" in credential:
         uuid_part = credential.split(":", 1)[0]
-        if uuid_part.upper() in ("UUID", "PASSWORD"):
-            return True
-        return _UUID_RE.match(uuid_part) is None
+        return uuid_part.upper() in ("UUID", "PASSWORD")
     return False
 
 
@@ -596,6 +878,15 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
 
     if isinstance(link_or_config, Config):
         cfg = link_or_config
+        # Watermark masquerade: a source-crafted vmess with add="0.0.0.0"
+        # mimics the display-only watermark the writer prepends. With
+        # validators off it would be published and then silently dropped on
+        # fast-track reparse (the runner treats it as the watermark).
+        if (
+            str(cfg.address).strip() == "0.0.0.0"
+            and str(cfg.protocol).lower() == "vmess"
+        ):
+            return True
         # Check address, sni, host, pbk, sid for placeholders.
         # NOTE: uuid_or_password AND remark are deliberately EXCLUDED from the
         # combined regex check because ``\bUUID\b`` and ``\bPASSWORD\b`` would
@@ -646,13 +937,82 @@ def is_garbage_config(link_or_config: str | Config) -> bool:
     # which IS garbage, while a link that keeps its credential elsewhere
     # (vmess:// stores it inside the base64 JSON) has no userinfo at all and must
     # not be judged as if the credential were empty.
-    if body_without_userinfo != body and _is_garbage_credential(
-        scheme.strip(),
-        unquote(userinfo).strip(),
-    ):
+    if body_without_userinfo != body:
+        credential = unquote(userinfo).strip()
+        # Plain shadowsocks userinfo is ``method:PASSWORD``; the Config branch
+        # only ever holds the password half (``ss_method`` is not scanned), so
+        # the string branch must judge the same part or the two disagree
+        # (``ss://aes-256-gcm:PASSWORD@host:8388`` — literal placeholder as
+        # the password — passed as a string while its Config was rejected).
+        # SIP002 / legacy userinfos are base64 and contain no colon, so they
+        # keep the whole-value check.
+        if scheme.strip().lower() == "ss" and ":" in credential:
+            credential = credential.split(":", 1)[1]
+        elif scheme.strip().lower() == "ss" and credential:
+            # SIP002 userinfo is base64(method:password) with no colon in
+            # the encoded form: decode it and judge the password half, so
+            # a placeholder password is caught in both branches.
+            try:
+                _cleaned = (
+                    _B64_NOISE_RE.sub("", credential)
+                    .replace("-", "+")
+                    .replace("_", "/")
+                )
+                _body = _cleaned.rstrip("=")
+                if _body and len(_body) % 4 != 1:
+                    _padded = _body + "=" * (-len(_body) % 4)
+                    _decoded = base64.b64decode(_padded, validate=True).decode(
+                        "utf-8", errors="replace"
+                    )
+                    if ":" in _decoded:
+                        _pass = _decoded.split(":", 1)[1]
+                        if _is_garbage_credential("ss", _pass):
+                            return True
+            except Exception as exc:  # best-effort decode probe
+                logger.debug("ss base64 userinfo probe failed: %s", exc)
+        if _is_garbage_credential(scheme.strip(), credential):
+            return True
+    # The placeholder scan mirrors the Config path's body scan: the whole
+    # query must NOT be scanned — that flagged
+    # ``hy2://realpass@h:443?obfs-password=abc`` "garbage" because
+    # \bPASSWORD\b matched inside the obfs parameter name while the same link
+    # parsed into a Config passed as real.
+    body_for_placeholder_scan = body_without_userinfo.split("?", 1)[0]
+    if _PLACEHOLDER_PATTERNS.search(body_for_placeholder_scan):
         return True
-    if _PLACEHOLDER_PATTERNS.search(body_without_userinfo):
-        return True
+    # But the query values that DO reach Config fields (``sni`` / ``host`` /
+    # ``pbk`` / ``sid``, via parse_qs_single in every parser) are scanned by
+    # the Config branch, so scan exactly those values here too — otherwise
+    # ``trojan://real-pass@real-server.net:443?sni=example.com`` passed as a
+    # string while its Config was rejected.
+    if "?" in body_without_userinfo:
+        query = parse_qs_single(body_without_userinfo.split("?", 1)[1])
+        query_fields = " ".join(
+            query.get(name) or "" for name in ("sni", "host", "pbk", "sid")
+        )
+        if _PLACEHOLDER_PATTERNS.search(query_fields):
+            return True
+    # vmess:// carries its endpoint inside base64 JSON, not in the authority:
+    # a template payload (add/sni/host = SERVER_IP / example.com / ...) never
+    # matches the authority scan above because it is still encoded. Decode
+    # best-effort and scan the same fields the Config branch scans. A payload
+    # that does not decode is left alone — a lost placeholder label is better
+    # than a false positive on an undecodable link.
+    if scheme.strip().lower() == "vmess":
+        try:
+            _payload = body_without_userinfo.split("://", 1)[1]
+            _payload = _payload.split("?", 1)[0]
+            _decoded = safe_b64decode(_payload)
+            if _decoded:
+                _obj = json.loads(_decoded)
+                if isinstance(_obj, dict):
+                    _vmess_fields = " ".join(
+                        str(_obj.get(name) or "") for name in ("add", "sni", "host")
+                    )
+                    if _PLACEHOLDER_PATTERNS.search(_vmess_fields):
+                        return True
+        except Exception as exc:  # best-effort decode probe, never fail-closed
+            logger.debug("vmess placeholder JSON probe failed: %s", exc)
     if remark:
         decoded_remark = unquote(remark)
         if decoded_remark.upper().strip() in (

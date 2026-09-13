@@ -4,6 +4,8 @@
 sources:
   max_concurrent_fetches: 10
   github_api_base: "https://api.github.com"
+  # Cap on parsed links per fetched file (anti-OOM). 0/negative = 1 (min).
+  max_links_per_file: 20000
 
 # --- Validator ---
 validator:
@@ -22,7 +24,15 @@ validator:
   max_configs_to_validate: 0
 
   # SOCKS5 proxy for TCP/TLS validation (optional, only when tcp/tls enabled).
+  # Single-proxy override (env VALIDATOR_PROXY wins when set).
   # proxy_url: "socks5://127.0.0.1:1080"
+  # Explicit Xray/sing-box paths (env XRAY_EXECUTABLE/SINGBOX_EXECUTABLE wins,
+  # then PATH — there is NO implicit bin/ scan; CI points XRAY_EXECUTABLE at
+  # its downloaded bin/xray/xray). Documented here for discoverability.
+  # xray_executable: ""
+  # singbox_executable: ""
+  # Singular fallback when xray_probe_urls is empty.
+  # xray_probe_url: "https://www.gstatic.com/generate_204"
 
   # Address guard (SSRF prevention). DNS queries only for hostnames (not IP literals).
   # Set to false to skip DNS entirely and only block private/reserved IP literals.
@@ -51,6 +61,10 @@ validator:
     blacklist: 0
     whitelist: 0
   min_alive_to_filter: 10
+  # When true and too few configs pass, the stage publishes the unfiltered
+  # (unvalidated) list instead of dropping it. Keep false to stay fail-closed:
+  # with it off, a low-alive run publishes only the configs that actually
+  # passed, never unvalidated ones.
   fail_open_on_low_alive: false
   # Keep configs whose transport is not TLS-based (plain ss, vmess security=
   # none): the Xray stage below is the real liveness gate; killing them here
@@ -83,15 +97,29 @@ validator:
   # 300 instead of the former 200: both lists hit the cap every run with ~3000
   # candidates left unprobed, and a bigger verified pool decays slower for
   # subscribers because configs die unevenly. Costs ~20-30 min of Xray stage.
+  # Kept equal to aggregator.max_configs_in_output (300): probing far past
+  # the output cap wastes Xray startups, probing far below it starves the
+  # subscription — change both together.
   xray_max_alive: 300
   xray_max_alive_by_list:
     blacklist: 300
     whitelist: 300
   xray_timeout_seconds: 15
   xray_startup_timeout_seconds: 5
-  # 10 left the SOCKS pool under-used: each probe is mostly waiting on the
-  # network, and Xray instances themselves are cheap.
-  xray_concurrency: 15
+  # Hard ceiling for ONE config's whole probe (all URL attempts + subprocess),
+  # 0 = off. Worst case without it: attempts x (startup + urls x timeout) of
+  # semaphore-slot time per config (~105s with the values above).
+  xray_per_config_timeout_seconds: 120
+  # Wall-clock safety net per list: candidates arriving after the deadline
+  # get NO verdict (health history records nothing) and retry first next
+  # run. The 2026-08-30 blacklist stage ground 96 minutes on a dead tail;
+  # the 8-proxy rotation + recheck should keep stages well under this —
+  # the budget only stops a runaway, it does not degrade verdicts.
+  # 0 disables the budget.
+  xray_stage_budget_minutes: 45
+  # 15 was sized for the old 3-proxy probe rotation; with 8 dial proxies the
+  # bottleneck moves back to CPU/xray spawns, so raise it accordingly.
+  xray_concurrency: 24
   # Configs that passed within this window get one fast re-probe instead of
   # the full attempt set, freeing probe budget for new candidates. A config
   # is then published with a verification up to this old, not brand-new.
@@ -100,15 +128,37 @@ validator:
   # Relaxed L3 gate: free SOCKS5 proxies are unstable. A single real Xray HTTPS
   # probe is enough; do not require a distinct outbound IP or a proxy-network
   # success. The real-handshake barrier still filters garbage configs.
-  xray_attempts_per_config: 2
-  xray_min_attempt_successes: 1
+  xray_attempts_per_config: 3
+  xray_min_attempt_successes: 2
+  # 2-of-2 leaves failures_allowed = 0: the FIRST failed probe URL kills the
+  # attempt, and a free pool that reaches gstatic but not cloudflare (or the
+  # reverse) marks perfectly healthy configs dead (measured: pool rejection
+  # rate ~49% made 2/2 gates ~a coin flip). 2 URLs with a 1-success minimum
+  # still requires a real handshake while tolerating one flaky destination.
   xray_min_probe_successes: 1
   # Primary probes dial the VPN server through the SOCKS pool: GitHub
   # Actions egress IPs are exactly what RU servers block, and a direct
   # probe from there marked living configs dead (9/220 survived in the
   # 2026-07-22 run). Each retry rotates to the next proxy.
   xray_probe_via_proxies: true
-  xray_proxy_probe_count: 3
+  # Per-list override. Routing the *whitelist* through the foreign SOCKS pool
+  # is a false negative by construction: those servers are published precisely
+  # because they are reachable from RU, and the pool exits are not. Measured
+  # 2026-09-12: the live run probed 685 whitelist configs through the pool and
+  # got 0 alive, while the same configs probed directly from a RU vantage point
+  # yield ~9-21% (reality) / ~2.5% (tls) — and via-proxy mode makes no direct
+  # attempt at all, so those configs were never probed the way a client would.
+  # The blacklist keeps the pool: it is a general-purpose list, where the
+  # GH-Actions egress IP is what RU servers block. Set whitelist back to true
+  # only when VALIDATOR_PROXY points at a RU-reachable exit.
+  xray_probe_via_proxies_by_list:
+    whitelist: false
+  # 3 left 37 of the 40 pooled proxies idle and put all attempts through a
+  # trio whose mid-run death poisoned a third of every config's attempts
+  # (2026-08-30 run: 9/6252 TLS-alive survived). 8 spreads the load and
+  # survives single-proxy deaths; dead dials are now attributed back to
+  # proxy health, so bad ones rotate out.
+  xray_proxy_probe_count: 8
   xray_min_proxy_successes: 0
   xray_require_distinct_outbound_ip: false
   # Status-only endpoints only: no identity APIs — ipify answers 403 from
@@ -118,7 +168,7 @@ validator:
     - "https://cp.cloudflare.com/generate_204"
 
   # QUIC protocols (hysteria2/tuic) cannot be probed by Xray-core; sing-box
-  # provides their L3 check (binary from SINGBOX_EXECUTABLE / bin/ / PATH).
+  # provides their L3 check (binary from SINGBOX_EXECUTABLE or PATH).
   # Shares the SOCKS pool, the probe URLs and the per-list alive budget.
   singbox_enabled: true
   singbox_timeout_seconds: 15
@@ -146,9 +196,19 @@ validator:
       - "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks5/data.txt"
       - "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/protocols/socks5/data.txt"
       - "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt"
+      # 2026-08-31: the pool self-checks 40/40 at fill, then bleeds out mid-run
+      # (8/40 alive at the Xray stage, 0/40 by the end) — probe verdicts depend
+      # on a live pool, so the lists above alone no longer cover the bleed.
+      # TheSpeedX refreshes hourly, monosans/hookzof are checked-filtered;
+      # the self-check still decides who actually enters the pool.
+      - "https://cdn.jsdelivr.net/gh/TheSpeedX/PROXY-List@master/socks5.txt"
+      - "https://cdn.jsdelivr.net/gh/monosans/proxy-list@main/proxies/socks5.txt"
+      - "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
+      - "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt"
+      - "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt"
     # 300 candidates is enough to fill max_proxies with working SOCKS5;
     # VPSLab/gfpcom mostly served private-IP junk and only slowed the sweep.
-    max_candidates: 300
+    max_candidates: 800
     max_candidates_per_source: 150
     min_proxies: 15
     max_proxies: 40
@@ -172,7 +232,10 @@ validator:
   geoip_mmdb_file: "data/GeoLite2-Country.mmdb"
   geoip_mmdb_url: "https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.08.22/GeoLite2-Country.mmdb"
   geoip_mmdb_sha256: "ba9a33b56e4c3b61a8df00757e925aac7c59afe757534cf0a32d2f9c6399c9e3"
-  geoip_api_url: "https://ip-api.com/json/{ip}"
+  # ip-api.com FREE tier only serves http:// (https answers 403) — the
+  # offline mmdb above is the primary path and this API is just a fallback.
+  # Paid plans behind pro.ip-api.com serve https.
+  geoip_api_url: "http://ip-api.com/json/{ip}"
   # ip-api.com free tier allows 45 req/min; lookups share one global rate
   # limiter, so enrichment takes roughly (distinct addresses / rpm) minutes.
   geoip_requests_per_minute: 40
@@ -184,10 +247,16 @@ validator:
 quality:
   health_history_enabled: true
   health_history_file: "output/health-history.json"
-  # Records untouched for this long are dropped on save. The file is published
-  # to the repo on every run, so without a retention window it grows with every
-  # config the sources have ever served. Still-banned records are always kept.
+  # Records untouched for this long are dropped on save. The file stays
+  # local-only (restored via the CI cache, never published to the repo), so
+  # without a retention window it grows with every config the sources have
+  # ever served. Still-banned records are always kept.
   health_history_retention_days: 30
+  # Hard cap on stored config records (0 = unlimited). Age-based retention
+  # alone could not bound the file: a source rotating configs faster than
+  # records age out pushed it past 69k entries / 25 MB. Still-banned records
+  # are exempt (the ban is why the config is skipped).
+  health_history_max_records: 20000
   health_recent_window: 5
   ban_after_consecutive_failures: 2
   ban_cooldown_hours: 12
@@ -209,14 +278,34 @@ quality:
   # down to a stub; with it, pruning only happens when what remains is still
   # a working subscription. 0 restores the purely absolute behavior.
   stability_enforce_fraction: 0.3
+  # A config on its first-ever pass has no run-to-run history to be unstable
+  # against. With this off, a fresh candidate needed a SECOND full run to
+  # enter the subscription at all — on top of failing L3 ~95% of the time,
+  # new candidates were held back twice. On: only configs WITH history are
+  # judged by the streak; first passes enter immediately.
+  stability_exempt_first_pass: true
   # Skip health/source bans when Xray found no more than this many alive configs,
   # so a small set of proven-working configs is not erased by stale history.
   health_ban_min_alive: 3
   source_health_enabled: true
-  source_min_checked: 50
+  # 50 let trash sources with few checked configs (sakha1370: 36, igareck-black:
+  # 12) dodge the bad-run ban forever and pollute the candidate pool every run.
+  source_min_checked: 20
   source_bad_alive_rate: 0.02
   source_good_alive_rate: 0.2
   source_bad_runs_to_ban: 2
+  # After this many consecutive bad runs a source is disabled permanently
+  # (banned_until far-future) instead of re-entering the pool every 12h:
+  # the 2026-08-30 cull showed trash sources re-qualifying forever.
+  # 0 disables the threshold.
+  # DISABLED (0) on 2026-09-13 for the first deploy of the 0.2.0 line: the
+  # whitelist is not yet proven alive under CI egress (the via-pool probe
+  # loss was measured at 0/685), and flaafix — a productive whitelist source
+  # — stood 3 bad runs away from a permanent ~10-year archive. Deploying the
+  # permanent-ban threshold before the whitelist egress question is settled
+  # risks archiving exactly the sources this release is meant to rescue.
+  # Re-enable only after two consecutive runs with whitelist alive > 0.
+  source_bad_runs_to_disable: 0
   source_ban_cooldown_hours: 12
 
 # --- Aggregator ---
@@ -244,7 +333,11 @@ publisher:
   split_output_files:
     blacklist: "output/subscription-blacklist.txt"
     whitelist: "output/subscription-whitelist.txt"
-  commit_message: "auto-update configs [{timestamp}]"
+  # Optional 50/50 mix split override (default max_total//2 each). Documented
+  # here so the keys are discoverable (aggregate stage reads them).
+  # mix_blacklist_count: 150
+  # mix_whitelist_count: 150
+  commit_message: "auto-update configs [{timestamp}] [skip ci]"
   # Empty-run floor, enforced IN CODE (the workflow's "<10" check runs only
   # after publication): an empty run writes watermark-only placeholders
   # locally but does NOT publish them, so a network failure cannot wipe the
@@ -259,13 +352,18 @@ telegram:
   alert_min_alive: 10
 
 # --- LLM Fallback ---
-# NOTE: LLM_API_KEY in .env is a Yandex key (AQ.A...) - none of the supported
-# providers (groq/openrouter/gemini/dashscope) accepts it, every call 401s.
-# Disabled to avoid wasting minutes per run. Set a supported provider key and
-# flip back to true to re-enable.
+# NOTE: LLM fallback is disabled — the configured LLM_API_KEY was for a
+# provider none of the supported ones (groq/openrouter/gemini/dashscope)
+# accepts, so every call 401'd. Disabled to avoid wasting minutes per run.
+# Set a supported provider key and flip back to true to re-enable.
 llm:
   enabled: false
   provider: "dashscope"
   model: "qwen-plus"
   api_key_env: "LLM_API_KEY"
   min_text_length: 100
+  # Hard ceiling on paid LLM calls per run: each unparsable file can send a
+  # 100k-char prompt with up to 3 retries.
+  max_calls_per_run: 50
+  # Per-source cap so one hostile source cannot burn the whole run budget.
+  max_calls_per_source: 10

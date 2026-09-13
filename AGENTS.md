@@ -8,7 +8,7 @@ vpnparser — Python ≥3.11 пайплайн: сбор VPN-конфигов (vm
 
 ## Команды (Windows: `python`, не `python3`)
 - Тесты: `python -m pytest -q -p no:cacheprovider` (addopts уже в pyproject.toml; порог покрытия 97% — `--cov-fail-under`)
-- Линт: `python -m ruff check --no-cache src tests`; автофикс: `--fix`; формат: `python -m ruff format src tests`
+- Линт: `python -m ruff check --no-cache src tests tools` + `python -m ruff format --check --no-cache src tests tools` (как CI lint-job); автофикс: `--fix`; формат: `python -m ruff format src tests tools`
 - Типы: `python -m mypy --no-incremental src` (strict, без ignore без причины)
 - Безопасность: `python -m bandit -c pyproject.toml -r src`
 - Пайплайн: `python -m src.main --run` (полный прогон — только при необходимости; использует сеть и Xray)
@@ -32,3 +32,11 @@ vpnparser — Python ≥3.11 пайплайн: сбор VPN-конфигов (vm
 
 ## Тесты
 pytest + pytest-asyncio (auto mode) + hypothesis; conftest.py общий. Новый функционал — с тестами; сетевые вызовы только через моки/фикстуры, без реального интернета в тестах.
+
+## Layout 0.2.0 (module map)
+
+- `src/scheduler/stages/fetch.py` — source fetching (`SourceFetcher`); `parse.py` — link parsing + country detection; `filter.py` — garbage/country/dedup preprocessing; `quality.py` — slow-drop + health/source bans (`QualityFilter`); `aggregate.py` — sort/country-balance/whitelist-mix/limit (`Aggregator`); `write.py` — subscription/split/location writers; `base.py` — `PipelineStage` marker interface.
+- `src/scheduler/stages/liveness_pool.py` — proxy-pool lifecycle mixin; `liveness_stages.py` — TCP/TLS/Xray stage bodies (mixin); `liveness.py` — orchestrator + health bookkeeping.
+- `src/notify/html_limits.py` (truncation/UTF-16), `src/notify/report.py` (summary→text formatters), `telegram.py` — transport + CLI + patch surface.
+- `src/sources/source_options.py` — per-source option parsing; `manager.py` — fetch layer + dispatch.
+- Releases: bump `pyproject.toml` version AND add a CHANGELOG.md entry in the same change.

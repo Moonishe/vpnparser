@@ -1,0 +1,13 @@
+# Dependabot keeps the SHA-pinned GitHub Actions (SECURITY.md supply-chain
+# section) from rotting: the pins were correct on the day they were written,
+# and without update automation they never pick up security fixes.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"

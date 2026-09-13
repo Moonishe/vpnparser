@@ -14,7 +14,7 @@ JSON field    Config field          Notes
 ``port``      ``port``              cast to int
 ``id``        ``uuid_or_password``  vmess UUID
 ``ps``        ``remark``            display name (falls back to ``#remark``)
-``net``       ``network``           default ``"tcp"``
+``net``       ``network``           default ``"tcp"``; stripped/lower-cased
 ``host``      ``host``              ws Host header / grpc authority
 ``path``      ``path``              ws path / grpc serviceName
 ``tls``       ``security``          ``"tls"`` if value is ``"tls"`` else ``"none"``
@@ -32,16 +32,21 @@ JSON field    Config field          Notes
 from __future__ import annotations
 
 import json
+import logging
 from typing import ClassVar
 
 from src.parsers.base import (
+    _ALLOWED_NETWORKS,
     _UUID_RE,
     BaseParser,
     Config,
     cap_remark,
     extract_remark,
+    is_valid_host,
     safe_b64decode,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _json_str_or_none(value: object) -> str | None:
@@ -62,7 +67,17 @@ def _json_str_or_none(value: object) -> str | None:
     """
     if not value:
         return None
-    return value if isinstance(value, str) else str(value)
+    result = value if isinstance(value, str) else str(value)
+    # json.loads accepts ``\uXXXX`` escapes for lone surrogates (``A\ud800B``),
+    # which no downstream ``.encode()`` can serialize: dedup_key's hashlib
+    # sha256 raised UnicodeEncodeError and one crafted link crashed the whole
+    # run (and permanently disabled dedup in the filter stage). Drop the
+    # surrogate bytes at the single entry point.
+    try:
+        result.encode("utf-8")
+    except UnicodeEncodeError:
+        result = result.encode("utf-8", "ignore").decode("utf-8")
+    return result
 
 
 class VmessParser(BaseParser):
@@ -122,6 +137,8 @@ class VmessParser(BaseParser):
                 address = address[1:-1].strip()
                 if not address:
                     return None
+            if not is_valid_host(address):
+                return None
             # A vmess ``id`` must be a valid UUID (8-4-4-4-12 hex, hyphens
             # optional). Rejecting here honours the documented contract
             # ("invalid JSON fields → None") and stops garbage early. Uses
@@ -158,10 +175,13 @@ class VmessParser(BaseParser):
             aid_raw = obj.get("aid")
             alter_id: int | None = None
             if aid_raw is not None and not isinstance(aid_raw, bool):
-                try:
-                    aid_int = int(aid_raw)
-                except (TypeError, ValueError):
+                if isinstance(aid_raw, float) and not aid_raw.is_integer():
                     aid_int = None
+                else:
+                    try:
+                        aid_int = int(aid_raw)
+                    except (TypeError, ValueError):
+                        aid_int = None
                 if aid_int is not None and 0 <= aid_int <= 65535:
                     alter_id = aid_int
 
@@ -169,23 +189,45 @@ class VmessParser(BaseParser):
             # no header_type field, so it is intentionally not stored.
             # ``scy`` and ``v`` are vmess-specific and not needed.
 
+            def _opt(key: str) -> str | None:
+                raw = _json_str_or_none(obj.get(key))
+                if raw is None:
+                    return None
+                cleaned = raw.strip()
+                return cleaned or None
+
+            ps_raw = _json_str_or_none(obj.get("ps"))
+
+            network = (
+                str(_json_str_or_none(obj.get("net")) or "")
+            ).strip().lower() or "tcp"
+            # Panels emit the transport with stray whitespace or uppercase
+            # (``"ws "``, ``"WS"``). clash.py matches Config.network against
+            # its supported set exactly, so a raw value silently published a
+            # ws config as plain TCP — normalise once, here. Unknown values
+            # reset to tcp with a warning instead of dropping the server.
+            if network not in _ALLOWED_NETWORKS:
+                logger.warning("vmess unknown network %r, reset to tcp.", network)
+                network = "tcp"
+
             return Config(
                 protocol=self.protocol,
                 address=address,
                 port=port,
                 uuid_or_password=uuid,
-                network=_json_str_or_none(obj.get("net")) or "tcp",
+                network=network,
                 security=security,
-                path=_json_str_or_none(obj.get("path")),
-                host=_json_str_or_none(obj.get("host")),
-                sni=_json_str_or_none(obj.get("sni")),
-                alpn=_json_str_or_none(obj.get("alpn")),
-                fp=_json_str_or_none(obj.get("fp")),
-                flow=_json_str_or_none(obj.get("flow")),
+                path=_opt("path"),
+                host=_opt("host"),
+                sni=_opt("sni"),
+                alpn=_opt("alpn"),
+                fp=_opt("fp"),
+                flow=_opt("flow"),
                 alter_id=alter_id,
-                remark=cap_remark(_json_str_or_none(obj.get("ps")))
-                or extract_remark(fragment),
-                raw_link=link,
+                remark=cap_remark(ps_raw)
+                if (ps_raw or "").strip()
+                else extract_remark(fragment),
+                raw_link=stripped,
             )
         except Exception:
             # Never raise on malformed input — fail soft to None.

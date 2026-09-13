@@ -43,6 +43,148 @@ def _patch_resolver(
     monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
 
 
+def test_redact_proxy_url_masks_credentials() -> None:
+    from src.utils.net import redact_proxy_url
+
+    assert redact_proxy_url("socks5://user:pass@host:1080") == "socks5://***@host:1080"
+    # Credential containing ':' or '/' still fully masked.
+    assert redact_proxy_url("socks5://u:pa/ss@host:1080") == "socks5://***@host:1080"
+    # No credentials pass through unchanged.
+    assert redact_proxy_url("socks5://host:1080") == "socks5://host:1080"
+    assert redact_proxy_url("") == ""
+
+
+def test_redact_proxy_url_masks_secret_query_values() -> None:
+    from src.utils.net import redact_proxy_url
+
+    # GitHub raw download_url for a private repo carries an auth token.
+    assert (
+        redact_proxy_url(
+            "https://raw.githubusercontent.com/o/r/main/f.txt?token=ABCDEF123",
+        )
+        == "https://raw.githubusercontent.com/o/r/main/f.txt?token=***"
+    )
+    # Matching is case-insensitive; the parameter name stays readable.
+    assert redact_proxy_url("https://cdn.example.com/f?Key=xyz") == (
+        "https://cdn.example.com/f?Key=***"
+    )
+    # Only the secret value is masked; sibling parameters survive.
+    assert redact_proxy_url("https://api.example.com/v1?api_key=zzz&x=1") == (
+        "https://api.example.com/v1?api_key=***&x=1"
+    )
+    # Non-secret query values and query-less URLs pass through.
+    assert redact_proxy_url("https://host.example/p?a=1&b=2") == (
+        "https://host.example/p?a=1&b=2"
+    )
+    assert redact_proxy_url("https://host.example/p") == "https://host.example/p"
+
+
+def test_redact_proxy_url_masks_glued_secret_suffixes() -> None:
+    """Glued lowercase suffixes used to leak (regression of the 09-12 rewrite).
+
+    ``sessionid``/``sigv4``/``token2`` carry no separator or case transition
+    after the secret word, and ``XToken`` has none before it either — all four
+    were returned verbatim and only caught by re-reading the regex.
+    """
+    from src.utils.net import redact_proxy_url
+
+    assert redact_proxy_url("https://h/p?sessionid=SECRET&x=1") == (
+        "https://h/p?sessionid=***&x=1"
+    )
+    assert redact_proxy_url("https://h/p?sessiontoken=SECRET") == (
+        "https://h/p?sessiontoken=***"
+    )
+    assert redact_proxy_url("https://h/p?sigv4=SECRET&Expires=1") == (
+        "https://h/p?sigv4=***&Expires=1"
+    )
+    assert redact_proxy_url("https://h/p?token2=SECRET") == "https://h/p?token2=***"
+    assert redact_proxy_url("https://h/p?passwd2=SECRET") == ("https://h/p?passwd2=***")
+    assert redact_proxy_url("https://h/p?pass=SECRET") == "https://h/p?pass=***"
+    assert redact_proxy_url("https://h/p?XToken=SECRET") == "https://h/p?XToken=***"
+
+
+def test_redact_proxy_url_leaves_lookalike_words_visible() -> None:
+    from src.utils.net import redact_proxy_url
+
+    for name in ("monkey", "keyboard", "passport", "signal", "passphrase"):
+        url = f"https://h/p?{name}=value"
+        assert redact_proxy_url(url) == url, name
+
+
+def test_redact_proxy_url_keeps_version_pins_in_web_paths() -> None:
+    from src.utils.net import redact_proxy_url
+
+    # jsDelivr/unpkg pin versions with '@' in the path; the host and the pin
+    # must stay readable so diagnostics keep saying which source failed.
+    jsdelivr = (
+        "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/all.txt"
+    )
+    assert redact_proxy_url(jsdelivr) == jsdelivr
+    # Authority-legal credentials in web URLs are still masked.
+    assert redact_proxy_url("https://user:pass@host.example/p") == (
+        "https://***@host.example/p"
+    )
+    # Non-web schemes mask greedily even across '/' in the credential, and
+    # the mixed case keeps each scheme's own treatment.
+    assert redact_proxy_url("trojan://pass@host:443?sni=x") == (
+        "trojan://***@host:443?sni=x"
+    )
+    mixed = (
+        "socks5://u:pa/ss@10.0.0.1:1080 then https://cdn.jsdelivr.net/gh/o/r@main/f.txt"
+    )
+    assert redact_proxy_url(mixed) == (
+        "socks5://***@10.0.0.1:1080 then https://cdn.jsdelivr.net/gh/o/r@main/f.txt"
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "token",
+        "access_token",
+        "license_key",
+        "signature",
+        "X-Amz-Signature",
+        "X-Amz-Credential",
+        "x-amz-credential",
+        "AWSAccessKeyId",
+    ],
+)
+def test_redact_proxy_url_masks_prefixed_secret_names(name: str) -> None:
+    """Any number of separated or camel-cased affixes still marks a secret.
+
+    The single-segment prefix rule leaked the AWS presigned-URL spellings
+    (``X-Amz-Signature``, ``x-amz-credential``, ``AWSAccessKeyId``) that a
+    third-party ``url-list`` source can legitimately carry.
+    """
+    from src.utils.net import redact_proxy_url
+
+    assert redact_proxy_url(f"?{name}=SECRET") == f"?{name}=***"
+
+
+def test_redact_proxy_url_keeps_words_containing_secret() -> None:
+    """``key`` as part of an ordinary word is not a credential parameter."""
+    from src.utils.net import redact_proxy_url
+
+    assert redact_proxy_url("?keyboard=QWERTY") == "?keyboard=QWERTY"
+    assert redact_proxy_url("?monkey=QWERTY") == "?monkey=QWERTY"
+
+
+def test_redact_proxy_url_masks_secrets_inside_full_url() -> None:
+    """The scrubber runs on whole URLs, not only on bare query strings."""
+    from src.utils.net import redact_proxy_url
+
+    url = (
+        "https://bucket.s3.amazonaws.com/key.txt"
+        "?X-Amz-Signature=deadbeef&X-Amz-Credential=AKIA%2F20260101"
+        "&AWSAccessKeyId=AKIAEXAMPLE&x=1"
+    )
+    assert redact_proxy_url(url) == (
+        "https://bucket.s3.amazonaws.com/key.txt"
+        "?X-Amz-Signature=***&X-Amz-Credential=***&AWSAccessKeyId=***&x=1"
+    )
+
+
 # --- is_blocked_literal ----------------------------------------------------
 
 
@@ -83,6 +225,35 @@ def test_is_blocked_literal_accepts_public_literals(host: str) -> None:
 @pytest.mark.parametrize("host", ["example.com", "vpn-01.example.net", "", None])
 def test_is_blocked_literal_ignores_non_literals(host: str | None) -> None:
     # Hostnames need DNS and are judged by filter_public_configs instead.
+    assert is_blocked_literal(host) is False
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "127.0.0.1.",  # trailing-dot FQDN form
+        "127.1",  # abbreviated octets
+        "2130706433",  # decimal int form
+        "0x7f000001",  # hex form
+        "0177.0.0.1",  # octal octet -> 127.0.0.1
+    ],
+)
+def test_is_blocked_literal_rejects_non_canonical_loopback(host: str) -> None:
+    # Non-canonical IPv4 spellings must still be recognized as the loopback
+    # literal and dropped, not treated as an unresolved hostname.
+    assert is_blocked_literal(host) is True
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "8.8.8.8.",  # trailing-dot form of a public literal stays public
+        "134744072",  # 8.8.8.8 in decimal int form
+        "0x08080808",  # 8.8.8.8 in hex form
+    ],
+)
+def test_is_blocked_literal_canonicalizes_public_too(host: str) -> None:
+    # Non-canonical public spellings must normalize and stay allowed.
     assert is_blocked_literal(host) is False
 
 
@@ -137,6 +308,39 @@ async def test_classify_host_resolves_each_name_once(monkeypatch) -> None:
     assert calls == ["internal.example"]
 
 
+async def test_classify_host_retries_transient_none(monkeypatch) -> None:
+    """A transient resolver failure retries once, like is_public_host.
+
+    One 5-second resolver hiccup used to drop the whole hostname batch for
+    the run: a ``None`` answer is a lookup failure, not a verdict.
+    """
+    monkeypatch.setattr(address_guard, "_TRANSIENT_RESOLVE_RETRY_DELAY", 0.0)
+    calls: list[str] = []
+
+    async def _flaky(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        calls.append(host)
+        # First lookup times out, the retry succeeds.
+        return ["93.184.216.34"] if len(calls) >= 2 else None
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _flaky)
+    assert await classify_host("flaky.example") == "public"
+    assert calls == ["flaky.example", "flaky.example"]
+
+
+async def test_classify_host_retry_does_not_loosen_the_guard(monkeypatch) -> None:
+    """A private answer is terminal: the retry never re-asks the resolver."""
+    monkeypatch.setattr(address_guard, "_TRANSIENT_RESOLVE_RETRY_DELAY", 0.0)
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        calls.append(host)
+        return ["10.0.0.5"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+    assert await classify_host("internal.example") == "blocked"
+    assert calls == ["internal.example"]
+
+
 async def test_classify_host_accepts_nat64_answer(monkeypatch) -> None:
     """A DNS64 network answers with 64:ff9b::<ipv4> for every public host."""
     _patch_resolver(monkeypatch, answers={"dns64.example": ["64:ff9b::808:808"]})
@@ -179,9 +383,8 @@ async def test_filter_keeps_order_and_drops_blocked(monkeypatch, caplog) -> None
     assert [c.address for c in kept] == [
         "good.example",
         "93.184.216.34",
-        "nowhere.example",
     ]
-    assert "TCP check: dropped 2/5" in caplog.text
+    assert "TCP check: dropped 3/5" in caplog.text
 
 
 async def test_filter_deduplicates_lookups(monkeypatch) -> None:
@@ -211,18 +414,20 @@ async def test_filter_survives_a_failing_classification(monkeypatch, caplog) -> 
     bad = _cfg("a" * 70 + ".example.com")
     good = _cfg("good.example")
     kept = await filter_public_configs([good, bad], stage="TCP check")
-    # Verdict "unresolved" for the broken host: kept here, dropped later by the
-    # connect itself, exactly like any other dead address.
-    assert kept == [good, bad]
+    # Fail-closed: the unclassifiable host ("unresolved") is dropped with the
+    # blocked ones — one bad address costs one config, not the whole stage.
+    assert kept == [good]
     assert "treating it as unresolved" in caplog.text
 
 
 async def _drain_lookup_threads(timeout: float = 5.0) -> None:
     """Wait until the lookup threads a test unblocked have really finished."""
+    # Yield-only wait: the threads are real OS threads, so sleep(0) lets them
+    # finish without adding a real 10ms delay per poll iteration.
     for _ in range(int(timeout / 0.01)):
         if not net.active_lookup_count():
             return
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0)
 
 
 async def test_stuck_lookups_never_hide_a_private_host(monkeypatch) -> None:
@@ -230,8 +435,10 @@ async def test_stuck_lookups_never_hide_a_private_host(monkeypatch) -> None:
 
     ``getaddrinfo`` cannot be cancelled, so a timed-out lookup keeps its thread.
     With a fixed-width pool the lookups behind it timed out *in the queue*,
-    which the guard reads as "unresolved" and lets through — the SSRF guard
-    silently stopped guarding under exactly the batch sizes it exists for.
+    which the guard reads as "unresolved" and drops — the SSRF guard
+    must keep guarding under exactly the batch sizes it exists for, so the
+    private host behind a stuck queue is still classified (blocked), never
+    waved through.
     """
     release = threading.Event()
 
@@ -252,9 +459,9 @@ async def test_stuck_lookups_never_hide_a_private_host(monkeypatch) -> None:
             stage="TCP check",
             resolve_timeout=0.05,
         )
-        assert [c.address for c in kept] == [
-            cfg.address for cfg in configs if cfg.address != "internal.example"
-        ]
+        # Fail-closed: timed-out ("unresolved") lookups are dropped together
+        # with the private host — nothing unvalidated reaches a socket.
+        assert [c.address for c in kept] == []
     finally:
         release.set()
         await _drain_lookup_threads()
@@ -268,23 +475,48 @@ async def test_lookup_waits_for_a_thread_instead_of_inventing_a_verdict(
     "Did not resolve" lets the address through, so a lookup that never ran must
     not be reported as one that ran and failed.
     """
+    # Late-release hygiene first: a thread from an EARLIER test's cancelled
+    # lookup can exit while THIS test runs, and its finally releases whatever
+    # ``net._lookup_slots`` is CURRENT at that moment — i.e. the fresh 1-slot
+    # instance installed below. Drain the old threads before swapping the
+    # counter so no foreign release can land inside this test's window.
+    for _ in range(200):
+        if not net.active_lookup_count():
+            break
+        await asyncio.sleep(0.05)
     monkeypatch.setattr(net, "_lookup_slots", net._LookupSlots(1))
+    entered = threading.Event()
     release = threading.Event()
 
     def _fake_getaddrinfo(host: str, *_args: object, **_kwargs: object) -> list[object]:
         if host == "stuck.example":
+            # Signal entry BEFORE blocking: under load the thread may start
+            # later than the caller's timeout, and asserting on slot state
+            # before the thread is provably inside getaddrinfo raced (the
+            # cancelled lookup's thread exits and frees its slot).
+            entered.set()
             release.wait(30.0)
             raise socket.gaierror("blackholed")
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
 
     monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
     try:
-        assert await net.resolve_host_addresses("stuck.example", timeout=0.05) is None
+        stuck = asyncio.ensure_future(
+            net.resolve_host_addresses("stuck.example", timeout=0.05),
+        )
+        # Wait off-loop until the stuck thread is INSIDE getaddrinfo: from
+        # here the slot is held for sure (the thread cannot observe the
+        # caller's cancellation while blocked on `release`).
+        assert await asyncio.to_thread(entered.wait, 5.0) is True
+        assert await stuck is None
         assert net.active_lookup_count() == 1
         pending = asyncio.ensure_future(
             net.resolve_host_addresses("good.example", timeout=5.0),
         )
-        await asyncio.sleep(0.2)
+        # Yield-only wait: one loop tick is enough for the pending lookup to
+        # reach the occupied slot and stay queued; no real delay needed.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
         assert not pending.done()
         release.set()
         assert await pending == ["93.184.216.34"]
@@ -447,7 +679,9 @@ async def test_resolve_survives_malformed_dns_labels(host: str) -> None:
     address), and an escaping exception used to abort the whole stage.
     """
     assert await net.resolve_host_addresses(host, timeout=1.0) is None
-    assert await net.resolve_global_ips(host, timeout=1.0) == []
+    # None = transient resolver failure (see resolve_global_ips): the caller
+    # retries; [] is the terminal "resolved, but private" verdict.
+    assert await net.resolve_global_ips(host, timeout=1.0) is None
     assert await classify_host(host, timeout=1.0) == "unresolved"
 
 
@@ -565,7 +799,8 @@ async def test_filter_reuses_a_decided_verdict_across_stages(monkeypatch) -> Non
 
 
 async def test_unresolved_verdict_is_not_cached(monkeypatch) -> None:
-    """``unresolved`` is the permissive answer, so it must be retried."""
+    """``unresolved`` is never cached, so it is retried on the next stage."""
+    monkeypatch.setattr(address_guard, "_TRANSIENT_RESOLVE_RETRY_DELAY", 0.0)
     lookups: list[str] = []
 
     async def _resolve(host: str, *, timeout: float = 5.0) -> list[str] | None:
@@ -577,7 +812,9 @@ async def test_unresolved_verdict_is_not_cached(monkeypatch) -> None:
     for _ in range(3):
         await filter_public_configs([_cfg("nowhere.example")], stage="tcp")
 
-    assert lookups == ["nowhere.example"] * 3
+    # Two lookups per filter call: the transient retry inside classify_host,
+    # then a fresh classification on the next call (nothing was cached).
+    assert lookups == ["nowhere.example"] * 6
 
 
 async def test_expired_verdict_is_resolved_again(monkeypatch) -> None:
@@ -690,3 +927,88 @@ async def test_resolve_pinned_address_two_failures_fail_closed(monkeypatch) -> N
 
     monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
     assert await address_guard.resolve_pinned_address("gone.example") is None
+
+
+# --- resolve_pinned_addresses cache -----------------------------------------
+
+
+async def test_resolve_pinned_addresses_caches_public_resolution(monkeypatch) -> None:
+    """Every attempt of every stage re-pins the same host: DNS must be asked
+    once, not once per attempt (dozens of lookups per config per run)."""
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str]:
+        calls.append(host)
+        return ["93.184.216.34", "10.0.0.5"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+    first = await address_guard.resolve_pinned_addresses("pinned.example")
+    second = await address_guard.resolve_pinned_addresses("pinned.example")
+    assert first == second == ["93.184.216.34"]
+    assert calls == ["pinned.example"]
+
+
+async def test_resolve_pinned_addresses_cache_expires(monkeypatch) -> None:
+    """A stale pin must not outlive its TTL (same rebinding concern as the
+    verdict cache, just shorter — a pin is a connect target)."""
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str]:
+        calls.append(host)
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+    await address_guard.resolve_pinned_addresses("aging.example")
+    # Age the stored pin instead of moving the clock (time.monotonic is
+    # shared with the event loop, same trick as the verdict-cache test).
+    address_guard._pinned_cache["aging.example"] = (
+        address_guard.time.monotonic() - 1.0,
+        ["93.184.216.34"],
+    )
+    await address_guard.resolve_pinned_addresses("aging.example")
+    assert calls == ["aging.example", "aging.example"]
+
+
+async def test_resolve_pinned_addresses_never_caches_non_public(monkeypatch) -> None:
+    """Only successful public resolutions are cached; anything else must keep
+    being retried (fail closed, but recoverable)."""
+    calls: list[str] = []
+
+    async def _resolve(host: str, *, timeout: float = 5.0) -> list[str]:
+        calls.append(host)
+        return ["10.0.0.5"]
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _resolve)
+    for _ in range(2):
+        assert await address_guard.resolve_pinned_addresses("internal.example") == []
+    assert calls == ["internal.example", "internal.example"]
+
+    calls.clear()
+
+    async def _empty(host: str, *, timeout: float = 5.0) -> list[str] | None:
+        calls.append(host)
+        return []
+
+    monkeypatch.setattr(address_guard, "resolve_host_addresses", _empty)
+    for _ in range(2):
+        assert await address_guard.resolve_pinned_addresses("dead.example") == []
+    assert calls == ["dead.example", "dead.example"]
+
+
+def test_verdict_cache_sweeps_expired_entries_when_large() -> None:
+    """Entries never re-queried must still be dropped: in --continuous the
+    verdict cache otherwise grew without bound."""
+    address_guard.clear_verdict_cache()
+    try:
+        now = address_guard.time.monotonic()
+        for i in range(address_guard._CACHE_SWEEP_THRESHOLD + 1):
+            address_guard._verdict_cache[f"stale{i}.example"] = (now - 1.0, "public")
+        address_guard._store_verdict("fresh.example", "public", now=now)
+        assert "stale0.example" not in address_guard._verdict_cache
+        assert "stale100.example" not in address_guard._verdict_cache
+        assert address_guard._verdict_cache["fresh.example"] == (
+            now + address_guard._VERDICT_TTL_SECONDS,
+            "public",
+        )
+    finally:
+        address_guard.clear_verdict_cache()

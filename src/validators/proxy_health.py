@@ -12,6 +12,9 @@ import logging
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+from src.utils.net import redact_proxy_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,10 @@ _COUNTER_FIELDS = ("attempts", "successes", "consecutive_failures")
 #: The file is rewritten (and committed) on every run, so without an upper
 #: bound it keeps every proxy the upstream lists ever rotated through.
 _DEFAULT_RETENTION_SECONDS = 86400.0
+
+#: Default latency/recent-results window, mirrored by _sanitize_records for
+#: legacy-key migration merges (the instance window is not known there).
+_DEFAULT_WINDOW = 5
 
 
 def _as_count(value: Any) -> int | None:
@@ -58,8 +65,22 @@ def _sanitize_entry(raw: Any) -> dict[str, Any] | None:
         if not isinstance(value, bool) and isinstance(value, int | float) and value > 0
     ]
 
-    last_seen = raw.get("last_seen", 0.0)
-    if isinstance(last_seen, bool) or not isinstance(last_seen, int | float):
+    recent_results = raw.get("recent_results", [])
+    if not isinstance(recent_results, list):
+        return None
+    entry["recent_results"] = [
+        bool(value) for value in recent_results if isinstance(value, bool)
+    ]
+
+    last_seen = raw.get("last_seen")
+    if last_seen is None:
+        # Legacy records predate the last_seen field. Substituting 0.0 made
+        # prune() — which save() always runs — drop them on the very next
+        # write, silently destroying the accumulated ban/latency stats.
+        # "Seen just now" buys the record one retention window to earn a
+        # fresher last_seen from a real probe.
+        last_seen = time.time()
+    elif isinstance(last_seen, bool) or not isinstance(last_seen, int | float):
         return None
     entry["last_seen"] = float(last_seen)
 
@@ -70,27 +91,97 @@ def _sanitize_entry(raw: Any) -> dict[str, Any] | None:
     return entry
 
 
-def _sanitize_records(data: dict[Any, Any]) -> dict[str, dict[str, Any]]:
-    """Keep only well-formed ``proxy_url -> entry`` pairs, warning about drops."""
+def _sanitize_records(
+    data: dict[Any, Any], window: int = 5
+) -> dict[str, dict[str, Any]]:
+    """Keep only well-formed ``proxy_url -> entry`` pairs, warning about drops.
+
+    Keys are migrated to the credential-free form: files written by pre-0.2.0
+    versions (or restored from an old cache) carried raw
+    ``socks5://user:pass@host`` keys, and without re-keying here the loaded
+    records would re-persist that credential-at-rest on every save — plus
+    fork the history, since new probes land under the redacted key.
+
+    ``window`` caps the migrated latency/recent lists: ``load()`` passes the
+    configured ``latency_window`` so a wide window is not silently truncated
+    to the default on every restart.
+    """
+    cap = max(1, window)
     records: dict[str, dict[str, Any]] = {}
     dropped: list[str] = []
+    migrated = 0
     for key, raw in data.items():
         entry = _sanitize_entry(raw) if isinstance(key, str) and key.strip() else None
         if entry is None:
             dropped.append(str(key))
             continue
-        records[key] = entry
+        new_key = ProxyHealthHistory._key(key)
+        if new_key != key:
+            migrated += 1
+            existing = records.get(new_key)
+            if existing is not None:
+                # A redacted twin already loaded (or an earlier migration of
+                # the same host:port): merge so no evidence is lost.
+                existing["attempts"] += entry["attempts"]
+                existing["successes"] += entry["successes"]
+                existing["latency_ms"] = (existing["latency_ms"] + entry["latency_ms"])[
+                    -cap:
+                ]
+                existing["recent_results"] = (
+                    existing["recent_results"] + entry["recent_results"]
+                )[-cap:]
+                existing["consecutive_failures"] = max(
+                    int(existing.get("consecutive_failures") or 0),
+                    int(entry.get("consecutive_failures") or 0),
+                )
+                existing["banned_until"] = max(
+                    float(existing["banned_until"] or 0.0),
+                    float(entry["banned_until"] or 0.0),
+                )
+                existing["last_seen"] = max(
+                    float(existing["last_seen"] or 0.0),
+                    float(entry["last_seen"] or 0.0),
+                )
+                continue
+        records[new_key] = entry
     if dropped:
         logger.warning(
             "Dropped %d malformed proxy health record(s): %s",
             len(dropped),
-            ", ".join(repr(key) for key in dropped[:5]),
+            ", ".join(repr(redact_proxy_url(key)) for key in dropped[:5]),
+        )
+    if migrated:
+        logger.info(
+            "Migrated %d proxy health record(s) to credential-free keys.",
+            migrated,
         )
     return records
 
 
+def _masked_key(url: str) -> str:
+    """Redact *url* for use as a record key, including scheme-less forms.
+
+    ``redact_proxy_url``'s userinfo rule anchors on an authority (``//...@``),
+    so a bare credential string (``user:pass@host``) would pass through
+    unmasked and land in the persisted key on disk.
+    """
+    if "://" not in url and "@" in url:
+        return redact_proxy_url("//" + url)
+    return redact_proxy_url(url)
+
+
 class ProxyHealthHistory:
-    """In-memory proxy health history with JSON persistence."""
+    """In-memory proxy health history with JSON persistence.
+
+
+
+    Records are keyed by a CREDENTIAL-FREE URL (``scheme://host:port``): the
+    history is persisted to ``output/proxy-health-history.json`` on every
+    run, and raw keys carried ``user:pass@`` — a credential-at-rest in a file
+    that lives on every dev/runner disk. Two free-list proxies that differ
+    only in credentials share a record, which is fine for health scoring:
+    liveness is a property of the host:port pair, not the account.
+    """
 
     def __init__(
         self,
@@ -112,6 +203,29 @@ class ProxyHealthHistory:
         # resets the counter. 0 disables banning entirely.
         self.ban_seconds = max(0.0, float(ban_seconds))
 
+    @staticmethod
+    def _key(proxy_url: str) -> str:
+        """Credential-free, stable record key: ``scheme://host:port``.
+
+        The previous key was the redacted URL, which still *contained* the
+        userinfo: one proxy spelled ``socks5://user:pass@h:p`` and the same
+        proxy spelled ``socks5://h:p`` produced two forked histories
+        (``socks5://***@h:p`` vs ``socks5://h:p``), splitting consecutive
+        failure counters and bans. The health of a proxy is the health of its
+        dial target, so the key is the dial target itself. Unparseable or
+        host-less input falls back to the masked URL rather than raising.
+        """
+        try:
+            parts = urlsplit(proxy_url.strip())
+            host = (parts.hostname or "").strip()
+            port = parts.port
+        except ValueError:
+            return _masked_key(proxy_url.strip())
+        if not host or port is None:
+            return _masked_key(proxy_url.strip())
+        host_text = f"[{host}]" if ":" in host else host
+        return f"{(parts.scheme or 'socks5').lower()}://{host_text}:{port}"
+
     @classmethod
     def load(cls, path: str | Path, **kwargs: Any) -> ProxyHealthHistory:
         from src.utils.paths import resolve_safe_output_path
@@ -128,7 +242,11 @@ class ProxyHealthHistory:
                 data = json.load(fh)
             if not isinstance(data, dict):
                 return cls(**kwargs)
-            return cls(_sanitize_records(data), **kwargs)
+            try:
+                window = max(1, int(kwargs.get("window", _DEFAULT_WINDOW)))
+            except (TypeError, ValueError):
+                window = _DEFAULT_WINDOW
+            return cls(_sanitize_records(data, window), **kwargs)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning(
                 "Failed to load proxy health history from %s: %s",
@@ -175,9 +293,9 @@ class ProxyHealthHistory:
         success: bool,
         latency_ms: float | None = None,
     ) -> None:
-        if not proxy_url:
+        if not proxy_url or not proxy_url.strip():
             return
-        key = proxy_url.strip()
+        key = self._key(proxy_url)
         if not key:
             # Whitespace-only input would create a "" record that
             # _sanitize_records drops on the next load — never store it.
@@ -189,6 +307,7 @@ class ProxyHealthHistory:
                 "successes": 0,
                 "consecutive_failures": 0,
                 "latency_ms": [],
+                "recent_results": [],
                 "last_seen": 0.0,
                 "banned_until": 0.0,
             },
@@ -209,9 +328,14 @@ class ProxyHealthHistory:
         if latency_ms is not None and latency_ms > 0:
             entry["latency_ms"].append(latency_ms)
             entry["latency_ms"] = entry["latency_ms"][-self.window :]
+        # Windowed success/failure trail for ranking: the lifetime rate let a
+        # proxy's ancient good streak outrank its recent death spiral.
+        entry["recent_results"] = [*entry.get("recent_results", []), success][
+            -self.window :
+        ]
 
     def is_banned(self, proxy_url: str) -> bool:
-        key = proxy_url.strip()
+        key = self._key(proxy_url)
         entry = self.records.get(key)
         if not entry:
             return False
@@ -228,7 +352,7 @@ class ProxyHealthHistory:
         return time.time() < float(entry.get("banned_until") or 0.0)
 
     def _avg_latency(self, proxy_url: str) -> float:
-        entry = self.records.get(proxy_url.strip())
+        entry = self.records.get(self._key(proxy_url))
         if not entry:
             return float("inf")
         latencies = entry.get("latency_ms", [])
@@ -242,16 +366,24 @@ class ProxyHealthHistory:
         avg = self._avg_latency(proxy_url)
         return None if avg == float("inf") else avg
 
-    def _has_history(self, proxy_url: str) -> bool:
-        return proxy_url.strip() in self.records
+    def _success_rate(self, entry: dict[str, Any]) -> float:
+        """Success rate over the recent window, falling back to lifetime.
+
+        A windowed rate exists from the moment any record() lands; records
+        persisted before the field existed (or hand-trimmed files) fall back
+        to the lifetime successes/attempts so ranking never regresses.
+        """
+        recent = [bool(v) for v in entry.get("recent_results", [])]
+        if recent:
+            return sum(1.0 for v in recent if v) / len(recent)
+        attempts = max(1, int(entry.get("attempts", 0)))
+        return int(entry.get("successes", 0)) / attempts
 
     def _score(self, proxy_url: str) -> float:
-        entry = self.records.get(proxy_url.strip())
+        entry = self.records.get(self._key(proxy_url))
         if not entry:
             return 0.5
-        attempts = max(1, int(entry.get("attempts", 0)))
-        successes = int(entry.get("successes", 0))
-        success_rate = successes / attempts
+        success_rate = self._success_rate(entry)
         avg_latency = self._avg_latency(proxy_url)
         if avg_latency == float("inf") or avg_latency > self.max_latency_ms:
             latency_penalty = 0.0
@@ -268,20 +400,33 @@ class ProxyHealthHistory:
     ) -> list[str]:
         result: list[str] = []
         for proxy in proxies:
-            key = proxy.strip()
+            key = self._key(proxy)
             if not key:
                 continue
             if drop_banned and self.is_banned(key):
-                logger.debug("Proxy %s is banned by health history.", key)
+                logger.debug(
+                    "Proxy %s is banned by health history.", redact_proxy_url(key)
+                )
                 continue
+            # ``inf`` means "recorded, but never measured": record() appends a
+            # latency only on success, so a proxy that has only ever failed has
+            # a record with an empty latency list. Treating that as "too slow"
+            # dropped it on every later run until retention forgot it a day
+            # later — far stronger than the time-boxed ban this class
+            # implements, and it also denied the proxy any chance to earn a
+            # latency sample. _score() already reads ``inf`` as "no data".
+            avg_latency = self._avg_latency(key)
             if (
                 drop_slow
-                and self._has_history(key)
-                and self._avg_latency(key) > self.max_latency_ms
+                and avg_latency != float("inf")
+                and avg_latency > self.max_latency_ms
             ):
-                logger.debug("Proxy %s is too slow by health history.", key)
+                logger.debug(
+                    "Proxy %s is too slow by health history.",
+                    redact_proxy_url(key),
+                )
                 continue
-            result.append(key)
+            result.append(proxy.strip())
         result.sort(key=lambda p: self._score(p), reverse=True)
         return result
 

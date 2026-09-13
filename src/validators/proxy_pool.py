@@ -13,10 +13,13 @@ import logging
 import re
 import time
 from collections.abc import Iterable
-from urllib.parse import urljoin, urlparse
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import SplitResult, urljoin, urlparse, urlsplit, urlunsplit
 
 import httpx
 
+from src.utils.net import redact_proxy_url, resolve_global_ips
 from src.validators.proxy_health import ProxyHealthHistory
 
 logger = logging.getLogger(__name__)
@@ -48,11 +51,33 @@ DEFAULT_PROXY_SOURCES: tuple[str, ...] = (
 
 _USER_AGENT = "vpn-config-parser/1.0"
 _PROXY_RE = re.compile(
-    r"(?:socks5h?://|socks://)?"
+    r"^\s*(?:socks5h?://|socks://)?"
     r"(?P<host>(?:\d{1,3}\.){3}\d{1,3})"
     r"(?::|\s+)"
-    r"(?P<port>\d{1,5})",
+    r"(?P<port>\d{1,5})"
+    r"\s*(?:#.*)?$",
 )
+
+
+def _line_chunks(line: str) -> list[str]:
+    """Split a proxy-list line into matchable chunks.
+
+    The common case is one proxy per line ("1.2.3.4:1080",
+    "1.2.3.4 1080", "socks5://1.2.3.4:1080", "... # comment"). Some
+    lists pack several proxies into one line ("a:1 b:2") — those fall
+    back to whitespace tokens, stopping at a "#" comment token.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return []
+    if _PROXY_RE.match(stripped):
+        return [stripped]
+    chunks: list[str] = []
+    for token in stripped.split():
+        if token.startswith("#"):
+            break
+        chunks.append(token)
+    return chunks
 
 
 def _is_public_ipv4(host: str) -> bool:
@@ -83,9 +108,16 @@ def parse_proxy_candidates(text: str) -> list[str]:
     seen: set[str] = set()
     proxies: list[str] = []
     for line in text.splitlines():
-        # Most proxy lists use comments/metadata after whitespace or #. The
-        # regex still scans the full line so "socks5://ip:port" is supported.
-        for match in _PROXY_RE.finditer(line):
+        # Anchored per chunk: an unanchored finditer matched "1.2.3.4:8080"
+        # embedded in garbage ("token=1.2.3.4:8080&x=1", "user:pass@…"),
+        # minting pool candidates out of junk and burning the TCP
+        # self-check budget on them. A trailing "# comment" is still
+        # allowed — most proxy lists annotate entries that way. Octet and
+        # port ranges are enforced by _normalize_proxy below.
+        for chunk in _line_chunks(line):
+            match = _PROXY_RE.match(chunk)
+            if match is None:
+                continue
             proxy = _normalize_proxy(match.group("host"), match.group("port"))
             if proxy and proxy not in seen:
                 seen.add(proxy)
@@ -93,28 +125,124 @@ def parse_proxy_candidates(text: str) -> list[str]:
     return proxies
 
 
-def _is_safe_public_http_url(url: str) -> bool:
-    """True for an absolute http(s) URL whose host is a public address/name.
+@dataclass(frozen=True)
+class _PinnedTarget:
+    """A source URL bound to the addresses its host was validated on.
 
-    Mirrors the SSRF stance of the source fetcher: a redirect hop pointing at
-    loopback/RFC1918/link-local (or cloud metadata) must never be followed.
-    Hostnames are accepted here and resolved by the connector; the proxy-list
-    sources are operator-configured, so the per-hop check focuses on literals
-    and scheme sanity.
+    Resolving once and connecting to the approved address closes the
+    check-to-connect window (DNS rebinding / TOCTOU): httpx would otherwise
+    resolve independently at connect time, letting a TTL-0 record answer the
+    guard with a public address and the socket with ``127.0.0.1`` /
+    ``169.254.169.254``.  ``host_header`` and ``sni_hostname`` keep virtual
+    hosting and TLS working against the original hostname, not the address.
+    """
+
+    connect_urls: tuple[str, ...]
+    host_header: str
+    extensions: dict[str, str]
+    logical_url: str
+
+
+#: Hostname suffixes that are private/internal by convention and must never be
+#: followed on a redirect.
+_BLOCKED_HOST_SUFFIXES = (
+    ".local",
+    ".internal",
+    ".localhost",
+    ".example",
+    ".invalid",
+    ".arpa",
+)
+#: Hostnames that resolve (or may resolve) to internal infrastructure.
+_BLOCKED_HOSTS = frozenset(
+    {"localhost", "metadata", "metadata.google.internal", "ip6-localhost"}
+)
+
+#: How many resolved addresses a single pinned target may connect to before the
+#: rest are dropped (defence against a host answering with an enormous list).
+_MAX_PINNED_ADDRESSES = 4
+
+
+def _host_literal(host: str) -> str:
+    """Return *host* as a URL authority literal, bracketing IPv6 addresses."""
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    return f"[{addr}]" if addr.version == 6 else str(addr)
+
+
+def _safe_source_url(url: str) -> tuple[SplitResult, str] | None:
+    """Accept *url* only as an absolute http(s) URL with a non-blocked host.
+
+    Hostnames are allowed (the pinning step resolves and judges their
+    addresses); internal hostnames (``.local``, ``metadata``, …) are refused by
+    name before any DNS lookup.  Returns the parsed URL and its lowercased host,
+    or ``None`` when the URL is not fit to be a source.
     """
     try:
-        parsed = urlparse(url)
+        parts = urlsplit((url or "").strip())
     except ValueError:
-        return False
-    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
-        return False
-    try:
-        addr = ipaddress.ip_address(parsed.hostname.strip("[]"))
-    except ValueError:
-        # A hostname: cannot judge without DNS; accept — same as operators'
-        # configured sources, redirects included below are still bounded.
-        return True
-    return addr.is_global
+        return None
+    if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:
+        return None
+    host = parts.hostname.lower()
+    if host in _BLOCKED_HOSTS or any(host.endswith(s) for s in _BLOCKED_HOST_SUFFIXES):
+        return None
+    return parts, host
+
+
+async def _pin_public_target(url: str) -> _PinnedTarget | None:
+    """Validate *url* against the SSRF guard and pin it to its public addresses.
+
+    Resolution happens exactly once; the connection goes to what was resolved,
+    so a redirect controlled by a third party cannot be pointed at an internal
+    address (DNS-rebinding TOCTOU).  Returns ``None`` when the URL is not a safe
+    public http(s) URL or its host does not resolve exclusively to public
+    addresses.
+    """
+    parsed = _safe_source_url(url)
+    if parsed is None:
+        return None
+    parts, host = parsed
+    addresses = await resolve_global_ips(host)
+    if not addresses:
+        return None
+    userinfo = ""
+    if parts.username or parts.password:
+        # urlsplit() returns percent-ENCODED credentials (it does not decode
+        # them), so they are rebuilt as-is: re-quoting turned "p%40ss" into
+        # "p%2540ss" and the proxy refused the auth it had originally given.
+        username = parts.username or ""
+        password = parts.password or ""
+        userinfo = f"{username}:{password}@" if password else f"{username}@"
+    port = f":{parts.port}" if parts.port is not None else ""
+    connect_urls = tuple(
+        urlunsplit(
+            (
+                parts.scheme,
+                f"{userinfo}{_host_literal(address)}{port}",
+                parts.path,
+                parts.query,
+                parts.fragment,
+            )
+        )
+        for address in addresses[:_MAX_PINNED_ADDRESSES]
+    )
+    return _PinnedTarget(
+        connect_urls=connect_urls,
+        host_header=f"{_host_literal(host)}{port}",
+        extensions={"sni_hostname": host} if parts.scheme.lower() == "https" else {},
+        logical_url=urlunsplit(
+            (
+                parts.scheme,
+                f"{userinfo}{host}{port}",
+                parts.path,
+                parts.query,
+                parts.fragment,
+            )
+        ),
+    )
 
 
 async def _fetch_source(
@@ -133,69 +261,118 @@ async def _fetch_source(
     """
     headers = {"User-Agent": _USER_AGENT, "Accept": "text/plain,*/*"}
     target = url
+    # Operator-supplied source URLs may embed credentials (?token=, userinfo);
+    # every log line below shows the redacted form only.
+    log_url = redact_proxy_url(url)
+    prior_scheme: str | None = None
     try:
         async with asyncio.timeout(timeout * _DOWNLOAD_BUDGET_FACTOR):
             for _hop in range(_MAX_REDIRECT_HOPS + 1):
-                if not _is_safe_public_http_url(target):
+                # Resolve once and connect to the approved address, so a
+                # redirect controlled by a third party cannot be pointed at an
+                # internal host (DNS-rebinding TOCTOU).  Hostnames are judged
+                # only by the addresses they resolve to — never re-resolved by
+                # httpx at connect time.
+                pinned = await _pin_public_target(target)
+                if pinned is None:
                     logger.warning(
-                        "Proxy source %s redirects to unsafe URL — refusing.",
-                        url,
+                        "Proxy source %s refused (unsafe or unresolvable): %s",
+                        log_url,
+                        redact_proxy_url(target),
                     )
                     return ""
-                async with client.stream(
-                    "GET",
-                    target,
-                    headers=headers,
-                ) as response:
-                    if response.status_code in (301, 302, 303, 307, 308):
-                        location = response.headers.get("location")
-                        if not location:
-                            logger.warning(
-                                "Proxy source %s redirected without "
-                                "Location — skipping.",
-                                target,
-                            )
-                            return ""
-                        # Resolve against the *logical* URL of this hop.
-                        target = urljoin(target, location.strip())
+                scheme = urlsplit(target).scheme.lower()
+                # A server-controlled redirect must not downgrade TLS.
+                if prior_scheme == "https" and scheme == "http":
+                    logger.warning(
+                        "Proxy source %s https->http redirect refused: %s",
+                        log_url,
+                        redact_proxy_url(target),
+                    )
+                    return ""
+                prior_scheme = scheme
+                request_headers = {**headers, "Host": pinned.host_header}
+                last_error: httpx.HTTPError | None = None
+                for connect_url in pinned.connect_urls:
+                    try:
+                        async with client.stream(
+                            "GET",
+                            connect_url,
+                            headers=request_headers,
+                            extensions=pinned.extensions,
+                        ) as response:
+                            if response.status_code in (301, 302, 303, 307, 308):
+                                location = response.headers.get("location")
+                                if not location:
+                                    logger.warning(
+                                        "Proxy source %s redirected without "
+                                        "Location — skipping.",
+                                        redact_proxy_url(target),
+                                    )
+                                    return ""
+                                # Resolve against the *logical* URL, never the
+                                # pinned address, so relative redirects stay sane.
+                                target = urljoin(pinned.logical_url, location.strip())
+                                break
+                            if response.status_code != 200:
+                                logger.warning(
+                                    "Proxy source %s returned HTTP %d",
+                                    log_url,
+                                    response.status_code,
+                                )
+                                return ""
+                            # Byte cap so response.text cannot buffer the entire body.
+                            body = bytearray()
+                            overflow = False
+                            async for chunk in response.aiter_bytes(64 * 1024):
+                                body.extend(chunk)
+                                if len(body) > _MAX_SOURCE_BODY_BYTES:
+                                    logger.warning(
+                                        "Proxy source %s exceeded %d bytes "
+                                        "— discarded.",
+                                        log_url,
+                                        _MAX_SOURCE_BODY_BYTES,
+                                    )
+                                    overflow = True
+                                    break
+                            if overflow:
+                                return None
+                            return body.decode("utf-8", errors="replace")
+                    except httpx.TransportError as exc:
+                        # Any transport failure on one pinned address must
+                        # still try the next one (mirrors sources/manager).
+                        last_error = exc
                         continue
-                    if response.status_code != 200:
-                        logger.warning(
-                            "Proxy source %s returned HTTP %d",
-                            url,
-                            response.status_code,
-                        )
-                        return ""
-                    # Stream with a byte cap: response.text would buffer any size.
-                    body = bytearray()
-                    overflow = False
-                    async for chunk in response.aiter_bytes(64 * 1024):
-                        body.extend(chunk)
-                        if len(body) > _MAX_SOURCE_BODY_BYTES:
-                            logger.warning(
-                                "Proxy source %s exceeded %d bytes — discarded.",
-                                url,
-                                _MAX_SOURCE_BODY_BYTES,
-                            )
-                            overflow = True
-                            break
-                    if overflow:
-                        return None
-                    return body.decode("utf-8", errors="replace")
+                else:
+                    logger.warning(
+                        "Proxy source %s connect failed: %s",
+                        log_url,
+                        # httpx connect errors embed the full request URL.
+                        redact_proxy_url(str(last_error)),
+                    )
+                    return ""
+                # A redirect broke the inner loop; follow it on the next hop.
+                continue
+            logger.warning(
+                "Proxy source %s exceeded %d redirect hops.",
+                log_url,
+                _MAX_REDIRECT_HOPS,
+            )
+            return ""
     except TimeoutError:
         logger.warning(
             "Proxy source %s exceeded its %.0fs wall-clock budget.",
-            url,
+            log_url,
             timeout * _DOWNLOAD_BUDGET_FACTOR,
         )
         return None
     except httpx.HTTPError as exc:
-        logger.warning("Proxy source fetch failed for %s: %s", url, exc)
+        logger.warning(
+            "Proxy source fetch failed for %s: %s",
+            log_url,
+            redact_proxy_url(str(exc)),
+        )
         return ""
-    logger.warning(
-        "Proxy source %s exceeded %d redirect hops.", url, _MAX_REDIRECT_HOPS
-    )
-    return ""
 
 
 async def fetch_proxy_candidates(
@@ -229,7 +406,11 @@ async def fetch_proxy_candidates(
             try:
                 text = await _fetch_source(client, url, timeout=timeout)
             except Exception as exc:
-                logger.warning("Proxy source fetch raised for %s: %s", url, exc)
+                logger.warning(
+                    "Proxy source fetch raised for %s: %s",
+                    redact_proxy_url(url),
+                    redact_proxy_url(str(exc)),
+                )
                 continue
             if not text:
                 continue
@@ -297,7 +478,7 @@ async def proxy_connects(
                 logger.debug(
                     "Proxy %s passed self-check via failover target %s:%d "
                     "(primary %s unreachable).",
-                    proxy_url,
+                    redact_proxy_url(proxy_url),
                     host,
                     port,
                     probe_host,
@@ -378,23 +559,47 @@ async def validate_proxy_candidates(
                     done_event.set()
 
     tasks = [asyncio.create_task(_check(proxy)) for proxy in proxies]
-    pending_tasks = set(tasks)
-    done_task = asyncio.create_task(done_event.wait())
-    while pending_tasks and not done_event.is_set():
-        done, _pending = await asyncio.wait(
-            [*pending_tasks, done_task],
+    # Race gather against the max_proxies event instead of re-registering the
+    # whole pending set on every completion (O(n²) in done-callbacks, and a
+    # cancellation during the loop orphaned every in-flight lookup).
+    gather_task: asyncio.Future[Any] = asyncio.gather(*tasks, return_exceptions=True)
+    done_task = asyncio.ensure_future(done_event.wait())
+    try:
+        await asyncio.wait(
+            [gather_task, done_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
-        pending_tasks -= done
-
-    if done_event.is_set():
-        for task in pending_tasks:
-            task.cancel()
-
-    await asyncio.gather(*tasks, return_exceptions=True)
-    if not done_task.done():
+    except asyncio.CancelledError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
         done_task.cancel()
-        await asyncio.gather(done_task, return_exceptions=True)
+        with contextlib.suppress(asyncio.CancelledError):
+            await gather_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await done_task
+        raise
+    finally:
+        # Outer cancellation during the wait must still reap children.
+        if done_task.done() and not done_event.is_set():
+            done_event.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        done_task.cancel()
+
+    try:
+        await gather_task
+    except asyncio.CancelledError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await gather_task
+        raise
+    # Reap the watcher: cancel() only requests cancellation.
+    with contextlib.suppress(asyncio.CancelledError):
+        await done_task
     return alive[:max_proxies]
 
 
