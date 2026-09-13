@@ -313,10 +313,10 @@ class GitHubPublisher:
         # byte-identical (~11k commits in the publish repository). The SHA the
         # Contents API reports for a file IS its git blob SHA, so comparing it
         # with a locally computed blob hash is exact and needs no extra request.
-        # The hash is the git object hash GitHub itself reports (S324 is
-        # suppressed below) — not a security primitive; usedforsecurity=False
-        # silences Bandit's B324 in the CI security gate as well.
-        local_blob_sha = hashlib.sha1(  # noqa: S324
+        # The hash is the git object hash GitHub itself reports — not a
+        # security primitive; usedforsecurity=False silences both ruff S324
+        # and Bandit B324 in the CI security gate.
+        local_blob_sha = hashlib.sha1(
             b"blob %d\x00" % len(content_bytes) + content_bytes,
             usedforsecurity=False,
         ).hexdigest()
