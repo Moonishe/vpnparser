@@ -1744,12 +1744,17 @@ async def test_rerun_published_revalidates_and_writes(
 
 @pytest.mark.asyncio
 async def test_published_source_results_skips_unusable_splits(tmp_path: Path) -> None:
-    """Unreadable / linkless splits are FATAL: partial republish wipes half the subscription.
+    """An UNREADABLE split is FATAL: partial republish wipes half the subscription.
 
     The old behavior skipped unusable splits with a warning, so one dead file
     let rerun_published revalidate just the other list and overwrite the
-    healthy subscription with half of it. Non-list entries (mix) are still
-    skipped — only blacklist+whitelist participate in fast-track.
+    healthy subscription with half of it. A merely LINK-LESS split (present
+    and valid, zero configs — the steady state of a list that yields nothing
+    alive) proceeds with the rest instead: refusing would fail every hourly
+    fast-track while the repo itself holds the same partial set. See
+    test_published_source_results_proceeds_without_linkless_split.
+    Non-list entries (mix) are still skipped — only blacklist+whitelist
+    participate in fast-track.
     """
     import base64 as _b64
 
@@ -1774,6 +1779,77 @@ async def test_published_source_results_skips_unusable_splits(tmp_path: Path) ->
 
     with pytest.raises(FileNotFoundError, match="unreadable or link-less"):
         r._published_source_results(str(tmp_path / "out.txt"))
+
+
+def _write_split_settings(tmp_path: Path, bl: Path, wl: Path) -> tuple[str, str]:
+    """Settings + sources wiring two published split files; returns their paths."""
+    settings = tmp_path / "settings.yaml"
+    settings.write_text(
+        "validator:\n"
+        "  allowed_countries: []\n"
+        "publisher:\n"
+        f"  split_output_files:\n    blacklist: {bl}\n    whitelist: {wl}\n",
+        encoding="utf-8",
+    )
+    src = tmp_path / "sources.json"
+    src.write_text('{"sources": []}', encoding="utf-8")
+    return str(settings), str(src)
+
+
+def test_published_source_results_proceeds_without_linkless_split(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A link-less (but present) split is skipped, the rest is revalidated.
+
+    The repo's whitelist holds only the display watermark, so every hourly
+    fast-track crashed here instead of refreshing the live blacklist. The
+    skip is recorded for the run summary (degraded) rather than failing.
+    """
+    bl = tmp_path / "bl.txt"
+    _write_b64_subscription(bl, [_watermark_link(), _ss_link("1.2.3.4", "DE-01")])
+    wl = tmp_path / "wl.txt"
+    _write_b64_subscription(wl, [_watermark_link()])
+    settings, src = _write_split_settings(tmp_path, bl, wl)
+    r = PipelineRunner(settings_path=settings, sources_path=src)
+
+    caplog.set_level(logging.WARNING, logger="src.scheduler.runner")
+    results = r._published_source_results(str(tmp_path / "out.txt"))
+
+    assert [str(res.list_type) for res in results] == ["blacklist"]
+    assert r._partial_rerun_skipped == ["whitelist"]
+    assert "proceeding without link-less" in caplog.text
+
+
+def test_published_source_results_all_linkless_raises(tmp_path: Path) -> None:
+    """Nothing usable at all still refuses — there is nothing to revalidate."""
+    bl = tmp_path / "bl.txt"
+    _write_b64_subscription(bl, [_watermark_link()])
+    wl = tmp_path / "wl.txt"
+    _write_b64_subscription(wl, [_watermark_link()])
+    settings, src = _write_split_settings(tmp_path, bl, wl)
+    r = PipelineRunner(settings_path=settings, sources_path=src)
+
+    with pytest.raises(FileNotFoundError, match="unreadable or link-less"):
+        r._published_source_results(str(tmp_path / "out.txt"))
+
+
+def test_degraded_reasons_report_skipped_splits(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A partial fast-track input shows up in the summary degraded reasons."""
+    bl = tmp_path / "bl.txt"
+    _write_b64_subscription(bl, [_ss_link("1.2.3.4", "DE-01")])
+    wl = tmp_path / "wl.txt"
+    _write_b64_subscription(wl, [_watermark_link()])
+    settings, src = _write_split_settings(tmp_path, bl, wl)
+    r = PipelineRunner(settings_path=settings, sources_path=src)
+
+    caplog.set_level(logging.WARNING, logger="src.scheduler.runner")
+    r._published_source_results(str(tmp_path / "out.txt"))
+    reasons = r._degraded_reasons()
+
+    assert any("whitelist" in reason for reason in reasons)
+    assert any("no links" in reason for reason in reasons)
 
 
 # ===================================================================

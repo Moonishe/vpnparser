@@ -117,6 +117,12 @@ class PipelineRunner:
         # {file path: config count}. Surfaced in run-summary.json so an
         # operator can see WHY a file did not update.
         self._publish_floor_applied: dict[str, int] = {}
+        # Configured splits skipped as link-less by this run's fast-track
+        # input load (see _published_source_results). Reset at each entry
+        # point (not in _prepare_run_state: the splits are read BEFORE the
+        # pipeline body resets per-run state) and surfaced in run-summary.json
+        # via _degraded_reasons so a partial revalidation is visible.
+        self._partial_rerun_skipped: list[str] = []
         # Paths of outputs written as empty this run (watermark placeholder, so
         # they are NOT 0 bytes). The per-file publish floor skips these so they
         # do not overwrite a previously working published slice.
@@ -220,6 +226,7 @@ class PipelineRunner:
                 configs and still look successful.
         """
         self._require_settings_file()
+        self._partial_rerun_skipped = []
         results = await self._fetch_sources()
         return await self._pipeline(results, output_file, publish)
 
@@ -236,12 +243,16 @@ class PipelineRunner:
         between full discovery runs.
 
         Raises:
-            FileNotFoundError: Same contract as :meth:`run`, plus when neither
-                published split file is readable — revalidating "nothing" must
+            FileNotFoundError: Same contract as :meth:`run`, plus when no
+                published split file is usable — revalidating "nothing" must
                 not fall through to an empty-run publish that would wipe the
-                live subscription.
+                live subscription. A MISSING/UNREADABLE split still refuses
+                (local partial state); a present-but-LINK-LESS split is
+                skipped with a warning and the rest is revalidated (see
+                :meth:`_published_source_results`).
         """
         self._require_settings_file()
+        self._partial_rerun_skipped = []
         # Blocking file IO off the event loop: published splits are read here.
         results = await asyncio.to_thread(self._published_source_results, output_file)
         if not results:
@@ -539,6 +550,8 @@ class PipelineRunner:
 
         splits = self._split_output_files(output_file)
         results: list[Any] = []
+        unreadable: list[str] = []
+        linkless: list[str] = []
         for list_type, path in splits.items():
             if list_type not in ("blacklist", "whitelist"):
                 continue
@@ -548,6 +561,7 @@ class PipelineRunner:
                 )
             except Exception as exc:
                 logger.warning("Published %s file unreadable: %s", list_type, exc)
+                unreadable.append(list_type)
                 continue
             text = raw.strip()
             # validate=True (unlike the default decoder, which silently drops
@@ -564,6 +578,7 @@ class PipelineRunner:
             ]
             if not links:
                 logger.warning("Published %s file has no links: %s", list_type, path)
+                linkless.append(list_type)
                 continue
             results.append(
                 SimpleNamespace(
@@ -573,25 +588,43 @@ class PipelineRunner:
                     default_country=None,
                 )
             )
-        # Every CONFIGURED split must be revalidated, or not at all: the guard
-        # above fired only when BOTH files were unreadable, so one dead file
-        # let the run republish just the other list — silently erasing half
-        # the live subscription. The required set derives from the configured
-        # splits instead of a hardcoded pair: a deployment with only one split
-        # made the fast-track permanently unusable.
+        # Every CONFIGURED split must be revalidated, or not at all — with one
+        # distinction: UNREADABLE (missing/corrupt file) refuses, LINK-LESS
+        # (present and valid, zero configs) proceeds with the rest. A missing
+        # file is a local/partial state: publishing the rest would overwrite
+        # the healthy subscription with part of it. A link-less file is a
+        # persisted repo state instead (the fast-track reads the checkout, so
+        # a link-less split means the repo itself holds no configs for that
+        # list — a steady state when a list yields nothing alive): refusing
+        # would fail every hourly run and let the live lists go stale too.
+        # The per-file publish floor still withholds the empty slices, and
+        # the skip is recorded in the run summary as degraded. The required
+        # set derives from the configured splits instead of a hardcoded pair:
+        # a deployment with only one split made the fast-track permanently
+        # unusable.
         configured_types = {
             list_type for list_type in splits if list_type in ("blacklist", "whitelist")
         }
         found_types = {str(getattr(result, "list_type", "")) for result in results}
         missing = sorted(configured_types - found_types)
         if configured_types and missing:
-            msg = (
-                "rerun_published requires every published split file to be "
-                f"readable next to {output_file}; unreadable or link-less: "
-                f"{', '.join(missing)}. Revalidating a partial set would "
-                "overwrite the healthy subscription with part of it."
+            unreadable_missing = sorted(set(missing) & set(unreadable))
+            if unreadable_missing or not results:
+                msg = (
+                    "rerun_published requires every published split file to be "
+                    f"readable next to {output_file}; unreadable or link-less: "
+                    f"{', '.join(missing)}. Revalidating a partial set would "
+                    "overwrite the healthy subscription with part of it."
+                )
+                raise FileNotFoundError(msg)
+            skipped = sorted(set(missing) - set(unreadable))
+            logger.warning(
+                "rerun_published proceeding without link-less published "
+                "splits: %s. Combined/mix outputs are rebuilt from the "
+                "remaining lists; the skipped slices stay as published.",
+                ", ".join(skipped),
             )
-            raise FileNotFoundError(msg)
+            self._partial_rerun_skipped = skipped
         return results
 
     async def _fetch_sources(self) -> list[Any]:
@@ -1084,9 +1117,16 @@ class PipelineRunner:
         A full Xray sweep that leaves every candidate dead is almost always a
         probe-infrastructure failure (dead SOCKS proxies), not input that is
         100% dead — surface it in run-summary.json and Telegram instead of
-        reporting a healthy "ok" run with an empty subscription.
+        reporting a healthy "ok" run with an empty subscription. Fast-track
+        runs also report configured splits skipped as link-less, so a partial
+        revalidation never looks like a full one.
         """
         reasons: list[str] = []
+        for skipped in self._partial_rerun_skipped:
+            reasons.append(
+                f"{skipped}: published split has no links, skipped from "
+                "fast-track revalidation",
+            )
         lists = (self._liveness_stats or {}).get("lists") or {}
         if isinstance(lists, dict):
             for list_name, stats in lists.items():

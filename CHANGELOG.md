@@ -14,6 +14,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Actions runners always export `GITHUB_REPOSITORY`, which used to satisfy
   target resolution in CI and push the test into the network-guarded
   publisher instead of the not-configured branch.
+- Fast-track no longer crashes on a link-less published split: a present but
+  config-less file (the steady state of a list that yields nothing alive,
+  e.g. the watermark-only whitelist) is skipped with a warning while the
+  remaining lists are revalidated; the skip lands in the run summary as
+  degraded. A missing/unreadable split still refuses, and an empty input
+  set still refuses — there is nothing to revalidate then.
 
 ## [0.2.1] — 2026-09-13
 
