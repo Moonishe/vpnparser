@@ -555,3 +555,31 @@ def test_vless_xhttp_network_is_kept() -> None:
     assert proxy is not None
     assert proxy["network"] == "xhttp"
     assert "xhttp-opts" in proxy
+
+
+def test_converter_error_skips_config_not_batch(monkeypatch, caplog) -> None:
+    """A raising converter skips its config instead of killing the batch.
+
+    ``config_to_clash_proxy`` is total by contract (``None`` means
+    inexpressible), but link fields arrive from untrusted subscriptions, so
+    the ``ValueError``/``TypeError``/``AttributeError`` net around each
+    conversion keeps one poisoned entry from dropping the whole YAML twin.
+    """
+    import logging
+
+    import src.aggregator.clash as clash_module
+
+    real_converter = clash_module.config_to_clash_proxy
+
+    def _boom(cfg, used):
+        if cfg.address == "boom.example":
+            raise ValueError("poisoned link fields")
+        return real_converter(cfg, used)
+
+    monkeypatch.setattr(clash_module, "config_to_clash_proxy", _boom)
+    caplog.set_level(logging.WARNING, logger="src.aggregator.clash")
+    bad = _vless(address="boom.example", remark="bad")
+    good = _vless(address="ok.example", remark="ok")
+    proxies = clash_module.configs_to_clash([bad, good])
+    assert [p["server"] for p in proxies] == ["ok.example"]
+    assert "Skipping Clash-inexpressible config" in caplog.text

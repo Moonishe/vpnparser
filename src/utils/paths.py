@@ -44,7 +44,7 @@ def history_file_lock(target: Path) -> Iterator[None]:
         except OSError:
             yield
             return
-        if sys.platform == "win32":
+        if sys.platform == "win32":  # pragma: no cover — Windows-only (msvcrt)
             import msvcrt
 
             deadline = time.monotonic() + 10.0

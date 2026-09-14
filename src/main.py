@@ -52,7 +52,7 @@ _CONTINUOUS_BACKOFF_MAX = 300.0
 if TYPE_CHECKING:
     # StreamHandler is generic to type checkers only; subscripting it at
     # runtime is not supported on every interpreter we build against.
-    _StreamHandlerBase = logging.StreamHandler[TextIO]
+    _StreamHandlerBase = logging.StreamHandler[TextIO]  # pragma: no cover
 else:
     _StreamHandlerBase = logging.StreamHandler
 

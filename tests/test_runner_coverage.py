@@ -554,10 +554,19 @@ def test_publish_no_token(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> N
 
 
 def test_publish_no_owner_repo(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_publish skips when owner/repo not configured (lines 843-847)."""
     caplog.set_level(logging.WARNING)
+    # Hermetic target resolution: Actions runners always export
+    # GITHUB_REPOSITORY, which _publish_owner_repo accepts as a fallback —
+    # without this the "not configured" branch never fires in CI and the
+    # test walks into the network-guarded publisher instead.
+    monkeypatch.delenv("GITHUB_OWNER", raising=False)
+    monkeypatch.delenv("GITHUB_REPO", raising=False)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
     r = _make_runner(tmp_path, github_token="gh_test")
     # The output file must EXIST for _publish to reach the owner/repo check:
     # a missing file is rejected earlier ("does not exist") and the

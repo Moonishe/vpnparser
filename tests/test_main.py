@@ -12,7 +12,11 @@ import codecs
 import io
 import logging
 
-from src.main import _EncodingSafeStreamHandler, _setup_logging
+from src.main import (
+    _EncodingSafeStreamHandler,
+    _setup_logging,
+    _status_summary_file,
+)
 
 
 def test_setup_logging_verbose(monkeypatch) -> None:
@@ -131,3 +135,36 @@ def test_handler_writes_to_stream_without_encoding_attribute() -> None:
     handler.setFormatter(logging.Formatter("%(message)s"))
     handler.emit(logging.LogRecord("t", logging.INFO, "p", 1, "Юникод", None, None))
     assert stream.getvalue() == "Юникод\n"
+
+
+def test_handler_routes_write_failure_to_handle_error(monkeypatch) -> None:
+    """A non-encoding stream failure surfaces via handleError (lines 78-79).
+
+    Only ``UnicodeEncodeError`` gets the downgrade retry; any other write
+    failure (a closed or broken console stream) must go through the standard
+    handler-error path instead of killing the logging call.
+    """
+
+    class _BrokenStream:
+        encoding = "utf-8"
+
+        def write(self, text: str) -> int:
+            raise OSError("console gone")
+
+        def flush(self) -> None:
+            return None
+
+    handler = _EncodingSafeStreamHandler(_BrokenStream())  # type: ignore[arg-type]
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    errors: list[logging.LogRecord] = []
+    monkeypatch.setattr(handler, "handleError", errors.append)
+    handler.emit(logging.LogRecord("t", logging.INFO, "p", 1, "msg", None, None))
+    assert len(errors) == 1
+
+
+def test_status_summary_file_prefers_written_path() -> None:
+    """The notifier reads the path this run actually wrote (line 201)."""
+    from types import SimpleNamespace
+
+    runner = SimpleNamespace(_last_summary_path="output/run-summary.json")
+    assert _status_summary_file(runner) == "output/run-summary.json"

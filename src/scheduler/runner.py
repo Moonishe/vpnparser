@@ -54,11 +54,16 @@ def _canonical_output_path(p: str) -> str:
     Relative paths resolve against the project root (not CWD) so "output/x.txt"
     and its absolute counterpart produce the same key even when the process
     runs outside the repo (console `vpnparser` + VPNPARSER_PROJECT_ROOT).
+    Backslashes are folded to "/" first: on POSIX "\\" is a valid filename
+    character, so without this "output\\x.txt" (pathlib spelling on Windows)
+    and "output/x.txt" (settings spelling) canonicalise to different keys
+    and the same file is published twice. `pathlib` accepts "/" on every
+    platform, so the fold is a no-op for genuinely Windows paths.
     Falls back to CWD resolution when the project root cannot be determined.
     Module-level (not async): ASYNC240 only fires inside async functions,
-    and this is a single fs stat on run-local paths with no concurrency.
+    and this is pure I/O on run-local paths with no concurrent hazard.
     """
-    raw = str(p)
+    raw = str(p).replace("\\", "/")
     try:
         from src.utils.paths import _find_project_root
 

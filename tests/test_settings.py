@@ -238,3 +238,24 @@ def test_load_settings_strict_valid_file(tmp_path):
     ok.write_text("validator:\n  tcp_enabled: true\n", encoding="utf-8")
     data = load_settings_strict(str(ok))
     assert data == {"validator": {"tcp_enabled": True}}
+
+
+def test_load_settings_undecodable_file(tmp_path, caplog):
+    """load_settings returns {} when the file is not valid UTF-8 (lines 38-40)."""
+    caplog.set_level("WARNING")
+    bad = tmp_path / "bad.yaml"
+    bad.write_bytes(b"key: \xff\xfe not utf-8 \x00\n")
+    assert load_settings(str(bad)) == {}
+    assert "Cannot read settings" in caplog.text
+
+
+def test_settings_as_int_bool_is_not_one():
+    """as_int treats a bool as a typo, not as 0/1 (line 112)."""
+    assert Settings.as_int(True, 5) == 5
+    assert Settings.as_int(False, 5) == 5
+
+
+def test_settings_as_float_bool_is_not_numeric():
+    """as_float treats a bool as a typo, not as 0.0/1.0 (line 136)."""
+    assert Settings.as_float(True, 2.5) == 2.5
+    assert Settings.as_float(False, 2.5) == 2.5

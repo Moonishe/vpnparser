@@ -4287,6 +4287,129 @@ class TestXrayProxyLatencyBaselines:
 
 
 # ============================================================================
+# _run_xray_stage — probe-proxy latency baselines via direct stage entry
+# ============================================================================
+
+
+class TestXrayBaselinesDirectStageEntry:
+    """The baselines block must not depend on the orchestrator's probe path.
+
+    The ``validate_configs`` entry reaches ``_run_xray_stage`` through pool
+    pre-selection, recheck and refill whose outcome varies by platform (live
+    socket behaviour), which left the baselines fallback branches uncovered
+    on Linux. Calling the stage directly with explicit proxy URLs pins the
+    inputs, so every branch is covered deterministically on all platforms.
+    """
+
+    @staticmethod
+    def _patch_stage(monkeypatch) -> dict:
+        captured: dict = {}
+
+        async def mock_xray(configs, **kwargs):
+            captured.update(kwargs)
+            for cfg in configs:
+                cfg.xray_was_checked = True
+                cfg.is_alive = True
+            return list(configs)
+
+        monkeypatch.setattr(
+            "src.validators.xray_probe.find_xray_executable",
+            lambda p: "/usr/bin/xray",
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.is_xray_supported",
+            lambda cfg: True,
+        )
+        monkeypatch.setattr(
+            "src.validators.xray_probe.validate_configs_xray",
+            mock_xray,
+        )
+        return captured
+
+    @staticmethod
+    def _stage_settings(**extra) -> dict:
+        settings = _xray_settings(
+            xray_probe_via_proxies=True,
+            xray_proxy_probe_count=2,
+            **extra,
+        )
+        return settings["validator"]
+
+    async def _run_stage(self, lv, vcfg, monkeypatch):
+        captured = self._patch_stage(monkeypatch)
+        list_stats: dict = {}
+        result = await lv._run_xray_stage(
+            [_make_config("h.example", 443)],
+            label="blacklist",
+            list_key="blacklist",
+            vcfg=vcfg,
+            proxy_urls=["socks5://p1:1080", "socks5://p2:1080"],
+            check_hostnames=False,
+            resolve_timeout=5.0,
+            list_stats=list_stats,
+        )
+        return result, captured
+
+    async def test_direct_entry_builds_empty_history_when_none(
+        self, monkeypatch
+    ) -> None:
+        """No loaded history: an empty in-memory history is built, not None."""
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_proxy_probe_count=2,
+            ),
+            proxy_url_getter=_two_proxy_list,
+        )
+        lv._proxy_health_history = None
+        _, captured = await self._run_stage(lv, self._stage_settings(), monkeypatch)
+        assert captured["proxy_latency_ms"] == {}
+
+    async def test_direct_entry_reads_in_memory_history(self, monkeypatch) -> None:
+        """A loaded history supplies per-proxy latency baselines."""
+
+        class FakePoolHistory:
+            def average_latency(self, proxy_url: str):
+                return 250.0
+
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_proxy_probe_count=2,
+            ),
+            proxy_url_getter=_two_proxy_list,
+        )
+        lv._proxy_health_history = FakePoolHistory()
+        _, captured = await self._run_stage(lv, self._stage_settings(), monkeypatch)
+        assert captured["proxy_latency_ms"] == {
+            "socks5://p1:1080": 250.0,
+            "socks5://p2:1080": 250.0,
+        }
+
+    async def test_direct_entry_history_failure_is_logged(
+        self, monkeypatch, caplog
+    ) -> None:
+        """A failing history degrades to no baselines, loudly."""
+
+        class _ExplodingHistory:
+            def average_latency(self, *args, **kwargs):
+                raise OSError("disk gone")
+
+        lv = _make_liveness(
+            _xray_settings(
+                xray_probe_via_proxies=True,
+                xray_proxy_probe_count=2,
+            ),
+            proxy_url_getter=_two_proxy_list,
+        )
+        lv._proxy_health_history = _ExplodingHistory()
+        caplog.set_level(logging.WARNING)
+        _, captured = await self._run_stage(lv, self._stage_settings(), monkeypatch)
+        assert captured["proxy_latency_ms"] == {}
+        assert "Cannot load proxy latency baselines" in caplog.text
+
+
+# ============================================================================
 # Alive budget full — fresh retry and stale pass skipped (lines 1577-1579,
 # 1625-1626)
 # ============================================================================

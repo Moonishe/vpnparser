@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Publish dedup folds backslashes before comparing paths: on Linux
+  `output\x.txt` (pathlib spelling) and `output/x.txt` (settings spelling)
+  no longer publish the same file twice per run.
+- `test_publish_no_owner_repo` clears ambient `GITHUB_*` variables first:
+  Actions runners always export `GITHUB_REPOSITORY`, which used to satisfy
+  target resolution in CI and push the test into the network-guarded
+  publisher instead of the not-configured branch.
+
 ## [0.2.1] — 2026-09-13
 
 Deployability round: the local line had never been pushed and the publish
