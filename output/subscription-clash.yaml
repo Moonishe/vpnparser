@@ -1,4 +1,10 @@
 proxies:
+- name: '[OpenRay] 🇨🇦 CA-29083'
+  server: 51.222.200.165
+  port: 5000
+  type: ss
+  cipher: aes-256-gcm
+  password: Y6R9pAtvxxzmGC
 - name: 🇩🇪 AetrisVPN
   server: 2.59.134.226
   port: 443
@@ -12,79 +18,6 @@ proxies:
   reality-opts:
     public-key: 1sSmdw90uTiGuitDvp_q8zcXTcHXKQS3IVjA7T1UNiY
 - name: 🇫🇮 AetrisVPN
-  server: 91.210.169.181
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: chrome
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 🇫🇷 France | [*CIDR]
-  server: 212.92.101.117
-  port: 9894
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: chrome
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
-    short-id: aa
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: 87.58.220.77:8443
-  server: 87.58.220.77
-  port: 8443
-  type: trojan
-  password: 1469b6d28ab078dd692131108163effc
-  client-fingerprint: firefox
-  tls: true
-  sni: m.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
-    short-id: dc05de
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 188.130.209.151
-  port: 444
-  type: vless
-  uuid: 83fdcfab-711d-49c2-b998-4b1561f7eab2
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: vextor.win
-  skip-cert-verify: true
-  reality-opts:
-    public-key: P7F65GjTQGZju-N8CVHtlKNaWebVe_76Xt7Lm00RuH0
-- name: 🌐 Anycast-IP | 🇺🇸 | [BL]
-  server: 165.140.217.53
-  port: 443
-  type: vmess
-  uuid: b65a2d69-5634-42a2-e4be-54e8a6176900
-  alterId: 0
-  cipher: auto
-- name: 194.87.55.90:443
-  server: 194.87.55.90
-  port: 443
-  type: vless
-  uuid: 471f94e3-a75b-4716-a48e-9ef9387132f4
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: max.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SzOhlaAgX-5m7RB6MTfx3MwjfYDi5G2JblGcpnLgam0
-    short-id: 8ef32bea5018959f
-- name: '🇫🇮 AetrisVPN #2'
   server: wstg.datasynctrue.online
   port: 443
   type: vless
@@ -97,26 +30,57 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: '🇷🇺 Russia | [*CIDR] #2'
-  server: 188.130.209.151
-  port: 444
+- name: 🇬🇧GB_22|500KB/s|A004-260618 01
+  server: 149.102.149.207
+  port: 80
+  type: ss
+  cipher: aes-256-gcm
+  password: LXchLsIwtCeUAUgu
+- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
+  server: 82.38.31.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-15189'
+  server: 108.181.118.10
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: G5p6ww4o67HB
+- name: DE
+  server: 194.87.55.90
+  port: 443
   type: vless
-  uuid: 83fdcfab-711d-49c2-b998-4b1561f7eab2
+  uuid: 471f94e3-a75b-4716-a48e-9ef9387132f4
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: vextor.win
+  servername: max.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: P7F65GjTQGZju-N8CVHtlKNaWebVe_76Xt7Lm00RuH0
-- name: '🌐 Anycast-IP | 🇺🇸 | [BL] #2'
-  server: 165.140.217.139
-  port: 443
+    public-key: SzOhlaAgX-5m7RB6MTfx3MwjfYDi5G2JblGcpnLgam0
+    short-id: 8ef32bea5018959f
+- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
+  server: 82.110.60.9
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: 🇳🇱NL_33|403KB/s|A004-260618 01
+  server: 82.38.31.206
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
+  port: 22324
   type: vmess
-  uuid: b65a2d69-5634-42a2-e4be-54e8a6176900
+  uuid: 04621bae-ab36-11ec-b909-0242ac120002
   alterId: 0
   cipher: auto
-- name: 194.87.55.90:8443
+- name: 'DE #2'
   server: 194.87.55.90
   port: 8443
   type: trojan
@@ -128,44 +92,126 @@ proxies:
   reality-opts:
     public-key: NR271PO2o1hKS1HzygSQ9DQJ2kehk8qaEv2ZpzKw234
     short-id: e7d997
-- name: '🇷🇺 Russia | [*CIDR] #3'
-  server: 188.130.209.151
-  port: 444
-  type: vless
-  uuid: 83fdcfab-711d-49c2-b998-4b1561f7eab2
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
+- name: '[OpenRay] 🇳🇱 NL-8636'
+  server: 82.38.31.193
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-16534'
+  server: 82.198.246.37
+  port: 180
+  type: vmess
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
+  cipher: auto
+- name: 🇩🇪DE_98|1.5MB/s|S001-260618 01
+  server: 185.164.175.81
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: '[OpenRay] 🇳🇱 NL-8659'
+  server: 82.38.31.219
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-24855'
+  server: 84.17.41.2
+  port: 18000
+  type: vmess
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
+- name: 🇳🇱NL_115|866KB/s|B007-260618 01
+  server: 82.38.31.42
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇺🇸 US-24205'
+  server: 23.150.248.20
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: qB2Cv9VIlujj
+- name: '[OpenRay] 🇳🇱 NL-633'
+  server: 82.38.31.202
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-22260'
+  server: 129.146.143.80
+  port: 48111
+  type: vmess
+  uuid: d4603cc2-e0ee-4651-83f5-1db5b7168177
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇳🇱 NL-10352'
+  server: 193.29.139.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: QCXDxuDlTTMD7jtgHUjIoj
+- name: 🇳🇱NL_49|4.0MB/s 01
+  server: 82.38.31.48
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-626'
+  server: 82.38.31.210
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-8635'
+  server: 82.38.31.195
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: NL
+  server: 87.58.220.77
+  port: 8443
+  type: trojan
+  password: 1469b6d28ab078dd692131108163effc
+  client-fingerprint: firefox
   tls: true
-  servername: vextor.win
+  sni: m.vk.com
   skip-cert-verify: true
   reality-opts:
-    public-key: P7F65GjTQGZju-N8CVHtlKNaWebVe_76Xt7Lm00RuH0
-- name: 🇩🇪78Mb
-  server: 91.98.96.59
-  port: 40017
-  type: vless
-  uuid: d005cde6-263f-48ac-8b13-74ebf7f3f8ef
-- name: '🇷🇺 Russia | [*CIDR] #4'
-  server: 188.130.209.151
-  port: 444
-  type: vless
-  uuid: 83fdcfab-711d-49c2-b998-4b1561f7eab2
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: vextor.win
-  skip-cert-verify: true
-  reality-opts:
-    public-key: P7F65GjTQGZju-N8CVHtlKNaWebVe_76Xt7Lm00RuH0
-- name: '🇷🇺 Russia | [*CIDR] #5'
-  server: 188.130.209.151
-  port: 444
-  type: vless
-  uuid: 83fdcfab-711d-49c2-b998-4b1561f7eab2
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: vextor.win
-  skip-cert-verify: true
-  reality-opts:
-    public-key: P7F65GjTQGZju-N8CVHtlKNaWebVe_76Xt7Lm00RuH0
+    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
+    short-id: dc05de
+- name: '[OpenRay] 🇳🇱 NL-8634'
+  server: 82.38.31.200
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-7170'
+  server: 82.38.31.149
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-10865'
+  server: 82.38.31.213
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-8260'
+  server: 82.38.31.9
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-623'
+  server: 82.38.31.179
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
