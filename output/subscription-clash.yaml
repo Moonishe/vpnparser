@@ -1,63 +1,23 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 2.59.134.226
-  port: 443
-  type: vless
-  uuid: 88281d02-b387-4fe3-918e-26ed331e6d08
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: jolly-ember.cdn.cachefleet.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1sSmdw90uTiGuitDvp_q8zcXTcHXKQS3IVjA7T1UNiY
-- name: 🇫🇮 AetrisVPN
-  server: 91.210.169.181
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: chrome
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 87.58.220.77:443
-  server: 87.58.220.77
-  port: 443
-  type: vless
-  uuid: ec355aa5-62fc-41d3-a3fd-ffc23cd4cffb
-  flow: xtls-rprx-vision
+- name: '[OpenRay] 🇨🇦 CA-29083'
+  server: 51.222.200.165
+  port: 5000
+  type: ss
+  cipher: aes-256-gcm
+  password: Y6R9pAtvxxzmGC
+- name: DE
+  server: 194.87.55.90
+  port: 8443
+  type: trojan
+  password: c507ea9c751e714cd33809be63042329
   client-fingerprint: firefox
   tls: true
-  servername: rutube.ru
+  sni: rutube.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: aQD1AVNprkpHlqyx4YBHiMEi5-hb-Gmi_pdiY-_Lvzg
-    short-id: 9f41ab7b3c
-- name: 🇱🇹 Lithuania [*CIDR]
-  server: lt26.cdnfern.org
-  port: 443
-  type: vless
-  uuid: e8002f83-f46a-40d8-9b36-ff982f029488
-  client-fingerprint: qq
-  tls: true
-  servername: lt26.cdnfern.org
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/
-- name: 🇩🇪133Mb
-  server: 91.98.102.240
-  port: 42718
-  type: vless
-  uuid: b775630e-1386-44a6-9d89-61d029d4b5ab
-- name: '🇫🇮 AetrisVPN #2'
+    public-key: NR271PO2o1hKS1HzygSQ9DQJ2kehk8qaEv2ZpzKw234
+    short-id: e7d997
+- name: 🇫🇮 AetrisVPN
   server: wstg.datasynctrue.online
   port: 443
   type: vless
@@ -70,19 +30,68 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 87.58.220.77:8443
-  server: 87.58.220.77
-  port: 8443
-  type: trojan
-  password: db9eb9b8f6f350328e2c530e2b8f4fa1
+- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
+  server: 82.110.60.9
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 46.254.18.27
+  port: 443
+  type: vless
+  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
+  flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  sni: vkvideo.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
-    short-id: dc05de
-- name: '🇱🇹 Lithuania [*CIDR] #2'
+    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
+- name: 🇱🇹 Lithuania [*CIDR]-RU
+  server: lt26.cdnfern.org
+  port: 443
+  type: vless
+  uuid: e8002f83-f46a-40d8-9b36-ff982f029488
+  client-fingerprint: qq
+  tls: true
+  servername: lt26.cdnfern.org
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/
+- name: '[OpenRay] 🇺🇸 US-24205'
+  server: 23.150.248.20
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: qB2Cv9VIlujj
+- name: 🇩🇪 Germany | [*CIDR]
+  server: 46.254.18.27
+  port: 443
+  type: vless
+  uuid: d0f0a880-0df1-0002-bdf1-5669fb9483ce
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
+- name: NL
+  server: 87.58.220.77
+  port: 443
+  type: vless
+  uuid: ec355aa5-62fc-41d3-a3fd-ffc23cd4cffb
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: rutube.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aQD1AVNprkpHlqyx4YBHiMEi5-hb-Gmi_pdiY-_Lvzg
+    short-id: 9f41ab7b3c
+- name: '🇱🇹 Lithuania [*CIDR]-RU #2'
   server: lt26.cdnfern.org
   port: 443
   type: vless
@@ -96,7 +105,14 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v1/
-- name: 194.87.55.90:443
+- name: '[OpenRay] 🇺🇸 US-16534'
+  server: 82.198.246.37
+  port: 180
+  type: vmess
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
+  cipher: auto
+- name: 'DE #2'
   server: 194.87.55.90
   port: 443
   type: vless
@@ -109,19 +125,52 @@ proxies:
   reality-opts:
     public-key: SzOhlaAgX-5m7RB6MTfx3MwjfYDi5G2JblGcpnLgam0
     short-id: 8ef32bea5018959f
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 46.182.24.15
+- name: '[OpenRay] 🇳🇱 NL-10865'
+  server: 82.38.31.213
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU
+  server: 93.115.203.93
   port: 443
   type: vless
-  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
+  uuid: 57ae2ef6-2aef-0007-b0c1-b8c9d4dfc233
   flow: xtls-rprx-vision
   client-fingerprint: edge
   tls: true
-  servername: 5post-gate.x5.ru
+  servername: cdn-hip-msk-macaron.attention-game.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: 🇱🇹 Lithuania | [*CIDR]
+    public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
+    short-id: f4fcfded61e398f5
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
+  port: 22324
+  type: vmess
+  uuid: 04621bae-ab36-11ec-b909-0242ac120002
+  alterId: 0
+  cipher: auto
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: 176.98.178.164
+  port: 8443
+  type: vless
+  uuid: e3ec2866-96cd-4cc3-86c9-e7336ea2fbc2
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: de-two.quiet-rogue.site
+  skip-cert-verify: true
+  reality-opts:
+    public-key: QMJRGTqZRbpeLpIAdvn6dhftuzrpwbtwmVG2s5IuuU0
+    short-id: 00a02855ba568c29
+- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
+  server: 82.38.31.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇱🇹 Lithuania | [*CIDR]-RU
   server: lt26.cdnfern.org
   port: 443
   type: vless
@@ -135,118 +184,12 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v1/
-- name: 194.87.55.90:8443
-  server: 194.87.55.90
-  port: 8443
-  type: trojan
-  password: c507ea9c751e714cd33809be63042329
-  client-fingerprint: firefox
-  tls: true
-  sni: rutube.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: NR271PO2o1hKS1HzygSQ9DQJ2kehk8qaEv2ZpzKw234
-    short-id: e7d997
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: 46.182.24.15
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: 93.115.203.93
-  port: 443
-  type: vless
-  uuid: 57ae2ef6-2aef-0008-b0c1-b8c9d4dfc233
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: cdn-hip-msk-macaron.attention-game.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
-    short-id: 0ced7679be4d992f
-- name: 🇩🇪 Germany | [*CIDR]
-  server: 46.182.24.15
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0002-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '🇳🇱 The Netherlands | [*CIDR] #3'
-  server: 46.182.24.15
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
-  server: 93.115.203.93
-  port: 443
-  type: vless
-  uuid: 57ae2ef6-2aef-0008-b0c1-b8c9d4dfc233
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: cdn-hip-msk-macaron.attention-game.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
-    short-id: 0ced7679be4d992f
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: 176.98.178.164
-  port: 8443
-  type: vless
-  uuid: e3ec2866-96cd-4cc3-86c9-e7336ea2fbc2
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: de-two.quiet-rogue.site
-  skip-cert-verify: true
-  reality-opts:
-    public-key: QMJRGTqZRbpeLpIAdvn6dhftuzrpwbtwmVG2s5IuuU0
-    short-id: 00a02855ba568c29
-- name: '🇳🇱 The Netherlands | [*CIDR] #4'
-  server: 46.182.24.15
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #3'
-  server: 93.115.203.93
-  port: 443
-  type: vless
-  uuid: 57ae2ef6-2aef-0008-b0c1-b8c9d4dfc233
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: cdn-hip-msk-macaron.attention-game.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
-    short-id: 0ced7679be4d992f
+- name: '[OpenRay] 🇺🇸 US-15189'
+  server: 108.181.118.10
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: G5p6ww4o67HB
 - name: '🇩🇪 Germany | [*CIDR] #3'
   server: 176.98.178.164
   port: 8443
@@ -260,141 +203,33 @@ proxies:
   reality-opts:
     public-key: QMJRGTqZRbpeLpIAdvn6dhftuzrpwbtwmVG2s5IuuU0
     short-id: 00a02855ba568c29
-- name: '🇳🇱 The Netherlands | [*CIDR] #5'
-  server: 46.254.18.27
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #4'
+- name: '[OpenRay] 🇳🇱 NL-626'
+  server: 82.38.31.210
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #2'
   server: 93.115.203.93
   port: 443
   type: vless
-  uuid: 57ae2ef6-2aef-0007-b0c1-b8c9d4dfc233
+  uuid: 57ae2ef6-2aef-0008-b0c1-b8c9d4dfc233
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: safari
   tls: true
   servername: cdn-hip-msk-macaron.attention-game.ru
   skip-cert-verify: true
   reality-opts:
     public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
-    short-id: f4fcfded61e398f5
+    short-id: 0ced7679be4d992f
+- name: '[OpenRay] 🇺🇸 US-24855'
+  server: 84.17.41.2
+  port: 18000
+  type: vmess
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
 - name: '🇩🇪 Germany | [*CIDR] #4'
-  server: 46.182.24.15
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0002-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '🇳🇱 The Netherlands | [*CIDR] #6'
-  server: 46.182.24.15
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #5'
-  server: 93.115.203.93
-  port: 443
-  type: vless
-  uuid: 57ae2ef6-2aef-0007-b0c1-b8c9d4dfc233
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: cdn-hip-msk-macaron.attention-game.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
-    short-id: f4fcfded61e398f5
-- name: '🇩🇪 Germany | [*CIDR] #5'
-  server: 176.98.178.164
-  port: 8443
-  type: vless
-  uuid: e3ec2866-96cd-4cc3-86c9-e7336ea2fbc2
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: de-two.quiet-rogue.site
-  skip-cert-verify: true
-  reality-opts:
-    public-key: QMJRGTqZRbpeLpIAdvn6dhftuzrpwbtwmVG2s5IuuU0
-    short-id: 00a02855ba568c29
-- name: '🇳🇱 The Netherlands | [*CIDR] #7'
-  server: 46.254.18.27
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #6'
-  server: 93.115.203.93
-  port: 443
-  type: vless
-  uuid: 57ae2ef6-2aef-0007-b0c1-b8c9d4dfc233
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: cdn-hip-msk-macaron.attention-game.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
-    short-id: f4fcfded61e398f5
-- name: '🇩🇪 Germany | [*CIDR] #6'
-  server: 46.182.24.15
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0002-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '🇳🇱 The Netherlands | [*CIDR] #8'
-  server: 46.254.18.27
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #7'
-  server: 93.115.203.93
-  port: 443
-  type: vless
-  uuid: 57ae2ef6-2aef-0007-b0c1-b8c9d4dfc233
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: cdn-hip-msk-macaron.attention-game.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
-    short-id: f4fcfded61e398f5
-- name: '🇩🇪 Germany | [*CIDR] #7'
   server: 176.98.178.164
   port: 8443
   type: vless
@@ -407,51 +242,37 @@ proxies:
   reality-opts:
     public-key: QMJRGTqZRbpeLpIAdvn6dhftuzrpwbtwmVG2s5IuuU0
     short-id: 00a02855ba568c29
-- name: '🇩🇪 Germany | [*CIDR] #8'
-  server: 46.182.24.15
+- name: '[OpenRay] 🇳🇱 NL-8635'
+  server: 82.38.31.195
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #3'
+  server: 93.115.203.93
   port: 443
   type: vless
-  uuid: d0f0a880-0df1-0002-bdf1-5669fb9483ce
+  uuid: 57ae2ef6-2aef-0008-b0c1-b8c9d4dfc233
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
-  servername: 5post-gate.x5.ru
+  servername: cdn-hip-msk-macaron.attention-game.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '🇩🇪 Germany | [*CIDR] #9'
-  server: 46.254.18.27
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0002-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '🇩🇪 Germany | [*CIDR] #10'
-  server: 46.254.18.27
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0002-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
-- name: '🇩🇪 Germany | [*CIDR] #11'
-  server: 46.254.18.27
-  port: 443
-  type: vless
-  uuid: d0f0a880-0df1-0002-bdf1-5669fb9483ce
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
+    public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
+    short-id: 0ced7679be4d992f
+- name: 🇩🇪DE_98|1.5MB/s|S001-260618 01
+  server: 185.164.175.81
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: '[OpenRay] 🇳🇱 NL-8634'
+  server: 82.38.31.200
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
 - name: 🇩🇪 Germany [*CIDR]
   server: 93.115.203.93
   port: 443
@@ -465,8 +286,73 @@ proxies:
   reality-opts:
     public-key: SYJXYtJTiFXD3NzHEk6qyqR7laes9QxnhvDm_VbykDE
     short-id: f4fcfded61e398f5
-- name: 🇩🇪74Mb
-  server: 91.98.102.240
-  port: 42718
+- name: 🇳🇱NL_33|403KB/s|A004-260618 01
+  server: 82.38.31.206
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-8260'
+  server: 82.38.31.9
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-7170'
+  server: 82.38.31.149
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '[OpenRay] 🇳🇱 NL-8659'
+  server: 82.38.31.219
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇳🇱NL_115|866KB/s|B007-260618 01
+  server: 82.38.31.42
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 'NL #2'
+  server: 87.58.220.77
+  port: 8443
+  type: trojan
+  password: db9eb9b8f6f350328e2c530e2b8f4fa1
+  client-fingerprint: firefox
+  tls: true
+  sni: vkvideo.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
+    short-id: dc05de
+- name: '[OpenRay] 🇳🇱 NL-623'
+  server: 82.38.31.179
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: 46.254.18.27
+  port: 443
   type: vless
-  uuid: b775630e-1386-44a6-9d89-61d029d4b5ab
+  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
+- name: '🇳🇱 The Netherlands | [*CIDR] #3'
+  server: 46.254.18.27
+  port: 443
+  type: vless
+  uuid: d0f0a880-0df1-0003-bdf1-5669fb9483ce
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Sx6bJWPbDlwuMfKjcz-sUyJxZkuks4uLqqLa-1uyjH4
