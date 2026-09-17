@@ -1,41 +1,4 @@
 proxies:
-- name: 🇨🇳 AetrisVPN
-  server: 185.158.133.40
-  port: 8880
-  type: vless
-  uuid: 6202b230-417c-4d8e-b624-0f71afa9c75d
-  network: ws
-  ws-opts:
-    path: /?ed=2560&https://t.me/youtube@ZYFXS🇨🇳
-    headers:
-      Host: vms.lifetime58.workers.dev
-- name: 🇯🇵63Mb
-  server: 152.69.195.67
-  port: 47878
-  type: vless
-  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
-  server: bz18.wba-pn.ru
-  port: 2053
-  type: vless
-  uuid: 3a2265d2-9f4f-437b-abf1-a44047776cf0
-  client-fingerprint: chrome
-  tls: true
-  servername: bz18.wba-pn.ru
-  skip-cert-verify: true
-  network: ws
-  ws-opts: {}
-- name: 🇷🇺 AetrisVPN
-  server: 162.159.156.214
-  port: 8880
-  type: vless
-  uuid: 86dc5fb4-f279-45b7-a2c6-0d1e84b85c18
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /pyip=ProxyIP.US.CMLiussss.net
-    headers:
-      Host: lingering-dawn-5d4a.163-3f1.workers.dev
 - name: 🇩🇪 AetrisVPN
   server: 2.59.134.226
   port: 443
@@ -48,23 +11,13 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: 1sSmdw90uTiGuitDvp_q8zcXTcHXKQS3IVjA7T1UNiY
-- name: '🇷🇺 AetrisVPN #2'
-  server: 188.114.98.112
-  port: 80
-  type: vless
-  uuid: 0991a0c4-0ee5-4213-af89-7ad589f853f3
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /ELiV2-RAY----ELiV2-RAY----ELiV2-RAY----ELiV2-RAY----ELiV2-RAY----ELiV2-RAY?ed=2560
-    headers:
-      Host: elenaaaaaaaaaa.cloudns.pro.
-- name: 🇩🇪92Mb
-  server: 192.248.182.183
-  port: 39244
-  type: vless
-  uuid: 5fc7563b-552d-417f-9409-08ef92284599
-- name: '🇷🇺 AetrisVPN #3'
+- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
+  server: 82.38.31.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇷🇺 AetrisVPN
   server: 104.16.107.139
   port: 8880
   type: vless
@@ -75,12 +28,43 @@ proxies:
     path: /pyip=ProxyIP.US.CMLiussss.net
     headers:
       Host: lingering-dawn-5d4a.163-3f1.workers.dev
-- name: 🇩🇪133Mb
-  server: 95.179.169.44
-  port: 53224
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
+  port: 22324
+  type: vmess
+  uuid: 04621bae-ab36-11ec-b909-0242ac120002
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇳🇱 NL-10865'
+  server: 82.38.31.213
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '🇷🇺 AetrisVPN #2'
+  server: 162.159.156.214
+  port: 8880
   type: vless
-  uuid: 5f00ca4e-3f26-473e-ad1c-414112abb0a3
-- name: '🇷🇺 AetrisVPN #4'
+  uuid: 86dc5fb4-f279-45b7-a2c6-0d1e84b85c18
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /pyip=ProxyIP.US.CMLiussss.net
+    headers:
+      Host: lingering-dawn-5d4a.163-3f1.workers.dev
+- name: '[OpenRay] 🇺🇸 US-24205'
+  server: 23.150.248.20
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: qB2Cv9VIlujj
+- name: '[OpenRay] 🇳🇱 NL-8659'
+  server: 82.38.31.219
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '🇷🇺 AetrisVPN #3'
   server: 104.16.106.213
   port: 8880
   type: vless
@@ -91,21 +75,19 @@ proxies:
     path: /pyip=ProxyIP.KR.CMLiussss.net
     headers:
       Host: misty-flower-4d15.372-912.workers.dev
-- name: 🇩🇪192Mb
-  server: 95.179.169.44
-  port: 53224
-  type: vless
-  uuid: 5f00ca4e-3f26-473e-ad1c-414112abb0a3
-- name: '🇷🇺 AetrisVPN #5'
-  server: 185.158.133.30
-  port: 8880
-  type: vless
-  uuid: 6202b230-417c-4d8e-b624-0f71afa9c75d
-  network: ws
-  ws-opts:
-    headers:
-      Host: vms.lifetime58.workers.dev
-- name: '🇷🇺 AetrisVPN #6'
+- name: '[OpenRay] 🇺🇸 US-15189'
+  server: 108.181.118.10
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: G5p6ww4o67HB
+- name: '[OpenRay] 🇳🇱 NL-8634'
+  server: 82.38.31.200
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '🇷🇺 AetrisVPN #4'
   server: 45.192.224.30
   port: 8880
   type: vless
@@ -114,7 +96,20 @@ proxies:
   ws-opts:
     headers:
       Host: vms.lifetime17.workers.dev
-- name: '🇷🇺 AetrisVPN #7'
+- name: '[OpenRay] 🇺🇸 US-16534'
+  server: 82.198.246.37
+  port: 180
+  type: vmess
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇳🇱 NL-7170'
+  server: 82.38.31.149
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '🇷🇺 AetrisVPN #5'
   server: 172.66.0.246
   port: 443
   type: vless
@@ -128,7 +123,18 @@ proxies:
     path: /
     headers:
       Host: round-art-52ee.eadfgv.workers.dev
-- name: '🇷🇺 AetrisVPN #8'
+- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
+  server: bz18.wba-pn.ru
+  port: 2053
+  type: vless
+  uuid: 3a2265d2-9f4f-437b-abf1-a44047776cf0
+  client-fingerprint: chrome
+  tls: true
+  servername: bz18.wba-pn.ru
+  skip-cert-verify: true
+  network: ws
+  ws-opts: {}
+- name: '🇷🇺 AetrisVPN #6'
   server: 104.17.222.14
   port: 2053
   type: vless
@@ -149,19 +155,6 @@ proxies:
   uuid: 24f8cbc6-6bf6-4109-8909-930d484ee9e0
   flow: xtls-rprx-vision
   client-fingerprint: firefox
-  tls: true
-  servername: ru1-edge.safe-connect.info
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #2'
-  server: ru1-edge.safe-connect.info
-  port: 443
-  type: vless
-  uuid: 24f8cbc6-6bf6-4109-8909-930d484ee9e0
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
   tls: true
   servername: ru1-edge.safe-connect.info
   alpn:
