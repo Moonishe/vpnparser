@@ -11,66 +11,126 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: 1sSmdw90uTiGuitDvp_q8zcXTcHXKQS3IVjA7T1UNiY
-- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
-  server: 82.110.60.9
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '[OpenRay] 🇳🇱 NL-10865'
-  server: 82.38.31.213
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
-- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
-  server: 82.38.31.212
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
+- name: 🌐 Anycast-IP | 🇫🇮 🇷🇺 | [*CIDR]
+  server: n2.fiprotected.com
+  port: 443
+  type: vless
+  uuid: 3d53970b-419b-4a27-87b5-e9c99bb02eca
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: cdn2.fiprotected.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: XBx1PANE_LKfrCRVCsu1LDwd2kywg7iDHW9tYEf2SQ0
+- name: 87.58.220.77:8443
+  server: 87.58.220.77
+  port: 8443
+  type: trojan
+  password: f9d835cae23f9c58dfac02703a2f2598
+  client-fingerprint: firefox
+  tls: true
+  sni: max.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
+    short-id: dc05de
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+  server: 31.76.34.100
+  port: 443
+  type: vless
+  uuid: 3d53970b-419b-4a27-87b5-e9c99bb02eca
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: cdn3.ndprotected.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: nY7HQ2YzzXRZd2PJgWS7mPKG-5iXuIBIEl_V-OXmg0c
+- name: 🇩🇪78Mb
+  server: 95.179.169.44
+  port: 53224
+  type: vless
+  uuid: 5f00ca4e-3f26-473e-ad1c-414112abb0a3
+- name: '🌐 Anycast-IP | 🇫🇮 🇷🇺 | [*CIDR] #2'
+  server: n2.fiprotected.com
+  port: 443
+  type: vless
+  uuid: 3d53970b-419b-4a27-87b5-e9c99bb02eca
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: cdn2.fiprotected.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: XBx1PANE_LKfrCRVCsu1LDwd2kywg7iDHW9tYEf2SQ0
+- name: 🌐667Mb
+  server: 158.101.216.158
+  port: 62145
+  type: vless
+  uuid: 8fb65472-5957-4f64-ba2d-b5812b2f155a
+- name: 🌐 Anycast-IP | 🇵🇱 🇷🇺 [*CIDR]
+  server: runode.protectednetwork.shop
+  port: 443
+  type: vless
+  uuid: 3d53970b-419b-4a27-87b5-e9c99bb02eca
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: rucdn.protectednetwork.shop
+  skip-cert-verify: true
+  reality-opts:
+    public-key: qQ5v62tCMmdAXvcrfWj9e4pm732FGnWnjTomgwBYXwU
+- name: 🇩🇪244Mb
+  server: 95.179.169.44
+  port: 53224
+  type: vless
+  uuid: e4887910-bcfc-48f8-8cd4-abb592e181af
+- name: 🇩🇪 Germany | [*CIDR]
+  server: renderer-stream-2-62.mirra.now
+  port: 443
   type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
   alterId: 0
   cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-24855'
-  server: 84.17.41.2
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8634'
-  server: 82.38.31.200
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-15189'
-  server: 108.181.118.10
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: G5p6ww4o67HB
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
-  type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 0
-  cipher: auto
+  tls: true
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/v1/gpu-stream/socket
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: 37.9.4.182
+  port: 8443
+  type: trojan
+  password: eZwp12tXna8-s_ysszXnXq25rv1c8w
+  client-fingerprint: edge
+  tls: true
+  sni: denode201.velox-network.org
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: '🇩🇪 Germany | [*CIDR] #3'
+  server: 37.9.4.182
+  port: 8443
+  type: trojan
+  password: eZwp12tXna8-s_ysszXnXq25rv1c8w
+  client-fingerprint: qq
+  tls: true
+  sni: denode201.velox-network.org
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: '🇩🇪 Germany | [*CIDR] #4'
+  server: 37.9.4.182
+  port: 8443
+  type: trojan
+  password: eZwp12tXna8-s_ysszXnXq25rv1c8w
+  client-fingerprint: firefox
+  tls: true
+  sni: denode201.velox-network.org
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
