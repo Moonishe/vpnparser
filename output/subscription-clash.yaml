@@ -11,70 +11,31 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: 1sSmdw90uTiGuitDvp_q8zcXTcHXKQS3IVjA7T1UNiY
-- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
-  server: 82.38.31.212
-  port: 8080
+- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
+  server: 82.110.60.9
+  port: 19999
   type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇷🇺 AetrisVPN
-  server: 104.16.107.139
-  port: 8880
-  type: vless
-  uuid: 86dc5fb4-f279-45b7-a2c6-0d1e84b85c18
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /pyip=ProxyIP.US.CMLiussss.net
-    headers:
-      Host: lingering-dawn-5d4a.163-3f1.workers.dev
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
-  type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-10865'
-  server: 82.38.31.213
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇷🇺 AetrisVPN #2'
-  server: 162.159.156.214
-  port: 8880
-  type: vless
-  uuid: 86dc5fb4-f279-45b7-a2c6-0d1e84b85c18
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /pyip=ProxyIP.US.CMLiussss.net
-    headers:
-      Host: lingering-dawn-5d4a.163-3f1.workers.dev
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
 - name: '[OpenRay] 🇳🇱 NL-8659'
   server: 82.38.31.219
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇷🇺 AetrisVPN #3'
-  server: 104.16.106.213
-  port: 8880
-  type: vless
-  uuid: bd3eb105-b048-47fa-9a1d-63a66f9830a2
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /pyip=ProxyIP.KR.CMLiussss.net
-    headers:
-      Host: misty-flower-4d15.372-912.workers.dev
+- name: '[OpenRay] 🇺🇸 US-16534'
+  server: 82.198.246.37
+  port: 180
+  type: vmess
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
+  cipher: auto
+- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
+  server: 82.38.31.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
 - name: '[OpenRay] 🇺🇸 US-15189'
   server: 108.181.118.10
   port: 8388
@@ -87,77 +48,23 @@ proxies:
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇷🇺 AetrisVPN #4'
-  server: 45.192.224.30
-  port: 8880
-  type: vless
-  uuid: 6202b230-417c-4d8e-b624-0f71afa9c75d
-  network: ws
-  ws-opts:
-    headers:
-      Host: vms.lifetime17.workers.dev
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-7170'
-  server: 82.38.31.149
-  port: 8080
+- name: '[OpenRay] 🇺🇸 US-24205'
+  server: 23.150.248.20
+  port: 8388
   type: ss
   cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇷🇺 AetrisVPN #5'
-  server: 172.66.0.246
-  port: 443
-  type: vless
-  uuid: 7b102311-43fd-4e8f-877e-8090623c101d
-  client-fingerprint: chrome
-  tls: true
-  servername: round-art-52ee.eadfgv.workers.dev
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: round-art-52ee.eadfgv.workers.dev
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
-  server: bz18.wba-pn.ru
-  port: 2053
-  type: vless
-  uuid: 3a2265d2-9f4f-437b-abf1-a44047776cf0
-  client-fingerprint: chrome
-  tls: true
-  servername: bz18.wba-pn.ru
-  skip-cert-verify: true
-  network: ws
-  ws-opts: {}
-- name: '🇷🇺 AetrisVPN #6'
-  server: 104.17.222.14
-  port: 2053
-  type: vless
-  uuid: ad40a583-2d59-44ff-88cf-b5db0e1e00a7
-  client-fingerprint: chrome
-  tls: true
-  servername: edgetunnel.kalmevebto.workers.dev
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: edgetunnel.kalmevebto.workers.dev
-- name: 🇷🇺 Russia | 🌐 | [*CIDR]
-  server: ru1-edge.safe-connect.info
-  port: 443
-  type: vless
-  uuid: 24f8cbc6-6bf6-4109-8909-930d484ee9e0
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: ru1-edge.safe-connect.info
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
+  password: qB2Cv9VIlujj
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
+  port: 22324
+  type: vmess
+  uuid: 04621bae-ab36-11ec-b909-0242ac120002
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇺🇸 US-24855'
+  server: 84.17.41.2
+  port: 18000
+  type: vmess
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
