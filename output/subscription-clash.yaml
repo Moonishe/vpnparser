@@ -11,114 +11,362 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: 1sSmdw90uTiGuitDvp_q8zcXTcHXKQS3IVjA7T1UNiY
-- name: 🌐 Anycast-IP | 🇫🇮 🇷🇺 | [*CIDR]
-  server: n2.fiprotected.com
+- name: 🇫🇷 France | [*CIDR]
+  server: api.videoistok.cc
   port: 443
   type: vless
-  uuid: 3d53970b-419b-4a27-87b5-e9c99bb02eca
+  uuid: d097ade5-225a-4a50-9f0e-fae258aa4d0c
   flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: cdn2.fiprotected.com
+  servername: api.videoistok.cc
   skip-cert-verify: true
   reality-opts:
-    public-key: XBx1PANE_LKfrCRVCsu1LDwd2kywg7iDHW9tYEf2SQ0
-- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
-  server: 82.110.60.9
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '[OpenRay] 🇳🇱 NL-8634'
-  server: 82.38.31.200
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🌐 Anycast-IP | 🇵🇱 🇷🇺 [*CIDR]
-  server: runode.protectednetwork.shop
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: 87.58.220.77:443
+  server: 87.58.220.77
   port: 443
   type: vless
-  uuid: 3d53970b-419b-4a27-87b5-e9c99bb02eca
+  uuid: 846e2c80-fce8-43c0-a166-671765a036b2
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: rucdn.protectednetwork.shop
+  servername: sso.passport.yandex.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: qQ5v62tCMmdAXvcrfWj9e4pm732FGnWnjTomgwBYXwU
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: 🇩🇪 Germany | [*CIDR]
-  server: renderer-stream-2-62.mirra.now
-  port: 443
-  type: vmess
-  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
-  alterId: 0
-  cipher: auto
-  tls: true
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v1/gpu-stream/socket
-- name: '🌐 Anycast-IP | 🇫🇮 🇷🇺 | [*CIDR] #2'
-  server: n2.fiprotected.com
+    public-key: aQD1AVNprkpHlqyx4YBHiMEi5-hb-Gmi_pdiY-_Lvzg
+    short-id: 9f41ab7b3c
+- name: 🌐 Anycast-IP | 🇷🇺 🇸🇪 | [*CIDR]
+  server: 5.129.246.206
   port: 443
   type: vless
-  uuid: 3d53970b-419b-4a27-87b5-e9c99bb02eca
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: safari
+  tls: true
+  servername: ruf.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: gGOxIZmei4pncxymGXqioVfceDldRkG5bkwzSkqzCH0
+    short-id: fd688fee17544730
+- name: 🇺🇸 United States, Charlottesville | [BL]
+  server: 47.85.188.30
+  port: 12004
+  type: vmess
+  uuid: 8b5552bd-4cc7-4cac-af08-81c21686fd4f
+  alterId: 0
+  cipher: auto
+- name: 🇩🇪195Mb
+  server: 95.179.169.44
+  port: 53224
+  type: vless
+  uuid: 5f00ca4e-3f26-473e-ad1c-414112abb0a3
+- name: '🇫🇷 France | [*CIDR] #2'
+  server: 189.74.117.5
+  port: 443
+  type: vless
+  uuid: d097ade5-225a-4a50-9f0e-fae258aa4d0c
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: api.videoistok.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: 87.58.220.77:8443
+  server: 87.58.220.77
+  port: 8443
+  type: trojan
+  password: c56ca89cd263b7aa8c921b476a4ec1e7
+  client-fingerprint: firefox
+  tls: true
+  sni: api.ok.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
+    short-id: dc05de
+- name: 🇷🇺 Russia | [*CIDR]
+  server: 147.45.184.91
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: qq
+  tls: true
+  servername: ruc.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: peH7x6tLruYCP094XuFaTxGsvy6YYH33OUI0M8CbbzU
+    short-id: 03ae403f6e389722
+- name: 🇩🇪239Mb
+  server: 95.179.169.44
+  port: 53224
+  type: vless
+  uuid: 5f00ca4e-3f26-473e-ad1c-414112abb0a3
+- name: '🇫🇷 France | [*CIDR] #3'
+  server: 189.74.117.5
+  port: 443
+  type: vless
+  uuid: d097ade5-225a-4a50-9f0e-fae258aa4d0c
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: api.videoistok.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🌐 Anycast-IP | 🇷🇺 🇸🇪 | [*CIDR] #2'
+  server: 5.129.246.206
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: firefox
+  tls: true
+  servername: ruf.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: gGOxIZmei4pncxymGXqioVfceDldRkG5bkwzSkqzCH0
+    short-id: fd688fee17544730
+- name: 🇩🇪232Mb
+  server: 95.179.169.44
+  port: 53224
+  type: vless
+  uuid: e4887910-bcfc-48f8-8cd4-abb592e181af
+- name: '🇫🇷 France | [*CIDR] #4'
+  server: api.videoistok.cc
+  port: 443
+  type: vless
+  uuid: d097ade5-225a-4a50-9f0e-fae258aa4d0c
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: api.videoistok.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇷🇺 Russia | [*CIDR] #2'
+  server: 5.129.249.65
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: edge
+  tls: true
+  servername: rue.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: iT-HgkPRUHl7Tm-LUWAGD-zoNoZSkVc-M9sscIIomHY
+    short-id: a62228a1c8b3378f
+- name: 🇩🇪176Mb
+  server: 192.248.182.183
+  port: 39244
+  type: vless
+  uuid: 5fc7563b-552d-417f-9409-08ef92284599
+- name: '🇫🇷 France | [*CIDR] #5'
+  server: api.videoistok.cc
+  port: 443
+  type: vless
+  uuid: d097ade5-225a-4a50-9f0e-fae258aa4d0c
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api.videoistok.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+  server: ruc.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: qq
+  tls: true
+  servername: ruc.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: peH7x6tLruYCP094XuFaTxGsvy6YYH33OUI0M8CbbzU
+    short-id: 03ae403f6e389722
+- name: '🇫🇷 France | [*CIDR] #6'
+  server: 189.74.117.5
+  port: 443
+  type: vless
+  uuid: d097ade5-225a-4a50-9f0e-fae258aa4d0c
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: cdn2.fiprotected.com
+  servername: api.videoistok.cc
   skip-cert-verify: true
   reality-opts:
-    public-key: XBx1PANE_LKfrCRVCsu1LDwd2kywg7iDHW9tYEf2SQ0
-- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
-  server: 82.38.31.212
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
-  type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-10865'
-  server: 82.38.31.213
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-24855'
-  server: 84.17.41.2
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
-- name: '[OpenRay] 🇺🇸 US-15189'
-  server: 108.181.118.10
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: G5p6ww4o67HB
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇷🇺 Russia | [*CIDR] #3'
+  server: 147.45.184.91
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: chrome
+  tls: true
+  servername: ruc.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: peH7x6tLruYCP094XuFaTxGsvy6YYH33OUI0M8CbbzU
+    short-id: 03ae403f6e389722
+- name: '🇫🇷 France | [*CIDR] #7'
+  server: 189.74.117.5
+  port: 443
+  type: vless
+  uuid: d097ade5-225a-4a50-9f0e-fae258aa4d0c
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api.videoistok.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇷🇺 Russia | [*CIDR] #4'
+  server: 147.45.184.91
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: safari
+  tls: true
+  servername: ruc.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: peH7x6tLruYCP094XuFaTxGsvy6YYH33OUI0M8CbbzU
+    short-id: 03ae403f6e389722
+- name: 🇷🇺 Russia | [*CIDR] YA
+  server: rud.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: safari
+  tls: true
+  servername: rud.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aTNdG_OBFU146IYw8_YIzxuc8tSbpM0Iqky8dM3Fxls
+    short-id: ce8a3c5f52b58355
+- name: '🇷🇺 Russia | [*CIDR] #5'
+  server: 5.129.249.65
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: qq
+  tls: true
+  servername: rue.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: iT-HgkPRUHl7Tm-LUWAGD-zoNoZSkVc-M9sscIIomHY
+    short-id: a62228a1c8b3378f
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
+  server: rue.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: edge
+  tls: true
+  servername: rue.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: iT-HgkPRUHl7Tm-LUWAGD-zoNoZSkVc-M9sscIIomHY
+    short-id: a62228a1c8b3378f
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #3'
+  server: rue.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: ios
+  tls: true
+  servername: rue.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: iT-HgkPRUHl7Tm-LUWAGD-zoNoZSkVc-M9sscIIomHY
+    short-id: a62228a1c8b3378f
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #4'
+  server: ruc.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: ios
+  tls: true
+  servername: ruc.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: peH7x6tLruYCP094XuFaTxGsvy6YYH33OUI0M8CbbzU
+    short-id: 03ae403f6e389722
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #5'
+  server: rue.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: qq
+  tls: true
+  servername: rue.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: iT-HgkPRUHl7Tm-LUWAGD-zoNoZSkVc-M9sscIIomHY
+    short-id: a62228a1c8b3378f
+- name: '🌐 Anycast-IP | 🇷🇺 🇸🇪 | [*CIDR] #3'
+  server: 5.129.246.206
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: ios
+  tls: true
+  servername: ruf.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: gGOxIZmei4pncxymGXqioVfceDldRkG5bkwzSkqzCH0
+    short-id: fd688fee17544730
+- name: '🇷🇺 Russia | [*CIDR] #6'
+  server: 147.45.184.91
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: firefox
+  tls: true
+  servername: ruc.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: peH7x6tLruYCP094XuFaTxGsvy6YYH33OUI0M8CbbzU
+    short-id: 03ae403f6e389722
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #6'
+  server: ruf.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: safari
+  tls: true
+  servername: ruf.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: gGOxIZmei4pncxymGXqioVfceDldRkG5bkwzSkqzCH0
+    short-id: fd688fee17544730
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #7'
+  server: ruf.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: ios
+  tls: true
+  servername: ruf.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: gGOxIZmei4pncxymGXqioVfceDldRkG5bkwzSkqzCH0
+    short-id: fd688fee17544730
+- name: '🇷🇺 Russia | [*CIDR] YA #2'
+  server: rud.tems.bet
+  port: 443
+  type: vless
+  uuid: 33c9e70f-07fe-44f5-962a-ef681259f73d
+  client-fingerprint: qq
+  tls: true
+  servername: rud.tems.bet
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aTNdG_OBFU146IYw8_YIzxuc8tSbpM0Iqky8dM3Fxls
+    short-id: ce8a3c5f52b58355
