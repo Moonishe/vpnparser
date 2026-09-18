@@ -11,25 +11,13 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: 1sSmdw90uTiGuitDvp_q8zcXTcHXKQS3IVjA7T1UNiY
-- name: 🇫🇮 AetrisVPN
-  server: wstg.datasynctrue.online
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 🇯🇵60Mb
-  server: 152.69.195.67
-  port: 47878
-  type: vless
-  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
-- name: 87.58.220.77:443
+- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
+  server: 82.110.60.9
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: NL
   server: 87.58.220.77
   port: 443
   type: vless
@@ -42,36 +30,64 @@ proxies:
   reality-opts:
     public-key: aQD1AVNprkpHlqyx4YBHiMEi5-hb-Gmi_pdiY-_Lvzg
     short-id: 9f41ab7b3c
-- name: 🇷🇺 AetrisVPN
-  server: cf9.466688.xyz
-  port: 8880
-  type: vless
-  uuid: 612f78a0-65ca-45af-a3ff-7d0f8e9f8655
-  network: ws
-  ws-opts:
-    path: /pyip=ProxyIP.KR.CMLiussss.net@https://t.me/QiangLieTuiJian
-    headers:
-      Host: broken-star-c5ae.446.workers.dev
-- name: 🇩🇪138Mb
-  server: 192.248.182.183
-  port: 39244
-  type: vless
-  uuid: 5fc7563b-552d-417f-9409-08ef92284599
-- name: '🇫🇮 AetrisVPN #2'
-  server: 91.210.169.181
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: chrome
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 87.58.220.77:8443
+- name: '[OpenRay] 🇺🇸 US-24205'
+  server: 23.150.248.20
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: qB2Cv9VIlujj
+- name: '[OpenRay] 🇳🇱 NL-10865'
+  server: 82.38.31.213
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-15189'
+  server: 108.181.118.10
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: G5p6ww4o67HB
+- name: '[OpenRay] 🇳🇱 NL-8659'
+  server: 82.38.31.219
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-16534'
+  server: 82.198.246.37
+  port: 180
+  type: vmess
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇳🇱 NL-8634'
+  server: 82.38.31.200
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-24855'
+  server: 84.17.41.2
+  port: 18000
+  type: vmess
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
+- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
+  server: 82.38.31.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
+  port: 22324
+  type: vmess
+  uuid: 04621bae-ab36-11ec-b909-0242ac120002
+  alterId: 0
+  cipher: auto
+- name: 'NL #2'
   server: 87.58.220.77
   port: 8443
   type: trojan
@@ -83,39 +99,3 @@ proxies:
   reality-opts:
     public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
     short-id: dc05de
-- name: '🇷🇺 AetrisVPN #2'
-  server: 104.16.106.213
-  port: 8880
-  type: vless
-  uuid: bd3eb105-b048-47fa-9a1d-63a66f9830a2
-  client-fingerprint: chrome
-  network: ws
-  ws-opts:
-    path: /pyip=ProxyIP.KR.CMLiussss.net
-    headers:
-      Host: misty-flower-4d15.372-912.workers.dev
-- name: '🇷🇺 AetrisVPN #3'
-  server: 104.16.100.66
-  port: 8880
-  type: vless
-  uuid: b4a18856-301d-4bb2-b729-6afcb700faf5
-  client-fingerprint: firefox
-  network: ws
-  ws-opts:
-    path: /pyip=ProxyIP.JP.CMLiussss.net
-    headers:
-      Host: red-flower-a2bf.363.workers.dev
-- name: '🇷🇺 AetrisVPN #4'
-  server: 8.39.125.152
-  port: 8443
-  type: vless
-  uuid: 8525fe74-67e6-4a55-8a26-95f227bd1384
-  client-fingerprint: random
-  tls: true
-  servername: bitter-shadow-4fc5.alvlirm852.workers.dev
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: bitter-shadow-4fc5.alvlirm852.workers.dev
