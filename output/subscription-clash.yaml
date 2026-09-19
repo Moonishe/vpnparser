@@ -1,111 +1,149 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 179.254.115.49
+- name: 🌐 Anycast-IP | 🇫🇮 [*CIDR]
+  server: 107.150.93.51
   port: 443
   type: vless
-  uuid: 2ac46dc3-0593-4898-bd52-42a7d5a8f2e2
-  flow: xtls-rprx-vision
-  client-fingerprint: random
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: safari
   tls: true
-  servername: de1-web.mysoyka.online
+  servername: 6a32736d.ferrin.uk
   skip-cert-verify: true
-  reality-opts:
-    public-key: 5USjl6vRG3X4bxVWL9oZ7eUpyr-N3kezxnUi14WOrlY
-    short-id: 3d475d331e49eee8
-- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
-  server: 82.110.60.9
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '[OpenRay] 🇳🇱 NL-8634'
-  server: 82.38.31.200
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-24855'
-  server: 84.17.41.2
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: '🇩🇪 AetrisVPN #2'
-  server: de1-web.mysoyka.online
-  port: 443
+  network: xhttp
+  xhttp-opts: {}
+- name: 🇫🇷 AetrisVPN
+  server: 176.123.162.100
+  port: 9880
   type: vless
-  uuid: 2ac46dc3-0593-4898-bd52-42a7d5a8f2e2
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: de1-web.mysoyka.online
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 5USjl6vRG3X4bxVWL9oZ7eUpyr-N3kezxnUi14WOrlY
-    short-id: 3d475d331e49eee8
-- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
-  server: 82.38.31.212
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
-- name: '[OpenRay] 🇳🇱 NL-10865'
-  server: 82.38.31.213
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
-  type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 0
-  cipher: auto
-- name: 🇳🇱 AetrisVPN
-  server: 185.255.179.11
-  port: 9443
-  type: vless
-  uuid: d9d0f208-d582-41d5-bb7b-742671402810
-  client-fingerprint: random
-  tls: true
-  servername: hub-nl-02.hanvpn.cc
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /nl02-ws-8e47a
-    headers:
-      Host: hub-nl-02.hanvpn.cc
-- name: '🇳🇱 AetrisVPN #2'
-  server: 188.225.58.238
-  port: 443
-  type: vless
-  uuid: 026f58a9-b36e-4204-8f8d-54c5374163da
-  flow: xtls-rprx-vision
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
   client-fingerprint: firefox
   tls: true
-  servername: app5.betust.net
+  servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: laDuxd6kFSPv2nWTy9LUjMGVRZM949R82alkZpMAqlk
-    short-id: e84029c5
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: 🇳🇱 AetrisVPN
+  server: 94.183.224.45
+  port: 443
+  type: vless
+  uuid: d72f05b0-b182-4783-a6f2-21cecc7d841a
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: dzen.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SibLV5WBGdljTiUCmKx77KhHQfErCwjDMD_ZLoha3js
+    short-id: a1b2c3d4e5f67890
+- name: '🌐 Anycast-IP | 🇫🇮 [*CIDR] #2'
+  server: 107.150.93.51
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: edge
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts: {}
+- name: '🌐 Anycast-IP | 🇫🇮 [*CIDR] #3'
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: edge
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: 🇫🇮 Finland | [*CIDR]
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: chrome
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: 🌐 Anycast-IP | 🇫🇮 🇸🇪 [*CIDR]
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: edge
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: '🌐 Anycast-IP | 🇫🇮 [*CIDR] #4'
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: firefox
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: 🇫🇮 AetrisVPN
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: chrome
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: '🌐 Anycast-IP | 🇫🇮 [*CIDR] #5'
+  server: 107.150.93.51
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: chrome
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts: {}
+- name: '🌐 Anycast-IP | 🇫🇮 [*CIDR] #6'
+  server: 107.150.93.51
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: ios
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts: {}
+- name: '🌐 Anycast-IP | 🇫🇮 🇸🇪 [*CIDR] #2'
+  server: 107.150.93.51
+  port: 443
+  type: vless
+  uuid: 6a32736d-4b7f-4c35-a1cf-4489d49f2cfb
+  client-fingerprint: firefox
+  tls: true
+  servername: 6a32736d.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts: {}
