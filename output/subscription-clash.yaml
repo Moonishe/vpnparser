@@ -1,89 +1,5 @@
 proxies:
 - name: 🇩🇪 Germany | [*CIDR]
-  server: 5.188.26.85
-  port: 443
-  type: vmess
-  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
-  alterId: 0
-  cipher: auto
-  tls: true
-  servername: renderer-stream-2-62.mirra.now
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v1/gpu-stream/socket
-    headers:
-      Host: renderer-stream-2-62.mirra.now
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 62.233.39.9
-  port: 8443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: chrome
-  tls: true
-  servername: cdn.steamstatic.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: 🌐 Anycast-IP | 🇰🇿 [*CIDR]
-  server: 62.233.39.9
-  port: 443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: chrome
-  tls: true
-  servername: dl.dell.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: 🇩🇪 AetrisVPN
-  server: 185.229.9.175
-  port: 443
-  type: vless
-  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.ok.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Eutx4frdhG1y7THj7k3CjazAsrCMj932RtbV4a1QfQk
-    short-id: d5b6308860d578bb
-- name: 🌐 Anycast-IP | 🇳🇱 [*CIDR]
-  server: 62.233.39.9
-  port: 8443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: safari
-  tls: true
-  servername: cdn.steamstatic.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR] #2'
-  server: 62.233.39.9
-  port: 443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: firefox
-  tls: true
-  servername: dl.dell.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: '🇩🇪 Germany | [*CIDR] #2'
   server: 194.87.71.141
   port: 443
   type: vmess
@@ -98,12 +14,18 @@ proxies:
     path: /api/v1/gpu-stream/socket
     headers:
       Host: renderer-stream-2-62.mirra.now
-- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #2'
+- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
+  server: 82.110.60.9
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: 🇳🇱 The Netherlands | [*CIDR]
   server: 62.233.39.9
   port: 8443
   type: vless
   uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: ios
+  client-fingerprint: chrome
   tls: true
   servername: cdn.steamstatic.com
   skip-cert-verify: true
@@ -112,7 +34,7 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: TunService
-- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR] #3'
+- name: 🌐 Anycast-IP | 🇰🇿 [*CIDR]-RU
   server: 62.233.39.9
   port: 8443
   type: vless
@@ -126,20 +48,27 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: TunService
-- name: 🌐 Anycast-IP | 🇩🇪 🇸🇪 [*CIDR]
-  server: 82.146.57.228
+- name: '[OpenRay] 🇺🇸 US-24205'
+  server: 23.150.248.20
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: qB2Cv9VIlujj
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: 5.188.26.85
   port: 443
-  type: vless
-  uuid: b1b3e430-ff52-44b8-b95d-27fa580fbc4f
-  client-fingerprint: chrome
+  type: vmess
+  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
+  alterId: 0
+  cipher: auto
   tls: true
-  servername: id.vk.com
+  servername: renderer-stream-2-62.mirra.now
   skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-  network: grpc
-  grpc-opts:
-    grpc-service-name: vless-grpc-reality
+  network: ws
+  ws-opts:
+    path: /api/v1/gpu-stream/socket
+    headers:
+      Host: renderer-stream-2-62.mirra.now
 - name: 🌐 Anycast-IP | 🇳🇱 🇸🇪 [*CIDR]
   server: 62.233.39.9
   port: 8443
@@ -154,7 +83,54 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: TunService
-- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR] #4'
+- name: 🇰🇿 Kazakhstan | [*CIDR]-RU
+  server: 62.233.39.9
+  port: 8443
+  type: vless
+  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  client-fingerprint: chrome
+  tls: true
+  servername: dl.dell.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
+  network: grpc
+  grpc-opts:
+    grpc-service-name: TunService
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
+  port: 22324
+  type: vmess
+  uuid: 04621bae-ab36-11ec-b909-0242ac120002
+  alterId: 0
+  cipher: auto
+- name: '🇩🇪 Germany | [*CIDR] #3'
+  server: renderer-stream-2-62.mirra.now
+  port: 443
+  type: vmess
+  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
+  alterId: 0
+  cipher: auto
+  tls: true
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/v1/gpu-stream/socket
+- name: 🌐 Anycast-IP | 🇳🇱 [*CIDR]
+  server: 62.233.39.9
+  port: 8443
+  type: vless
+  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  client-fingerprint: safari
+  tls: true
+  servername: cdn.steamstatic.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
+  network: grpc
+  grpc-opts:
+    grpc-service-name: TunService
+- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR]-RU #2'
   server: 62.233.39.9
   port: 8443
   type: vless
@@ -168,18 +144,86 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: TunService
-- name: '🇩🇪 Germany | [*CIDR] #3'
-  server: renderer-stream-2-62.mirra.now
-  port: 443
+- name: '[OpenRay] 🇺🇸 US-24855'
+  server: 84.17.41.2
+  port: 18000
   type: vmess
-  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
   alterId: 0
   cipher: auto
+- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #2'
+  server: 62.233.39.9
+  port: 8443
+  type: vless
+  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  client-fingerprint: ios
   tls: true
+  servername: cdn.steamstatic.com
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v1/gpu-stream/socket
+  reality-opts:
+    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
+  network: grpc
+  grpc-opts:
+    grpc-service-name: TunService
+- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR]-RU #3'
+  server: 62.233.39.9
+  port: 443
+  type: vless
+  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.dell.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: '[OpenRay] 🇺🇸 US-16534'
+  server: 82.198.246.37
+  port: 180
+  type: vmess
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇳🇱 NL-8634'
+  server: 82.38.31.200
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR]-RU #4'
+  server: 62.233.39.9
+  port: 443
+  type: vless
+  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  client-fingerprint: chrome
+  tls: true
+  servername: dl.dell.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: '[OpenRay] 🇳🇱 NL-10865'
+  server: 82.38.31.213
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
+  server: 82.38.31.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇳🇱 NL-8659'
+  server: 82.38.31.219
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
 - name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #3'
   server: 62.233.39.9
   port: 443
@@ -194,26 +238,12 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /
-- name: 🇰🇿 Kazakhstan | [*CIDR]
-  server: 62.233.39.9
-  port: 8443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: chrome
-  tls: true
-  servername: dl.dell.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #4'
   server: 62.233.39.9
   port: 443
   type: vless
   uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: chrome
+  client-fingerprint: edge
   tls: true
   servername: cdn.steamstatic.com
   skip-cert-verify: true
@@ -222,37 +252,12 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /
-- name: 🌐 Anycast-IP | 🇷🇺 🇸🇪 | [*CIDR]
-  server: xssite.webredirect.org
-  port: 443
-  type: vless
-  uuid: c90395e6-2140-47ad-a54d-9b166729d3ef
-  client-fingerprint: random
-  tls: true
-  servername: xssite.webredirect.org
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-ru
-- name: 🇳🇱 The Netherlands | [*CIDR] YA
-  server: 84.201.146.8
-  port: 443
-  type: vless
-  uuid: 1e2b9c0c-4f9b-56f5-a062-1c4f2d2aa200
-  client-fingerprint: qq
-  tls: true
-  servername: max.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: biyXF3Egpu0ul4Jyf04Vh1Zl6u3JGXJ2k5y5y7pDjgo
-  network: xhttp
-  xhttp-opts: {}
-- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #4'
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
   server: 62.233.39.9
   port: 443
   type: vless
   uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: edge
+  client-fingerprint: chrome
   tls: true
   servername: cdn.steamstatic.com
   skip-cert-verify: true
