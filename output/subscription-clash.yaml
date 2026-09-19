@@ -1,40 +1,49 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR]
-  server: 194.87.71.141
+- name: 🌐 Anycast-IP | 🇩🇪 🇸🇪 [*CIDR]
+  server: 82.146.56.30
   port: 443
-  type: vmess
-  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
-  alterId: 0
-  cipher: auto
-  tls: true
-  servername: renderer-stream-2-62.mirra.now
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v1/gpu-stream/socket
-    headers:
-      Host: renderer-stream-2-62.mirra.now
-- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
-  server: 82.110.60.9
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 62.233.39.9
-  port: 8443
   type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: chrome
+  uuid: b1b3e430-ff52-44b8-b95d-27fa580fbc4f
+  client-fingerprint: ios
   tls: true
-  servername: cdn.steamstatic.com
+  servername: id.vk.com
   skip-cert-verify: true
   reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
   network: grpc
   grpc-opts:
-    grpc-service-name: TunService
-- name: 🌐 Anycast-IP | 🇰🇿 [*CIDR]-RU
+    grpc-service-name: vless-grpc-reality
+- name: 🇫🇷 AetrisVPN
+  server: 212.119.42.27
+  port: 43582
+  type: vless
+  uuid: 419e6d23-5166-42de-bbed-efbcb3e9a037
+  client-fingerprint: random
+  tls: true
+  servername: vkontakte.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: xan4iyYYeN4WR6UJ0-lvdqpdpabZ2sfNxBlhp5Xb7So
+    short-id: 1d375df67c
+- name: 🌐102Mb
+  server: 152.69.195.67
+  port: 47878
+  type: vless
+  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
+- name: 🇳🇱 AetrisVPN
+  server: 85.198.70.200
+  port: 14406
+  type: vless
+  uuid: 237f91bf-102e-4077-8cc3-baebccb42936
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vk.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ldAmsl3dqTCUBmlmA8CS9ZnpznP6cFWj9AxNddWnbxY
+    short-id: 1a2b3c4d5e6f7a8b
+- name: 🇰🇿 AetrisVPN
   server: 62.233.39.9
   port: 8443
   type: vless
@@ -48,221 +57,214 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: TunService
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: 5.188.26.85
+- name: 🇩🇪 AetrisVPN
+  server: 179.254.115.49
   port: 443
-  type: vmess
-  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
-  alterId: 0
-  cipher: auto
+  type: vless
+  uuid: 2ac46dc3-0593-4898-bd52-42a7d5a8f2e2
+  flow: xtls-rprx-vision
+  client-fingerprint: random
   tls: true
-  servername: renderer-stream-2-62.mirra.now
+  servername: de1-web.mysoyka.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 5USjl6vRG3X4bxVWL9oZ7eUpyr-N3kezxnUi14WOrlY
+    short-id: 3d475d331e49eee8
+- name: 🇯🇵130Mb
+  server: 152.69.195.67
+  port: 47878
+  type: vless
+  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
+- name: '🇳🇱 AetrisVPN #2'
+  server: 185.255.179.11
+  port: 9443
+  type: vless
+  uuid: d9d0f208-d582-41d5-bb7b-742671402810
+  client-fingerprint: random
+  tls: true
+  servername: hub-nl-02.hanvpn.cc
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /api/v1/gpu-stream/socket
+    path: /nl02-ws-8e47a
     headers:
-      Host: renderer-stream-2-62.mirra.now
-- name: 🌐 Anycast-IP | 🇳🇱 🇸🇪 [*CIDR]
-  server: 62.233.39.9
-  port: 8443
+      Host: hub-nl-02.hanvpn.cc
+- name: 🇷🇺 AetrisVPN
+  server: 45.12.75.242
+  port: 26424
   type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: firefox
-  tls: true
-  servername: cdn.steamstatic.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: 🇰🇿 Kazakhstan | [*CIDR]-RU
-  server: 62.233.39.9
-  port: 8443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
   client-fingerprint: chrome
   tls: true
-  servername: dl.dell.com
+  servername: ya.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
-  type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 0
-  cipher: auto
-- name: '🇩🇪 Germany | [*CIDR] #3'
-  server: renderer-stream-2-62.mirra.now
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: '🇩🇪 AetrisVPN #2'
+  server: de1-web.mysoyka.online
   port: 443
-  type: vmess
-  uuid: db50a20e-7ff5-4e70-948f-17cc9ca7c154
-  alterId: 0
-  cipher: auto
+  type: vless
+  uuid: 2ac46dc3-0593-4898-bd52-42a7d5a8f2e2
+  flow: xtls-rprx-vision
+  client-fingerprint: random
   tls: true
+  servername: de1-web.mysoyka.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 5USjl6vRG3X4bxVWL9oZ7eUpyr-N3kezxnUi14WOrlY
+    short-id: 3d475d331e49eee8
+- name: '🇳🇱 AetrisVPN #3'
+  server: 37.18.15.103
+  port: 443
+  type: vless
+  uuid: f79fe29a-39c9-445d-a6e9-85bfa76d5f02
+  client-fingerprint: random
+  tls: true
+  servername: j8dvb.guardora.pro
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /api/v1/gpu-stream/socket
-- name: 🌐 Anycast-IP | 🇳🇱 [*CIDR]
-  server: 62.233.39.9
-  port: 8443
+    path: /api/v2/client/session/connect
+    headers:
+      Host: j8dvb.guardora.pro
+- name: '🇷🇺 AetrisVPN #2'
+  server: ruself.yandex-api.com
+  port: 443
   type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  uuid: 1b7ee703-fa08-4305-8469-ae3e30e61e44
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: ruself.yandex-api.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: c8IEc_c_QBmI5YAwILoVH0xw2xC4AJgJDKEYKcmKogo
+    short-id: 7f2e9c4b1a8d6e55
+- name: '🌐 Anycast-IP | 🇩🇪 🇸🇪 [*CIDR] #2'
+  server: pechatprint-63.ru
+  port: 8080
+  type: vless
+  uuid: 75db4327-dff6-4de2-a089-6924b22b7e51
   client-fingerprint: safari
   tls: true
-  servername: cdn.steamstatic.com
+  servername: pechatprint-63.ru
   skip-cert-verify: true
-  reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR]-RU #2'
-  server: 62.233.39.9
-  port: 8443
+  network: ws
+  ws-opts:
+    path: /chws
+- name: 🇳🇱291Mb
+  server: 158.101.213.194
+  port: 62145
   type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: qq
-  tls: true
-  servername: dl.dell.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: '[OpenRay] 🇺🇸 US-24855'
-  server: 84.17.41.2
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #2'
-  server: 62.233.39.9
-  port: 8443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: ios
-  tls: true
-  servername: cdn.steamstatic.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR]-RU #3'
-  server: 62.233.39.9
+  uuid: 8fb65472-5957-4f64-ba2d-b5812b2f155a
+- name: 🇪🇺 AetrisVPN
+  server: werwer.mervi.icu
   port: 443
   type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: firefox
+  uuid: 9bbd487f-8f84-4ad7-b897-681c3f7d95dc
+  flow: xtls-rprx-vision
+  client-fingerprint: random
   tls: true
-  servername: dl.dell.com
+  servername: werwer.mervi.icu
   skip-cert-verify: true
   reality-opts:
-    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8634'
-  server: 82.38.31.200
+    public-key: n4HzRVDwOdcZQ62HiKeVYn_A9FMv_Qm_LRRDZlbe3xQ
+    short-id: 2cce6a63eaeb0b4f
+- name: '🇩🇪 AetrisVPN #3'
+  server: ns.o11111o.club
+  port: 443
+  type: vless
+  uuid: b1b3e430-ff52-44b8-b95d-27fa580fbc4f
+  client-fingerprint: random
+  tls: true
+  servername: id.vk.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: grpc
+  grpc-opts:
+    grpc-service-name: vless-grpc-reality
+- name: 🇷🇺 Russia | [*CIDR]
+  server: 147.45.175.81
+  port: 443
+  type: vless
+  uuid: c90395e6-2140-47ad-a54d-9b166729d3ef
+  client-fingerprint: random
+  tls: true
+  servername: xssite.webredirect.org
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-ru
+- name: 🌐 Anycast-IP | 🇩🇪 🇸🇪 | [*CIDR]
+  server: pechatprint-63.ru
   port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🌐 Anycast-IP | 🇰🇿 [*CIDR]-RU #4'
-  server: 62.233.39.9
-  port: 443
   type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  uuid: 75db4327-dff6-4de2-a089-6924b22b7e51
   client-fingerprint: chrome
   tls: true
-  servername: dl.dell.com
+  servername: pechatprint-63.ru
   skip-cert-verify: true
-  reality-opts:
-    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: '[OpenRay] 🇳🇱 NL-10865'
-  server: 82.38.31.213
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
-  server: 82.38.31.212
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #3'
-  server: 62.233.39.9
+  network: ws
+  ws-opts:
+    path: /chws
+- name: 🇷🇺 Russia [*CIDR]
+  server: xsru2.freeddns.org
   port: 443
   type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: ios
-  tls: true
-  servername: cdn.steamstatic.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #4'
-  server: 62.233.39.9
-  port: 443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
+  uuid: c90395e6-2140-47ad-a54d-9b166729d3ef
   client-fingerprint: edge
   tls: true
-  servername: cdn.steamstatic.com
+  servername: xsru2.freeddns.org
   skip-cert-verify: true
-  reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: 62.233.39.9
+  network: ws
+  ws-opts:
+    path: /wsru
+    headers:
+      Host: xsru2.freeddns.org
+- name: '🇩🇪 AetrisVPN #4'
+  server: 188.72.103.4
   port: 443
   type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: chrome
+  uuid: 1f959100-a98b-47fb-84fa-359246dc458a
   tls: true
-  servername: cdn.steamstatic.com
+  servername: apicdn.4subnodes.com
   skip-cert-verify: true
-  reality-opts:
-    public-key: sbBzEDf7UllUslF6LTfsM1qiOW322QKM343zhJD0Lng
-  network: xhttp
-  xhttp-opts:
-    path: /
+  network: ws
+  ws-opts:
+    path: /apiv1/esa1-asda2jcvnbpseflkn-kjweksad
+    headers:
+      Host: apicdn.4subnodes.com
+- name: '🇷🇺 AetrisVPN #3'
+  server: 195.133.5.102
+  port: 10900
+  type: ss
+  cipher: aes-256-gcm
+  password: 895b4b796a357570
+- name: '🇷🇺 Russia | [*CIDR] #2'
+  server: 147.45.175.81
+  port: 443
+  type: vless
+  uuid: c90395e6-2140-47ad-a54d-9b166729d3ef
+  client-fingerprint: random
+  tls: true
+  servername: xsru2.freeddns.org
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /wsru
+    headers:
+      Host: xsru2.freeddns.org
+- name: '🇷🇺 Russia [*CIDR] #2'
+  server: xssite.webredirect.org
+  port: 443
+  type: vless
+  uuid: c90395e6-2140-47ad-a54d-9b166729d3ef
+  client-fingerprint: ios
+  tls: true
+  servername: xssite.webredirect.org
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-ru
