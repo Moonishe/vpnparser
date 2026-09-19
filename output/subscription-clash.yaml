@@ -1,49 +1,61 @@
 proxies:
 - name: 🇩🇪 AetrisVPN
-  server: de1-web.mysoyka.online
+  server: 185.229.9.175
   port: 443
   type: vless
-  uuid: 2ac46dc3-0593-4898-bd52-42a7d5a8f2e2
+  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: api.ok.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Eutx4frdhG1y7THj7k3CjazAsrCMj932RtbV4a1QfQk
+    short-id: d5b6308860d578bb
+- name: 🌐 Anycast-IP | 🇫🇷 🇸🇪 | [*CIDR]
+  server: 45.131.212.39
+  port: 443
+  type: vless
+  uuid: 950beaff-a665-4b36-baad-2251ba6bbd6a
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: fr.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+    short-id: 848b53fea10a561e
+- name: 🇯🇵100Mb
+  server: 152.69.195.67
+  port: 47878
+  type: vless
+  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
+- name: 🇳🇱 AetrisVPN
+  server: 85.198.70.200
+  port: 14406
+  type: vless
+  uuid: 237f91bf-102e-4077-8cc3-baebccb42936
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vk.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ldAmsl3dqTCUBmlmA8CS9ZnpznP6cFWj9AxNddWnbxY
+    short-id: 1a2b3c4d5e6f7a8b
+- name: 🇪🇺 AetrisVPN
+  server: werwer.mervi.icu
+  port: 443
+  type: vless
+  uuid: 9bbd487f-8f84-4ad7-b897-681c3f7d95dc
   flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: de1-web.mysoyka.online
+  servername: werwer.mervi.icu
   skip-cert-verify: true
   reality-opts:
-    public-key: 5USjl6vRG3X4bxVWL9oZ7eUpyr-N3kezxnUi14WOrlY
-    short-id: 3d475d331e49eee8
-- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
-  server: 82.110.60.9
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇰🇿 AetrisVPN-RU
-  server: 62.233.39.9
-  port: 8443
-  type: vless
-  uuid: b2141c97-76af-ff6f-839b-70a53e23aad9
-  client-fingerprint: ios
-  tls: true
-  servername: dl.dell.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: oHaUPZiESTQQ89DMd4uIcPWgsyeFFy58iZYX_8mbvWk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: TunService
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
+    public-key: n4HzRVDwOdcZQ62HiKeVYn_A9FMv_Qm_LRRDZlbe3xQ
+    short-id: 2cce6a63eaeb0b4f
 - name: '🇩🇪 AetrisVPN #2'
   server: 179.254.115.49
   port: 443
@@ -57,88 +69,80 @@ proxies:
   reality-opts:
     public-key: 5USjl6vRG3X4bxVWL9oZ7eUpyr-N3kezxnUi14WOrlY
     short-id: 3d475d331e49eee8
-- name: '[OpenRay] 🇳🇱 NL-8634'
-  server: 82.38.31.200
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇷🇺 AetrisVPN
-  server: ruself.yandex-api.com
+- name: '🌐 Anycast-IP | 🇫🇷 🇸🇪 | [*CIDR] #2'
+  server: 45.131.212.39
   port: 443
   type: vless
-  uuid: 1b7ee703-fa08-4305-8469-ae3e30e61e44
+  uuid: 950beaff-a665-4b36-baad-2251ba6bbd6a
   flow: xtls-rprx-vision
-  client-fingerprint: random
+  client-fingerprint: qq
   tls: true
-  servername: ruself.yandex-api.com
+  servername: fr.lstu.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: c8IEc_c_QBmI5YAwILoVH0xw2xC4AJgJDKEYKcmKogo
-    short-id: 7f2e9c4b1a8d6e55
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
-  server: 82.38.31.212
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇷🇺 AetrisVPN #2'
-  server: 195.133.5.102
-  port: 10900
-  type: ss
-  cipher: aes-256-gcm
-  password: 895b4b796a357570
-- name: '[OpenRay] 🇺🇸 US-24855'
-  server: 84.17.41.2
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-10865'
-  server: 82.38.31.213
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
-  type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 0
-  cipher: auto
-- name: 🇳🇱 AetrisVPN
-  server: 185.255.179.11
-  port: 9443
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+    short-id: 848b53fea10a561e
+- name: 🇳🇱237Mb
+  server: 144.21.43.119
+  port: 62145
   type: vless
-  uuid: d9d0f208-d582-41d5-bb7b-742671402810
-  client-fingerprint: random
+  uuid: 8fb65472-5957-4f64-ba2d-b5812b2f155a
+- name: 🇩🇪 Germany | [*CIDR]
+  server: pechatprint-63.ru
+  port: 8080
+  type: vless
+  uuid: 75db4327-dff6-4de2-a089-6924b22b7e51
+  client-fingerprint: chrome
   tls: true
-  servername: hub-nl-02.hanvpn.cc
+  servername: pechatprint-63.ru
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /nl02-ws-8e47a
-    headers:
-      Host: hub-nl-02.hanvpn.cc
-- name: '🇳🇱 AetrisVPN #2'
-  server: 85.198.70.200
-  port: 14406
+    path: /chws
+- name: '🌐 Anycast-IP | 🇫🇷 🇸🇪 | [*CIDR] #3'
+  server: 45.131.212.39
+  port: 443
   type: vless
-  uuid: 237f91bf-102e-4077-8cc3-baebccb42936
+  uuid: 950beaff-a665-4b36-baad-2251ba6bbd6a
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: chrome
   tls: true
-  servername: vk.ru
+  servername: fr.lstu.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: ldAmsl3dqTCUBmlmA8CS9ZnpznP6cFWj9AxNddWnbxY
-    short-id: 1a2b3c4d5e6f7a8b
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+    short-id: 848b53fea10a561e
+- name: 🇳🇱310Mb
+  server: 158.101.205.217
+  port: 62145
+  type: vless
+  uuid: 8fb65472-5957-4f64-ba2d-b5812b2f155a
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: pechatprint-63.ru
+  port: 8080
+  type: vless
+  uuid: 75db4327-dff6-4de2-a089-6924b22b7e51
+  client-fingerprint: android
+  tls: true
+  servername: pechatprint-63.ru
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /chws
+- name: 🇳🇱 The Netherlands, Eygelshoven | [BL]
+  server: nl2.pleiades.codes
+  port: 2053
+  type: trojan
+  password: d5bee0afdbc500b8cda02d80
+  client-fingerprint: random
+  tls: true
+  sni: nl2.pleiades.codes
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: 🇳🇱279Mb
+  server: 158.101.205.217
+  port: 62145
+  type: vless
+  uuid: 8fb65472-5957-4f64-ba2d-b5812b2f155a
