@@ -1,87 +1,5 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 185.229.9.175
-  port: 443
-  type: vless
-  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.ok.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Eutx4frdhG1y7THj7k3CjazAsrCMj932RtbV4a1QfQk
-    short-id: d5b6308860d578bb
-- name: 🌐125Mb
-  server: 152.69.195.67
-  port: 47878
-  type: vless
-  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
-- name: 87.58.220.77:8443
-  server: 87.58.220.77
-  port: 8443
-  type: trojan
-  password: 19a98e32a1149952a988e1e915306e07
-  client-fingerprint: firefox
-  tls: true
-  sni: yandex.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
-    short-id: dc05de
-- name: 🇪🇺 AetrisVPN
-  server: 200.165.231.209
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: '🇩🇪 AetrisVPN #2'
-  server: 91.240.87.166
-  port: 443
-  type: vless
-  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: yandex.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 2ZUQYIhUijdJ1vRL8iR8RxjmJvRVHYp-JoWevQ2LyR4
-    short-id: 7bb730e3e6616d31
-- name: 87.58.220.77:443
-  server: 87.58.220.77
-  port: 443
-  type: vless
-  uuid: 1ed7bfe0-9645-483d-925a-b8e618291d36
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: www.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aQD1AVNprkpHlqyx4YBHiMEi5-hb-Gmi_pdiY-_Lvzg
-    short-id: 9f41ab7b3c
-- name: '🇪🇺 AetrisVPN #2'
-  server: 188.225.33.141
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 194.87.55.90:443
+- name: DE
   server: 194.87.55.90
   port: 443
   type: vless
@@ -94,20 +12,38 @@ proxies:
   reality-opts:
     public-key: SzOhlaAgX-5m7RB6MTfx3MwjfYDi5G2JblGcpnLgam0
     short-id: 8ef32bea5018959f
-- name: 🇷🇺 AetrisVPN
-  server: 185.141.227.180
-  port: 2053
+- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
+  server: 82.110.60.9
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: '[OpenRay] 🇳🇱 NL-8634'
+  server: 82.38.31.200
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: 🇪🇺 AetrisVPN-RU
+  server: 200.165.231.209
+  port: 443
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: random
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
   tls: true
-  servername: dismissaltree.net
+  servername: wstg.datasynctrue.online
   skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: dismissaltree.net
-- name: 194.87.55.90:8443
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '[OpenRay] 🇺🇸 US-24205'
+  server: 23.150.248.20
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: qB2Cv9VIlujj
+- name: 'DE #2'
   server: 194.87.55.90
   port: 8443
   type: trojan
@@ -119,7 +55,20 @@ proxies:
   reality-opts:
     public-key: NR271PO2o1hKS1HzygSQ9DQJ2kehk8qaEv2ZpzKw234
     short-id: e7d997
-- name: '🇩🇪 AetrisVPN #3'
+- name: '[OpenRay] 🇳🇱 NL-10865'
+  server: 82.38.31.213
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-16534'
+  server: 82.198.246.37
+  port: 180
+  type: vmess
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
+  alterId: 0
+  cipher: auto
+- name: 🇩🇪 AetrisVPN
   server: 91.240.86.12
   port: 443
   type: vless
@@ -132,3 +81,60 @@ proxies:
   reality-opts:
     public-key: 2ZUQYIhUijdJ1vRL8iR8RxjmJvRVHYp-JoWevQ2LyR4
     short-id: 7bb730e3e6616d31
+- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
+  server: 82.38.31.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
+  port: 22324
+  type: vmess
+  uuid: 04621bae-ab36-11ec-b909-0242ac120002
+  alterId: 0
+  cipher: auto
+- name: NL
+  server: 87.58.220.77
+  port: 443
+  type: vless
+  uuid: 1ed7bfe0-9645-483d-925a-b8e618291d36
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: www.vk.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aQD1AVNprkpHlqyx4YBHiMEi5-hb-Gmi_pdiY-_Lvzg
+    short-id: 9f41ab7b3c
+- name: '[OpenRay] 🇺🇸 US-24855'
+  server: 84.17.41.2
+  port: 18000
+  type: vmess
+  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
+  alterId: 0
+  cipher: auto
+- name: '[OpenRay] 🇳🇱 NL-8659'
+  server: 82.38.31.219
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '[OpenRay] 🇺🇸 US-15189'
+  server: 108.181.118.10
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: G5p6ww4o67HB
+- name: 'NL #2'
+  server: 87.58.220.77
+  port: 8443
+  type: trojan
+  password: 19a98e32a1149952a988e1e915306e07
+  client-fingerprint: firefox
+  tls: true
+  sni: yandex.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
+    short-id: dc05de
