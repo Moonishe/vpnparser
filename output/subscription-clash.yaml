@@ -1,4 +1,18 @@
 proxies:
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
+  server: 201.24.50.94
+  port: 443
+  type: vless
+  uuid: 8057eabc-921d-0002-9acb-80ccc6b48379
+  client-fingerprint: edge
+  tls: true
+  servername: kerbal.mafioznik.xyz
+  skip-cert-verify: true
+  reality-opts:
+    public-key: wG3BS0H2EKpY2tpv9bWipTmafwIdXuUXPAZCpr1eZ0M
+  network: grpc
+  grpc-opts:
+    grpc-service-name: Sosat
 - name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
   server: 82.110.60.9
   port: 19999
@@ -25,23 +39,92 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
+- name: '[OpenRay] 🇺🇸 US-17222'
+  server: 216.106.185.141
+  port: 22324
+  type: vmess
+  uuid: 04621bae-ab36-11ec-b909-0242ac120002
+  alterId: 0
+  cipher: auto
+- name: 🇩🇪 Germany | 🌐 | [*CIDR]
+  server: 201.24.50.94
+  port: 443
+  type: vless
+  uuid: 8057eabc-921d-0002-9acb-80ccc6b48379
+  client-fingerprint: firefox
+  tls: true
+  servername: kerbal.mafioznik.xyz
+  skip-cert-verify: true
+  reality-opts:
+    public-key: wG3BS0H2EKpY2tpv9bWipTmafwIdXuUXPAZCpr1eZ0M
+  network: grpc
+  grpc-opts:
+    grpc-service-name: Sosat
+- name: '[OpenRay] 🇳🇱 NL-8659'
+  server: 82.38.31.219
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU
+  server: 92.255.79.246
+  port: 443
+  type: vless
+  uuid: 8057eabc-921d-0002-9acb-80ccc6b48379
+  client-fingerprint: firefox
+  tls: true
+  servername: supbober.mafioznik.xyz
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 8P2rVrZZ8v1q7WpYiRWnZ_nk2UI_4PqpN_DdZP91700
+  network: grpc
+  grpc-opts:
+    grpc-service-name: Lizat
 - name: '[OpenRay] 🇺🇸 US-24205'
   server: 23.150.248.20
   port: 8388
   type: ss
   cipher: chacha20-ietf-poly1305
   password: qB2Cv9VIlujj
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #2'
+  server: 92.255.79.246
+  port: 443
+  type: vless
+  uuid: 8057eabc-921d-0002-9acb-80ccc6b48379
+  client-fingerprint: chrome
+  tls: true
+  servername: supbober.mafioznik.xyz
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 8P2rVrZZ8v1q7WpYiRWnZ_nk2UI_4PqpN_DdZP91700
+  network: grpc
+  grpc-opts:
+    grpc-service-name: Lizat
 - name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
   server: 82.38.31.212
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #2'
+  server: 92.255.79.246
+  port: 443
+  type: vless
+  uuid: 8057eabc-921d-0002-9acb-80ccc6b48379
+  client-fingerprint: edge
+  tls: true
+  servername: supbober.mafioznik.xyz
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 8P2rVrZZ8v1q7WpYiRWnZ_nk2UI_4PqpN_DdZP91700
+  network: grpc
+  grpc-opts:
+    grpc-service-name: Lizat
+- name: '[OpenRay] 🇺🇸 US-16534'
+  server: 82.198.246.37
+  port: 180
   type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
+  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
   alterId: 0
   cipher: auto
 - name: '[OpenRay] 🇳🇱 NL-8634'
@@ -55,19 +138,6 @@ proxies:
   port: 18000
   type: vmess
   uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
   alterId: 0
   cipher: auto
 - name: '[OpenRay] 🇺🇸 US-15189'
