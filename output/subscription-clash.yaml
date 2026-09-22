@@ -1,30 +1,47 @@
 proxies:
-- name: DE
-  server: 194.87.55.90
-  port: 443
+- name: 🇩🇪 AetrisVPN
+  server: 91.196.32.216
+  port: 9543
   type: vless
-  uuid: 44a2e1af-a524-47a0-8d26-b160b20a5e37
+  uuid: ff6d2dda-7b90-404e-9951-34b3124bfdfa
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: chrome
   tls: true
-  servername: cdn.jsdelivr.net
+  servername: storage.yandexcloud.net
   skip-cert-verify: true
   reality-opts:
-    public-key: SzOhlaAgX-5m7RB6MTfx3MwjfYDi5G2JblGcpnLgam0
-    short-id: 8ef32bea5018959f
-- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
-  server: 82.110.60.9
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '[OpenRay] 🇳🇱 NL-8634'
-  server: 82.38.31.200
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇪🇺 AetrisVPN-RU
+    public-key: M6Ck7wUfOLhQl4582CBnaXwscPEP6SCpdEkUDzoj4Fc
+    short-id: 123abcdf
+- name: 🇫🇮 Finland | [*CIDR]
+  server: 193.233.245.21
+  port: 9443
+  type: vless
+  uuid: d9d0f208-d582-41d5-bb7b-742671402810
+  client-fingerprint: android
+  tls: true
+  servername: hub-fi-03.hanvpn.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /fi03-ws-8e47a
+    headers:
+      Host: hub-fi-03.hanvpn.cc
+- name: 🌐125Mb
+  server: 152.69.195.67
+  port: 47878
+  type: vless
+  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
+- name: 🇳🇱 The Netherlands, Eygelshoven | [BL]
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: 🇪🇺 AetrisVPN
   server: 200.165.231.209
   port: 443
   type: vless
@@ -37,104 +54,264 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
-- name: 'DE #2'
-  server: 194.87.55.90
-  port: 8443
-  type: trojan
-  password: a585ba04e0a8be8c5b5b80dd6c67bc24
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
+  server: 193.233.245.21
+  port: 9443
+  type: vless
+  uuid: d9d0f208-d582-41d5-bb7b-742671402810
   client-fingerprint: firefox
   tls: true
-  sni: vk.ru
+  servername: hub-de-06.hanvpn.cc
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /de06-xhttp-8e47a/
+    host: hub-de-06.hanvpn.cc
+- name: 🇫🇮 Finland | 🌐 | [*CIDR] VK
+  server: 89.208.208.172
+  port: 2107
+  type: vless
+  uuid: a76f6959-7d88-40c5-8984-4d888aa42389
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: 957a14.relay-edge.net
   skip-cert-verify: true
   reality-opts:
-    public-key: NR271PO2o1hKS1HzygSQ9DQJ2kehk8qaEv2ZpzKw234
-    short-id: e7d997
-- name: '[OpenRay] 🇳🇱 NL-10865'
-  server: 82.38.31.213
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: 🇩🇪 AetrisVPN
-  server: 91.240.86.12
-  port: 443
+    public-key: 4YFpLhV9HbwlCXzvCL8EfvYe-V-VCuXZIaOWS11lKXI
+    short-id: 11f303a9ff001d7c
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [BL]
+  server: 144.31.103.195
+  port: 8443
   type: vless
-  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #2'
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: android
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL] #2'
+  server: 144.31.103.195
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: d0e80dcb-190e-48e3-87dc-b2bab2324723
+  client-fingerprint: chrome
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #2'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: d0e80dcb-190e-48e3-87dc-b2bab2324723
+  client-fingerprint: edge
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #3'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: d0e80dcb-190e-48e3-87dc-b2bab2324723
+  client-fingerprint: chrome
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #3'
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #4'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: d0e80dcb-190e-48e3-87dc-b2bab2324723
+  client-fingerprint: randomized
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #5'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: d0e80dcb-190e-48e3-87dc-b2bab2324723
+  client-fingerprint: edge
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #4'
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #6'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: d0e80dcb-190e-48e3-87dc-b2bab2324723
+  client-fingerprint: firefox
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #7'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: d0e80dcb-190e-48e3-87dc-b2bab2324723
+  client-fingerprint: firefox
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL] #3'
+  server: 144.31.103.195
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL] #4'
+  server: 144.31.103.195
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #8'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: d0e80dcb-190e-48e3-87dc-b2bab2324723
+  client-fingerprint: qq
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #5'
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: yandex.ru
+  servername: nl1.hys.braidx.tech
   skip-cert-verify: true
-  reality-opts:
-    public-key: 2ZUQYIhUijdJ1vRL8iR8RxjmJvRVHYp-JoWevQ2LyR4
-    short-id: 7bb730e3e6616d31
-- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
-  server: 82.38.31.212
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
-  type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 0
-  cipher: auto
-- name: NL
-  server: 87.58.220.77
-  port: 443
-  type: vless
-  uuid: 1ed7bfe0-9645-483d-925a-b8e618291d36
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: www.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aQD1AVNprkpHlqyx4YBHiMEi5-hb-Gmi_pdiY-_Lvzg
-    short-id: 9f41ab7b3c
-- name: '[OpenRay] 🇺🇸 US-24855'
-  server: 84.17.41.2
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-15189'
-  server: 108.181.118.10
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: G5p6ww4o67HB
-- name: 'NL #2'
-  server: 87.58.220.77
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #6'
+  server: 194.93.61.139
   port: 8443
-  type: trojan
-  password: 19a98e32a1149952a988e1e915306e07
-  client-fingerprint: firefox
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
   tls: true
-  sni: yandex.ru
+  servername: nl1.hys.braidx.tech
   skip-cert-verify: true
-  reality-opts:
-    public-key: Xg9GWp35B9WMmB1FRancEXyJ6TD-HiCvw0s2gC-YtTU
-    short-id: dc05de
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL] #5'
+  server: 144.31.103.195
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #7'
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
