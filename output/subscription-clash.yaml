@@ -1,64 +1,144 @@
 proxies:
-- name: 🇬🇧GB_99|1.8MB/s|A001-260618 01
-  server: 82.110.60.9
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '[OpenRay] 🇳🇱 NL-10865'
-  server: 82.38.31.213
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-16534'
-  server: 82.198.246.37
-  port: 180
-  type: vmess
-  uuid: d13fc2f5-3e05-4795-81eb-44143a09e552
-  alterId: 0
-  cipher: auto
-- name: 🇳🇱NL_9|3.0MB/s|A003-260618 01
-  server: 82.38.31.212
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-24205'
-  server: 23.150.248.20
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: qB2Cv9VIlujj
-- name: '[OpenRay] 🇳🇱 NL-8634'
-  server: 82.38.31.200
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-17222'
-  server: 216.106.185.141
-  port: 22324
-  type: vmess
-  uuid: 04621bae-ab36-11ec-b909-0242ac120002
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇳🇱 NL-8659'
-  server: 82.38.31.219
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '[OpenRay] 🇺🇸 US-24855'
-  server: 84.17.41.2
-  port: 18000
-  type: vmess
-  uuid: f8c8dc3d-0d37-46b0-8b34-a7232882fcfe
-  alterId: 0
-  cipher: auto
-- name: '[OpenRay] 🇺🇸 US-15189'
-  server: 108.181.118.10
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: G5p6ww4o67HB
+- name: 🇩🇪 AetrisVPN
+  server: 185.229.9.175
+  port: 443
+  type: vless
+  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: api.ok.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Eutx4frdhG1y7THj7k3CjazAsrCMj932RtbV4a1QfQk
+    short-id: d5b6308860d578bb
+- name: 🇬🇧 United Kingdom, London | [BL]
+  server: uk-mori-new.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: uk-mori-new.failspace.top
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: 🇳🇱259Mb
+  server: 158.101.219.77
+  port: 62145
+  type: vless
+  uuid: 8fb65472-5957-4f64-ba2d-b5812b2f155a
+- name: 🇷🇺 AetrisVPN
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: chrome
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: 🇺🇸 United States | 🌐 | [BL]
+  server: us.netease.uz
+  port: 8444
+  type: vless
+  uuid: fd3b5215-287b-4f16-84d9-6b5854dea110
+  client-fingerprint: chrome
+  tls: true
+  servername: us.netease.uz
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: '🇬🇧 United Kingdom, London | [BL] #2'
+  server: 50.7.227.253
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: uk-mori-new.failspace.top
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands, Eygelshoven | [BL]
+  server: 176.65.151.205
+  port: 2087
+  type: vless
+  uuid: 443b2e33-8e9c-4f7b-a48a-383a93895d1e
+- name: 🇪🇺 AetrisVPN
+  server: 91.210.169.181
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: 🇳🇱 The Netherlands, Halfweg | [BL]
+  server: 50.7.120.163
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: nl-dedic-new-mori.failspace.top
+  skip-cert-verify: true
+- name: 🇪🇪 AetrisVPN
+  server: 188.225.83.133
+  port: 443
+  type: vless
+  uuid: 8c7e1e4d-9369-49db-b35c-366aa23fcd78
+  client-fingerprint: random
+  tls: true
+  servername: xnodtwx.artemida.live
+  skip-cert-verify: true
+  reality-opts:
+    public-key: JqmkP6Fys7jN2Fu1iDJuWKVNPhlgHfy_pj1DHFVKVhw
+    short-id: a1b2c3d4e5f6a7b8
+  network: grpc
+  grpc-opts: {}
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #2'
+  server: netherlands.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: netherlands.failspace.top
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #3'
+  server: hub-new.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: hub-new.failspace.top
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: 🇳🇱 AetrisVPN
+  server: 191.44.38.143
+  port: 8443
+  type: vless
+  uuid: e9ba7694-8d07-4ddf-8573-c924dc09577a
+  client-fingerprint: random
+  tls: true
+  servername: nl2.yabloko.top
+  skip-cert-verify: true
+  reality-opts:
+    public-key: -bdfPh42n5vMnPsrknIDPOzEOMsI1TlY9AjDPSggaR0
+    short-id: 1c10c8c03e2f0484
