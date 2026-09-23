@@ -10,7 +10,7 @@ proxies:
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: edge
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
@@ -33,7 +33,7 @@ proxies:
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: firefox
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
@@ -43,62 +43,12 @@ proxies:
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: android
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #4'
   server: 194.93.61.139
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL
-  server: 144.31.103.195
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #2'
-  server: 144.31.103.195
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #3'
-  server: 144.31.103.195
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #4'
-  server: 144.31.103.195
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #5'
-  server: 144.31.103.195
   port: 8443
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
@@ -113,12 +63,62 @@ proxies:
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: chrome
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #6'
   server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL
+  server: 144.31.103.195
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #2'
+  server: 144.31.103.195
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #3'
+  server: 144.31.103.195
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #4'
+  server: 144.31.103.195
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #5'
+  server: 144.31.103.195
   port: 8443
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
@@ -133,7 +133,7 @@ proxies:
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
-  client-fingerprint: android
+  client-fingerprint: qq
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
