@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-22T22:26:55Z",
+  "generated_at": "2026-09-23T00:57:05Z",
   "outputs": {
     "blacklist": {
       "count": 13,
@@ -106,7 +106,7 @@
     "lists": {
       "blacklist": {
         "checked": true,
-        "duration_s": 44.0,
+        "duration_s": 43.9,
         "fail_open": false,
         "filtered": true,
         "input": 13,
@@ -158,7 +158,7 @@
       },
       "whitelist": {
         "checked": true,
-        "duration_s": 52.2,
+        "duration_s": 84.8,
         "fail_open": false,
         "filtered": true,
         "input": 13,
@@ -193,9 +193,7 @@
         "xray_drop_unsupported": true,
         "xray_fresh_attempts_per_config": 1,
         "xray_fresh_min_attempt_successes": 1,
-        "xray_fresh_retried": 9,
-        "xray_fresh_retried_alive": 0,
-        "xray_fresh_verified": 10,
+        "xray_fresh_verified": 1,
         "xray_max_alive": 300,
         "xray_min_attempt_successes": 2,
         "xray_min_probe_successes": 1,
@@ -212,7 +210,7 @@
       }
     },
     "proxy_attempts_per_config": 3,
-    "proxy_count": 38,
+    "proxy_count": 40,
     "proxy_min_proxies": 15,
     "proxy_networks": 33,
     "proxy_pool_enabled": true,
@@ -231,7 +229,7 @@
     "proxy_search_rounds": 1,
     "quality": {
       "blacklist": {
-        "avg_score": 91.3205055195077,
+        "avg_score": 92.5722278127846,
         "input": 13,
         "kept": 13,
         "slow_dropped": 0,
@@ -249,7 +247,7 @@
         "whitelist": 1
       },
       "whitelist": {
-        "avg_score": 92.040478974,
+        "avg_score": 92.194866633,
         "input": 1,
         "kept": 1,
         "slow_dropped": 0,
