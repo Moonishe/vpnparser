@@ -1,15 +1,102 @@
 proxies:
-- name: 🇳🇱 The Netherlands, Eygelshoven | [BL]
-  server: 194.93.61.139
-  port: 8443
+- name: 🇩🇪 AetrisVPN
+  server: 185.229.9.175
+  port: 443
   type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
   flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: firefox
   tls: true
-  servername: nl1.hys.braidx.tech
+  servername: api.ok.ru
   skip-cert-verify: true
-- name: 🇪🇺 AetrisVPN-RU
+  reality-opts:
+    public-key: Eutx4frdhG1y7THj7k3CjazAsrCMj932RtbV4a1QfQk
+    short-id: d5b6308860d578bb
+- name: 🇫🇷 AetrisVPN
+  server: 176.123.162.100
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: 🇳🇱 AetrisVPN
+  server: 188.225.58.238
+  port: 443
+  type: vless
+  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: app5.betust.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: laDuxd6kFSPv2nWTy9LUjMGVRZM949R82alkZpMAqlk
+    short-id: e84029c5
+- name: 🇷🇺 AetrisVPN
+  server: 217.19.122.65
+  port: 443
+  type: vless
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: firefox
+  tls: true
+  servername: fbsv6.guardora.pro
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: fbsv6.guardora.pro
+- name: '🇩🇪 AetrisVPN #2'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: chrome
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: 🇪🇺 AetrisVPN
+  server: 91.210.169.181
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇩🇪 AetrisVPN #3'
+  server: 91.240.86.12
+  port: 443
+  type: vless
+  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: yandex.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 2ZUQYIhUijdJ1vRL8iR8RxjmJvRVHYp-JoWevQ2LyR4
+    short-id: 7bb730e3e6616d31
+- name: '🇪🇺 AetrisVPN #2'
   server: 200.165.231.209
   port: 443
   type: vless
@@ -22,113 +109,61 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #2'
-  server: 194.93.61.139
-  port: 8443
+- name: 🇩🇪 Germany, Frankfurt am Main | [BL]
+  server: s1.connect.labex.pro
+  port: 1007
+  type: vmess
+  uuid: 14594d5e-86bd-4727-8772-feb16dbf24ec
+  alterId: 0
+  cipher: auto
+- name: '🇷🇺 AetrisVPN #2'
+  server: 45.12.75.242
+  port: 26424
   type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: chrome
   tls: true
-  servername: nl1.hys.braidx.tech
+  servername: ya.ru
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #3'
-  server: 194.93.61.139
-  port: 8443
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: 🇱🇹 AetrisVPN
+  server: 188.225.25.142
+  port: 443
   type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: android
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #4'
-  server: 194.93.61.139
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: nl1.hys.braidx.tech
+  servername: prime.betust.net
   skip-cert-verify: true
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL
-  server: 144.31.103.195
-  port: 8443
+  reality-opts:
+    public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
+    short-id: 8681edc9
+- name: '🇱🇹 AetrisVPN #2'
+  server: 188.225.35.207
+  port: 443
   type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: firefox
   tls: true
-  servername: nl1.hys.braidx.tech
+  servername: demo.betust.net
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #5'
-  server: 194.93.61.139
-  port: 8443
+  reality-opts:
+    public-key: -lLmJilTNFk_DYxnbvWJH_swC9a5JRheZrN1KPVMjCc
+    short-id: 219a891b
+- name: '🇱🇹 AetrisVPN #3'
+  server: 188.225.24.201
+  port: 443
   type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
   flow: xtls-rprx-vision
-  client-fingerprint: ios
+  client-fingerprint: firefox
   tls: true
-  servername: nl1.hys.braidx.tech
+  servername: app11.betust.net
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #6'
-  server: 194.93.61.139
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #7'
-  server: 194.93.61.139
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #2'
-  server: 144.31.103.195
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #3'
-  server: 144.31.103.195
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #4'
-  server: 144.31.103.195
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL]-NL #5'
-  server: 144.31.103.195
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
+  reality-opts:
+    public-key: XhzNlmMTdYr2pYTqiNNP6qWe7BkAgVHU-kZWXc9u9hY
+    short-id: 91c2269c
