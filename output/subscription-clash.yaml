@@ -1,16 +1,11 @@
 proxies:
-- name: 🌐125Mb-JP
-  server: 152.69.195.67
-  port: 47878
-  type: vless
-  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
 - name: 🇳🇱 The Netherlands, Eygelshoven | [BL]
   server: 194.93.61.139
   port: 8443
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: safari
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
@@ -33,7 +28,7 @@ proxies:
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: qq
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
@@ -53,27 +48,7 @@ proxies:
   type: vless
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #5'
-  server: 194.93.61.139
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #6'
-  server: 194.93.61.139
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: firefox
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
@@ -84,6 +59,36 @@ proxies:
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
   client-fingerprint: qq
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #5'
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #6'
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: nl1.hys.braidx.tech
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #7'
+  server: 194.93.61.139
+  port: 8443
+  type: vless
+  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
@@ -124,16 +129,6 @@ proxies:
   uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
   flow: xtls-rprx-vision
   client-fingerprint: chrome
-  tls: true
-  servername: nl1.hys.braidx.tech
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #7'
-  server: 194.93.61.139
-  port: 8443
-  type: vless
-  uuid: 61da8f4b-6ab1-4ca7-bae0-1cec4f9be2f8
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
   tls: true
   servername: nl1.hys.braidx.tech
   skip-cert-verify: true
