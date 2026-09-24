@@ -12,7 +12,36 @@ proxies:
   reality-opts:
     public-key: M6Ck7wUfOLhQl4582CBnaXwscPEP6SCpdEkUDzoj4Fc
     short-id: 123abcdf
-- name: 🇪🇪 AetrisVPN-NL
+- name: 🇫🇮 Finland, Helsinki | [BL]
+  server: api-1.hysteria.ltd
+  port: 4443
+  type: vless
+  uuid: 73606ef5-51ab-4182-8ae8-41a50e1a9d52
+  flow: xtls-rprx-vision
+  client-fingerprint: android
+  tls: true
+  servername: api-1.hysteria.ltd
+  skip-cert-verify: true
+- name: 🇫🇷 AetrisVPN
+  server: 176.123.162.100
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: 🇬🇧213Mb
+  server: 146.19.130.192
+  port: 8080
+  type: vless
+  uuid: 7e6cb488-b2c1-4522-affe-659f0589fd12
+- name: 🇪🇪 AetrisVPN
   server: qq.utiltools.site
   port: 443
   type: vless
@@ -24,7 +53,54 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇪🇺 AetrisVPN-RU
+- name: 🇪🇺 AetrisVPN
+  server: 188.225.33.141
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: 188.225.33.141
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇩🇪 AetrisVPN #2'
+  server: 37.139.42.138
+  port: 443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: android
+  tls: true
+  servername: dostavitos.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /e9ws
+- name: '🇫🇮 Finland, Helsinki | [BL] #2'
+  server: api-1.hysteria.ltd
+  port: 4443
+  type: vless
+  uuid: 73606ef5-51ab-4182-8ae8-41a50e1a9d52
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: api-1.hysteria.ltd
+  skip-cert-verify: true
+- name: '🇪🇪 AetrisVPN #2'
+  server: 78.159.250.214
+  port: 443
+  type: vless
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: qq.utiltools.site
+  skip-cert-verify: true
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+- name: '🇪🇺 AetrisVPN #2'
   server: 200.165.231.209
   port: 443
   type: vless
@@ -38,44 +114,21 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: '🇩🇪 AetrisVPN #2'
-  server: 185.229.9.74
-  port: 443
+- name: 🇩🇪 Germany, Frankfurt am Main (Innenstadt I) | 🌐 | [BL]
+  server: ir.fastraytel9880.ir
+  port: 22117
   type: vless
-  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
+  uuid: 4abb351b-5948-42d6-9c41-329ba75ddaa1
+- name: '🇫🇮 Finland, Helsinki | [BL] #3'
+  server: api-1.hysteria.ltd
+  port: 4443
+  type: vless
+  uuid: 73606ef5-51ab-4182-8ae8-41a50e1a9d52
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: ios
   tls: true
-  servername: www.vk.com
+  servername: api-1.hysteria.ltd
   skip-cert-verify: true
-  reality-opts:
-    public-key: 7o36V1H4H_34kTMpwCfJmDB1bbd21Rgbk2dM_dAonyM
-    short-id: 0bb3fbdc6cb178d4
-- name: '🇪🇪 AetrisVPN-NL #2'
-  server: 78.159.250.214
-  port: 443
-  type: vless
-  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: qq.utiltools.site
-  skip-cert-verify: true
-  reality-opts:
-    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: '🇪🇺 AetrisVPN-RU #2'
-  server: 188.225.33.141
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: 188.225.33.141
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
 - name: 🇳🇱 AetrisVPN
   server: 188.225.58.238
   port: 443
@@ -89,7 +142,7 @@ proxies:
   reality-opts:
     public-key: laDuxd6kFSPv2nWTy9LUjMGVRZM949R82alkZpMAqlk
     short-id: e84029c5
-- name: 🇱🇹 AetrisVPN-RU
+- name: 🇱🇹 AetrisVPN
   server: 188.225.25.142
   port: 443
   type: vless
@@ -102,33 +155,17 @@ proxies:
   reality-opts:
     public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
     short-id: 8681edc9
-- name: '🇳🇱 AetrisVPN #2'
-  server: 45.11.27.86
-  port: 443
+- name: '🇫🇮 Finland, Helsinki | [BL] #4'
+  server: api-1.hysteria.ltd
+  port: 4443
   type: vless
-  uuid: a2738d8d-ed26-4b13-a4a2-b89c7238cd10
+  uuid: 73606ef5-51ab-4182-8ae8-41a50e1a9d52
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: safari
   tls: true
-  servername: 5post-gate.x5.ru
+  servername: api-1.hysteria.ltd
   skip-cert-verify: true
-  reality-opts:
-    public-key: IBzFSziv_xISB-Q6X90PocTBde6jb4X6swEvdZQhqzk
-    short-id: d0aae44f
-- name: '🇱🇹 AetrisVPN-RU #2'
-  server: 188.225.44.89
-  port: 443
-  type: vless
-  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: app12.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Fgd7fSq-ZXnAZd3GUYGEfTyiz9wno4IWVIcs7-Narwg
-    short-id: f73ac93d
-- name: 🇱🇻 AetrisVPN-RU
+- name: 🇱🇻 AetrisVPN
   server: 159.194.209.203
   port: 2083
   type: vless
@@ -141,3 +178,33 @@ proxies:
   reality-opts:
     public-key: DcAXpVZZ7_JtJqz9b6ax9gWWvkH_6icdC29j6keGPj8
     short-id: c4e81a7b
+- name: '🇫🇮 Finland, Helsinki | [BL] #5'
+  server: api-1.hysteria.ltd
+  port: 4443
+  type: vless
+  uuid: 73606ef5-51ab-4182-8ae8-41a50e1a9d52
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: api-1.hysteria.ltd
+  skip-cert-verify: true
+- name: '🇫🇮 Finland, Helsinki | [BL] #6'
+  server: api-1.hysteria.ltd
+  port: 4443
+  type: vless
+  uuid: 73606ef5-51ab-4182-8ae8-41a50e1a9d52
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api-1.hysteria.ltd
+  skip-cert-verify: true
+- name: '🇫🇮 Finland, Helsinki | [BL] #7'
+  server: api-1.hysteria.ltd
+  port: 4443
+  type: vless
+  uuid: 73606ef5-51ab-4182-8ae8-41a50e1a9d52
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: api-1.hysteria.ltd
+  skip-cert-verify: true
