@@ -12,8 +12,22 @@ proxies:
   reality-opts:
     public-key: M6Ck7wUfOLhQl4582CBnaXwscPEP6SCpdEkUDzoj4Fc
     short-id: 123abcdf
-- name: 🇪🇪 AetrisVPN-NL
-  server: qq.utiltools.site
+- name: 🇫🇷 AetrisVPN
+  server: 176.123.162.100
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: 🇪🇪 AetrisVPN
+  server: 78.159.250.214
   port: 443
   type: vless
   uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
@@ -24,51 +38,12 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇪🇺 AetrisVPN-RU
-  server: 200.165.231.209
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: random
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: '🇩🇪 AetrisVPN #2'
-  server: 185.229.9.175
-  port: 443
-  type: vless
-  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.ok.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Eutx4frdhG1y7THj7k3CjazAsrCMj932RtbV4a1QfQk
-    short-id: d5b6308860d578bb
-- name: 🇳🇱 AetrisVPN
-  server: 188.225.58.238
-  port: 443
-  type: vless
-  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: app5.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: laDuxd6kFSPv2nWTy9LUjMGVRZM949R82alkZpMAqlk
-    short-id: e84029c5
-- name: '🇪🇺 AetrisVPN-RU #2'
+- name: 🇪🇺 AetrisVPN
   server: 188.225.33.141
   port: 443
   type: vless
   uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
   tls: true
   servername: wstg.datasynctrue.online
   skip-cert-verify: true
@@ -77,71 +52,88 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: '🇳🇱 AetrisVPN #2'
-  server: 31.177.111.4
+- name: 🇺🇸262Mb
+  server: hub-mori-new.failspace.top
   port: 443
   type: vless
-  uuid: 4f29ea6e-8b9d-4eb4-a0fc-aa8a1ed25d3e
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
   tls: true
-  servername: community-bd.paruscamp.com
   skip-cert-verify: true
-  reality-opts:
-    public-key: NjbnmsosFJHk-7LJei0QOWDI4f7Db2lO6rsdJ0wfHlE
-    short-id: 9654e54cf3aaa5bb
-- name: 🇱🇹 AetrisVPN-RU
-  server: 188.225.77.241
+- name: 🇳🇱 The Netherlands, Eygelshoven | [BL]
+  server: 2.26.150.84
   port: 443
   type: vless
-  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
+  uuid: 933eb45b-0e97-4ed1-bfb9-e34bd0b4342c
   flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: tlsov.vles.space
+  skip-cert-verify: true
+- name: '🇪🇺 AetrisVPN #2'
+  server: 91.210.169.181
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
   client-fingerprint: random
   tls: true
-  servername: api.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: YczbievYAOeZIypa58aRpil6XbfdyifK_0cFJWn8-yg
-    short-id: d6c172d3
-- name: '🇱🇹 AetrisVPN-RU #2'
-  server: 188.225.44.89
-  port: 443
-  type: vless
-  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: app12.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Fgd7fSq-ZXnAZd3GUYGEfTyiz9wno4IWVIcs7-Narwg
-    short-id: f73ac93d
-- name: 🇷🇺 AetrisVPN
-  server: 217.19.122.65
-  port: 443
-  type: vless
-  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
-  client-fingerprint: firefox
-  tls: true
-  servername: fbsv6.guardora.pro
-  alpn:
-  - http/1.1
+  servername: wstg.datasynctrue.online
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /ws
+    path: /api/connect
     headers:
-      Host: fbsv6.guardora.pro
-- name: '🇱🇹 AetrisVPN-RU #3'
-  server: 188.225.25.195
+      Host: wstg.datasynctrue.online
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #2'
+  server: 2.26.150.84
   port: 443
   type: vless
-  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
+  uuid: 933eb45b-0e97-4ed1-bfb9-e34bd0b4342c
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: tlsov.vles.space
+  skip-cert-verify: true
+- name: '🇪🇺 AetrisVPN #3'
+  server: 195.133.73.65
+  port: 443
+  type: vless
+  uuid: ebd1c0d6-7ff4-4b9f-8692-237517a27a64
   flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: app25.betust.net
+  servername: anyfile2file.com
   skip-cert-verify: true
   reality-opts:
-    public-key: Fe_144ALuRRedGs06ljDnE1f_G2B2wE4i9_diqw5LnY
-    short-id: a16bc894
+    public-key: mza5Hn1aolSz65qu-UwvBP3oesxMe25r11o4nxvikF0
+    short-id: 64c1fe36c7846400
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #3'
+  server: 2.26.150.84
+  port: 443
+  type: vless
+  uuid: 933eb45b-0e97-4ed1-bfb9-e34bd0b4342c
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: tlsov.vles.space
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #4'
+  server: 2.26.150.84
+  port: 443
+  type: vless
+  uuid: 933eb45b-0e97-4ed1-bfb9-e34bd0b4342c
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: tlsov.vles.space
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Eygelshoven | [BL] #5'
+  server: 2.26.150.84
+  port: 443
+  type: vless
+  uuid: 933eb45b-0e97-4ed1-bfb9-e34bd0b4342c
+  flow: xtls-rprx-vision
+  client-fingerprint: android
+  tls: true
+  servername: tlsov.vles.space
+  skip-cert-verify: true
