@@ -12,21 +12,7 @@ proxies:
   reality-opts:
     public-key: M6Ck7wUfOLhQl4582CBnaXwscPEP6SCpdEkUDzoj4Fc
     short-id: 123abcdf
-- name: 🇫🇷 AetrisVPN
-  server: 176.123.162.100
-  port: 9880
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: firefox
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: 🇪🇪 AetrisVPN
+- name: 🇪🇪 AetrisVPN-NL
   server: qq.utiltools.site
   port: 443
   type: vless
@@ -38,8 +24,8 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇪🇺 AetrisVPN
-  server: 91.210.169.181
+- name: 🇪🇺 AetrisVPN-RU
+  server: 200.165.231.209
   port: 443
   type: vless
   uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
@@ -52,14 +38,6 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇺🇸262Mb
-  server: hub-mori-new.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  tls: true
-  skip-cert-verify: true
 - name: '🇩🇪 AetrisVPN #2'
   server: 185.229.9.175
   port: 443
@@ -74,45 +52,6 @@ proxies:
     public-key: Eutx4frdhG1y7THj7k3CjazAsrCMj932RtbV4a1QfQk
     short-id: d5b6308860d578bb
 - name: 🇳🇱 AetrisVPN
-  server: 31.177.111.4
-  port: 443
-  type: vless
-  uuid: 4f29ea6e-8b9d-4eb4-a0fc-aa8a1ed25d3e
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: community-bd.paruscamp.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: NjbnmsosFJHk-7LJei0QOWDI4f7Db2lO6rsdJ0wfHlE
-    short-id: 9654e54cf3aaa5bb
-- name: 🇱🇹 AetrisVPN
-  server: 188.225.77.241
-  port: 443
-  type: vless
-  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: api.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: YczbievYAOeZIypa58aRpil6XbfdyifK_0cFJWn8-yg
-    short-id: d6c172d3
-- name: '🇩🇪 AetrisVPN #3'
-  server: 185.229.9.74
-  port: 443
-  type: vless
-  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: www.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 7o36V1H4H_34kTMpwCfJmDB1bbd21Rgbk2dM_dAonyM
-    short-id: 0bb3fbdc6cb178d4
-- name: '🇳🇱 AetrisVPN #2'
   server: 188.225.58.238
   port: 443
   type: vless
@@ -125,7 +64,46 @@ proxies:
   reality-opts:
     public-key: laDuxd6kFSPv2nWTy9LUjMGVRZM949R82alkZpMAqlk
     short-id: e84029c5
-- name: '🇱🇹 AetrisVPN #2'
+- name: '🇪🇺 AetrisVPN-RU #2'
+  server: 188.225.33.141
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇳🇱 AetrisVPN #2'
+  server: 31.177.111.4
+  port: 443
+  type: vless
+  uuid: 4f29ea6e-8b9d-4eb4-a0fc-aa8a1ed25d3e
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: community-bd.paruscamp.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NjbnmsosFJHk-7LJei0QOWDI4f7Db2lO6rsdJ0wfHlE
+    short-id: 9654e54cf3aaa5bb
+- name: 🇱🇹 AetrisVPN-RU
+  server: 188.225.77.241
+  port: 443
+  type: vless
+  uuid: 7cde4592-4758-415f-8b97-c188faa4d1c9
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: api.betust.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: YczbievYAOeZIypa58aRpil6XbfdyifK_0cFJWn8-yg
+    short-id: d6c172d3
+- name: '🇱🇹 AetrisVPN-RU #2'
   server: 188.225.44.89
   port: 443
   type: vless
@@ -138,45 +116,6 @@ proxies:
   reality-opts:
     public-key: Fgd7fSq-ZXnAZd3GUYGEfTyiz9wno4IWVIcs7-Narwg
     short-id: f73ac93d
-- name: '🇩🇪 AetrisVPN #4'
-  server: 91.240.87.166
-  port: 443
-  type: vless
-  uuid: c5694dc5-39fd-4a92-8430-3837baa522a3
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: yandex.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 2ZUQYIhUijdJ1vRL8iR8RxjmJvRVHYp-JoWevQ2LyR4
-    short-id: 7bb730e3e6616d31
-- name: '🇳🇱 AetrisVPN #3'
-  server: 45.11.27.86
-  port: 443
-  type: vless
-  uuid: a2738d8d-ed26-4b13-a4a2-b89c7238cd10
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: IBzFSziv_xISB-Q6X90PocTBde6jb4X6swEvdZQhqzk
-    short-id: d0aae44f
-- name: 🇱🇻 AetrisVPN
-  server: 159.194.209.203
-  port: 2083
-  type: vless
-  uuid: 6796f262-ca34-4b8e-b86e-6c175c081f2e
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: DcAXpVZZ7_JtJqz9b6ax9gWWvkH_6icdC29j6keGPj8
-    short-id: c4e81a7b
 - name: 🇷🇺 AetrisVPN
   server: 217.19.122.65
   port: 443
@@ -193,49 +132,7 @@ proxies:
     path: /ws
     headers:
       Host: fbsv6.guardora.pro
-- name: '🇪🇺 AetrisVPN #2'
-  server: 188.225.33.141
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: '🇪🇺 AetrisVPN #3'
-  server: 200.165.231.209
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: random
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: '🇪🇺 AetrisVPN #4'
-  server: 176.123.167.90
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: random
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aa
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: '🇱🇹 AetrisVPN #3'
+- name: '🇱🇹 AetrisVPN-RU #3'
   server: 188.225.25.195
   port: 443
   type: vless
