@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-26T05:25:47Z",
+  "generated_at": "2026-09-26T10:14:39Z",
   "outputs": {
     "blacklist": {
       "count": 0,
@@ -7,18 +7,18 @@
       "file": "output/subscription-blacklist.txt"
     },
     "clash": {
-      "count": 2,
+      "count": 3,
       "countries": {
         "DE": 1,
-        "RU": 1
+        "RU": 2
       },
       "file": "output/subscription-clash.yaml"
     },
     "combined": {
-      "count": 2,
+      "count": 3,
       "countries": {
         "DE": 1,
-        "RU": 1
+        "RU": 2
       },
       "file": "output/subscription.txt"
     },
@@ -60,9 +60,9 @@
       "file": "output/locations/subscription-NL.txt"
     },
     "location_ru": {
-      "count": 1,
+      "count": 2,
       "countries": {
-        "RU": 1
+        "RU": 2
       },
       "file": "output/locations/subscription-RU.txt"
     },
@@ -72,18 +72,18 @@
       "file": "output/locations/subscription-US.txt"
     },
     "mix": {
-      "count": 2,
+      "count": 3,
       "countries": {
         "DE": 1,
-        "RU": 1
+        "RU": 2
       },
       "file": "output/subscription-mix.txt"
     },
     "whitelist": {
-      "count": 2,
+      "count": 3,
       "countries": {
         "DE": 1,
-        "RU": 1
+        "RU": 2
       },
       "file": "output/subscription-whitelist.txt"
     }
@@ -98,31 +98,45 @@
     "fail_open_on_low_alive": false,
     "lists": {
       "blacklist": {
-        "ban_prefiltered": 11,
-        "checked": false,
-        "duration_s": 1.2,
+        "checked": true,
+        "duration_s": 31.7,
         "fail_open": false,
-        "filtered": false,
+        "filtered": true,
         "input": 11,
+        "min_alive_to_filter_tcp": 10,
+        "min_alive_to_filter_tls": 10,
+        "output_after_tcp": 11,
+        "output_after_tls": 0,
         "proxy_count": 40,
-        "reason": "",
-        "tcp_candidates": 0,
-        "tcp_skipped_protocol": 0
+        "reason": "below_min_alive_tls",
+        "sources": {},
+        "tcp_alive": 11,
+        "tcp_candidates": 11,
+        "tcp_checked": 11,
+        "tcp_max_alive": 0,
+        "tcp_search_round_limit": 1,
+        "tcp_search_rounds": 1,
+        "tcp_skipped_protocol": 0,
+        "tls_alive": 0,
+        "tls_candidates": 11,
+        "tls_checked": 11,
+        "tls_drop_unchecked": false,
+        "tls_unchecked_passthrough": 0
       },
       "whitelist": {
         "ban_prefiltered": 7,
         "checked": true,
-        "duration_s": 55.9,
+        "duration_s": 71.7,
         "fail_open": false,
         "filtered": true,
         "input": 11,
         "min_alive_to_filter_tcp": 4,
         "min_alive_to_filter_tls": 4,
-        "output_after_health": 2,
+        "output_after_health": 3,
         "output_after_tcp": 4,
         "output_after_tls": 3,
-        "output_after_xray": 2,
-        "proxy_count": 40,
+        "output_after_xray": 3,
+        "proxy_count": 39,
         "reason": "below_min_alive_tls",
         "singbox_available": true,
         "singbox_candidates": 0,
@@ -139,7 +153,7 @@
         "tls_checked": 4,
         "tls_drop_unchecked": false,
         "tls_unchecked_passthrough": 0,
-        "xray_alive": 2,
+        "xray_alive": 3,
         "xray_attempts_per_config": 3,
         "xray_available": true,
         "xray_candidates": 3,
@@ -147,7 +161,7 @@
         "xray_drop_unsupported": true,
         "xray_fresh_attempts_per_config": 1,
         "xray_fresh_min_attempt_successes": 1,
-        "xray_fresh_verified": 1,
+        "xray_fresh_verified": 0,
         "xray_max_alive": 300,
         "xray_min_attempt_successes": 2,
         "xray_min_probe_successes": 1,
@@ -166,7 +180,7 @@
     "proxy_attempts_per_config": 3,
     "proxy_count": 39,
     "proxy_min_proxies": 15,
-    "proxy_networks": 27,
+    "proxy_networks": 31,
     "proxy_pool_enabled": true,
     "proxy_pool_required": true,
     "proxy_pool_validate": true,
@@ -190,12 +204,12 @@
         "whitelist": 10
       },
       "stability_relaxed": {
-        "whitelist": 2
+        "whitelist": 1
       },
       "whitelist": {
-        "avg_score": 93.20171647699999,
-        "input": 2,
-        "kept": 2,
+        "avg_score": 79.582236321,
+        "input": 3,
+        "kept": 3,
         "slow_dropped": 0,
         "stability_dropped": 0
       }
