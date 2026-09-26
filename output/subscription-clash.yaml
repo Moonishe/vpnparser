@@ -11,108 +11,35 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: l9b1AQuRbk4WA3hUVHI3mGBW-X5gNKFF72fWvismAS0
-- name: 🌐74Mb
-  server: 152.69.195.67
-  port: 47878
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+  server: 188.130.209.219
+  port: 8443
   type: vless
-  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
-- name: 🇳🇱 AetrisVPN
-  server: 188.225.58.238
-  port: 443
-  type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
+  uuid: 7faa65a6-b43b-413e-9480-a81fae3d0c49
   flow: xtls-rprx-vision
-  client-fingerprint: random
+  client-fingerprint: safari
   tls: true
-  servername: app5.betust.net
+  servername: edge-fr.extazy.net
   skip-cert-verify: true
   reality-opts:
-    public-key: laDuxd6kFSPv2nWTy9LUjMGVRZM949R82alkZpMAqlk
-    short-id: e84029c5
-- name: 🇱🇹 AetrisVPN
-  server: 188.225.25.142
+    public-key: ygxQyBcJzlLgpSl3MCRDDiFET4TT-3wxa4GdG1obkCY
+    short-id: ba4b2afa9e7193ea
+- name: 🇳🇱110Mb
+  server: nl-dedic-mori-4.failspace.top
   port: 443
   type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: random
+  client-fingerprint: firefox
   tls: true
-  servername: prime.betust.net
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-  reality-opts:
-    public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
-    short-id: 8681edc9
-- name: '🇩🇪 AetrisVPN #2'
-  server: 213.171.26.168
-  port: 443
-  type: vless
-  uuid: 8d321a7d-a874-0006-becd-8ed824bf80a3
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: ru-001.zapretu.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: l9b1AQuRbk4WA3hUVHI3mGBW-X5gNKFF72fWvismAS0
-- name: '🇳🇱 AetrisVPN #2'
-  server: 188.225.57.78
-  port: 443
-  type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: app4.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: NCW-zK60GXsiDdlbxww18Pqp4kz3zTG1URHWS_bnfDk
-    short-id: 3f7e0363
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 31.76.65.234
-  port: 443
-  type: vless
-  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
-  client-fingerprint: android
-  tls: true
-  servername: 31.76.65.234.fwqfw783rg2dad.website
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /websocket
-    headers:
-      Host: 31.76.65.234.fwqfw783rg2dad.website
-- name: '🇱🇹 AetrisVPN #2'
-  server: 188.225.77.241
-  port: 443
-  type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: api.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: YczbievYAOeZIypa58aRpil6XbfdyifK_0cFJWn8-yg
-    short-id: d6c172d3
-- name: '🇱🇹 AetrisVPN #3'
-  server: 188.225.35.207
-  port: 443
-  type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: demo.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: -lLmJilTNFk_DYxnbvWJH_swC9a5JRheZrN1KPVMjCc
-    short-id: 219a891b
 - name: 🇷🇺 Russia [*CIDR]
   server: 31.76.65.234.fwqfw783rg2dad.website
   port: 443
   type: vless
   uuid: cc39844c-d9ba-4394-9cae-395933f4e353
-  client-fingerprint: chrome
+  client-fingerprint: ios
   tls: true
   servername: 31.76.65.234.fwqfw783rg2dad.website
   alpn:
@@ -123,7 +50,142 @@ proxies:
     path: /websocket
     headers:
       Host: 31.76.65.234.fwqfw783rg2dad.website
-- name: '🇱🇹 AetrisVPN #4'
+- name: 🇺🇸398Mb
+  server: hub-mori-new.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  tls: true
+  skip-cert-verify: true
+- name: 🇩🇪 Germany | 🌐 | [*CIDR]
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: chrome
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
+  server: 188.130.209.219
+  port: 8443
+  type: vless
+  uuid: 7faa65a6-b43b-413e-9480-a81fae3d0c49
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: edge-fr.extazy.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ygxQyBcJzlLgpSl3MCRDDiFET4TT-3wxa4GdG1obkCY
+    short-id: ba4b2afa9e7193ea
+- name: 🇳🇱 The Netherlands, Halfweg | [BL]
+  server: nilka.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: nilka.failspace.top
+  skip-cert-verify: true
+- name: '🇷🇺 Russia [*CIDR] #2'
+  server: 31.76.65.234
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: firefox
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: chrome
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: 95.163.232.171
+- name: '🇷🇺 Russia [*CIDR] #3'
+  server: 31.76.65.234
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: edge
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #2'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: firefox
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: 95.163.232.171
+- name: '🇷🇺 Russia [*CIDR] #4'
+  server: 31.76.65.234.fwqfw783rg2dad.website
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: edge
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #2'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: chrome
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: media-se.compressor.work
+- name: 🇱🇹 AetrisVPN
   server: 188.225.25.195
   port: 443
   type: vless
@@ -136,16 +198,358 @@ proxies:
   reality-opts:
     public-key: Fe_144ALuRRedGs06ljDnE1f_G2B2wE4i9_diqw5LnY
     short-id: a16bc894
-- name: '🇱🇹 AetrisVPN #5'
-  server: 188.225.24.201
-  port: 443
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #3'
+  server: 95.163.232.171
+  port: 14443
   type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
-  flow: xtls-rprx-vision
-  client-fingerprint: random
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: safari
   tls: true
-  servername: app11.betust.net
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: media-se.compressor.work
+- name: 🇷🇺 AetrisVPN
+  server: 135.106.227.252
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: KHdJKMAYowrILcVjV7t4lPtuh5bVXUAS
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #3'
+  server: media-se.compressor.work
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: safari
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: 🇳🇴 AetrisVPN
+  server: 139.100.236.74
+  port: 1
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: WxYpOK1iPSJySbVNMMJDtw
+- name: '🇩🇪 AetrisVPN #2'
+  server: 139.100.236.74
+  port: 2
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: WxYpOK1iPSJySbVNMMJDtw
+- name: 🇰🇿 Kazakhstan [*CIDR]
+  server: 92.53.104.65
+  port: 9992
+  type: vless
+  uuid: 41164ee6-90ad-479a-ba3c-a152217ef34a
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
   skip-cert-verify: true
   reality-opts:
-    public-key: XhzNlmMTdYr2pYTqiNNP6qWe7BkAgVHU-kZWXc9u9hY
-    short-id: 91c2269c
+    public-key: IelvZ9WsWF3WXZoJnaqQKByqwJoz1zsmmdnInzDYcyw
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #4'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: firefox
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: 🇰🇿 Kazakhstan | [*CIDR]
+  server: 92.53.104.65
+  port: 9992
+  type: vless
+  uuid: 41164ee6-90ad-479a-ba3c-a152217ef34a
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  skip-cert-verify: true
+  reality-opts:
+    public-key: IelvZ9WsWF3WXZoJnaqQKByqwJoz1zsmmdnInzDYcyw
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #4'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: safari
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #5'
+  server: media-se.compressor.work
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: qq
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #5'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: firefox
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: 95.163.232.171
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #6'
+  server: media-se.compressor.work
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: ios
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #7'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: safari
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: 95.163.232.171
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #6'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: safari
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #7'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: edge
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #8'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: firefox
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #9'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: qq
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: 95.163.232.171
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #8'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: edge
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: 95.163.232.171
+- name: 🇩🇪 Germany | [*CIDR]
+  server: 92.53.104.65
+  port: 9991
+  type: vless
+  uuid: 41164ee6-90ad-479a-ba3c-a152217ef34a
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  skip-cert-verify: true
+  reality-opts:
+    public-key: TxJgJEmiq8qF7EWORETonb8dZg49N3HvIaY9rlRN4w0
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #10'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: qq
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #9'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: ios
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #10'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: chrome
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #11'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: edge
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #11'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: qq
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: 95.163.232.171
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #12'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: ios
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: media-se.compressor.work
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #13'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: edge
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: media-se.compressor.work
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #14'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: firefox
+  tls: true
+  servername: media-se.compressor.work
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: media-se.compressor.work
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #15'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: qq
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
