@@ -1,33 +1,4 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 91.196.32.216
-  port: 9543
-  type: vless
-  uuid: ff6d2dda-7b90-404e-9951-34b3124bfdfa
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: storage.yandexcloud.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: M6Ck7wUfOLhQl4582CBnaXwscPEP6SCpdEkUDzoj4Fc
-    short-id: 123abcdf
-- name: 🇫🇮 AetrisVPN
-  server: 2.26.133.99
-  port: 443
-  type: vless
-  uuid: cb9bc521-77a2-4c23-9bbf-b8d5318e717d
-  client-fingerprint: chrome
-  tls: true
-  servername: ads.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: --pxBStu9Lk1PFAsYbzTg5vBZKXtzdcOlmrpw9pen1s
-    short-id: 0812e28665a36091
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: ads.x5.ru
 - name: 🇫🇷 AetrisVPN
   server: 176.123.162.100
   port: 9880
@@ -42,43 +13,24 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: 🇯🇵117Mb
-  server: 152.69.195.67
-  port: 47878
-  type: vless
-  uuid: eb8613e3-8393-4cff-a3ad-6501fd4adc63
-- name: 🇪🇺 AetrisVPN
-  server: 91.210.169.181
+- name: 🇪🇪 AetrisVPN
+  server: 78.159.250.214
   port: 443
   type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 🇱🇻 AetrisVPN
-  server: 159.194.209.203
-  port: 2083
-  type: vless
-  uuid: 6796f262-ca34-4b8e-b86e-6c175c081f2e
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: 5post-gate.x5.ru
+  servername: qq.utiltools.site
   skip-cert-verify: true
   reality-opts:
-    public-key: DcAXpVZZ7_JtJqz9b6ax9gWWvkH_6icdC29j6keGPj8
-    short-id: c4e81a7b
-- name: '🇪🇺 AetrisVPN #2'
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+- name: 🇪🇺 AetrisVPN
   server: 200.165.231.209
   port: 443
   type: vless
   uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
   tls: true
   servername: wstg.datasynctrue.online
   skip-cert-verify: true
@@ -87,45 +39,128 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇷🇺 AetrisVPN
-  server: 45.67.56.25
+- name: 🇺🇸212Mb
+  server: ukefast.failspace.top
   port: 443
   type: vless
-  uuid: 933eb45b-0e97-4ed1-bfb9-e34bd0b4342c
-  client-fingerprint: random
-  tls: true
-  servername: a.wb.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: M7fn-U9PikoH_WXu6HbDE5bi9ej5cFN8bgWy8qF14WU
-    short-id: 76f547961a8ca082
-- name: '🇷🇺 AetrisVPN #2'
-  server: dismissaltree.net
-  port: 2053
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: random
-  tls: true
-  servername: dismissaltree.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: dismissaltree.net
-- name: 🇷🇺 Russia | 🌐 | [*CIDR]
-  server: 46.17.44.194
-  port: 48564
-  type: vless
-  uuid: b3c9b89b-b6b6-44d1-b46a-a0b7d99bb89d
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: ai.android
+  servername: ukefast.failspace.top
+  alpn:
+  - h2
   skip-cert-verify: true
-  reality-opts:
-    public-key: MjL1qkCDkJ3mW9NCTtUcgs-Yw_mHQNweRIvLfK07c3o
-    short-id: cd34ce1bffe1
-  network: grpc
-  grpc-opts: {}
+- name: '🇪🇺 AetrisVPN #2'
+  server: 188.225.33.141
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇪🇺 AetrisVPN #3'
+  server: wstg.datasynctrue.online
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+- name: 🇷🇺 Russia | [*CIDR]
+  server: 31.76.65.234.fwqfw783rg2dad.website
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: safari
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+- name: '🇷🇺 Russia | [*CIDR] #2'
+  server: 31.76.65.234
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: qq
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+- name: '🇷🇺 Russia | [*CIDR] #3'
+  server: 31.76.65.234.fwqfw783rg2dad.website
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: qq
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+- name: '🇷🇺 Russia | [*CIDR] #4'
+  server: 31.76.65.234
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: edge
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+- name: '🇷🇺 Russia | [*CIDR] #5'
+  server: 31.76.65.234
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: ios
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+- name: '🇷🇺 Russia | [*CIDR] #6'
+  server: 31.76.65.234
+  port: 443
+  type: vless
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  client-fingerprint: firefox
+  tls: true
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
