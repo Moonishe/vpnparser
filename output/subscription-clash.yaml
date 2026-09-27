@@ -27,75 +27,17 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: 🇪🇪 AetrisVPN
-  server: qq.utiltools.site
-  port: 443
-  type: vless
-  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: qq.utiltools.site
-  skip-cert-verify: true
-  reality-opts:
-    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇱🇹 AetrisVPN
-  server: 188.225.25.142
-  port: 443
-  type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: prime.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
-    short-id: 8681edc9
-- name: 🇺🇸358Mb
-  server: hub-mori-new.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  tls: true
-  skip-cert-verify: true
 - name: 🇳🇱 The Netherlands, Halfweg | [BL]
   server: nl-dedic-mori-4.failspace.top
   port: 443
   type: vless
   uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: qq
   tls: true
   servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-- name: '🇱🇹 AetrisVPN #2'
-  server: 188.225.44.89
-  port: 443
-  type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: app12.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Fgd7fSq-ZXnAZd3GUYGEfTyiz9wno4IWVIcs7-Narwg
-    short-id: f73ac93d
-- name: '🇪🇪 AetrisVPN #2'
-  server: 78.159.250.214
-  port: 443
-  type: vless
-  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: qq.utiltools.site
-  skip-cert-verify: true
-  reality-opts:
-    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: '🇱🇹 AetrisVPN #3'
+- name: 🇱🇹 AetrisVPN-RU
   server: 188.225.24.201
   port: 443
   type: vless
@@ -108,25 +50,33 @@ proxies:
   reality-opts:
     public-key: XhzNlmMTdYr2pYTqiNNP6qWe7BkAgVHU-kZWXc9u9hY
     short-id: 91c2269c
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #2'
-  server: 50.7.120.203
+- name: 🇺🇸358Mb
+  server: hub-mori-new.failspace.top
   port: 443
   type: vless
   uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  tls: true
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #2'
+  server: nl-dedic-mori-4.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
   tls: true
   servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands, Halfweg | [BL] #3'
-  server: 50.7.120.164
+  server: nl-dedic-mori-4.failspace.top
   port: 443
   type: vless
   uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: dedic-nl-new.failspace.top
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands, Halfweg | [BL] #4'
   server: nl-dedic-mori-4.failspace.top
@@ -134,46 +84,40 @@ proxies:
   type: vless
   uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: firefox
   tls: true
   servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #5'
-  server: 50.7.120.164
+- name: 🇪🇪 AetrisVPN-NL
+  server: qq.utiltools.site
   port: 443
   type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: random
   tls: true
-  servername: dedic-nl-new.failspace.top
+  servername: qq.utiltools.site
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #6'
-  server: 50.7.120.203
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+- name: '🇪🇪 AetrisVPN-NL #2'
+  server: 78.159.250.214
   port: 443
   type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
   flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: random
   tls: true
-  servername: nl-dedic-mori-4.failspace.top
+  servername: qq.utiltools.site
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #7'
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
 - name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
   server: 91.215.40.26
   port: 16443
   type: vless
   uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
-  client-fingerprint: chrome
+  client-fingerprint: firefox
   tls: true
   servername: ddg.steptofsvo.com
   skip-cert-verify: true
@@ -189,7 +133,7 @@ proxies:
   port: 16443
   type: vless
   uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
-  client-fingerprint: random
+  client-fingerprint: qq
   tls: true
   servername: ddg.steptofsvo.com
   skip-cert-verify: true
@@ -205,7 +149,7 @@ proxies:
   port: 16443
   type: vless
   uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
   servername: ddg.steptofsvo.com
   skip-cert-verify: true
@@ -216,32 +160,12 @@ proxies:
   xhttp-opts:
     path: /aFlS06iNEzhdEdIa
     host: ddg.steptofsvo.com
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #8'
-  server: 50.7.120.203
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #9'
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
 - name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #4'
   server: 91.215.40.26
   port: 16443
   type: vless
   uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
-  client-fingerprint: safari
+  client-fingerprint: random
   tls: true
   servername: ddg.steptofsvo.com
   skip-cert-verify: true
@@ -257,7 +181,7 @@ proxies:
   port: 16443
   type: vless
   uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
-  client-fingerprint: firefox
+  client-fingerprint: safari
   tls: true
   servername: ddg.steptofsvo.com
   skip-cert-verify: true
