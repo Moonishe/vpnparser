@@ -28,40 +28,38 @@ proxies:
   grpc-opts:
     grpc-service-name: grpc-tunnel
 - name: 🇳🇱 The Netherlands, Halfweg | [BL]
-  server: 50.7.120.203
+  server: nl-dedic-mori-4.failspace.top
   port: 443
   type: vless
   uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: safari
   tls: true
   servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-- name: 🇱🇹 AetrisVPN
-  server: 188.225.25.142
+- name: 🇪🇺 AetrisVPN-RU
+  server: 195.133.73.65
   port: 443
   type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
+  uuid: ebd1c0d6-7ff4-4b9f-8692-237517a27a64
   flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: prime.betust.net
+  servername: anyfile2file.com
   skip-cert-verify: true
   reality-opts:
-    public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
-    short-id: 8681edc9
-- name: 🇺🇸191Mb
+    public-key: mza5Hn1aolSz65qu-UwvBP3oesxMe25r11o4nxvikF0
+    short-id: 64c1fe36c7846400
+- name: 🇺🇸358Mb
   server: hub-mori-new.failspace.top
   port: 443
   type: vless
   uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
   tls: true
-  servername: hub-mori-new.failspace.top
   skip-cert-verify: true
 - name: 🇩🇪 Germany | 🌐 | [*CIDR]
-  server: 147.45.141.182
+  server: 212.67.17.241
   port: 2087
   type: vless
   uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
@@ -76,16 +74,54 @@ proxies:
   grpc-opts:
     grpc-service-name: grpc-direct
 - name: '🇳🇱 The Netherlands, Halfweg | [BL] #2'
-  server: 50.7.120.203
+  server: nl-dedic-mori-4.failspace.top
   port: 443
   type: vless
   uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: firefox
   tls: true
   servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-- name: '🇱🇹 AetrisVPN #2'
+- name: 🇱🇹 AetrisVPN-RU
+  server: 188.225.25.142
+  port: 443
+  type: vless
+  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: prime.betust.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
+    short-id: 8681edc9
+- name: 🇩🇪 Germany | [*CIDR]
+  server: 201.24.124.202
+  port: 2087
+  type: vless
+  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
+  client-fingerprint: chrome
+  tls: true
+  servername: de-gw.videomonitor.cloud
+  skip-cert-verify: true
+  reality-opts:
+    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
+    short-id: 11f2ad8421132110
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-direct
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #3'
+  server: nl-dedic-mori-4.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: '🇱🇹 AetrisVPN-RU #2'
   server: 188.225.35.207
   port: 443
   type: vless
@@ -113,37 +149,35 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-direct
-- name: 🇪🇪 AetrisVPN
-  server: qq.utiltools.site
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #4'
+  server: nl-dedic-mori-4.failspace.top
   port: 443
   type: vless
-  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: random
+  client-fingerprint: chrome
   tls: true
-  servername: qq.utiltools.site
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-  reality-opts:
-    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇪🇺 AetrisVPN
-  server: 195.133.73.65
+- name: 🇷🇺 Russia | 🌐 | [*CIDR]
+  server: 185.147.27.201
   port: 443
   type: vless
-  uuid: ebd1c0d6-7ff4-4b9f-8692-237517a27a64
+  uuid: 68d89911-b92d-46fe-9007-3645c3b285f0
   flow: xtls-rprx-vision
-  client-fingerprint: random
+  client-fingerprint: chrome
   tls: true
-  servername: anyfile2file.com
+  servername: youtube.sparxiecn.com
   skip-cert-verify: true
   reality-opts:
-    public-key: mza5Hn1aolSz65qu-UwvBP3oesxMe25r11o4nxvikF0
-    short-id: 64c1fe36c7846400
+    public-key: boyoshgS6sNQ7xgi36ggKQzv_YtAoiFPxMZj-R6XB38
+    short-id: 3acbb7d765702da3
 - name: '🇩🇪 Germany | 🌐 | [*CIDR] #3'
-  server: 212.67.17.241
+  server: 201.24.124.187
   port: 2087
   type: vless
   uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
-  client-fingerprint: ios
+  client-fingerprint: safari
   tls: true
   servername: de-gw.videomonitor.cloud
   skip-cert-verify: true
@@ -153,7 +187,7 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-direct
-- name: '🇪🇪 AetrisVPN #2'
+- name: 🇪🇪 AetrisVPN-NL
   server: 78.159.250.214
   port: 443
   type: vless
@@ -165,7 +199,7 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: '🇱🇹 AetrisVPN #3'
+- name: '🇱🇹 AetrisVPN-RU #3'
   server: 188.225.44.89
   port: 443
   type: vless
@@ -193,210 +227,19 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-direct
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [BL]
-  server: nl-dedic-mori-4.failspace.top
+- name: '🇪🇪 AetrisVPN-NL #2'
+  server: qq.utiltools.site
   port: 443
   type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
   flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 161.104.38.98
-  port: 443
-  type: vless
-  uuid: 553d8193-d897-0032-bb46-f075b670f22a
   client-fingerprint: random
   tls: true
-  servername: donatov.net
+  servername: qq.utiltools.site
   skip-cert-verify: true
   reality-opts:
-    public-key: kYwdZueXQt_DEKPrWTw8yoj6G4AWqupg8UrWjAgWbkE
-    short-id: 8ba6e72ee60667f6
-  network: xhttp
-  xhttp-opts:
-    path: /assets
-    host: 161.104.38.98
-- name: 🇩🇪 Germany | [*CIDR]
-  server: 201.24.124.202
-  port: 2087
-  type: vless
-  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
-  client-fingerprint: chrome
-  tls: true
-  servername: de-gw.videomonitor.cloud
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
-    short-id: 11f2ad8421132110
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-direct
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL] #2'
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: '🇷🇺 Russia | [*CIDR] #2'
-  server: 161.104.38.98
-  port: 443
-  type: vless
-  uuid: 553d8193-d897-0032-bb46-f075b670f22a
-  client-fingerprint: random
-  tls: true
-  servername: donatov.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: kYwdZueXQt_DEKPrWTw8yoj6G4AWqupg8UrWjAgWbkE
-    short-id: 8ba6e72ee60667f6
-  network: xhttp
-  xhttp-opts:
-    path: /assets
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #5'
-  server: de-gw.videomonitor.cloud
-  port: 2087
-  type: vless
-  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
-  client-fingerprint: ios
-  tls: true
-  servername: de-gw.videomonitor.cloud
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
-    short-id: 11f2ad8421132110
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-direct
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL] #3'
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: '🇷🇺 Russia | [*CIDR] #3'
-  server: 161.104.38.98
-  port: 443
-  type: vless
-  uuid: 553d8193-d897-0032-bb46-f075b670f22a
-  client-fingerprint: edge
-  tls: true
-  servername: donatov.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: kYwdZueXQt_DEKPrWTw8yoj6G4AWqupg8UrWjAgWbkE
-    short-id: 8ba6e72ee60667f6
-  network: xhttp
-  xhttp-opts:
-    path: /assets
-    host: 161.104.38.98
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: 201.24.124.202
-  port: 2087
-  type: vless
-  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
-  client-fingerprint: edge
-  tls: true
-  servername: de-gw.videomonitor.cloud
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
-    short-id: 11f2ad8421132110
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-direct
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [BL] #4'
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: 🇷🇺 Russia | 🌐 | [*CIDR]
-  server: 185.147.27.201
-  port: 443
-  type: vless
-  uuid: 68d89911-b92d-46fe-9007-3645c3b285f0
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: youtube.sparxiecn.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: boyoshgS6sNQ7xgi36ggKQzv_YtAoiFPxMZj-R6XB38
-    short-id: 3acbb7d765702da3
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #6'
-  server: 212.67.17.241
-  port: 2087
-  type: vless
-  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
-  client-fingerprint: firefox
-  tls: true
-  servername: de-gw.videomonitor.cloud
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
-    short-id: 11f2ad8421132110
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-direct
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #3'
-  server: 50.7.120.203
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: 🇷🇺 AetrisVPN
-  server: 195.225.108.233
-  port: 4500
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: rQvE_rqbOFGsP8qWA1HxmUpBeFqinJ56
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #7'
-  server: de-gw.videomonitor.cloud
-  port: 2087
-  type: vless
-  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
-  client-fingerprint: edge
-  tls: true
-  servername: de-gw.videomonitor.cloud
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
-    short-id: 11f2ad8421132110
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-direct
-- name: 🇳🇱225Mb
-  server: kosta8.api3-max.ru
-  port: 443
-  type: vless
-  uuid: cdd6bfce-781a-4454-b7d5-4778abb5c24f
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: kosta8.api3-max.ru
-  skip-cert-verify: true
-- name: '🇪🇺 AetrisVPN #2'
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+- name: '🇪🇺 AetrisVPN-RU #2'
   server: 176.123.167.90
   port: 9881
   type: vless
@@ -411,8 +254,8 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #8'
-  server: 201.24.124.187
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #5'
+  server: 147.45.141.182
   port: 2087
   type: vless
   uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
@@ -426,12 +269,22 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-direct
-- name: 🇷🇺 Russia [*CIDR]
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #5'
+  server: 50.7.120.203
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: 🇷🇺 Russia | [*CIDR]
   server: 161.104.38.98
   port: 443
   type: vless
   uuid: 553d8193-d897-0032-bb46-f075b670f22a
-  client-fingerprint: firefox
+  client-fingerprint: edge
   tls: true
   servername: donatov.net
   skip-cert-verify: true
@@ -442,12 +295,67 @@ proxies:
   xhttp-opts:
     path: /assets
     host: 161.104.38.98
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #9'
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #6'
   server: 147.45.141.182
   port: 2087
   type: vless
   uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
   client-fingerprint: edge
+  tls: true
+  servername: de-gw.videomonitor.cloud
+  skip-cert-verify: true
+  reality-opts:
+    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
+    short-id: 11f2ad8421132110
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-direct
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #6'
+  server: 50.7.120.203
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #7'
+  server: de-gw.videomonitor.cloud
+  port: 2087
+  type: vless
+  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
+  client-fingerprint: ios
+  tls: true
+  servername: de-gw.videomonitor.cloud
+  skip-cert-verify: true
+  reality-opts:
+    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
+    short-id: 11f2ad8421132110
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-direct
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #8'
+  server: 212.67.17.241
+  port: 2087
+  type: vless
+  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
+  client-fingerprint: ios
+  tls: true
+  servername: de-gw.videomonitor.cloud
+  skip-cert-verify: true
+  reality-opts:
+    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
+    short-id: 11f2ad8421132110
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-direct
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #9'
+  server: 212.67.17.241
+  port: 2087
+  type: vless
+  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
+  client-fingerprint: firefox
   tls: true
   servername: de-gw.videomonitor.cloud
   skip-cert-verify: true
@@ -465,6 +373,23 @@ proxies:
   client-fingerprint: random
   tls: true
   servername: de-gw.videomonitor.cloud
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  reality-opts:
+    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
+    short-id: 11f2ad8421132110
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-direct
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: 201.24.124.202
+  port: 2087
+  type: vless
+  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
+  client-fingerprint: edge
+  tls: true
+  servername: de-gw.videomonitor.cloud
   skip-cert-verify: true
   reality-opts:
     public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
@@ -473,21 +398,6 @@ proxies:
   grpc-opts:
     grpc-service-name: grpc-direct
 - name: '🇩🇪 Germany | 🌐 | [*CIDR] #11'
-  server: 212.67.17.241
-  port: 2087
-  type: vless
-  uuid: d6b98f2c-53c7-11f1-91ee-561961d26415
-  client-fingerprint: safari
-  tls: true
-  servername: de-gw.videomonitor.cloud
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
-    short-id: 11f2ad8421132110
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-direct
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #12'
   server: de-gw.videomonitor.cloud
   port: 2087
   type: vless
@@ -495,8 +405,6 @@ proxies:
   client-fingerprint: random
   tls: true
   servername: de-gw.videomonitor.cloud
-  alpn:
-  - http/1.1
   skip-cert-verify: true
   reality-opts:
     public-key: LBsG9yP94EfV0y0hUGiraFdedsHbp4JjDp3XppkTnyQ
