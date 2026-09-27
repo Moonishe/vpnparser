@@ -1,19 +1,33 @@
 proxies:
 - name: 🇩🇪 AetrisVPN
-  server: media-se.compressor.work
+  server: 95.163.232.171
   port: 14443
   type: vless
   uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
-  client-fingerprint: ios
+  client-fingerprint: chrome
   tls: true
   servername: media-se.compressor.work
-  alpn:
-  - http/1.1
   skip-cert-verify: true
   network: ws
   ws-opts:
     path: /ws
-- name: 🇪🇪 AetrisVPN-NL
+    headers:
+      Host: media-se.compressor.work
+- name: 🇫🇷 AetrisVPN
+  server: 176.123.162.100
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: 🇪🇪 AetrisVPN
   server: qq.utiltools.site
   port: 443
   type: vless
@@ -25,7 +39,7 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇱🇹 AetrisVPN-RU
+- name: 🇱🇹 AetrisVPN
   server: 188.225.25.142
   port: 443
   type: vless
@@ -38,21 +52,25 @@ proxies:
   reality-opts:
     public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
     short-id: 8681edc9
-- name: '🇩🇪 AetrisVPN #2'
-  server: 95.163.232.171
-  port: 14443
+- name: 🇺🇸358Mb
+  server: hub-mori-new.failspace.top
+  port: 443
   type: vless
-  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
-  client-fingerprint: random
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
   tls: true
-  servername: media-se.compressor.work
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /ws
-    headers:
-      Host: media-se.compressor.work
-- name: '🇱🇹 AetrisVPN-RU #2'
+- name: 🇳🇱 The Netherlands, Halfweg | [BL]
+  server: nl-dedic-mori-4.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: '🇱🇹 AetrisVPN #2'
   server: 188.225.44.89
   port: 443
   type: vless
@@ -65,7 +83,19 @@ proxies:
   reality-opts:
     public-key: Fgd7fSq-ZXnAZd3GUYGEfTyiz9wno4IWVIcs7-Narwg
     short-id: f73ac93d
-- name: '🇱🇹 AetrisVPN-RU #3'
+- name: '🇪🇪 AetrisVPN #2'
+  server: 78.159.250.214
+  port: 443
+  type: vless
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: qq.utiltools.site
+  skip-cert-verify: true
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+- name: '🇱🇹 AetrisVPN #3'
   server: 188.225.24.201
   port: 443
   type: vless
@@ -78,78 +108,163 @@ proxies:
   reality-opts:
     public-key: XhzNlmMTdYr2pYTqiNNP6qWe7BkAgVHU-kZWXc9u9hY
     short-id: 91c2269c
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 161.104.38.98
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #2'
+  server: 50.7.120.203
   port: 443
   type: vless
-  uuid: 553d8193-d897-0032-bb46-f075b670f22a
-  client-fingerprint: random
-  tls: true
-  servername: donatov.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: kYwdZueXQt_DEKPrWTw8yoj6G4AWqupg8UrWjAgWbkE
-    short-id: 8ba6e72ee60667f6
-  network: xhttp
-  xhttp-opts:
-    path: /assets
-- name: 🇷🇺 Russia [*CIDR]
-  server: 161.104.38.98
-  port: 443
-  type: vless
-  uuid: 553d8193-d897-0032-bb46-f075b670f22a
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
   client-fingerprint: qq
   tls: true
-  servername: donatov.net
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-  reality-opts:
-    public-key: kYwdZueXQt_DEKPrWTw8yoj6G4AWqupg8UrWjAgWbkE
-    short-id: 8ba6e72ee60667f6
-  network: xhttp
-  xhttp-opts:
-    path: /assets
-- name: '🇷🇺 Russia [*CIDR] #2'
-  server: 161.104.38.98
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #3'
+  server: 50.7.120.164
   port: 443
   type: vless
-  uuid: 553d8193-d897-0032-bb46-f075b670f22a
-  client-fingerprint: firefox
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
   tls: true
-  servername: donatov.net
+  servername: dedic-nl-new.failspace.top
   skip-cert-verify: true
-  reality-opts:
-    public-key: kYwdZueXQt_DEKPrWTw8yoj6G4AWqupg8UrWjAgWbkE
-    short-id: 8ba6e72ee60667f6
-  network: xhttp
-  xhttp-opts:
-    path: /assets
-- name: '🇷🇺 Russia [*CIDR] #3'
-  server: 161.104.38.98
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #4'
+  server: nl-dedic-mori-4.failspace.top
   port: 443
   type: vless
-  uuid: 553d8193-d897-0032-bb46-f075b670f22a
-  client-fingerprint: edge
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
   tls: true
-  servername: donatov.net
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-  reality-opts:
-    public-key: kYwdZueXQt_DEKPrWTw8yoj6G4AWqupg8UrWjAgWbkE
-    short-id: 8ba6e72ee60667f6
-  network: xhttp
-  xhttp-opts:
-    path: /assets
-- name: 🇱🇻 Latvia | [*CIDR]-RU
-  server: 84.38.187.169
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #5'
+  server: 50.7.120.164
   port: 443
   type: vless
-  uuid: 553d8193-d897-0037-bb46-f075b670f22a
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: dedic-nl-new.failspace.top
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #6'
+  server: 50.7.120.203
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #7'
+  server: nl-dedic-mori-4.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
+  client-fingerprint: chrome
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #2'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
   client-fingerprint: random
   tls: true
-  servername: mc.yandex.tr
+  servername: ddg.steptofsvo.com
   skip-cert-verify: true
   reality-opts:
-    public-key: rJMYW6mHgjs61mHxfm8Gmm_Re23sV_xe5b0IrTpLsiQ
-    short-id: 94c9dbbf07366d96
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
   network: xhttp
   xhttp-opts:
-    path: /script
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #3'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
+  client-fingerprint: qq
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #8'
+  server: 50.7.120.203
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #9'
+  server: nl-dedic-mori-4.failspace.top
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #4'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
+  client-fingerprint: safari
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #5'
+  server: 91.215.40.26
+  port: 16443
+  type: vless
+  uuid: 8d130a3a-c2fc-4544-99a4-d46ffb12f0a6
+  client-fingerprint: firefox
+  tls: true
+  servername: ddg.steptofsvo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: NcusujNOLaj9kiNIAMzg3BKdb3WYXMdkCgfeNHyie1E
+    short-id: 67ca97db5f330f5f
+  network: xhttp
+  xhttp-opts:
+    path: /aFlS06iNEzhdEdIa
+    host: ddg.steptofsvo.com
