@@ -1,17 +1,18 @@
 proxies:
 - name: 🇩🇪 AetrisVPN
-  server: 78.159.247.151
-  port: 50097
+  server: 95.163.232.171
+  port: 14443
   type: vless
-  uuid: ddae04fe-48ce-4c5b-b562-7a65c70ecbdf
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: random
   tls: true
-  servername: eh.vk.com
+  servername: media-se.compressor.work
   skip-cert-verify: true
-  reality-opts:
-    public-key: 0_FWbcTe6tvBuSZ7_7PrMaNmg44a8VxYRXPKjZuERwQ
-    short-id: a150dff4
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: '['''']'
 - name: 🇫🇷 AetrisVPN
   server: 176.123.162.100
   port: 9880
@@ -26,48 +27,101 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: 🇳🇱 The Netherlands, Halfweg | [BL]
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
+- name: 🇷🇺 Russia | [*CIDR] YA
+  server: 158.160.211.200
+  port: 11556
+  type: vmess
+  uuid: e2733dbc-1bc6-4835-b90a-447806f9efcd
+  alterId: 0
+  cipher: auto
   client-fingerprint: chrome
   tls: true
-  servername: nl-dedic-mori-4.failspace.top
+  alpn:
+  - h2
+  - http/1.1
   skip-cert-verify: true
-- name: 🇪🇺 AetrisVPN-RU
+- name: '🇩🇪 AetrisVPN #2'
+  server: 158.160.160.21
+  port: 443
+  type: vless
+  uuid: 06d05a0a-f298-0001-8fab-3de32e3fb770
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: matrix.stargazed.space
+  skip-cert-verify: true
+  reality-opts:
+    public-key: RMjWKm3Jj09ytfHD-90J0c3qdpQtjqJ4muUSAuF2eXQ
+    short-id: 0e9e64843ec8
+- name: 🇪🇺 AetrisVPN
   server: 188.225.33.141
   port: 443
   type: vless
   uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
   tls: true
-  servername: 188.225.33.141
+  servername: wstg.datasynctrue.online
   skip-cert-verify: true
   network: ws
   ws-opts:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇺🇸358Mb
-  server: hub-mori-new.failspace.top
+- name: 🇩🇪 Germany | [*CIDR]
+  server: 92.255.110.194
   port: 443
   type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  uuid: 2412bd96-925b-43f2-81d1-0ed4f0793699
   flow: xtls-rprx-vision
+  client-fingerprint: firefox
   tls: true
+  servername: repo1.maven.org
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #2'
-  server: 50.7.120.203
+  reality-opts:
+    public-key: B_U5JqjAEFux2lRqo-RRwi1Lk4JKtQ-QAPFjwTE6ZXs
+    short-id: 7c696636b2578f3c
+- name: '🇪🇺 AetrisVPN #2'
+  server: 91.210.169.181
   port: 443
   type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
   tls: true
-  servername: nl-dedic-mori-4.failspace.top
+  servername: wstg.datasynctrue.online
   skip-cert-verify: true
-- name: 🇱🇹 AetrisVPN-RU
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇪🇺 AetrisVPN #3'
+  server: 200.165.231.209
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇪🇺 AetrisVPN #4'
+  server: 195.133.73.65
+  port: 443
+  type: vless
+  uuid: ebd1c0d6-7ff4-4b9f-8692-237517a27a64
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: anyfile2file.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: mza5Hn1aolSz65qu-UwvBP3oesxMe25r11o4nxvikF0
+    short-id: 64c1fe36c7846400
+- name: 🇱🇹 AetrisVPN
   server: 194.87.239.50
   port: 443
   type: vless
@@ -80,17 +134,7 @@ proxies:
   reality-opts:
     public-key: RE8_xTgxCN-ZHuYHBVpXjS6_X-2jfiurSl5CF0ATLxs
     short-id: 701c4492fe75c46b
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #3'
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: '🇱🇹 AetrisVPN-RU #2'
+- name: '🇱🇹 AetrisVPN #2'
   server: 188.225.24.201
   port: 443
   type: vless
@@ -103,33 +147,3 @@ proxies:
   reality-opts:
     public-key: XhzNlmMTdYr2pYTqiNNP6qWe7BkAgVHU-kZWXc9u9hY
     short-id: 91c2269c
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #4'
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #5'
-  server: nl-dedic-mori-4.failspace.top
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Halfweg | [BL] #6'
-  server: 50.7.120.203
-  port: 443
-  type: vless
-  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: nl-dedic-mori-4.failspace.top
-  skip-cert-verify: true
