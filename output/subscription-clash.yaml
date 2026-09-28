@@ -26,18 +26,17 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: 🇪🇺 AetrisVPN
-  server: wstg.datasynctrue.online
+- name: 🇳🇱 The Netherlands, Halfweg | [BL]
+  server: nl-dedic-mori-4.failspace.top
   port: 443
   type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
   tls: true
-  servername: wstg.datasynctrue.online
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-- name: '🇪🇺 AetrisVPN #2'
+- name: 🇪🇺 AetrisVPN-RU
   server: 188.225.33.141
   port: 443
   type: vless
@@ -50,48 +49,25 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇱🇹 AetrisVPN
-  server: 188.225.25.142
+- name: 🇺🇸358Mb
+  server: hub-mori-new.failspace.top
   port: 443
   type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: random
   tls: true
-  servername: prime.betust.net
   skip-cert-verify: true
-  reality-opts:
-    public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
-    short-id: 8681edc9
-- name: '🇱🇹 AetrisVPN #2'
-  server: 188.225.24.201
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #2'
+  server: 50.7.120.203
   port: 443
   type: vless
-  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
   flow: xtls-rprx-vision
-  client-fingerprint: random
+  client-fingerprint: chrome
   tls: true
-  servername: app11.betust.net
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-  reality-opts:
-    public-key: XhzNlmMTdYr2pYTqiNNP6qWe7BkAgVHU-kZWXc9u9hY
-    short-id: 91c2269c
-- name: '🇪🇺 AetrisVPN #3'
-  server: 213.171.25.29
-  port: 9889
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: firefox
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ycPIUcY6ci2yi7YA_OHc20e4gzxEdJTqpmeShxSuHRU
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: '🇱🇹 AetrisVPN #3'
+- name: 🇱🇹 AetrisVPN-RU
   server: 194.87.239.50
   port: 443
   type: vless
@@ -104,48 +80,56 @@ proxies:
   reality-opts:
     public-key: RE8_xTgxCN-ZHuYHBVpXjS6_X-2jfiurSl5CF0ATLxs
     short-id: 701c4492fe75c46b
-- name: 🇷🇺 Russia | 🌐 | [*CIDR]
-  server: yt2.chick-team.ru
-  port: 8443
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #3'
+  server: nl-dedic-mori-4.failspace.top
+  port: 443
   type: vless
-  uuid: 68d89911-b92d-46fe-9007-3645c3b285f0
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
+- name: '🇱🇹 AetrisVPN-RU #2'
+  server: 188.225.24.201
+  port: 443
+  type: vless
+  uuid: 94877739-3af6-4fbb-85b6-ca6fe86c7696
+  flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: www.google.com
+  servername: app11.betust.net
   skip-cert-verify: true
   reality-opts:
-    public-key: 9ec9h6mJ6hzfrm_EFHPXuZwfN9Tt8USwSyBzETrDil4
-    short-id: ff6ef323f94eda5d
-  network: xhttp
-  xhttp-opts:
-    path: /xh
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #2'
-  server: yt2.chick-team.ru
-  port: 8443
+    public-key: XhzNlmMTdYr2pYTqiNNP6qWe7BkAgVHU-kZWXc9u9hY
+    short-id: 91c2269c
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #4'
+  server: nl-dedic-mori-4.failspace.top
+  port: 443
   type: vless
-  uuid: 68d89911-b92d-46fe-9007-3645c3b285f0
-  client-fingerprint: edge
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
   tls: true
-  servername: www.google.com
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-  reality-opts:
-    public-key: 9ec9h6mJ6hzfrm_EFHPXuZwfN9Tt8USwSyBzETrDil4
-    short-id: ff6ef323f94eda5d
-  network: xhttp
-  xhttp-opts:
-    path: /xh
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #3'
-  server: yt2.chick-team.ru
-  port: 8443
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #5'
+  server: nl-dedic-mori-4.failspace.top
+  port: 443
   type: vless
-  uuid: 68d89911-b92d-46fe-9007-3645c3b285f0
-  client-fingerprint: chrome
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
   tls: true
-  servername: www.google.com
+  servername: nl-dedic-mori-4.failspace.top
   skip-cert-verify: true
-  reality-opts:
-    public-key: 9ec9h6mJ6hzfrm_EFHPXuZwfN9Tt8USwSyBzETrDil4
-    short-id: ff6ef323f94eda5d
-  network: xhttp
-  xhttp-opts:
-    path: /xh
+- name: '🇳🇱 The Netherlands, Halfweg | [BL] #6'
+  server: 50.7.120.203
+  port: 443
+  type: vless
+  uuid: cd3bb7d9-7df3-4644-ac05-c260990ac277
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl-dedic-mori-4.failspace.top
+  skip-cert-verify: true
