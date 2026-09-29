@@ -1,18 +1,30 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 95.163.232.171
-  port: 14443
+- name: 🇩🇪 Germany | [*CIDR]
+  server: static-r5q1ml4-games.cdn-mirror.net
+  port: 49000
   type: vless
-  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
-  client-fingerprint: random
+  uuid: 22f1ad12-b224-409f-9d0d-0150caee7a90
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
   tls: true
-  servername: media-se.compressor.work
+  servername: static-r5q1ml4-games.cdn-mirror.net
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /ws
-    headers:
-      Host: '['''']'
+  reality-opts:
+    public-key: LQypRJXu7PXJqo1ZKfaIgamOjl58R2CtSYUXjroQQw0
+    short-id: fdbcfbf9d14832fb
+- name: 🇫🇮 Finland | 🌐 | [*CIDR]
+  server: edge-cdn.gazladder.work
+  port: 8443
+  type: vless
+  uuid: e9844617-e393-4876-afa7-11859695f4ee
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: edge-cdn.gazladder.work
+  skip-cert-verify: true
+  reality-opts:
+    public-key: j97RCvxVfMu5XWcXuAc4s8TnBTdl8PQrNFrZDQpAkng
+    short-id: f5781bd8af7dbaf6
 - name: 🇫🇷 AetrisVPN
   server: 176.123.162.100
   port: 9880
@@ -27,53 +39,123 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: 🇳🇱 AetrisVPN
-  server: ru-test.omuservice.tech
-  port: 8443
+- name: 🇪🇺 AetrisVPN
+  server: 188.225.33.141
+  port: 443
   type: vless
-  uuid: 228ecfd3-9bf0-42fd-a50e-581f84022513
-  flow: xtls-rprx-vision
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
   client-fingerprint: random
   tls: true
-  servername: ozone.nl
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: static-r5q1ml4-games.cdn-mirror.net
+  port: 49000
+  type: vless
+  uuid: 22f1ad12-b224-409f-9d0d-0150caee7a90
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: static-r5q1ml4-games.cdn-mirror.net
   skip-cert-verify: true
   reality-opts:
-    public-key: yyH7Fyfh1ULPH4L5mFVtqPf_rB1IY6jwDgOuIRY7-wA
-    short-id: ccbe97abe7
-- name: 🇳🇴 AetrisVPN
-  server: 80.242.57.97
-  port: 1
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: 9qGcNiZj4uCi7DGSjxlg5Q
-- name: 🇫🇷 France, Saint-Denis | [BL]
-  server: 31.77.227.10
-  port: 52006
+    public-key: LQypRJXu7PXJqo1ZKfaIgamOjl58R2CtSYUXjroQQw0
+    short-id: fdbcfbf9d14832fb
+- name: 🇫🇷 France | [*CIDR]
+  server: 113.30.154.65
+  port: 443
   type: vless
-  uuid: bc659d88-a1e0-4c65-a49a-7b51b26a7a7f
+  uuid: 550a69ec-fec1-4eca-b939-4ee076875fa8
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: sellflow.org
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+- name: '🇪🇺 AetrisVPN #2'
+  server: 91.210.169.181
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇩🇪 Germany | [*CIDR] #3'
+  server: static-r5q1ml4-games.cdn-mirror.net
+  port: 49000
+  type: vless
+  uuid: 22f1ad12-b224-409f-9d0d-0150caee7a90
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: static-r5q1ml4-games.cdn-mirror.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: LQypRJXu7PXJqo1ZKfaIgamOjl58R2CtSYUXjroQQw0
+    short-id: fdbcfbf9d14832fb
+- name: '🇫🇷 France | [*CIDR] #2'
+  server: 113.30.154.65
+  port: 443
+  type: vless
+  uuid: 550a69ec-fec1-4eca-b939-4ee076875fa8
   flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: fr.setlisting.ru
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: 🇳🇱 The Netherlands | 🌐 [*CIDR]
-  server: 86v99n-08.p.portshaper.com
-  port: 8450
-  type: vless
-  uuid: c4f5d29c-9eec-4451-861e-3b13d0549f85
-  client-fingerprint: ios
-  tls: true
-  servername: 86v99n-08.p.portshaper.com
+  servername: sellflow.org
   skip-cert-verify: true
   reality-opts:
-    public-key: ZgSVwP_wlM4-oG8E03W3cMqK_VrS8oHXF4wzyBkISWo
-    short-id: a1b2c3d4
-  network: grpc
-  grpc-opts:
-    grpc-service-name: media.ingest.v2.ChunkUploadService
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+- name: '🇪🇺 AetrisVPN #3'
+  server: 200.165.231.209
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: 🇩🇪 AetrisVPN
+  server: 46.17.248.207
+  port: 443
+  type: vless
+  uuid: a1705606-715d-485d-b311-43538f2b11a6
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: 21.stepanofff.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 8yvZcJaBbi42WLDx4Tyj5zR1F0kYoD6K4Z92AGX_q3U
+    short-id: 96ef80
+- name: '🇫🇷 France | [*CIDR] #3'
+  server: 113.30.154.65
+  port: 443
+  type: vless
+  uuid: 550a69ec-fec1-4eca-b939-4ee076875fa8
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: sellflow.org
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
 - name: 🇷🇺 AetrisVPN
   server: 45.12.75.242
   port: 26424
@@ -86,73 +168,94 @@ proxies:
   reality-opts:
     public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
     short-id: 23103e1e
-- name: '🇫🇷 France, Saint-Denis | [BL] #2'
-  server: 31.77.227.10
-  port: 52006
+- name: '🇩🇪 Germany | [*CIDR] #4'
+  server: static-r5q1ml4-games.cdn-mirror.net
+  port: 49000
   type: vless
-  uuid: bc659d88-a1e0-4c65-a49a-7b51b26a7a7f
+  uuid: 22f1ad12-b224-409f-9d0d-0150caee7a90
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: static-r5q1ml4-games.cdn-mirror.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: LQypRJXu7PXJqo1ZKfaIgamOjl58R2CtSYUXjroQQw0
+    short-id: fdbcfbf9d14832fb
+- name: '🇫🇷 France | [*CIDR] #4'
+  server: 113.30.154.65
+  port: 443
+  type: vless
+  uuid: 550a69ec-fec1-4eca-b939-4ee076875fa8
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: sellflow.org
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+- name: 🇷🇺 Russia [*CIDR]
+  server: edge-cdn.gazladder.work
+  port: 443
+  type: vless
+  uuid: e9844617-e393-4876-afa7-11859695f4ee
+  flow: xtls-rprx-vision
+  client-fingerprint: randomized
+  tls: true
+  servername: edge-cdn.gazladder.work
+  skip-cert-verify: true
+  reality-opts:
+    public-key: j97RCvxVfMu5XWcXuAc4s8TnBTdl8PQrNFrZDQpAkng
+    short-id: f5781bd8af7dbaf6
+- name: '🇩🇪 AetrisVPN #2'
+  server: 95.163.232.171
+  port: 14443
+  type: vless
+  uuid: 365de9e9-ba29-4819-af2d-766f9638e3be
+  client-fingerprint: random
+  tls: true
+  servername: media-se.compressor.work
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: 🇷🇺 Russia | [*CIDR]
+  server: edge-cdn.gazladder.work
+  port: 443
+  type: vless
+  uuid: e9844617-e393-4876-afa7-11859695f4ee
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: edge-cdn.gazladder.work
+  skip-cert-verify: true
+  reality-opts:
+    public-key: j97RCvxVfMu5XWcXuAc4s8TnBTdl8PQrNFrZDQpAkng
+    short-id: f5781bd8af7dbaf6
+- name: '🇷🇺 Russia | [*CIDR] #2'
+  server: edge-cdn.gazladder.work
+  port: 443
+  type: vless
+  uuid: e9844617-e393-4876-afa7-11859695f4ee
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: edge-cdn.gazladder.work
+  skip-cert-verify: true
+  reality-opts:
+    public-key: j97RCvxVfMu5XWcXuAc4s8TnBTdl8PQrNFrZDQpAkng
+    short-id: f5781bd8af7dbaf6
+- name: '🇷🇺 Russia | [*CIDR] #3'
+  server: edge-cdn.gazladder.work
+  port: 443
+  type: vless
+  uuid: e9844617-e393-4876-afa7-11859695f4ee
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: fr.setlisting.ru
-  skip-cert-verify: true
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
-  server: 94.139.255.72
-  port: 8450
-  type: vless
-  uuid: c4f5d29c-9eec-4451-861e-3b13d0549f85
-  client-fingerprint: chrome
-  tls: true
-  servername: 86v99n-08.p.portshaper.com
+  servername: edge-cdn.gazladder.work
   skip-cert-verify: true
   reality-opts:
-    public-key: ZgSVwP_wlM4-oG8E03W3cMqK_VrS8oHXF4wzyBkISWo
-    short-id: a1b2c3d4
-  network: grpc
-  grpc-opts:
-    grpc-service-name: media.ingest.v2.ChunkUploadService
-- name: 🇪🇪 AetrisVPN
-  server: 161.104.38.98
-  port: 443
-  type: vless
-  uuid: 553d8193-d897-0024-bb46-f075b670f22a
-  client-fingerprint: random
-  tls: true
-  servername: donatov.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: kYwdZueXQt_DEKPrWTw8yoj6G4AWqupg8UrWjAgWbkE
-    short-id: 8ba6e72ee60667f6
-  network: xhttp
-  xhttp-opts:
-    path: /assets
-- name: '🇳🇱 The Netherlands | 🌐 [*CIDR] #2'
-  server: 86v99n-08.p.portshaper.com
-  port: 8450
-  type: vless
-  uuid: c4f5d29c-9eec-4451-861e-3b13d0549f85
-  client-fingerprint: edge
-  tls: true
-  servername: 86v99n-08.p.portshaper.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ZgSVwP_wlM4-oG8E03W3cMqK_VrS8oHXF4wzyBkISWo
-    short-id: a1b2c3d4
-  network: grpc
-  grpc-opts:
-    grpc-service-name: media.ingest.v2.ChunkUploadService
-- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #2'
-  server: 94.139.255.72
-  port: 8450
-  type: vless
-  uuid: c4f5d29c-9eec-4451-861e-3b13d0549f85
-  client-fingerprint: edge
-  tls: true
-  servername: 86v99n-08.p.portshaper.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ZgSVwP_wlM4-oG8E03W3cMqK_VrS8oHXF4wzyBkISWo
-    short-id: a1b2c3d4
-  network: grpc
-  grpc-opts:
-    grpc-service-name: media.ingest.v2.ChunkUploadService
+    public-key: j97RCvxVfMu5XWcXuAc4s8TnBTdl8PQrNFrZDQpAkng
+    short-id: f5781bd8af7dbaf6
