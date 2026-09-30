@@ -13,18 +13,67 @@ proxies:
   network: ws
   ws-opts:
     path: /ws
-- name: 🇷🇺 AetrisVPN
-  server: 78.159.246.110
+- name: 🇫🇮 Finland [*CIDR]
+  server: 87.228.33.67
   port: 443
   type: vless
-  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  uuid: f9f5a72c-c299-4d98-b2ad-d04aba3c7b1f
   client-fingerprint: chrome
   tls: true
-  servername: fbsv6.guardora.pro
+  servername: cdn21.global-cdn.org
+  alpn:
+  - h2
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /ws
+  network: grpc
+  grpc-opts:
+    grpc-service-name: vlgrpc
+- name: 🇫🇷 France | 🌐 [*CIDR]
+  server: 176.123.162.100
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: random
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: 🇬🇧 United Kingdom, London | [BL]
+  server: 146.19.130.192
+  port: 57890
+  type: vless
+  uuid: 2acf35b5-c936-41c8-b3f8-2728c461e9b8
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: 87.228.33.67
+  port: 443
+  type: vless
+  uuid: f9f5a72c-c299-4d98-b2ad-d04aba3c7b1f
+  client-fingerprint: chrome
+  tls: true
+  servername: cdn3.global-cdn.org
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: vlgrpc
+- name: 🇪🇺 AetrisVPN
+  server: du-rov.secureservice.top
+  port: 8443
+  type: vless
+  uuid: c53ea5e9-ed8b-4990-805d-7f1d6451426c
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: du-rov.secureservice.top
+  skip-cert-verify: true
+  reality-opts:
+    public-key: fSVfR9NB-6J6smrZlavi0GWd8JfDh0aXuEkKbtuFzUI
+    short-id: 3cbc3d737fb9c4af
 - name: '🇩🇪 AetrisVPN #2'
   server: 82.202.138.46
   port: 9891
@@ -40,31 +89,79 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 45.9.118.90
+- name: '🇫🇮 Finland [*CIDR] #2'
+  server: 87.228.32.207
   port: 443
   type: vless
-  uuid: ff2936d3-caa4-4b79-bb96-1475bd39ceda
-  flow: xtls-rprx-vision
+  uuid: f9f5a72c-c299-4d98-b2ad-d04aba3c7b1f
+  client-fingerprint: chrome
+  tls: true
+  servername: cdn8.cloud-cdn.xyz
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: vlgrpc
+- name: 🇫🇷 France [*CIDR]
+  server: 176.123.162.100
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: ios
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇬🇧 United Kingdom, London | [BL] #2'
+  server: 146.19.130.192
+  port: 57890
+  type: vless
+  uuid: 554152b4-7819-4e3b-9971-74d6fd8b3975
+- name: 🇷🇺 AetrisVPN
+  server: 78.159.246.110
+  port: 443
+  type: vless
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: chrome
+  tls: true
+  servername: fbsv6.guardora.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
+  server: 45.132.177.76
+  port: 443
+  type: vless
+  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
   client-fingerprint: firefox
   tls: true
-  servername: sellflow.org
+  servername: ru3.pleiades.codes
   skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: '🇷🇺 Russia | [*CIDR] #2'
-  server: 45.9.118.90
-  port: 443
+  network: grpc
+  grpc-opts:
+    grpc-service-name: cdn.v1.DeService
+- name: '🇫🇷 France | 🌐 [*CIDR] #2'
+  server: 176.123.162.100
+  port: 9880
   type: vless
-  uuid: ff2936d3-caa4-4b79-bb96-1475bd39ceda
-  flow: xtls-rprx-vision
-  client-fingerprint: random
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: safari
   tls: true
-  servername: sellflow.org
+  servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: 🇪🇺 AetrisVPN-RU
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇪🇺 AetrisVPN #2'
   server: 91.210.169.181
   port: 443
   type: vless
@@ -78,7 +175,124 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU
+- name: 🇩🇪 Germany [*CIDR]
+  server: 5.129.249.45
+  port: 9892
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇫🇷 France | 🌐 [*CIDR] #3'
+  server: 176.123.162.100
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+    short-id: aa
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇪🇺 AetrisVPN #3'
+  server: 188.225.33.141
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇩🇪 Germany [*CIDR] #2'
+  server: 5.129.249.45
+  port: 9892
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: random
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aa
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇪🇺 AetrisVPN #4'
+  server: 200.165.231.209
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: 200.165.231.209
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇩🇪 Germany [*CIDR] #3'
+  server: 5.129.249.45
+  port: 9892
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: random
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇷🇺 AetrisVPN #2'
+  server: dismissaltree.net
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: random
+  tls: true
+  servername: dismissaltree.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+- name: 🇱🇹 Lithuania [*CIDR]
+  server: 176.123.165.180
+  port: 9881
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabbccdd
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇱🇹 Lithuania [*CIDR] #2'
   server: 176.123.165.180
   port: 9881
   type: vless
@@ -93,37 +307,7 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #2'
-  server: 176.123.165.180
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: firefox
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabbccdd
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: 🇱🇹 AetrisVPN-RU
-  server: 176.123.165.180
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: random
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabbccdd
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: 🇱🇹 Lithuania | [*CIDR]-RU
+- name: '🇱🇹 Lithuania [*CIDR] #3'
   server: 176.123.165.180
   port: 9881
   type: vless
@@ -138,8 +322,24 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #3'
-  server: 176.123.165.180
+- name: '🇷🇺 AetrisVPN #3'
+  server: 217.19.122.200
+  port: 443
+  type: vless
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: chrome
+  tls: true
+  servername: fbsv6.guardora.pro
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: fbsv6.guardora.pro
+- name: 🇪🇪 Estonia [*CIDR]
+  server: 176.109.106.182
   port: 9881
   type: vless
   uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
@@ -149,35 +349,36 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabbccdd
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: 🇩🇰 Denmark | [*CIDR]-RU
-  server: 176.108.244.38
+- name: '🇱🇹 Lithuania [*CIDR] #4'
+  server: 176.123.165.180
   port: 9881
   type: vless
   uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: edge
+  client-fingerprint: safari
   tls: true
   servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
     public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
+    short-id: aabbccdd
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-tunnel
-- name: '🇪🇺 AetrisVPN-RU #2'
-  server: du-rov.secureservice.top
-  port: 8443
+- name: 🇷🇸 Serbia [*CIDR]
+  server: 213.171.25.29
+  port: 9889
   type: vless
-  uuid: c53ea5e9-ed8b-4990-805d-7f1d6451426c
-  flow: xtls-rprx-vision
-  client-fingerprint: random
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: ios
   tls: true
-  servername: du-rov.secureservice.top
+  servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: fSVfR9NB-6J6smrZlavi0GWd8JfDh0aXuEkKbtuFzUI
-    short-id: 3cbc3d737fb9c4af
+    public-key: ycPIUcY6ci2yi7YA_OHc20e4gzxEdJTqpmeShxSuHRU
+    short-id: aabbccdd
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
