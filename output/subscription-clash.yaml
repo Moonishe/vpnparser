@@ -1,136 +1,333 @@
 proxies:
-- name: 🇳🇱 AetrisVPN
-  server: 83.222.8.125
-  port: 8443
+- name: 🇩🇪 AetrisVPN
+  server: 109.69.20.101
+  port: 2087
   type: vless
-  uuid: 228ecfd3-9bf0-42fd-a50e-581f84022513
+  uuid: 7f02e3c5-e386-4cfe-bd24-c49d196638b6
   flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: ozone.nl
+  servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: yyH7Fyfh1ULPH4L5mFVtqPf_rB1IY6jwDgOuIRY7-wA
-    short-id: ccbe97abe7
-- name: 🇪🇺 AetrisVPN
-  server: 200.165.231.209
+    public-key: _rkp9bSe2rz_fcWZS-OVP1HrvsR1fyBCGt0o92WPz1E
+    short-id: f6019bc89397da24
+- name: 🇫🇷 France | 🌐 | [*CIDR]
+  server: 176.109.108.244
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: 🇪🇪 AetrisVPN
+  server: 78.159.250.214
   port: 443
   type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: wstg.datasynctrue.online
+  servername: qq.utiltools.site
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: '🇪🇺 AetrisVPN #2'
-  server: tg1.cdnphotos.org
-  port: 443
-  type: vless
-  uuid: f04cc810-aaf2-4a7b-8cad-356cdd30d394
-  client-fingerprint: random
-  tls: true
-  servername: tg1.cdnphotos.org
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
 - name: 🇷🇺 AetrisVPN
-  server: 78.159.246.110
+  server: 217.19.122.200
   port: 443
   type: vless
   uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
   client-fingerprint: chrome
   tls: true
   servername: fbsv6.guardora.pro
+  alpn:
+  - http/1.1
   skip-cert-verify: true
   network: ws
   ws-opts:
     path: /ws
-- name: '🇪🇺 AetrisVPN #3'
+    headers:
+      Host: fbsv6.guardora.pro
+- name: 🇺🇸 United States, Denver (North Capitol Hill) | [BL]
+  server: us3.zestapp778.com
+  port: 443
+  type: trojan
+  password: Trojan@82164024
+  client-fingerprint: safari
+  tls: true
+  sni: us3.zestapp778.com
+  skip-cert-verify: true
+- name: '🇫🇷 France | 🌐 | [*CIDR] #2'
+  server: 176.109.108.244
+  port: 9880
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: safari
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: bnRIb3Er1i-K6NGGByCO9UbGfOvu43ZoiK7ulPd1SzU
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 45.151.101.161
+  port: 443
+  type: vless
+  uuid: 4abdfe42-aec7-4b66-974d-3f891e2e8184
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: mail.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: kk7OIl7fsEKSuCTWKb8pSgWQbZuJurc4qGYMBYSd5hA
+    short-id: 3bdedfbb43fe4637
+- name: 🇪🇺 AetrisVPN
   server: wstg.datasynctrue.online
   port: 443
   type: vless
   uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: random
   tls: true
   servername: wstg.datasynctrue.online
   skip-cert-verify: true
   network: ws
   ws-opts:
     path: /api/connect
-- name: 🇷🇺 Russia | 🌐 | [*CIDR]
-  server: 46.17.42.201
-  port: 47342
-  type: vless
-  uuid: a857aa69-5fb6-4b7c-b0a8-7d23b7e45261
-  client-fingerprint: chrome
-  tls: true
-  servername: ai.android
-  skip-cert-verify: true
-  reality-opts:
-    public-key: _NMR4JJ9wxulZQXwqE7UGVq4AwRNaG_xD0g5FilVVg8
-    short-id: '69121050'
-  network: grpc
-  grpc-opts: {}
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #2'
-  server: 46.17.42.201
-  port: 47342
-  type: vless
-  uuid: a857aa69-5fb6-4b7c-b0a8-7d23b7e45261
+- name: '🇺🇸 United States, Denver (North Capitol Hill) | [BL] #2'
+  server: us3.zestapp778.com
+  port: 443
+  type: trojan
+  password: Trojan@82164024
   client-fingerprint: firefox
   tls: true
-  servername: ai.android
+  sni: us3.zestapp778.com
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: 45.151.101.161
+  port: 443
+  type: vless
+  uuid: 4abdfe42-aec7-4b66-974d-3f891e2e8184
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: mail.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: _NMR4JJ9wxulZQXwqE7UGVq4AwRNaG_xD0g5FilVVg8
-    short-id: '69121050'
-  network: grpc
-  grpc-opts: {}
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #3'
-  server: 46.17.42.201
-  port: 47342
+    public-key: kk7OIl7fsEKSuCTWKb8pSgWQbZuJurc4qGYMBYSd5hA
+    short-id: 3bdedfbb43fe4637
+- name: '🇪🇺 AetrisVPN #2'
+  server: 200.165.231.209
+  port: 443
   type: vless
-  uuid: a857aa69-5fb6-4b7c-b0a8-7d23b7e45261
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: 200.165.231.209
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇺🇸 United States, Denver (North Capitol Hill) | [BL] #3'
+  server: us3.zestapp778.com
+  port: 443
+  type: trojan
+  password: Trojan@82164024
+  client-fingerprint: ios
+  tls: true
+  sni: us3.zestapp778.com
+  skip-cert-verify: true
+- name: '🇷🇺 AetrisVPN #2'
+  server: dismissaltree.net
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: random
+  tls: true
+  servername: dismissaltree.net
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: dismissaltree.net
+- name: '🇺🇸 United States, Denver (North Capitol Hill) | [BL] #4'
+  server: us3.zestapp778.com
+  port: 443
+  type: trojan
+  password: Trojan@82164024
+  client-fingerprint: chrome
+  tls: true
+  sni: us3.zestapp778.com
+  skip-cert-verify: true
+- name: '🇪🇺 AetrisVPN #3'
+  server: 5.42.99.64
+  port: 8443
+  type: vless
+  uuid: c53ea5e9-ed8b-4990-805d-7f1d6451426c
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: du-rov.secureservice.top
+  skip-cert-verify: true
+  reality-opts:
+    public-key: fSVfR9NB-6J6smrZlavi0GWd8JfDh0aXuEkKbtuFzUI
+    short-id: 3cbc3d737fb9c4af
+- name: 🇦🇲 AetrisVPN
+  server: 109.69.20.101
+  port: 2088
+  type: vless
+  uuid: 7f02e3c5-e386-4cfe-bd24-c49d196638b6
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ku8w0v8YcKn7TnxfleKjgqPYiWzWMrOKEwsCREJ9Plc
+    short-id: 9f8442aef1b6598f
+- name: 🇷🇺 Russia | [*CIDR] CDN
+  server: 9micenasralnakover.net
+  port: 2053
+  type: vless
+  uuid: 7902aedf-ad9b-427a-b5ad-29d3575d0e2f
+  client-fingerprint: firefox
+  tls: true
+  servername: 9micenasralnakover.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: 9micenasralnakover.net
+- name: 🇧🇬 Bulgaria | [*CIDR] VK
+  server: birthdaysale.net
+  port: 8443
+  type: vless
+  uuid: 7902aedf-ad9b-427a-b5ad-29d3575d0e2f
+  client-fingerprint: edge
+  tls: true
+  servername: birthdaysale.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: birthdaysale.net
+- name: '🇧🇬 Bulgaria | [*CIDR] VK #2'
+  server: birthdaysale.net
+  port: 8443
+  type: vless
+  uuid: 7902aedf-ad9b-427a-b5ad-29d3575d0e2f
+  client-fingerprint: firefox
+  tls: true
+  servername: birthdaysale.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: birthdaysale.net
+- name: 🇳🇴 Norway | [*CIDR]
+  server: 176.108.247.76
+  port: 9881
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: random
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇷🇺 AetrisVPN #3'
+  server: 185.141.227.180
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  tls: true
+  servername: dismissaltree.net
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: dismissaltree.net
+- name: '🇳🇴 Norway | [*CIDR] #2'
+  server: 176.108.247.76
+  port: 9881
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
   client-fingerprint: safari
   tls: true
-  servername: ai.android
+  servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: _NMR4JJ9wxulZQXwqE7UGVq4AwRNaG_xD0g5FilVVg8
-    short-id: '69121050'
-  network: grpc
-  grpc-opts: {}
-- name: '🇪🇺 AetrisVPN #4'
-  server: 176.53.162.58
-  port: 24448
-  type: vless
-  uuid: b229d38c-35ec-4a0b-9c86-8fceba243d6c
-  client-fingerprint: random
-  tls: true
-  servername: spry-jolt.cdn.cachefleet.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: esOi15BFVX7pHyci7GQp8_FVlY2EmjSF2-0pPu4lIlk
-    short-id: defeaa98406c7bdf
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
   network: grpc
   grpc-opts:
-    grpc-service-name: telegram-bridge
-- name: '🇪🇺 AetrisVPN #5'
-  server: 176.53.162.58
-  port: 24449
+    grpc-service-name: grpc-tunnel
+- name: '🇧🇬 Bulgaria | [*CIDR] VK #3'
+  server: birthdaysale.net
+  port: 8443
   type: vless
-  uuid: b229d38c-35ec-4a0b-9c86-8fceba243d6c
-  client-fingerprint: random
+  uuid: 7902aedf-ad9b-427a-b5ad-29d3575d0e2f
+  client-fingerprint: safari
   tls: true
-  servername: spry-jolt.cdn.cachefleet.com
+  servername: birthdaysale.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: birthdaysale.net
+- name: '🇳🇴 Norway | [*CIDR] #3'
+  server: 176.108.247.76
+  port: 9881
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: chrome
+  tls: true
+  servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: esOi15BFVX7pHyci7GQp8_FVlY2EmjSF2-0pPu4lIlk
-    short-id: defeaa98406c7bdf
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
   network: grpc
   grpc-opts:
-    grpc-service-name: telegram-bridge
+    grpc-service-name: grpc-tunnel
+- name: '🇳🇴 Norway | [*CIDR] #4'
+  server: 176.108.247.76
+  port: 9881
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: edge
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
