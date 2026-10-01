@@ -1,17 +1,61 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 109.69.20.101
-  port: 2087
+- name: 🇩🇪 Germany | [*CIDR]
+  server: 91.215.43.80
+  port: 443
   type: vless
-  uuid: 7f02e3c5-e386-4cfe-bd24-c49d196638b6
-  flow: xtls-rprx-vision
+  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
+  client-fingerprint: firefox
+  tls: true
+  servername: sand.api.downloader-pet.xyz
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
+    headers:
+      Host: sand.api.downloader-pet.xyz
+- name: 🇪🇺 AetrisVPN-NL
+  server: 78.159.246.179
+  port: 2053
+  type: vless
+  uuid: c2bbf90c-7f13-47dd-b68d-f0bd38b6b3c8
   client-fingerprint: random
   tls: true
-  servername: dl.google.com
+  servername: randomquaint.net
   skip-cert-verify: true
-  reality-opts:
-    public-key: _rkp9bSe2rz_fcWZS-OVP1HrvsR1fyBCGt0o92WPz1E
-    short-id: f6019bc89397da24
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: randomquaint.net
+- name: 🇪🇺 AetrisVPN-RU
+  server: 91.210.169.181
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: 91.215.43.80
+  port: 443
+  type: vless
+  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
+  client-fingerprint: firefox
+  tls: true
+  servername: sand.api.downloader-pet.xyz
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
+    headers:
+      Host: sand.api.downloader-pet.xyz
 - name: 🇳🇱 The Netherlands | [*CIDR]
   server: 159.194.243.175
   port: 443
@@ -27,36 +71,33 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /videoapi
-- name: 🇷🇺 AetrisVPN
-  server: 217.19.122.200
+- name: 🇦🇲 AetrisVPN-RU
+  server: 109.69.20.101
+  port: 2088
+  type: vless
+  uuid: 7f02e3c5-e386-4cfe-bd24-c49d196638b6
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ku8w0v8YcKn7TnxfleKjgqPYiWzWMrOKEwsCREJ9Plc
+    short-id: 9f8442aef1b6598f
+- name: 🇩🇪 Germany [*CIDR]
+  server: 91.215.43.80
   port: 443
   type: vless
-  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
-  client-fingerprint: chrome
+  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
+  client-fingerprint: edge
   tls: true
-  servername: fbsv6.guardora.pro
-  alpn:
-  - http/1.1
+  servername: sand.api.downloader-pet.xyz
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /ws
+    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
     headers:
-      Host: fbsv6.guardora.pro
-- name: 🇩🇪 Germany | [*CIDR] VK
-  server: 89.208.223.146
-  port: 443
-  type: vless
-  uuid: 6eb642a2-f8ee-47cc-9c13-fabb0a50350d
-  client-fingerprint: firefox
-  tls: true
-  servername: badfuel.net
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /notvlessklyanus
-    headers:
-      Host: badfuel.net
+      Host: sand.api.downloader-pet.xyz
 - name: '🇳🇱 The Netherlands | [*CIDR] #2'
   server: 159.194.243.175
   port: 443
@@ -72,147 +113,6 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /videoapi
-- name: 🇪🇺 AetrisVPN
-  server: 195.133.73.65
-  port: 443
-  type: vless
-  uuid: ebd1c0d6-7ff4-4b9f-8692-237517a27a64
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: anyfile2file.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: mza5Hn1aolSz65qu-UwvBP3oesxMe25r11o4nxvikF0
-    short-id: 64c1fe36c7846400
-- name: '🇩🇪 Germany | [*CIDR] VK #2'
-  server: 89.208.223.146
-  port: 443
-  type: vless
-  uuid: 6eb642a2-f8ee-47cc-9c13-fabb0a50350d
-  client-fingerprint: random
-  tls: true
-  servername: badfuel.net
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /notvlessklyanus
-    headers:
-      Host: badfuel.net
-- name: '🇪🇺 AetrisVPN #2'
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: c2bbf90c-7f13-47dd-b68d-f0bd38b6b3c8
-  client-fingerprint: random
-  tls: true
-  servername: randomquaint.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: '🇪🇺 AetrisVPN #3'
-  server: 91.210.169.181
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: random
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 🇩🇪 Germany | [*CIDR]
-  server: 91.215.43.80
-  port: 443
-  type: vless
-  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
-  client-fingerprint: firefox
-  tls: true
-  servername: sand.api.downloader-pet.xyz
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
-    headers:
-      Host: sand.api.downloader-pet.xyz
-- name: '🇪🇺 AetrisVPN #4'
-  server: 176.53.162.58
-  port: 24446
-  type: vless
-  uuid: b229d38c-35ec-4a0b-9c86-8fceba243d6c
-  client-fingerprint: random
-  tls: true
-  servername: spry-jolt.cdn.cachefleet.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: esOi15BFVX7pHyci7GQp8_FVlY2EmjSF2-0pPu4lIlk
-    short-id: defeaa98406c7bdf
-  network: grpc
-  grpc-opts:
-    grpc-service-name: telegram-bridge
-- name: 🇩🇪 Germany [*CIDR]
-  server: 91.215.43.80
-  port: 443
-  type: vless
-  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
-  client-fingerprint: edge
-  tls: true
-  servername: sand.api.downloader-pet.xyz
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
-    headers:
-      Host: sand.api.downloader-pet.xyz
-- name: 🇦🇲 AetrisVPN
-  server: 109.69.20.101
-  port: 2088
-  type: vless
-  uuid: 7f02e3c5-e386-4cfe-bd24-c49d196638b6
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ku8w0v8YcKn7TnxfleKjgqPYiWzWMrOKEwsCREJ9Plc
-    short-id: 9f8442aef1b6598f
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: 91.215.43.80
-  port: 443
-  type: vless
-  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
-  client-fingerprint: firefox
-  tls: true
-  servername: sand.api.downloader-pet.xyz
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
-    headers:
-      Host: sand.api.downloader-pet.xyz
-- name: 🇪🇪 Estonia | [*CIDR]
-  server: 45.132.176.134
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: firefox
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
 - name: '🇩🇪 Germany | [*CIDR] #3'
   server: 91.215.43.80
   port: 443
@@ -229,32 +129,16 @@ proxies:
     path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
     headers:
       Host: sand.api.downloader-pet.xyz
-- name: 🇷🇸 Serbia | [*CIDR]
-  server: 45.132.177.96
-  port: 9889
+- name: 🇩🇪 AetrisVPN
+  server: 109.69.20.101
+  port: 2087
   type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: chrome
+  uuid: 7f02e3c5-e386-4cfe-bd24-c49d196638b6
+  flow: xtls-rprx-vision
+  client-fingerprint: random
   tls: true
   servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: ycPIUcY6ci2yi7YA_OHc20e4gzxEdJTqpmeShxSuHRU
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: '🇩🇪 AetrisVPN #2'
-  server: 45.8.99.5
-  port: 443
-  type: vless
-  uuid: 7f99eb58-5983-006e-9c02-d8cea49f7074
-  client-fingerprint: random
-  tls: true
-  servername: ozon.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 0omtLHQHyKnV7w05maiOqvL5PvxdCQKw_zDqqgR28X8
-    short-id: 8d0ff3d6ec629371
-  network: xhttp
-  xhttp-opts:
-    path: /aqkk8j6ayx76aw67mb
+    public-key: _rkp9bSe2rz_fcWZS-OVP1HrvsR1fyBCGt0o92WPz1E
+    short-id: f6019bc89397da24
