@@ -1,104 +1,20 @@
 proxies:
 - name: 🇩🇪 Germany | [*CIDR]
-  server: 91.215.43.80
-  port: 443
+  server: 159.194.244.132
+  port: 10991
   type: vless
-  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
-  client-fingerprint: firefox
-  tls: true
-  servername: sand.api.downloader-pet.xyz
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
-    headers:
-      Host: sand.api.downloader-pet.xyz
-- name: 🇪🇺 AetrisVPN-NL
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: c2bbf90c-7f13-47dd-b68d-f0bd38b6b3c8
-  client-fingerprint: random
-  tls: true
-  servername: randomquaint.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇪🇺 AetrisVPN-RU
-  server: 91.210.169.181
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: random
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: 91.215.43.80
-  port: 443
-  type: vless
-  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
-  client-fingerprint: firefox
-  tls: true
-  servername: sand.api.downloader-pet.xyz
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
-    headers:
-      Host: sand.api.downloader-pet.xyz
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 159.194.243.175
-  port: 443
-  type: vless
-  uuid: 237f3738-b70a-4146-89a8-10e914387c1d
+  uuid: bfa9f30d-357a-480d-9ff9-ef4dbc891343
   client-fingerprint: safari
   tls: true
-  servername: anisabrand.ru
+  servername: admin.intand.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: Q9-Fzdk-ww9qRMYjTvPwQXlbTfdsmEviG0ZXsPxXSxg
-    short-id: 62b5bd3a2607bc
+    public-key: DRxBiZFrywyVJE3HruA1StzL1UpXUy5QDJzFx1CCiQQ
+    short-id: dc634eee960b39
   network: xhttp
   xhttp-opts:
-    path: /videoapi
-- name: 🇦🇲 AetrisVPN-RU
-  server: 109.69.20.101
-  port: 2088
-  type: vless
-  uuid: 7f02e3c5-e386-4cfe-bd24-c49d196638b6
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ku8w0v8YcKn7TnxfleKjgqPYiWzWMrOKEwsCREJ9Plc
-    short-id: 9f8442aef1b6598f
-- name: 🇩🇪 Germany [*CIDR]
-  server: 91.215.43.80
-  port: 443
-  type: vless
-  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
-  client-fingerprint: edge
-  tls: true
-  servername: sand.api.downloader-pet.xyz
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
-    headers:
-      Host: sand.api.downloader-pet.xyz
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+    path: /apiertf
+- name: 🇳🇱 AetrisVPN
   server: 159.194.243.175
   port: 443
   type: vless
@@ -113,32 +29,156 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /videoapi
-- name: '🇩🇪 Germany | [*CIDR] #3'
-  server: 91.215.43.80
-  port: 443
+- name: 🇪🇺 AetrisVPN
+  server: 5.42.99.64
+  port: 8443
   type: vless
-  uuid: 3ebf23f9-e64a-4cad-a970-0562bc0fd8c0
+  uuid: c53ea5e9-ed8b-4990-805d-7f1d6451426c
+  flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: sand.api.downloader-pet.xyz
+  servername: du-rov.secureservice.top
+  skip-cert-verify: true
+  reality-opts:
+    public-key: fSVfR9NB-6J6smrZlavi0GWd8JfDh0aXuEkKbtuFzUI
+    short-id: 3cbc3d737fb9c4af
+- name: '🇪🇺 AetrisVPN #2'
+  server: 91.210.169.181
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇪🇺 AetrisVPN #3'
+  server: wstg.datasynctrue.online
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+- name: '🇪🇺 AetrisVPN #4'
+  server: 188.225.33.141
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: 188.225.33.141
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: 🇷🇺 AetrisVPN
+  server: dismissaltree.net
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: random
+  tls: true
+  servername: dismissaltree.net
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: dismissaltree.net
+- name: '🇷🇺 AetrisVPN #2'
+  server: 78.159.246.110
+  port: 443
+  type: vless
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: firefox
+  tls: true
+  servername: fbsv6.guardora.pro
   alpn:
   - http/1.1
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /gateway/v1/ws/74c4d5e82a8e50ccf09fc628c17dc9be
+    path: /ws
     headers:
-      Host: sand.api.downloader-pet.xyz
-- name: 🇩🇪 AetrisVPN
-  server: 109.69.20.101
-  port: 2087
+      Host: fbsv6.guardora.pro
+- name: 🇳🇴 Norway | [*CIDR]
+  server: 45.132.177.80
+  port: 9881
   type: vless
-  uuid: 7f02e3c5-e386-4cfe-bd24-c49d196638b6
-  flow: xtls-rprx-vision
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
   client-fingerprint: random
   tls: true
   servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: _rkp9bSe2rz_fcWZS-OVP1HrvsR1fyBCGt0o92WPz1E
-    short-id: f6019bc89397da24
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇳🇴 Norway | [*CIDR] #2'
+  server: 45.132.177.80
+  port: 9881
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: ios
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇳🇴 Norway | [*CIDR] #3'
+  server: 45.132.177.80
+  port: 9881
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: firefox
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇳🇴 Norway | [*CIDR] #4'
+  server: 45.132.177.80
+  port: 9881
+  type: vless
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: edge
+  tls: true
+  servername: dl.google.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇷🇺 AetrisVPN #3'
+  server: 81.94.148.214
+  port: 443
+  type: vless
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: chrome
+  tls: true
+  servername: fbsv6.guardora.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
