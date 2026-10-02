@@ -1,27 +1,17 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR]
-  server: 37.9.4.182
-  port: 8443
-  type: trojan
-  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
-  client-fingerprint: firefox
-  tls: true
-  sni: denode201.velox-network.org
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: 🇬🇧313Mb
-  server: 87.192.47.10
-  port: 52006
+- name: 🇩🇪 AetrisVPN
+  server: 159.194.244.172
+  port: 443
   type: vless
-  uuid: bc659d88-a1e0-4c65-a49a-7b51b26a7a7f
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  uuid: e0b9fb0f-1bbd-478b-9580-c2294778338b
+  client-fingerprint: random
   tls: true
-  servername: grok.setlisting.ru
+  servername: ger.g4m1.biz
   skip-cert-verify: true
-- name: 🇪🇪 AetrisVPN
+  network: grpc
+  grpc-opts:
+    grpc-service-name: cdn.v1.DeService
+- name: 🇪🇪 AetrisVPN-NL
   server: 78.159.250.214
   port: 443
   type: vless
@@ -49,44 +39,7 @@ proxies:
     path: /ws
     headers:
       Host: fbsv6.guardora.pro
-- name: 🇩🇪 AetrisVPN
-  server: 31.129.42.164
-  port: 6443
-  type: trojan
-  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
-  client-fingerprint: random
-  tls: true
-  sni: node111.ichost.cloud
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: 🇳🇱 AetrisVPN
-  server: nl.avroraservice.online
-  port: 443
-  type: vless
-  uuid: e0b9fb0f-1bbd-478b-9580-c2294778338b
-  client-fingerprint: random
-  tls: true
-  servername: nl.avroraservice.online
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: cdn.v1.NlService
-- name: 🇪🇺 AetrisVPN
-  server: wstg.datasynctrue.online
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-- name: '🇩🇪 Germany | [*CIDR] #2'
+- name: 🇩🇪 Germany | [*CIDR]
   server: 31.129.42.164
   port: 6443
   type: trojan
@@ -98,7 +51,30 @@ proxies:
   - h2
   - http/1.1
   skip-cert-verify: true
-- name: '🇪🇺 AetrisVPN #2'
+- name: 🇪🇺 AetrisVPN-RU
+  server: wstg.datasynctrue.online
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: 37.9.4.182
+  port: 8443
+  type: trojan
+  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
+  client-fingerprint: edge
+  tls: true
+  sni: denode201.velox-network.org
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: '🇪🇺 AetrisVPN-RU #2'
   server: 188.225.33.141
   port: 443
   type: vless
@@ -124,138 +100,54 @@ proxies:
   - h2
   - http/1.1
   skip-cert-verify: true
-- name: '🇪🇺 AetrisVPN #3'
-  server: 200.165.231.209
+- name: 🇪🇪 Estonia | [*CIDR]-RU
+  server: 185.91.52.139
   port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  type: trojan
+  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
+  client-fingerprint: safari
   tls: true
-  servername: wstg.datasynctrue.online
+  sni: isq.ichost.cloud
+  alpn:
+  - h2
+  - http/1.1
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
 - name: '🇩🇪 Germany | [*CIDR] #4'
   server: 37.9.4.182
   port: 8443
   type: trojan
   password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
-  client-fingerprint: edge
-  tls: true
-  sni: denode201.velox-network.org
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: '🇪🇺 AetrisVPN #4'
-  server: 91.210.169.181
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: random
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: '🇩🇪 Germany | [*CIDR] #5'
-  server: 37.9.4.182
-  port: 8443
-  type: trojan
-  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
-  client-fingerprint: safari
-  tls: true
-  sni: denode201.velox-network.org
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: 🇳🇴 Norway | [*CIDR]
-  server: 45.132.177.80
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: random
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: '🇩🇪 AetrisVPN #2'
-  server: 159.194.244.172
-  port: 443
-  type: vless
-  uuid: e0b9fb0f-1bbd-478b-9580-c2294778338b
-  client-fingerprint: random
-  tls: true
-  servername: ger.g4m1.biz
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: cdn.v1.DeService
-- name: 🇳🇴 AetrisVPN
-  server: 45.132.177.80
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: edge
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: 🇷🇺 Russia | 🌐 | [*CIDR]
-  server: 201.24.115.189
-  port: 443
-  type: vless
-  uuid: adc11f30-e4cb-4985-bf5e-f9ded69c019f
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: nvidia.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: fNfokzklCF4l_c8k8PciOCjm5ecNoF_sNLjEtaO-xzI
-    short-id: db04ce8bdb8900f1
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #2'
-  server: 201.24.115.189
-  port: 443
-  type: vless
-  uuid: adc11f30-e4cb-4985-bf5e-f9ded69c019f
-  flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: nvidia.com
+  sni: denode201.velox-network.org
+  alpn:
+  - h2
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: fNfokzklCF4l_c8k8PciOCjm5ecNoF_sNLjEtaO-xzI
-    short-id: db04ce8bdb8900f1
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #3'
-  server: 201.24.115.189
+- name: 🇪🇪 AetrisVPN-RU
+  server: 185.91.52.139
   port: 443
-  type: vless
-  uuid: adc11f30-e4cb-4985-bf5e-f9ded69c019f
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
+  type: trojan
+  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
+  client-fingerprint: random
   tls: true
-  servername: nvidia.com
+  sni: isq.ichost.cloud
+  alpn:
+  - h2
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: fNfokzklCF4l_c8k8PciOCjm5ecNoF_sNLjEtaO-xzI
-    short-id: db04ce8bdb8900f1
+- name: '🇪🇪 Estonia | [*CIDR]-RU #2'
+  server: 185.91.52.139
+  port: 443
+  type: trojan
+  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
+  client-fingerprint: ios
+  tls: true
+  sni: isq.ichost.cloud
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
 - name: '🇷🇺 AetrisVPN #2'
   server: 78.159.246.179
   port: 2053
@@ -269,39 +161,3 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: randomquaint.net
-- name: 🇪🇪 Estonia | [*CIDR]
-  server: 185.91.52.139
-  port: 443
-  type: trojan
-  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
-  client-fingerprint: safari
-  tls: true
-  sni: isq.ichost.cloud
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: '🇪🇪 AetrisVPN #2'
-  server: 185.91.52.139
-  port: 443
-  type: trojan
-  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
-  client-fingerprint: random
-  tls: true
-  sni: isq.ichost.cloud
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: '🇪🇪 Estonia | [*CIDR] #2'
-  server: 185.91.52.139
-  port: 443
-  type: trojan
-  password: ymk9eBP4Ams3-ncYCV4kDAezUzBfkR8x
-  client-fingerprint: ios
-  tls: true
-  sni: isq.ichost.cloud
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
