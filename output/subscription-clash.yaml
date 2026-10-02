@@ -1,16 +1,4 @@
 proxies:
-- name: 🌐0Mb
-  server: milo.rubinaz.xyz
-  port: 8080
-  type: vless
-  uuid: 6bceb548-d9b6-461f-8e37-a5a7fbcdc2c8
-- name: 🇫🇮 Finland | 🌐 [*CIDR]
-  server: 176.114.86.163
-  port: 8081
-  type: vless
-  uuid: b4090350-b91f-4920-b5c0-c3ffd2798534
-  network: grpc
-  grpc-opts: {}
 - name: 🇪🇪 AetrisVPN
   server: 78.159.250.214
   port: 443
@@ -23,52 +11,31 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇪🇺 AetrisVPN
-  server: wstg.datasynctrue.online
+- name: 🇷🇺 AetrisVPN
+  server: 81.94.148.214
   port: 443
   type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: random
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: chrome
   tls: true
-  servername: wstg.datasynctrue.online
+  servername: fbsv6.guardora.pro
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /api/connect
-- name: 🇷🇺 Russia | [*CIDR]
-  server: rf7.o4ka-internet.com
+    path: /ws
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 201.24.121.122
   port: 443
   type: vless
-  uuid: 8f6e49e6-7f03-4f10-9da9-1716158d80ed
-  flow: xtls-rprx-vision
+  uuid: 8e8ea5d2-6941-40fb-9efe-f9062b11b2b9
   client-fingerprint: ios
   tls: true
-  servername: rf7.o4ka-internet.com
+  servername: nld.centermass.net
   skip-cert-verify: true
-  reality-opts:
-    public-key: V2JprbR_aJkS7uX6anyU3nrswGxdvDQT2HpY4WnzuC8
-    short-id: 5629431325884ff0
-- name: '🇷🇺 Russia | [*CIDR] #2'
-  server: rf7.o4ka-internet.com
-  port: 443
-  type: vless
-  uuid: 8f6e49e6-7f03-4f10-9da9-1716158d80ed
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: rf7.o4ka-internet.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: V2JprbR_aJkS7uX6anyU3nrswGxdvDQT2HpY4WnzuC8
-    short-id: 5629431325884ff0
-- name: 🇷🇺 Russia [*CIDR]
-  server: 176.114.86.222
-  port: 8081
-  type: vless
-  uuid: b4090350-b91f-4920-b5c0-c3ffd2798534
-  network: grpc
-  grpc-opts: {}
-- name: 🇷🇺 AetrisVPN
+  network: xhttp
+  xhttp-opts:
+    path: /media/playback/v1/SessionGateway
+- name: '🇷🇺 AetrisVPN #2'
   server: 46.243.232.125
   port: 443
   type: vless
@@ -82,47 +49,93 @@ proxies:
     path: /ws
     headers:
       Host: fbsv6.guardora.pro
-- name: 🇱🇻 Latvia | [*CIDR]
-  server: 176.109.104.103
-  port: 9881
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: 201.24.121.122
+  port: 443
   type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  uuid: 8e8ea5d2-6941-40fb-9efe-f9062b11b2b9
+  client-fingerprint: firefox
+  tls: true
+  servername: nld.centermass.net
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /media/playback/v1/SessionGateway
+- name: '🇷🇺 AetrisVPN #3'
+  server: 78.159.246.110
+  port: 443
+  type: vless
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
   client-fingerprint: chrome
   tls: true
-  servername: dl.google.com
+  servername: fbsv6.guardora.pro
   skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: 🇩🇰 Denmark | [*CIDR]
-  server: 176.109.111.7
-  port: 9881
+  network: ws
+  ws-opts:
+    path: /ws
+- name: 🇪🇺 AetrisVPN
+  server: wstg.datasynctrue.online
+  port: 443
   type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+- name: '🇷🇺 AetrisVPN #4'
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
   client-fingerprint: chrome
   tls: true
-  servername: dl.google.com
+  servername: ya.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aa
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: '🇩🇰 Denmark | [*CIDR] #2'
-  server: 176.109.111.7
-  port: 9881
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: 🇱🇺 Luxembourg | [*CIDR]
+  server: 176.108.242.55
+  port: 5002
   type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: qq
+  uuid: 8e8ea5d2-6941-40fb-9efe-f9062b11b2b9
+  client-fingerprint: edge
   tls: true
-  servername: dl.google.com
+  servername: lm.centermass.net
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aa
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
+  network: ws
+  ws-opts:
+    path: media.playback.v1.SessionGateway
+- name: '🇱🇺 Luxembourg | [*CIDR] #2'
+  server: 176.108.242.55
+  port: 5002
+  type: vless
+  uuid: 8e8ea5d2-6941-40fb-9efe-f9062b11b2b9
+  client-fingerprint: firefox
+  tls: true
+  servername: lm.centermass.net
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: media.playback.v1.SessionGateway
+- name: '🇱🇺 Luxembourg | [*CIDR] #3'
+  server: 176.108.242.55
+  port: 5002
+  type: vless
+  uuid: 8e8ea5d2-6941-40fb-9efe-f9062b11b2b9
+  client-fingerprint: android
+  tls: true
+  servername: lm.centermass.net
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: media.playback.v1.SessionGateway
