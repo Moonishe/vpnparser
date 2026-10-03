@@ -1,18 +1,32 @@
 proxies:
-- name: 🇳🇱 AetrisVPN
-  server: 46.8.208.70
-  port: 443
+- name: 🇩🇪 AetrisVPN
+  server: de-1.avroraservice.online
+  port: 8443
   type: vless
-  uuid: 7c86240f-ac0c-4cfe-87c8-fa0dd69b2d25
-  client-fingerprint: chrome
+  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
+  client-fingerprint: random
   tls: true
-  servername: m-vnltw-e.mvpstr.com
+  servername: cdn-de.cahmes.space
   skip-cert-verify: true
+  reality-opts:
+    public-key: LP7yXSC50lHfxW-BuRQ3OLDBNncF2KVnMgVJuX9XR2w
+    short-id: 35cd2022241da999
   network: xhttp
   xhttp-opts:
-    path: /api/orders/track
-    host: m-vnltw-e.mvpstr.com
+    path: /xhttp
 - name: 🇷🇺 AetrisVPN
+  server: 78.159.246.110
+  port: 443
+  type: vless
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: chrome
+  tls: true
+  servername: fbsv6.guardora.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇷🇺 AetrisVPN #2'
   server: 81.94.148.214
   port: 443
   type: vless
@@ -24,15 +38,8 @@ proxies:
   network: ws
   ws-opts:
     path: /ws
-- name: 🇺🇸 United States, Orem | [BL]
-  server: 31.77.8.97
-  port: 110
-  type: vmess
-  uuid: d2d8601b-c14b-42c6-b8ea-33889bce152a
-  alterId: 0
-  cipher: auto
 - name: 🇪🇺 AetrisVPN
-  server: du-rov.secureservice.top
+  server: 5.42.99.64
   port: 8443
   type: vless
   uuid: c53ea5e9-ed8b-4990-805d-7f1d6451426c
@@ -44,59 +51,7 @@ proxies:
   reality-opts:
     public-key: fSVfR9NB-6J6smrZlavi0GWd8JfDh0aXuEkKbtuFzUI
     short-id: 3cbc3d737fb9c4af
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: 201.51.11.117
-  port: 443
-  type: vless
-  uuid: 5d0e5029-061f-4d75-ac97-718dbf827957
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: www.samsung.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 9eiEOSjRUJfWtjR5_h6qYOIIC7oihvCNtyFFvtu7MEM
-    short-id: ed07a0272e0123e0
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
-  server: 201.51.11.117
-  port: 443
-  type: vless
-  uuid: 5d0e5029-061f-4d75-ac97-718dbf827957
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: www.samsung.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 9eiEOSjRUJfWtjR5_h6qYOIIC7oihvCNtyFFvtu7MEM
-    short-id: ed07a0272e0123e0
 - name: 🇱🇹 AetrisVPN
-  server: 188.225.35.207
-  port: 443
-  type: vless
-  uuid: 7610be85-9855-4010-8929-ce16d4993969
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: demo.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: -lLmJilTNFk_DYxnbvWJH_swC9a5JRheZrN1KPVMjCc
-    short-id: 219a891b
-- name: '🇱🇹 AetrisVPN #2'
-  server: 188.225.25.142
-  port: 443
-  type: vless
-  uuid: 7610be85-9855-4010-8929-ce16d4993969
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: prime.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SxbaWzlvE_HQqqsA4PNX2PFcSYXTVE2nZlgLc7cPOgk
-    short-id: 8681edc9
-- name: '🇱🇹 AetrisVPN #3'
   server: 188.225.77.241
   port: 443
   type: vless
@@ -109,7 +64,7 @@ proxies:
   reality-opts:
     public-key: YczbievYAOeZIypa58aRpil6XbfdyifK_0cFJWn8-yg
     short-id: d6c172d3
-- name: '🇱🇹 AetrisVPN #4'
+- name: '🇱🇹 AetrisVPN #2'
   server: 188.225.25.195
   port: 443
   type: vless
@@ -122,3 +77,60 @@ proxies:
   reality-opts:
     public-key: Fe_144ALuRRedGs06ljDnE1f_G2B2wE4i9_diqw5LnY
     short-id: a16bc894
+- name: '🇷🇺 AetrisVPN #3'
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: chrome
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: '🇪🇺 AetrisVPN #2'
+  server: 200.165.231.209
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇪🇺 AetrisVPN #3'
+  server: renderer-stream-1-832.mirra.now
+  port: 443
+  type: vmess
+  uuid: 8ffa41d4-e6b5-4af5-a8a9-69e26bec75f5
+  alterId: 0
+  cipher: auto
+  client-fingerprint: firefox
+  tls: true
+  servername: renderer-stream-1-832.mirra.now
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/v1/gpu-stream/socket
+    headers:
+      Host: renderer-stream-1-832.mirra.now
+- name: '🇱🇹 AetrisVPN #3'
+  server: 188.225.35.207
+  port: 443
+  type: vless
+  uuid: 7610be85-9855-4010-8929-ce16d4993969
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: demo.betust.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: -lLmJilTNFk_DYxnbvWJH_swC9a5JRheZrN1KPVMjCc
+    short-id: 219a891b
