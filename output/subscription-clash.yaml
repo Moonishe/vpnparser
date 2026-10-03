@@ -1,131 +1,143 @@
 proxies:
-- name: 🌐 Anycast-IP | 🇩🇪 🇳🇱 | [*CIDR]
-  server: 45.132.177.171
+- name: 🇪🇪 AetrisVPN
+  server: 78.159.250.214
   port: 443
   type: vless
-  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
-  client-fingerprint: qq
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  flow: xtls-rprx-vision
+  client-fingerprint: random
   tls: true
-  servername: nl-01.avroraservice.online
+  servername: qq.utiltools.site
+  skip-cert-verify: true
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+- name: 🇪🇺 AetrisVPN
+  server: 200.165.231.209
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 87.242.94.237
+  port: 2443
+  type: trojan
+  password: _SYk3tZo0C9V_QADsfuF2wp2a47ax_3W
+  client-fingerprint: ios
+  tls: true
+  sni: yarik.cishosts.org
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: 🇷🇺 AetrisVPN
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: chrome
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: 87.242.94.237
+  port: 2443
+  type: trojan
+  password: _SYk3tZo0C9V_QADsfuF2wp2a47ax_3W
+  client-fingerprint: firefox
+  tls: true
+  sni: yarik.cishosts.org
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: '🇷🇺 AetrisVPN #2'
+  server: 78.159.246.110
+  port: 443
+  type: vless
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: chrome
+  tls: true
+  servername: fbsv6.guardora.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: 87.242.94.237
+  port: 2443
+  type: trojan
+  password: _SYk3tZo0C9V_QADsfuF2wp2a47ax_3W
+  client-fingerprint: safari
+  tls: true
+  sni: yarik.cishosts.org
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: '🇪🇺 AetrisVPN #2'
+  server: 81.17.154.181
+  port: 443
+  type: vless
+  uuid: b229d38c-35ec-4a0b-9c86-8fceba243d6c
+  client-fingerprint: random
+  tls: true
+  servername: fafeqdhlett2p5la6d.cdn.cachefleet.com
+  alpn:
+  - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
-    path: /xhttp
-    host: nl-01.avroraservice.online
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 189.74.114.89
+    path: /ccxf5snr06b8xxb6
+    host: fafeqdhlett2p5la6d.cdn.cachefleet.com
+- name: '🇷🇺 AetrisVPN #3'
+  server: 185.141.227.180
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: random
+  tls: true
+  servername: dismissaltree.net
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+- name: '🇷🇺 AetrisVPN #4'
+  server: 217.19.122.200
   port: 443
   type: vless
-  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: random
   tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇱🇺 Luxembourg | [*CIDR]-RU
-  server: 176.108.242.55
-  port: 5002
-  type: vless
-  uuid: 8e8ea5d2-6941-40fb-9efe-f9062b11b2b9
-  client-fingerprint: firefox
-  tls: true
-  servername: lm.centermass.net
+  servername: fbsv6.guardora.pro
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /media.playback.v1.SessionGateway
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: 189.74.114.89
-  port: 443
-  type: vless
-  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇱🇺 Luxembourg [*CIDR]-RU
-  server: 176.108.242.55
-  port: 5002
-  type: vless
-  uuid: 8e8ea5d2-6941-40fb-9efe-f9062b11b2b9
-  client-fingerprint: firefox
-  tls: true
-  servername: lm.centermass.net
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: media.playback.v1.SessionGateway
+    path: /ws
     headers:
-      Host: lm.centermass.net
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
-  server: api.mediapriboy.cc
+      Host: fbsv6.guardora.pro
+- name: '🇷🇺 AetrisVPN #5'
+  server: fbsv6.guardora.pro
   port: 443
   type: vless
-  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
+  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
+  client-fingerprint: random
   tls: true
-  servername: api.mediapriboy.cc
+  servername: fbsv6.guardora.pro
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇳🇱 The Netherlands | [*CIDR] #3'
-  server: 189.74.114.116
-  port: 443
-  type: vless
-  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇳🇱 The Netherlands | [*CIDR] #4'
-  server: 189.74.114.141
-  port: 443
-  type: vless
-  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇳🇱 The Netherlands | [*CIDR] #5'
-  server: 189.74.114.141
-  port: 443
-  type: vless
-  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇳🇱 The Netherlands | [*CIDR] #6'
-  server: 189.74.114.116
-  port: 443
-  type: vless
-  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
+  network: ws
+  ws-opts:
+    path: /ws
+    headers:
+      Host: fbsv6.guardora.pro
