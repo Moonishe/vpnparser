@@ -1,10 +1,10 @@
 proxies:
 - name: 🌐 Anycast-IP | 🇩🇪 🇳🇱 | [*CIDR]
-  server: 94.228.166.86
+  server: 45.132.177.171
   port: 443
   type: vless
   uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
-  client-fingerprint: ios
+  client-fingerprint: qq
   tls: true
   servername: nl-01.avroraservice.online
   skip-cert-verify: true
@@ -13,19 +13,19 @@ proxies:
     path: /xhttp
     host: nl-01.avroraservice.online
 - name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 189.74.114.116
+  server: 189.74.114.89
   port: 443
   type: vless
   uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: firefox
   tls: true
   servername: api.mediapriboy.cc
   skip-cert-verify: true
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: 🇱🇺 Luxembourg | [*CIDR]
+- name: 🇱🇺 Luxembourg | [*CIDR]-RU
   server: 176.108.242.55
   port: 5002
   type: vless
@@ -37,35 +37,20 @@ proxies:
   network: ws
   ws-opts:
     path: /media.playback.v1.SessionGateway
-- name: '🌐 Anycast-IP | 🇩🇪 🇳🇱 | [*CIDR] #2'
-  server: nl-01.avroraservice.online
-  port: 443
-  type: vless
-  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
-  client-fingerprint: qq
-  tls: true
-  servername: nl-01.avroraservice.online
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /xhttp
-    host: nl-01.avroraservice.online
 - name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: 189.74.114.116
+  server: 189.74.114.89
   port: 443
   type: vless
   uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: chrome
   tls: true
   servername: api.mediapriboy.cc
   skip-cert-verify: true
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: 🇱🇺 Luxembourg [*CIDR]
+- name: 🇱🇺 Luxembourg [*CIDR]-RU
   server: 176.108.242.55
   port: 5002
   type: vless
@@ -79,61 +64,32 @@ proxies:
     path: media.playback.v1.SessionGateway
     headers:
       Host: lm.centermass.net
-- name: 🇩🇪 Germany | 🌐 | [*CIDR]
-  server: de-1.avroraservice.online
-  port: 443
-  type: vless
-  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
-  client-fingerprint: random
-  tls: true
-  servername: de-1.avroraservice.online
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /xhttp
-    host: de-1.avroraservice.online
-- name: '🇳🇱 The Netherlands | [*CIDR] #3'
-  server: 189.74.114.141
+- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
+  server: api.mediapriboy.cc
   port: 443
   type: vless
   uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: safari
   tls: true
   servername: api.mediapriboy.cc
   skip-cert-verify: true
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇱🇺 Luxembourg | [*CIDR] #2'
-  server: 176.108.242.55
-  port: 5002
-  type: vless
-  uuid: 8e8ea5d2-6941-40fb-9efe-f9062b11b2b9
-  client-fingerprint: random
-  tls: true
-  servername: lm.centermass.net
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /media.playback.v1.SessionGateway
-- name: '🌐 Anycast-IP | 🇩🇪 🇳🇱 | [*CIDR] #3'
-  server: 45.132.177.171
+- name: '🇳🇱 The Netherlands | [*CIDR] #3'
+  server: 189.74.114.116
   port: 443
   type: vless
-  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
-  client-fingerprint: qq
+  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
   tls: true
-  servername: nl-01.avroraservice.online
+  servername: api.mediapriboy.cc
   skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /xhttp
-    host: nl-01.avroraservice.online
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
 - name: '🇳🇱 The Netherlands | [*CIDR] #4'
   server: 189.74.114.141
   port: 443
@@ -148,25 +104,12 @@ proxies:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
 - name: '🇳🇱 The Netherlands | [*CIDR] #5'
-  server: 189.74.114.89
+  server: 189.74.114.141
   port: 443
   type: vless
   uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
-  server: api.mediapriboy.cc
-  port: 443
-  type: vless
-  uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: firefox
   tls: true
   servername: api.mediapriboy.cc
   skip-cert-verify: true
@@ -174,7 +117,7 @@ proxies:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
 - name: '🇳🇱 The Netherlands | [*CIDR] #6'
-  server: 189.74.114.89
+  server: 189.74.114.116
   port: 443
   type: vless
   uuid: d9ca8548-7704-4685-8ff7-caf5ceba9d03
