@@ -1,248 +1,246 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: de-02.avroraservice.online
-  port: 8443
-  type: vless
-  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
-  client-fingerprint: random
-  tls: true
-  servername: cdn-de.cahmes.space
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LP7yXSC50lHfxW-BuRQ3OLDBNncF2KVnMgVJuX9XR2w
-    short-id: 35cd2022241da999
-  network: xhttp
-  xhttp-opts:
-    path: /xhttp
-- name: 🇳🇱 AetrisVPN
-  server: 188.225.57.78
+- name: 🌐 Anycast-IP | 🇫🇮 🇬🇧 | [*CIDR]
+  server: 176.108.244.24
   port: 443
   type: vless
-  uuid: 7610be85-9855-4010-8929-ce16d4993969
+  uuid: 14b48149-0d2a-5536-b5a3-b46f94e200f7
   flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: app4.betust.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: NCW-zK60GXsiDdlbxww18Pqp4kz3zTG1URHWS_bnfDk
-    short-id: 3f7e0363
-- name: 🇷🇺 AetrisVPN
-  server: fbsv6.guardora.pro
-  port: 443
-  type: vless
-  uuid: bc5ec86c-3e65-4272-994c-59a924c72a68
-  client-fingerprint: random
-  tls: true
-  servername: fbsv6.guardora.pro
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /ws
-    headers:
-      Host: fbsv6.guardora.pro
-- name: '🇩🇪 AetrisVPN #2'
-  server: de-1.avroraservice.online
-  port: 8443
-  type: vless
-  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
-  client-fingerprint: random
-  tls: true
-  servername: cdn-de.cahmes.space
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LP7yXSC50lHfxW-BuRQ3OLDBNncF2KVnMgVJuX9XR2w
-    short-id: 35cd2022241da999
-  network: xhttp
-  xhttp-opts:
-    path: /xhttp
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: api.mediapriboy.cc
-  port: 443
-  type: vless
-  uuid: 2624c4b0-99a8-413c-9a3b-dcd98483cf5d
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇷🇺 Russia | 🌐 [*CIDR]
-  server: ru-1-8.imnotgay.party
-  port: 443
-  type: vless
-  uuid: 65616081-1772-49d7-a793-42bc13d22f69
   client-fingerprint: firefox
   tls: true
-  servername: ru-1-8.imnotgay.party
+  servername: clr.mediagenering.online
   skip-cert-verify: true
   reality-opts:
-    public-key: gS0qvWKumWcOVoAgf8SHt6Sm3tqpBw07c5sA_Clb1hg
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: api.mediapriboy.cc
+    public-key: -pCiiUtqBhNYnwH3Kj4TeybTiXJAMSAsUB_lV_3o3SU
+    short-id: 2ef05ac5
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: api.mediagavan.cc
   port: 443
   type: vless
-  uuid: 2624c4b0-99a8-413c-9a3b-dcd98483cf5d
+  uuid: 84c9ff14-75b9-420b-8a5c-dc25e19ec11a
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 AetrisVPN #2'
-  server: 78.159.250.84
-  port: 2053
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: random
-  tls: true
-  servername: summerculture.net
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: summerculture.net
-- name: '🇳🇱 The Netherlands | [*CIDR] #3'
-  server: api.mediapriboy.cc
-  port: 443
-  type: vless
-  uuid: 2624c4b0-99a8-413c-9a3b-dcd98483cf5d
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 AetrisVPN #3'
-  server: 45.12.75.242
-  port: 26424
-  type: vless
-  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
-  client-fingerprint: chrome
-  tls: true
-  servername: ya.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
-    short-id: 23103e1e
-- name: '🇳🇱 The Netherlands | [*CIDR] #4'
-  server: 189.74.114.143
-  port: 443
-  type: vless
-  uuid: 2624c4b0-99a8-413c-9a3b-dcd98483cf5d
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 AetrisVPN #4'
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: c2bbf90c-7f13-47dd-b68d-f0bd38b6b3c8
-  client-fingerprint: random
-  tls: true
-  servername: randomquaint.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: '🇳🇱 The Netherlands | [*CIDR] #5'
-  server: api.mediapriboy.cc
-  port: 443
-  type: vless
-  uuid: 2624c4b0-99a8-413c-9a3b-dcd98483cf5d
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api.mediapriboy.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 Russia | 🌐 [*CIDR] #2'
-  server: ru-1-7.imnotgay.party
-  port: 443
-  type: vless
-  uuid: 65616081-1772-49d7-a793-42bc13d22f69
   client-fingerprint: edge
   tls: true
-  servername: ru-1-7.imnotgay.party
-  skip-cert-verify: true
-  reality-opts:
-    public-key: gS0qvWKumWcOVoAgf8SHt6Sm3tqpBw07c5sA_Clb1hg
-- name: '🇳🇱 The Netherlands | [*CIDR] #6'
-  server: 189.74.114.118
-  port: 443
-  type: vless
-  uuid: 2624c4b0-99a8-413c-9a3b-dcd98483cf5d
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: api.mediapriboy.cc
+  servername: api.mediagavan.cc
   skip-cert-verify: true
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: ru-1-7.imnotgay.party
-  port: 443
+- name: 🇱🇹 Lithuania | 🌐 | [*CIDR]
+  server: 45.91.52.204
+  port: 4443
   type: vless
-  uuid: 65616081-1772-49d7-a793-42bc13d22f69
-  client-fingerprint: ios
+  uuid: 14b48149-0d2a-5536-b5a3-b46f94e200f7
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
   tls: true
-  servername: ru-1-7.imnotgay.party
+  servername: yar.mediagenering.online
   skip-cert-verify: true
   reality-opts:
-    public-key: gS0qvWKumWcOVoAgf8SHt6Sm3tqpBw07c5sA_Clb1hg
-- name: '🇳🇱 The Netherlands | [*CIDR] #7'
-  server: 189.74.114.143
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+- name: '🌐 Anycast-IP | 🇫🇮 🇬🇧 | [*CIDR] #2'
+  server: 176.108.244.24
   port: 443
   type: vless
-  uuid: 2624c4b0-99a8-413c-9a3b-dcd98483cf5d
+  uuid: 14b48149-0d2a-5536-b5a3-b46f94e200f7
   flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: clr.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: -pCiiUtqBhNYnwH3Kj4TeybTiXJAMSAsUB_lV_3o3SU
+    short-id: 2ef05ac5
+- name: '🇱🇹 Lithuania | 🌐 | [*CIDR] #2'
+  server: 45.91.52.204
+  port: 4443
+  type: vless
+  uuid: 14b48149-0d2a-5536-b5a3-b46f94e200f7
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: yar.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+- name: '🌐 Anycast-IP | 🇫🇮 🇬🇧 | [*CIDR] #3'
+  server: 176.108.244.24
+  port: 443
+  type: vless
+  uuid: 14b48149-0d2a-5536-b5a3-b46f94e200f7
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: clr.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: -pCiiUtqBhNYnwH3Kj4TeybTiXJAMSAsUB_lV_3o3SU
+    short-id: 2ef05ac5
+- name: '🇱🇹 Lithuania | 🌐 | [*CIDR] #3'
+  server: 45.91.52.204
+  port: 4443
+  type: vless
+  uuid: 14b48149-0d2a-5536-b5a3-b46f94e200f7
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: yar.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+- name: '🌐 Anycast-IP | 🇫🇮 🇬🇧 | [*CIDR] #4'
+  server: 176.108.244.24
+  port: 8443
+  type: vless
+  uuid: 6f8ff35c-ba61-5617-b730-181bcaf69a90
+  client-fingerprint: firefox
+  tls: true
+  servername: clr.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: -pCiiUtqBhNYnwH3Kj4TeybTiXJAMSAsUB_lV_3o3SU
+    short-id: 2ef05ac5
+  network: xhttp
+  xhttp-opts:
+    path: /bravada-xhttp
+    host: clr.mediagenering.online
+- name: '🇱🇹 Lithuania | 🌐 | [*CIDR] #4'
+  server: 45.91.52.204
+  port: 9443
+  type: vless
+  uuid: 6f8ff35c-ba61-5617-b730-181bcaf69a90
+  client-fingerprint: firefox
+  tls: true
+  servername: yar.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+  network: xhttp
+  xhttp-opts:
+    path: /bravada-xhttp
+    host: yar.mediagenering.online
+- name: '🌐 Anycast-IP | 🇫🇮 🇬🇧 | [*CIDR] #5'
+  server: 176.108.244.24
+  port: 8443
+  type: vless
+  uuid: 6f8ff35c-ba61-5617-b730-181bcaf69a90
+  client-fingerprint: chrome
+  tls: true
+  servername: clr.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: -pCiiUtqBhNYnwH3Kj4TeybTiXJAMSAsUB_lV_3o3SU
+    short-id: 2ef05ac5
+  network: xhttp
+  xhttp-opts:
+    path: /bravada-xhttp
+    host: clr.mediagenering.online
+- name: '🇱🇹 Lithuania | 🌐 | [*CIDR] #5'
+  server: 45.91.52.204
+  port: 9443
+  type: vless
+  uuid: 6f8ff35c-ba61-5617-b730-181bcaf69a90
+  client-fingerprint: chrome
+  tls: true
+  servername: yar.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+  network: xhttp
+  xhttp-opts:
+    path: /bravada-xhttp
+    host: yar.mediagenering.online
+- name: '🌐 Anycast-IP | 🇫🇮 🇬🇧 | [*CIDR] #6'
+  server: 176.108.244.24
+  port: 443
+  type: vless
+  uuid: 14b48149-0d2a-5536-b5a3-b46f94e200f7
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: clr.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: -pCiiUtqBhNYnwH3Kj4TeybTiXJAMSAsUB_lV_3o3SU
+    short-id: 2ef05ac5
+- name: 🌐 Anycast-IP | 🇱🇹 🇷🇺 | [*CIDR]
+  server: 45.91.52.204
+  port: 9443
+  type: vless
+  uuid: 6f8ff35c-ba61-5617-b730-181bcaf69a90
+  client-fingerprint: qq
+  tls: true
+  servername: yar.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+  network: xhttp
+  xhttp-opts:
+    path: /bravada-xhttp
+    host: yar.mediagenering.online
+- name: '🇱🇹 Lithuania | 🌐 | [*CIDR] #6'
+  server: 45.91.52.204
+  port: 9443
+  type: vless
+  uuid: 6f8ff35c-ba61-5617-b730-181bcaf69a90
+  client-fingerprint: ios
+  tls: true
+  servername: yar.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+  network: xhttp
+  xhttp-opts:
+    path: /bravada-xhttp
+    host: yar.mediagenering.online
+- name: '🇱🇹 Lithuania | 🌐 | [*CIDR] #7'
+  server: 45.91.52.204
+  port: 9443
+  type: vless
+  uuid: 6f8ff35c-ba61-5617-b730-181bcaf69a90
+  client-fingerprint: edge
+  tls: true
+  servername: yar.mediagenering.online
+  skip-cert-verify: true
+  reality-opts:
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+  network: xhttp
+  xhttp-opts:
+    path: /bravada-xhttp
+    host: yar.mediagenering.online
+- name: '🇱🇹 Lithuania | 🌐 | [*CIDR] #8'
+  server: 45.91.52.204
+  port: 9443
+  type: vless
+  uuid: 6f8ff35c-ba61-5617-b730-181bcaf69a90
   client-fingerprint: safari
   tls: true
-  servername: api.mediapriboy.cc
+  servername: yar.mediagenering.online
   skip-cert-verify: true
   reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
-  server: ru-1-8.imnotgay.party
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
+  network: xhttp
+  xhttp-opts:
+    path: /bravada-xhttp
+    host: yar.mediagenering.online
+- name: 🇦🇱 Albania | [*CIDR] YA
+  server: 93.77.161.179
   port: 443
   type: vless
-  uuid: 65616081-1772-49d7-a793-42bc13d22f69
-  client-fingerprint: chrome
-  tls: true
-  servername: ru-1-8.imnotgay.party
-  skip-cert-verify: true
-  reality-opts:
-    public-key: gS0qvWKumWcOVoAgf8SHt6Sm3tqpBw07c5sA_Clb1hg
-- name: '🇳🇱 The Netherlands | [*CIDR] #8'
-  server: 189.74.114.143
-  port: 443
-  type: vless
-  uuid: 2624c4b0-99a8-413c-9a3b-dcd98483cf5d
+  uuid: 14b48149-0d2a-5536-b5a3-b46f94e200f7
   flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: api.mediapriboy.cc
+  servername: yt.mediagenering.online
   skip-cert-verify: true
   reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
+    public-key: frb8fnNJUtKEZon0sQUe3rRVfS5yajEfwX-dWkK42W0
+    short-id: 665eca45
