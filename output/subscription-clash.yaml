@@ -1,30 +1,17 @@
 proxies:
 - name: 🇩🇪 Germany [*CIDR]
-  server: 189.74.106.85
+  server: 189.74.106.116
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: chrome
   tls: true
   servername: api.setevoyprostor.cc
   skip-cert-verify: true
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: 🇫🇮 Finland | [*CIDR]
-  server: 111.88.162.139
-  port: 1443
-  type: vless
-  uuid: d77ad0b7-f73d-48b6-a37f-df435cabe889
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: fin.cloude.one
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aRKtPnNR49_nBF7jXdxoT8D0TLpG_bx5XWb3oytFDRA
-    short-id: 90fb5321877a587b
 - name: 🇫🇷 France [*CIDR]
   server: 189.74.117.15
   port: 443
@@ -39,71 +26,6 @@ proxies:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
 - name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 168.113.215.197
-  port: 1443
-  type: vless
-  uuid: d77ad0b7-f73d-48b6-a37f-df435cabe889
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: nls.cloude.one
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Hd07C_ohD8zIdawFWDVNBOTasc1X4oHpv653wMDXxQk
-    short-id: 994b9e7bc97a9c1f
-- name: 🇷🇴 AetrisVPN
-  server: 31.76.84.61
-  port: 8443
-  type: vless
-  uuid: 953358cb-82ba-4296-960d-6d2ec3468f4c
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: brightdesk.videoclothing.xyz
-  skip-cert-verify: true
-  reality-opts:
-    public-key: eRoG3-EGDH0bT7x0phlMKIRkdeGAP6DhUmnAw_2WLhE
-    short-id: 38a85846b72a1e51
-- name: '🇩🇪 Germany [*CIDR] #2'
-  server: 189.74.106.85
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇫🇮 Finland | [*CIDR] #2'
-  server: 111.88.162.139
-  port: 1443
-  type: vless
-  uuid: d77ad0b7-f73d-48b6-a37f-df435cabe889
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: fin.cloude.one
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aRKtPnNR49_nBF7jXdxoT8D0TLpG_bx5XWb3oytFDRA
-    short-id: 90fb5321877a587b
-- name: 🇫🇷 France | [*CIDR]
-  server: 189.74.117.15
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.videopereval.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
   server: 168.113.215.197
   port: 1443
   type: vless
@@ -128,8 +50,59 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+- name: '🇩🇪 Germany [*CIDR] #2'
+  server: 189.74.106.116
+  port: 443
+  type: vless
+  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api.setevoyprostor.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇫🇷 France [*CIDR] #2'
+  server: 189.74.117.15
+  port: 443
+  type: vless
+  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api.videopereval.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: 168.113.215.197
+  port: 1443
+  type: vless
+  uuid: d77ad0b7-f73d-48b6-a37f-df435cabe889
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: nls.cloude.one
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Hd07C_ohD8zIdawFWDVNBOTasc1X4oHpv653wMDXxQk
+    short-id: 994b9e7bc97a9c1f
+- name: '🇷🇺 Russia | [*CIDR] #2'
+  server: 45.9.118.101
+  port: 443
+  type: vless
+  uuid: 44730b65-24d5-45f2-8b45-8be24015d1b9
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: sellflow.org
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
 - name: 🇩🇪 Germany | [*CIDR]
-  server: 189.74.106.150
+  server: 189.74.106.53
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
@@ -141,26 +114,13 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇫🇮 Finland | [*CIDR] #3'
-  server: 111.88.162.139
-  port: 1443
-  type: vless
-  uuid: d77ad0b7-f73d-48b6-a37f-df435cabe889
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: fin.cloude.one
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aRKtPnNR49_nBF7jXdxoT8D0TLpG_bx5XWb3oytFDRA
-    short-id: 90fb5321877a587b
-- name: '🇫🇷 France [*CIDR] #2'
+- name: 🇫🇷 France | [*CIDR]
   server: 189.74.117.15
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: firefox
   tls: true
   servername: api.videopereval.cc
   skip-cert-verify: true
@@ -179,13 +139,13 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: 189.74.106.53
+- name: '🇩🇪 Germany [*CIDR] #3'
+  server: 189.74.106.150
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: chrome
   tls: true
   servername: api.setevoyprostor.cc
   skip-cert-verify: true
@@ -204,38 +164,13 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: '🇩🇪 Germany | [*CIDR] #3'
-  server: 189.74.106.53
+- name: '🇩🇪 Germany [*CIDR] #4'
+  server: 189.74.106.150
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
   flow: xtls-rprx-vision
   client-fingerprint: edge
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 Russia | [*CIDR] #2'
-  server: 45.9.118.101
-  port: 443
-  type: vless
-  uuid: 44730b65-24d5-45f2-8b45-8be24015d1b9
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: sellflow.org
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: '🇩🇪 Germany [*CIDR] #3'
-  server: 189.74.106.85
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
   tls: true
   servername: api.setevoyprostor.cc
   skip-cert-verify: true
@@ -254,33 +189,8 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: P7F65GjTQGZju-N8CVHtlKNaWebVe_76Xt7Lm00RuH0
-- name: '🇩🇪 Germany | [*CIDR] #4'
-  server: 189.74.106.85
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 Russia | [*CIDR] #4'
-  server: 188.130.209.224
-  port: 444
-  type: vless
-  uuid: 919a2568-3add-44ec-a769-915adad37bd2
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: vextor.win
-  skip-cert-verify: true
-  reality-opts:
-    public-key: P7F65GjTQGZju-N8CVHtlKNaWebVe_76Xt7Lm00RuH0
-- name: '🇩🇪 Germany | [*CIDR] #5'
-  server: 189.74.106.53
+- name: '🇩🇪 Germany [*CIDR] #5'
+  server: 189.74.106.116
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
@@ -292,21 +202,34 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇷🇺 Russia | [*CIDR] #5'
-  server: charredrelatedfoam.falloworchard.com
+- name: 🇷🇴 AetrisVPN-RU
+  server: 31.76.84.61
+  port: 8443
+  type: vless
+  uuid: 953358cb-82ba-4296-960d-6d2ec3468f4c
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: brightdesk.videoclothing.xyz
+  skip-cert-verify: true
+  reality-opts:
+    public-key: eRoG3-EGDH0bT7x0phlMKIRkdeGAP6DhUmnAw_2WLhE
+    short-id: 38a85846b72a1e51
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: 189.74.106.53
   port: 443
   type: vless
-  uuid: d53ceb12-1b43-4547-8c1d-9b34a02372c6
+  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: charredrelatedfoam.falloworchard.com
+  servername: api.setevoyprostor.cc
   skip-cert-verify: true
   reality-opts:
-    public-key: jp5PkSh099NYT4PM8-tPErUja-u1S1PFSqYoxhQgZmo
-    short-id: d97ed991ca4d52df
-- name: '🇩🇪 Germany [*CIDR] #4'
-  server: 189.74.106.150
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇩🇪 Germany [*CIDR] #6'
+  server: 189.74.106.85
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
@@ -318,21 +241,8 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇷🇺 Russia | [*CIDR] #6'
-  server: charredrelatedfoam.falloworchard.com
-  port: 443
-  type: vless
-  uuid: d53ceb12-1b43-4547-8c1d-9b34a02372c6
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: charredrelatedfoam.falloworchard.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: jp5PkSh099NYT4PM8-tPErUja-u1S1PFSqYoxhQgZmo
-    short-id: d97ed991ca4d52df
-- name: '🇩🇪 Germany | [*CIDR] #6'
-  server: 189.74.106.53
+- name: '🇩🇪 Germany [*CIDR] #7'
+  server: 189.74.106.85
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
@@ -344,46 +254,7 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇷🇺 Russia | [*CIDR] #7'
-  server: charredrelatedfoam.falloworchard.com
-  port: 443
-  type: vless
-  uuid: d53ceb12-1b43-4547-8c1d-9b34a02372c6
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: charredrelatedfoam.falloworchard.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: jp5PkSh099NYT4PM8-tPErUja-u1S1PFSqYoxhQgZmo
-    short-id: d97ed991ca4d52df
-- name: '🇩🇪 Germany [*CIDR] #5'
-  server: 189.74.106.116
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany [*CIDR] #6'
-  server: 189.74.106.150
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany | [*CIDR] #7'
+- name: '🇩🇪 Germany | [*CIDR] #3'
   server: 189.74.106.116
   port: 443
   type: vless
@@ -396,21 +267,8 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇩🇪 Germany [*CIDR] #7'
-  server: 189.74.106.116
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
 - name: '🇩🇪 Germany [*CIDR] #8'
-  server: 189.74.106.116
+  server: 189.74.106.150
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
@@ -423,12 +281,64 @@ proxies:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
 - name: '🇩🇪 Germany [*CIDR] #9'
-  server: 189.74.106.150
+  server: 189.74.106.85
   port: 443
   type: vless
   uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
   flow: xtls-rprx-vision
   client-fingerprint: edge
+  tls: true
+  servername: api.setevoyprostor.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇩🇪 Germany | [*CIDR] #4'
+  server: 189.74.106.53
+  port: 443
+  type: vless
+  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api.setevoyprostor.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇩🇪 Germany | [*CIDR] #5'
+  server: 189.74.106.85
+  port: 443
+  type: vless
+  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: api.setevoyprostor.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇩🇪 Germany | [*CIDR] #6'
+  server: 189.74.106.150
+  port: 443
+  type: vless
+  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: api.setevoyprostor.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇩🇪 Germany | [*CIDR] #7'
+  server: 189.74.106.53
+  port: 443
+  type: vless
+  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
   tls: true
   servername: api.setevoyprostor.cc
   skip-cert-verify: true
