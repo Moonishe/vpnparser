@@ -1,244 +1,181 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR]
-  server: 189.74.106.116
-  port: 443
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+  server: de12.h1cloud.net
+  port: 25089
   type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  uuid: 95003356-20f9-4c84-a21f-2f9c1fc285eb
+  client-fingerprint: safari
   tls: true
-  servername: api.setevoyprostor.cc
+  servername: www.chip.de
   skip-cert-verify: true
   reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇫🇷 France [*CIDR]
-  server: 189.74.117.15
-  port: 443
+    public-key: 3ZxTHjZ8XHP2aYzLEKUPI3xQ5jYQYrSrIEXlUlULUEA
+    short-id: 56d9d9fba348e5e6
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: 196.240.125.253
+  port: 8443
   type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: api.videopereval.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇷🇺 Russia [*CIDR]
-  server: 45.9.118.101
-  port: 443
-  type: vless
-  uuid: 44730b65-24d5-45f2-8b45-8be24015d1b9
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
   client-fingerprint: ios
   tls: true
-  servername: sellflow.org
+  servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: 🇩🇪 Germany [*CIDR]
-  server: 189.74.106.85
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #2'
+  server: 196.240.125.253
+  port: 8443
   type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: firefox
   tls: true
-  servername: api.setevoyprostor.cc
+  servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇫🇷 France [*CIDR] #2'
-  server: 189.74.117.15
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #3'
+  server: 196.240.125.253
+  port: 8443
   type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: api.videopereval.cc
+  servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 45.9.118.101
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #4'
+  server: 196.240.125.253
+  port: 8443
   type: vless
-  uuid: 44730b65-24d5-45f2-8b45-8be24015d1b9
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: qq
   tls: true
-  servername: sellflow.org
+  servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: 189.74.106.85
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #5'
+  server: nl.alpheratzz.org
+  port: 8443
   type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇫🇷 France | [*CIDR]
-  server: 189.74.117.15
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.videopereval.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 Russia | [*CIDR] #2'
-  server: 45.9.118.101
-  port: 443
-  type: vless
-  uuid: 44730b65-24d5-45f2-8b45-8be24015d1b9
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
   client-fingerprint: safari
   tls: true
-  servername: sellflow.org
+  servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: '🇩🇪 Germany | [*CIDR] #3'
-  server: 189.74.106.53
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #6'
+  server: nl.alpheratzz.org
+  port: 8443
   type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
   client-fingerprint: edge
   tls: true
-  servername: api.setevoyprostor.cc
+  servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 Russia [*CIDR] #2'
-  server: 45.9.118.101
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #7'
+  server: nl.alpheratzz.org
+  port: 8443
   type: vless
-  uuid: 44730b65-24d5-45f2-8b45-8be24015d1b9
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: ios
   tls: true
-  servername: sellflow.org
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
   skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-- name: '🇩🇪 Germany [*CIDR] #2'
-  server: 189.74.106.85
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #8'
+  server: nl.alpheratzz.org
+  port: 8443
   type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany | [*CIDR] #4'
-  server: 189.74.106.53
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany [*CIDR] #3'
-  server: 189.74.106.116
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany | [*CIDR] #5'
-  server: 189.74.106.53
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany [*CIDR] #4'
-  server: 189.74.106.85
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany | [*CIDR] #6'
-  server: 189.74.106.53
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany [*CIDR] #5'
-  server: 189.74.106.116
-  port: 443
-  type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
   client-fingerprint: edge
   tls: true
-  servername: api.setevoyprostor.cc
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇩🇪 Germany [*CIDR] #6'
-  server: 189.74.106.116
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #9'
+  server: 196.240.125.3
+  port: 8443
   type: vless
-  uuid: 684a58f3-e942-4486-a3a1-effd2f277b25
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 196.240.125.3
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #10'
+  server: 196.240.125.3
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #11'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
   client-fingerprint: qq
   tls: true
-  servername: api.setevoyprostor.cc
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
+- name: '🇳🇱 The Netherlands [*CIDR] #12'
+  server: 196.240.125.3
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #13'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #14'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #15'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
