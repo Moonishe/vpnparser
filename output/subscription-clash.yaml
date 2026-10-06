@@ -1,35 +1,25 @@
 proxies:
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: de12.h1cloud.net
-  port: 25089
-  type: vless
-  uuid: 95003356-20f9-4c84-a21f-2f9c1fc285eb
-  client-fingerprint: safari
-  tls: true
-  servername: www.chip.de
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 3ZxTHjZ8XHP2aYzLEKUPI3xQ5jYQYrSrIEXlUlULUEA
-    short-id: 56d9d9fba348e5e6
 - name: 🇳🇱 The Netherlands [*CIDR]
-  server: 196.240.125.253
+  server: 196.240.125.3
   port: 8443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: ios
+  client-fingerprint: safari
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #2'
-  server: 196.240.125.253
+  server: nl.alpheratzz.org
   port: 8443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: edge
   tls: true
   servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #3'
   server: 196.240.125.253
@@ -48,6 +38,16 @@ proxies:
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
   client-fingerprint: qq
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 196.240.125.3
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
@@ -72,7 +72,17 @@ proxies:
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #7'
-  server: nl.alpheratzz.org
+  server: 196.240.125.253
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #8'
+  server: 196.240.125.253
   port: 8443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
@@ -80,20 +90,6 @@ proxies:
   client-fingerprint: ios
   tls: true
   servername: vusr-6ac431f4.adhil.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #8'
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: vusr-6ac431f4.adhil.uk
-  alpn:
-  - h2
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #9'
   server: 196.240.125.3
@@ -105,23 +101,13 @@ proxies:
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 196.240.125.3
+- name: '🇳🇱 The Netherlands [*CIDR] #10'
+  server: nl.alpheratzz.org
   port: 8443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
   client-fingerprint: chrome
-  tls: true
-  servername: vusr-6ac431f4.adhil.uk
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #10'
-  server: 196.240.125.3
-  port: 8443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
@@ -131,19 +117,19 @@ proxies:
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: firefox
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   alpn:
   - h2
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #12'
-  server: 196.240.125.3
+  server: nl.alpheratzz.org
   port: 8443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: firefox
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
@@ -153,29 +139,19 @@ proxies:
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: ios
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   alpn:
   - h2
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #14'
-  server: nl.alpheratzz.org
+  server: 196.240.125.3
   port: 8443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: vusr-6ac431f4.adhil.uk
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #15'
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: qq
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
