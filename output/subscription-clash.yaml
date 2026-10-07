@@ -5,7 +5,7 @@ proxies:
   type: vless
   uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: firefox
   tls: true
   servername: api.setevoyprostor.cc
   skip-cert-verify: true
@@ -13,17 +13,16 @@ proxies:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
 - name: 🇫🇮 Finland [*CIDR]
-  server: fi.alpheratzz.org
+  server: 107.150.93.54
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: edge
+  client-fingerprint: firefox
   tls: true
   servername: 20ef7310.ferrin.uk
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
-    path: /
     host: fi.alpheratzz.org
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
@@ -38,21 +37,6 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇳🇴 Norway | [*CIDR]
-  server: 176.108.252.139
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: safari
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
 - name: '🇩🇪 Germany | [*CIDR] #2'
   server: 189.74.106.55
   port: 443
@@ -71,14 +55,14 @@ proxies:
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: qq
+  client-fingerprint: edge
   tls: true
   servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
   skip-cert-verify: true
   network: xhttp
-  xhttp-opts: {}
+  xhttp-opts:
+    path: /
+    host: fi.alpheratzz.org
 - name: '🇳🇱 AetrisVPN #2'
   server: 196.240.125.253
   port: 8443
@@ -89,23 +73,13 @@ proxies:
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 31.131.251.17
-  port: 443
-  type: vless
-  uuid: 9ea8b000-58ce-005a-b108-989dd4f248f1
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: quatro.lmstream.org
-  skip-cert-verify: true
 - name: '🇩🇪 Germany | [*CIDR] #3'
-  server: 189.74.106.55
+  server: 189.74.106.118
   port: 443
   type: vless
   uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: edge
   tls: true
   servername: api.setevoyprostor.cc
   skip-cert-verify: true
@@ -125,33 +99,37 @@ proxies:
   skip-cert-verify: true
   network: xhttp
   xhttp-opts: {}
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: nl-2a972c8052.shamanapp.online
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-- name: '🇷🇺 Russia | [*CIDR] #2'
-  server: 31.131.251.17
-  port: 443
-  type: vless
-  uuid: 9ea8b000-58ce-005a-b108-989dd4f248f1
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: quatro.lmstream.org
-  skip-cert-verify: true
 - name: '🇩🇪 Germany | [*CIDR] #4'
-  server: 189.74.106.118
+  server: 189.74.106.86
   port: 443
   type: vless
   uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
   flow: xtls-rprx-vision
   client-fingerprint: firefox
+  tls: true
+  servername: api.setevoyprostor.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: 🇫🇮 Finland | [*CIDR]
+  server: 107.150.93.54
+  port: 443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  client-fingerprint: qq
+  tls: true
+  servername: 20ef7310.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts: {}
+- name: '🇩🇪 Germany | [*CIDR] #5'
+  server: 189.74.106.86
+  port: 443
+  type: vless
+  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
   tls: true
   servername: api.setevoyprostor.cc
   skip-cert-verify: true
@@ -163,25 +141,40 @@ proxies:
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: firefox
+  client-fingerprint: safari
   tls: true
   servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
   skip-cert-verify: true
   network: xhttp
-  xhttp-opts: {}
-- name: '🇷🇺 Russia | [*CIDR] #3'
-  server: 31.131.251.17
+  xhttp-opts:
+    path: /
+    host: fi.alpheratzz.org
+- name: '🇩🇪 Germany | [*CIDR] #6'
+  server: 189.74.106.55
   port: 443
   type: vless
-  uuid: 9ea8b000-58ce-005a-b108-989dd4f248f1
+  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: quatro.lmstream.org
+  servername: api.setevoyprostor.cc
   skip-cert-verify: true
-- name: '🇩🇪 Germany | [*CIDR] #5'
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: '🇫🇮 Finland [*CIDR] #5'
+  server: 107.150.93.54
+  port: 443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  client-fingerprint: ios
+  tls: true
+  servername: 20ef7310.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    host: fi.alpheratzz.org
+- name: '🇩🇪 Germany | [*CIDR] #7'
   server: 189.74.106.118
   port: 443
   type: vless
@@ -194,152 +187,38 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇫🇮 Finland [*CIDR] #5'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: ios
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇩🇪 Germany | [*CIDR] #6'
-  server: 189.74.106.86
-  port: 443
-  type: vless
-  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
 - name: '🇫🇮 Finland [*CIDR] #6'
   server: fi.alpheratzz.org
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: safari
+  client-fingerprint: firefox
   tls: true
   servername: 20ef7310.ferrin.uk
+  alpn:
+  - h2
   skip-cert-verify: true
   network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇩🇪 Germany | [*CIDR] #7'
-  server: 189.74.106.86
-  port: 443
-  type: vless
-  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
+  xhttp-opts: {}
 - name: '🇫🇮 Finland [*CIDR] #7'
   server: fi.alpheratzz.org
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: chrome
+  client-fingerprint: qq
   tls: true
   servername: 20ef7310.ferrin.uk
   alpn:
   - h2
   skip-cert-verify: true
   network: xhttp
-  xhttp-opts:
-    path: /
-- name: 🌐 Anycast-IP | 🇩🇪 🇳🇱 🇷🇴 🇺🇸 | [BL]
-  server: 77.74.123.108
-  port: 4443
-  type: trojan
-  password: s0_sdK93x9wer_D02Lz9cvK3_Sa014Oakl_C2z
-  client-fingerprint: firefox
-  tls: true
-  sni: grape-test-italy.dynuddns.net
-  skip-cert-verify: true
+  xhttp-opts: {}
 - name: '🇫🇮 Finland [*CIDR] #8'
   server: fi.alpheratzz.org
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: qq
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #9'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: firefox
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: 🇫🇮 Finland | [*CIDR]
-  server: 107.150.93.54
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: firefox
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: '🇫🇮 Finland [*CIDR] #10'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: firefox
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: '🇫🇮 Finland [*CIDR] #11'
-  server: 107.150.93.54
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: firefox
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #12'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: qq
+  client-fingerprint: edge
   tls: true
   servername: 20ef7310.ferrin.uk
   alpn:
@@ -353,13 +232,54 @@ proxies:
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: qq
+  client-fingerprint: ios
   tls: true
   servername: 20ef7310.ferrin.uk
   skip-cert-verify: true
   network: xhttp
   xhttp-opts: {}
-- name: '🇫🇮 Finland [*CIDR] #13'
+- name: '🇫🇮 Finland [*CIDR] #9'
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  client-fingerprint: qq
+  tls: true
+  servername: 20ef7310.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+    host: fi.alpheratzz.org
+- name: '🇫🇮 Finland [*CIDR] #10'
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  client-fingerprint: chrome
+  tls: true
+  servername: 20ef7310.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+    host: fi.alpheratzz.org
+- name: '🇫🇮 Finland [*CIDR] #11'
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  client-fingerprint: edge
+  tls: true
+  servername: 20ef7310.ferrin.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+    host: fi.alpheratzz.org
+- name: '🇫🇮 Finland [*CIDR] #12'
   server: fi.alpheratzz.org
   port: 443
   type: vless
@@ -374,12 +294,12 @@ proxies:
   xhttp-opts:
     path: /
     host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #14'
+- name: '🇫🇮 Finland [*CIDR] #13'
   server: fi.alpheratzz.org
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: edge
+  client-fingerprint: firefox
   tls: true
   servername: 20ef7310.ferrin.uk
   alpn:
@@ -388,69 +308,3 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /
-- name: '🇫🇮 Finland [*CIDR] #15'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: edge
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #16'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: chrome
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #17'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: chrome
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland | [*CIDR] #3'
-  server: 107.150.93.54
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: ios
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: '🇫🇮 Finland [*CIDR] #18'
-  server: 107.150.93.54
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: ios
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    host: fi.alpheratzz.org
