@@ -1,19 +1,100 @@
 proxies:
-- name: 🇳🇱 AetrisVPN
-  server: 185.134.201.230
-  port: 443
+- name: 🇩🇪 AetrisVPN
+  server: 176.108.252.139
+  port: 9881
   type: vless
-  uuid: f53f5bb4-b8b0-4f02-9b1c-1336f5fb0e05
-  client-fingerprint: firefox
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  client-fingerprint: random
   tls: true
-  servername: flaxforge.app
+  servername: dl.google.com
   skip-cert-verify: true
   reality-opts:
-    public-key: F-kL7kAAgUomN7OT6gQPDLp6b0yv56bcVvj4I4LxoRo
-    short-id: d4f010dc22a5e425
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+    short-id: aabb
   network: grpc
   grpc-opts:
-    grpc-service-name: grpc
+    grpc-service-name: grpc-tunnel
+- name: 🇯🇵 Japan, Shibuya City | 🌐 | [BL]
+  server: 54.238.153.132
+  port: 443
+  type: trojan
+  password: UX82473651
+  tls: true
+  sni: obliging-louse.rooster465.autos
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
+- name: 🇪🇺 AetrisVPN
+  server: 91.210.169.181
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇯🇵 Japan, Shibuya City | 🌐 | [BL] #2'
+  server: 54.199.66.128
+  port: 443
+  type: trojan
+  password: UX82473651
+  tls: true
+  sni: integral-rodent.rooster465.autos
+  skip-cert-verify: true
+- name: 🇪🇪 AetrisVPN
+  server: 78.159.250.214
+  port: 443
+  type: vless
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: qq.utiltools.site
+  skip-cert-verify: true
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+    short-id: '00000000'
+- name: '🇪🇺 AetrisVPN #2'
+  server: 200.165.231.209
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: random
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: 🇳🇱 The Netherlands [*CIDR] VK
+  server: 37.139.42.221
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: firefox
+  tls: true
+  servername: apis.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
 - name: 🇷🇺 AetrisVPN
   server: 45.12.75.242
   port: 26424
@@ -26,113 +107,48 @@ proxies:
   reality-opts:
     public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
     short-id: 23103e1e
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 196.240.125.251
-  port: 8443
+- name: '🇳🇱 The Netherlands [*CIDR] VK #2'
+  server: apis.stroymatdv.cc
+  port: 443
   type: vless
-  uuid: a3dcd62b-deb8-453a-8adf-efbc1464a527
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: qq
   tls: true
-  servername: api-v1-6ac60b55.vmagnum.win
+  servername: apis.stroymatdv.cc
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: 196.240.125.5
-  port: 8443
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇪🇺 AetrisVPN #3'
+  server: 81.17.154.181
+  port: 443
   type: vless
-  uuid: a3dcd62b-deb8-453a-8adf-efbc1464a527
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
+  uuid: b229d38c-35ec-4a0b-9c86-8fceba243d6c
+  client-fingerprint: random
   tls: true
-  servername: api-v1-6ac60b55.vmagnum.win
-  skip-cert-verify: true
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: a3dcd62b-deb8-453a-8adf-efbc1464a527
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: api-v1-6ac60b55.vmagnum.win
+  servername: fafeqdhlett2p5la6d.cdn.cachefleet.com
   alpn:
   - h2
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #2'
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: a3dcd62b-deb8-453a-8adf-efbc1464a527
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: api-v1-6ac60b55.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #3'
-  server: 196.240.125.5
-  port: 8443
-  type: vless
-  uuid: a3dcd62b-deb8-453a-8adf-efbc1464a527
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v1-6ac60b55.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #4'
-  server: 196.240.125.5
-  port: 8443
-  type: vless
-  uuid: a3dcd62b-deb8-453a-8adf-efbc1464a527
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: api-v1-6ac60b55.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #5'
-  server: 196.240.125.5
-  port: 8443
-  type: vless
-  uuid: a3dcd62b-deb8-453a-8adf-efbc1464a527
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api-v1-6ac60b55.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #6'
-  server: 196.240.125.251
-  port: 8443
-  type: vless
-  uuid: a3dcd62b-deb8-453a-8adf-efbc1464a527
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api-v1-6ac60b55.vmagnum.win
-  skip-cert-verify: true
-- name: 🌐 Anycast-IP | 🇭🇳 🇳🇱 | [*CIDR] VK
-  server: 83.166.237.86
+  network: xhttp
+  xhttp-opts:
+    path: /ccxf5snr06b8xxb6
+    host: fafeqdhlett2p5la6d.cdn.cachefleet.com
+- name: 🇳🇱 The Netherlands | [*CIDR] VK
+  server: 37.139.42.221
   port: 443
   type: vless
-  uuid: 7c86240f-ac0c-4cfe-87c8-fa0dd69b2d25
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: random
   tls: true
-  servername: m-vruvc.mvpstr.com
+  servername: apis.stroymatdv.cc
   skip-cert-verify: true
-  reality-opts:
-    public-key: ZtAlhN1pU4MTmv4KaX9J_5_8KWnwy9IOnc-BLzIf234
-    short-id: f709479ae7bf583f
-- name: '🌐 Anycast-IP | 🇭🇳 🇳🇱 | [*CIDR] VK #2'
-  server: 83.166.237.86
-  port: 443
-  type: vless
-  uuid: 7c86240f-ac0c-4cfe-87c8-fa0dd69b2d25
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: m-vruvc.mvpstr.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ZtAlhN1pU4MTmv4KaX9J_5_8KWnwy9IOnc-BLzIf234
-    short-id: f709479ae7bf583f
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
