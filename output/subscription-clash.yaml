@@ -1,28 +1,31 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR]
-  server: 189.74.106.118
+- name: 🇩🇪 AetrisVPN
+  server: 189.74.106.86
   port: 443
   type: vless
   uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: chrome
   tls: true
   servername: api.setevoyprostor.cc
   skip-cert-verify: true
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: 🇫🇮 Finland [*CIDR]
-  server: 107.150.93.54
+- name: 🇫🇮 Finland | [*CIDR]
+  server: fi.alpheratzz.org
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: firefox
+  client-fingerprint: chrome
   tls: true
   servername: 20ef7310.ferrin.uk
+  alpn:
+  - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
+    path: /
     host: fi.alpheratzz.org
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
@@ -37,7 +40,20 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: '🇩🇪 Germany | [*CIDR] #2'
+- name: 🇷🇺 AetrisVPN
+  server: 185.141.227.180
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: random
+  tls: true
+  servername: dismissaltree.net
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: dismissaltree.net
+- name: '🇩🇪 AetrisVPN #2'
   server: 189.74.106.55
   port: 443
   type: vless
@@ -50,7 +66,7 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇫🇮 Finland [*CIDR] #2'
+- name: 🇫🇮 Finland [*CIDR]
   server: fi.alpheratzz.org
   port: 443
   type: vless
@@ -63,8 +79,96 @@ proxies:
   xhttp-opts:
     path: /
     host: fi.alpheratzz.org
-- name: '🇳🇱 AetrisVPN #2'
-  server: 196.240.125.253
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇷🇺 AetrisVPN #2'
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: chrome
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: 🇩🇪 Germany | [*CIDR]
+  server: 45.89.190.245
+  port: 8443
+  type: vless
+  uuid: 053682f4-c584-46df-ad81-069dec5f64f0
+  client-fingerprint: chrome
+  tls: true
+  servername: de.gokonstantin.com
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /cdnws
+    headers:
+      Host: de.gokonstantin.com
+- name: 🇫🇮 AetrisVPN
+  server: 107.150.93.54
+  port: 443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  client-fingerprint: firefox
+  tls: true
+  servername: 20ef7310.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    host: fi.alpheratzz.org
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: 45.89.190.245
+  port: 8443
+  type: vless
+  uuid: 053682f4-c584-46df-ad81-069dec5f64f0
+  client-fingerprint: ios
+  tls: true
+  servername: de.gokonstantin.com
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /cdnws
+    headers:
+      Host: de.gokonstantin.com
+- name: '🇫🇮 Finland [*CIDR] #2'
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  client-fingerprint: firefox
+  tls: true
+  servername: 20ef7310.ferrin.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: nl.alpheratzz.org
   port: 8443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
@@ -73,47 +177,8 @@ proxies:
   tls: true
   servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-- name: '🇩🇪 Germany | [*CIDR] #3'
-  server: 189.74.106.118
-  port: 443
-  type: vless
-  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
 - name: '🇫🇮 Finland [*CIDR] #3'
   server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: ios
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: '🇩🇪 Germany | [*CIDR] #4'
-  server: 189.74.106.86
-  port: 443
-  type: vless
-  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇫🇮 Finland | [*CIDR]
-  server: 107.150.93.54
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
@@ -122,26 +187,49 @@ proxies:
   servername: 20ef7310.ferrin.uk
   skip-cert-verify: true
   network: xhttp
-  xhttp-opts: {}
-- name: '🇩🇪 Germany | [*CIDR] #5'
-  server: 189.74.106.86
-  port: 443
+  xhttp-opts:
+    path: /
+    host: fi.alpheratzz.org
+- name: '🇳🇱 The Netherlands | [*CIDR] #3'
+  server: nl.alpheratzz.org
+  port: 8443
   type: vless
-  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: safari
   tls: true
-  servername: api.setevoyprostor.cc
+  servername: vusr-6ac431f4.adhil.uk
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
 - name: '🇫🇮 Finland [*CIDR] #4'
   server: fi.alpheratzz.org
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: safari
+  client-fingerprint: edge
+  tls: true
+  servername: 20ef7310.ferrin.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: '🇳🇱 The Netherlands | [*CIDR] #4'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇫🇮 Finland [*CIDR] #5'
+  server: fi.alpheratzz.org
+  port: 443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  client-fingerprint: chrome
   tls: true
   servername: 20ef7310.ferrin.uk
   skip-cert-verify: true
@@ -149,57 +237,45 @@ proxies:
   xhttp-opts:
     path: /
     host: fi.alpheratzz.org
-- name: '🇩🇪 Germany | [*CIDR] #6'
-  server: 189.74.106.55
-  port: 443
-  type: vless
-  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.setevoyprostor.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇫🇮 Finland [*CIDR] #5'
-  server: 107.150.93.54
-  port: 443
+- name: '🇳🇱 The Netherlands [*CIDR] #2'
+  server: nl.alpheratzz.org
+  port: 8443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: ios
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    host: fi.alpheratzz.org
-- name: '🇩🇪 Germany | [*CIDR] #7'
-  server: 189.74.106.118
-  port: 443
-  type: vless
-  uuid: b0eed7cb-72e2-4bf5-8668-b803deb5dd47
   flow: xtls-rprx-vision
-  client-fingerprint: ios
+  client-fingerprint: edge
   tls: true
-  servername: api.setevoyprostor.cc
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
 - name: '🇫🇮 Finland [*CIDR] #6'
   server: fi.alpheratzz.org
   port: 443
   type: vless
   uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: firefox
+  client-fingerprint: edge
   tls: true
   servername: 20ef7310.ferrin.uk
   alpn:
   - h2
   skip-cert-verify: true
   network: xhttp
-  xhttp-opts: {}
+  xhttp-opts:
+    path: /
+    host: fi.alpheratzz.org
+- name: '🇳🇱 The Netherlands [*CIDR] #3'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
 - name: '🇫🇮 Finland [*CIDR] #7'
   server: fi.alpheratzz.org
   port: 443
@@ -212,89 +288,19 @@ proxies:
   - h2
   skip-cert-verify: true
   network: xhttp
-  xhttp-opts: {}
+  xhttp-opts:
+    path: /
+- name: '🇳🇱 The Netherlands | [*CIDR] #5'
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
 - name: '🇫🇮 Finland [*CIDR] #8'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: edge
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: '🇫🇮 Finland | [*CIDR] #2'
-  server: 107.150.93.54
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: ios
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: '🇫🇮 Finland [*CIDR] #9'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: qq
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #10'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: chrome
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #11'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: edge
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #12'
-  server: fi.alpheratzz.org
-  port: 443
-  type: vless
-  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
-  client-fingerprint: safari
-  tls: true
-  servername: 20ef7310.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-    host: fi.alpheratzz.org
-- name: '🇫🇮 Finland [*CIDR] #13'
   server: fi.alpheratzz.org
   port: 443
   type: vless
@@ -308,3 +314,277 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /
+    host: fi.alpheratzz.org
+- name: '🇳🇱 The Netherlands | [*CIDR] #6'
+  server: 92.246.138.5
+  port: 443
+  type: vless
+  uuid: 72f8e59f-7a0d-44f2-a8db-b4c3e1e36716
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: plugins.jetbrains.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: f9s2GsuG8gQTiPJplAj3hpUUwdVzM92KEmG3ImvURSI
+    short-id: 1677b5291cd9319a
+- name: '🇳🇱 The Netherlands | [*CIDR] #7'
+  server: 92.246.138.5
+  port: 443
+  type: vless
+  uuid: 72f8e59f-7a0d-44f2-a8db-b4c3e1e36716
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: plugins.jetbrains.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: f9s2GsuG8gQTiPJplAj3hpUUwdVzM92KEmG3ImvURSI
+    short-id: 1677b5291cd9319a
+- name: '🇳🇱 The Netherlands | [*CIDR] #8'
+  server: 196.240.125.4
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #4'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #5'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: vusr-6ac513af.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #6'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac513af.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #9'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: vusr-6ac513af.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #10'
+  server: 196.240.125.250
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #11'
+  server: 196.240.125.250
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac513af.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #7'
+  server: 196.240.125.4
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #12'
+  server: 196.240.125.4
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #13'
+  server: 196.240.125.4
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac513af.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #14'
+  server: 196.240.125.250
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: vusr-6ac513af.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #15'
+  server: 196.240.125.4
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #16'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #17'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #8'
+  server: 196.240.125.4
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #18'
+  server: 196.240.125.250
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: vusr-6ac513af.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #9'
+  server: 196.240.125.250
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #19'
+  server: 196.240.125.4
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: vusr-6ac431f4.adhil.uk
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #20'
+  server: 196.240.125.4
+  port: 8443
+  type: vless
+  uuid: 20ef7310-0b50-4943-98a6-3d0856b383b1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: vusr-6ac513af.adhil.uk
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #21'
+  server: 45.139.26.179
+  port: 443
+  type: vless
+  uuid: 2b781b4a-5942-48e0-a7f3-5a07b7b488c1
+  client-fingerprint: safari
+  tls: true
+  servername: ads.x5.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: AhLy7ha7FF2EQfu-3SxOFKUwExyHActYPHtyv82KNCI
+    short-id: 15bcc0a77c3cacdf
+  network: grpc
+  grpc-opts:
+    grpc-service-name: api
+- name: '🇳🇱 AetrisVPN #2'
+  server: 185.134.201.230
+  port: 443
+  type: vless
+  uuid: f53f5bb4-b8b0-4f02-9b1c-1336f5fb0e05
+  client-fingerprint: firefox
+  tls: true
+  servername: flaxforge.app
+  skip-cert-verify: true
+  reality-opts:
+    public-key: F-kL7kAAgUomN7OT6gQPDLp6b0yv56bcVvj4I4LxoRo
+    short-id: d4f010dc22a5e425
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc
+- name: '🇳🇱 The Netherlands [*CIDR] #10'
+  server: 45.139.26.179
+  port: 443
+  type: vless
+  uuid: 2b781b4a-5942-48e0-a7f3-5a07b7b488c1
+  client-fingerprint: random
+  tls: true
+  servername: ads.x5.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: AhLy7ha7FF2EQfu-3SxOFKUwExyHActYPHtyv82KNCI
+    short-id: 15bcc0a77c3cacdf
+  network: grpc
+  grpc-opts:
+    grpc-service-name: api
