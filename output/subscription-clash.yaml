@@ -1,40 +1,14 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR] VK
-  server: 185.241.195.152
-  port: 9445
-  type: vless
-  uuid: d91dc97c-a09b-40fa-9da0-a3d1729f7427
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: yandex.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: i3F_hP7yc9VpcUC2Vn1oAqLyW3hZayGdTybl-VnWdz0
-    short-id: 02827ef87f4a23c0
-- name: 🌐 Anycast-IP | 🇫🇮 🇬🇧 [*CIDR]
-  server: 135.106.162.8
-  port: 150
-  type: vless
-  uuid: 08048938-eab6-4107-afee-53c1dbadef9c
-- name: 🇫🇷 France [*CIDR]
-  server: 31.131.251.17
-  port: 443
-  type: vless
-  uuid: 9ea8b000-58ce-005a-b108-989dd4f248f1
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: quatro.lmstream.org
-  skip-cert-verify: true
 - name: 🇳🇱 The Netherlands [*CIDR] VK
-  server: 37.139.42.221
+  server: apis.stroymatdv.cc
   port: 443
   type: vless
   uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
-  client-fingerprint: chrome
+  client-fingerprint: edge
   tls: true
   servername: apis.stroymatdv.cc
+  alpn:
+  - http/1.1
   skip-cert-verify: true
   network: ws
   ws-opts:
@@ -53,8 +27,22 @@ proxies:
   reality-opts:
     public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
     short-id: 23103e1e
-- name: '🇳🇱 The Netherlands [*CIDR] VK #2'
-  server: 37.139.42.221
+- name: 🇳🇱 The Netherlands | [*CIDR] VK
+  server: 185.86.145.183
+  port: 443
+  type: vless
+  uuid: 5d1f603d-34dc-4a38-9d4e-9d55bea241db
+  client-fingerprint: qq
+  tls: true
+  servername: begemotov.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /nl7ws
+    headers:
+      Host: begemotov.cc
+- name: '🇳🇱 The Netherlands | [*CIDR] VK #2'
+  server: 185.86.145.37
   port: 443
   type: vless
   uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
@@ -67,52 +55,26 @@ proxies:
     path: /amsws
     headers:
       Host: apis.stroymatdv.cc
-- name: 🇳🇴 Norway | [*CIDR]
-  server: 176.108.252.139
-  port: 9881
+- name: '🇳🇱 The Netherlands | [*CIDR] VK #3'
+  server: 185.86.145.183
+  port: 443
   type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: random
+  uuid: 5d1f603d-34dc-4a38-9d4e-9d55bea241db
+  client-fingerprint: firefox
   tls: true
-  servername: dl.google.com
+  servername: begemotov.cc
   skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: nl-2a972c8052.shamanapp.online
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
   network: ws
   ws-opts:
-    path: /vmess-ws
-- name: '🇳🇴 Norway | [*CIDR] #2'
-  server: 176.108.252.139
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: safari
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: '🇳🇱 The Netherlands [*CIDR] VK #3'
-  server: apis.stroymatdv.cc
+    path: /nl7ws
+    headers:
+      Host: begemotov.cc
+- name: '🇳🇱 The Netherlands | [*CIDR] VK #4'
+  server: 185.86.145.37
   port: 443
   type: vless
   uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
-  client-fingerprint: qq
+  client-fingerprint: firefox
   tls: true
   servername: apis.stroymatdv.cc
   alpn:
@@ -123,27 +85,12 @@ proxies:
     path: /amsws
     headers:
       Host: apis.stroymatdv.cc
-- name: '🇳🇴 Norway | [*CIDR] #3'
-  server: 176.108.252.139
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: chrome
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: 🇳🇱 The Netherlands | [*CIDR] VK
-  server: 37.139.42.221
+- name: '🇳🇱 The Netherlands | [*CIDR] VK #5'
+  server: 185.86.145.37
   port: 443
   type: vless
   uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
-  client-fingerprint: qq
+  client-fingerprint: edge
   tls: true
   servername: apis.stroymatdv.cc
   skip-cert-verify: true
@@ -152,46 +99,49 @@ proxies:
     path: /amsws
     headers:
       Host: apis.stroymatdv.cc
-- name: '🇷🇺 AetrisVPN #2'
-  server: 185.141.227.180
-  port: 2053
+- name: '🇳🇱 The Netherlands | [*CIDR] VK #6'
+  server: 185.86.145.37
+  port: 443
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: chrome
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: safari
   tls: true
-  servername: dismissaltree.net
+  servername: apis.stroymatdv.cc
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: dismissaltree.net
-- name: '🇳🇴 Norway | [*CIDR] #4'
-  server: 176.108.252.139
-  port: 9881
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇳🇱 The Netherlands [*CIDR] VK #2'
+  server: 185.86.145.37
+  port: 443
   type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: android
+  tls: true
+  servername: apis.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇳🇱 The Netherlands | [*CIDR] VK #7'
+  server: 185.86.145.37
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
   client-fingerprint: ios
   tls: true
-  servername: dl.google.com
+  servername: apis.stroymatdv.cc
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
-- name: '🇳🇴 Norway | [*CIDR] #5'
-  server: 176.108.252.139
-  port: 9881
-  type: vless
-  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
-  client-fingerprint: edge
-  tls: true
-  servername: dl.google.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
-    short-id: aabb
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-tunnel
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
