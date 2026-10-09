@@ -1,121 +1,70 @@
 proxies:
-- name: 🇳🇱 The Netherlands [*CIDR] VK
-  server: apis.stroymatdv.cc
+- name: 🇩🇪 Germany | [*CIDR]
+  server: 109.120.152.26
   port: 443
   type: vless
-  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
-  client-fingerprint: edge
-  tls: true
-  servername: apis.stroymatdv.cc
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /amsws
-    headers:
-      Host: apis.stroymatdv.cc
-- name: 🇷🇺 AetrisVPN
-  server: 45.12.75.242
-  port: 26424
-  type: vless
-  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
-  client-fingerprint: chrome
-  tls: true
-  servername: ya.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
-    short-id: 23103e1e
-- name: 🇳🇱 The Netherlands | [*CIDR] VK
-  server: 185.86.145.183
-  port: 443
-  type: vless
-  uuid: 5d1f603d-34dc-4a38-9d4e-9d55bea241db
-  client-fingerprint: qq
-  tls: true
-  servername: begemotov.cc
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /nl7ws
-    headers:
-      Host: begemotov.cc
-- name: '🇳🇱 The Netherlands | [*CIDR] VK #2'
-  server: 185.86.145.37
-  port: 443
-  type: vless
-  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
-  client-fingerprint: firefox
-  tls: true
-  servername: apis.stroymatdv.cc
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /amsws
-    headers:
-      Host: apis.stroymatdv.cc
-- name: '🇳🇱 The Netherlands | [*CIDR] VK #3'
-  server: 185.86.145.183
-  port: 443
-  type: vless
-  uuid: 5d1f603d-34dc-4a38-9d4e-9d55bea241db
-  client-fingerprint: firefox
-  tls: true
-  servername: begemotov.cc
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /nl7ws
-    headers:
-      Host: begemotov.cc
-- name: '🇳🇱 The Netherlands | [*CIDR] VK #4'
-  server: 185.86.145.37
-  port: 443
-  type: vless
-  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
-  client-fingerprint: firefox
-  tls: true
-  servername: apis.stroymatdv.cc
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /amsws
-    headers:
-      Host: apis.stroymatdv.cc
-- name: '🇳🇱 The Netherlands | [*CIDR] VK #5'
-  server: 185.86.145.37
-  port: 443
-  type: vless
-  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
-  client-fingerprint: edge
-  tls: true
-  servername: apis.stroymatdv.cc
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /amsws
-    headers:
-      Host: apis.stroymatdv.cc
-- name: '🇳🇱 The Netherlands | [*CIDR] VK #6'
-  server: 185.86.145.37
-  port: 443
-  type: vless
-  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  uuid: 95621b8e-5cf7-4123-9df4-38d903054a1b
+  flow: xtls-rprx-vision
   client-fingerprint: safari
   tls: true
-  servername: apis.stroymatdv.cc
-  alpn:
-  - http/1.1
+  servername: www.samsung.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: QJzo15K3EUtRdJwrkaGRjHdKLyl-WUiEzQTTMsHm8y4
+    short-id: b716462f7ff12219
+- name: 🇫🇮 AetrisVPN
+  server: 217.19.122.214
+  port: 7449
+  type: vless
+  uuid: 985fbc4e-f2fd-4a7f-b09f-f9b7728dd0a4
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: passport.yandex.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: OGMQnJGgrCYDojFm4u7YrvOoOmtjK6iZ4_q-Kmanozs
+    short-id: 03cf706025caa46e
+- name: 🇫🇷 AetrisVPN
+  server: 217.26.30.125
+  port: 1443
+  type: vless
+  uuid: 4f466863-b6c5-4fdc-955e-7a601c18d89a
+  client-fingerprint: qq
+  tls: true
+  servername: yahoo.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: EuRD8QK-uL3uQqnQ_IC2Ybj7v8feXRxCiEaXYjhHx3c
+  network: grpc
+  grpc-opts: {}
+- name: 🇳🇱 AetrisVPN
+  server: 188.225.33.141
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: wstg.datasynctrue.online
   skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /amsws
+    path: /api/connect
     headers:
-      Host: apis.stroymatdv.cc
-- name: '🇳🇱 The Netherlands [*CIDR] VK #2'
+      Host: wstg.datasynctrue.online
+- name: 🇷🇺 AetrisVPN
+  server: 185.141.227.180
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: random
+  tls: true
+  servername: dismissaltree.net
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: dismissaltree.net
+- name: 🇳🇱 The Netherlands [*CIDR] VK
   server: 185.86.145.37
   port: 443
   type: vless
@@ -129,8 +78,175 @@ proxies:
     path: /amsws
     headers:
       Host: apis.stroymatdv.cc
-- name: '🇳🇱 The Netherlands | [*CIDR] VK #7'
+- name: 🇪🇪 AetrisVPN
+  server: 45.133.151.163
+  port: 25895
+  type: vless
+  uuid: f90b7d43-69e2-4b46-a672-8029bc6796a2
+  client-fingerprint: chrome
+  tls: true
+  servername: www.samsung.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: jOVKSP-bS9OkILJ8Epz8hadh6qhavCrOiJYeF0NCn0k
+    short-id: a73f0410d728c823
+- name: '🇳🇱 The Netherlands [*CIDR] VK #2'
   server: 185.86.145.37
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: firefox
+  tls: true
+  servername: apis.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇷🇺 AetrisVPN #2'
+  server: 78.159.250.84
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: random
+  tls: true
+  servername: summerculture.net
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: summerculture.net
+- name: '🇳🇱 The Netherlands [*CIDR] VK #3'
+  server: 185.86.145.37
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: firefox
+  tls: true
+  servername: apis.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+- name: 🇳🇱 The Netherlands | [*CIDR] VK
+  server: apis.stroymatdv.cc
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: edge
+  tls: true
+  servername: apis.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇳🇱 The Netherlands | [*CIDR] VK #2'
+  server: apis.stroymatdv.cc
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: qq
+  tls: true
+  servername: apis.stroymatdv.cc
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇳🇱 The Netherlands [*CIDR] VK #4'
+  server: 185.86.145.37
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: safari
+  tls: true
+  servername: apis.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇳🇱 The Netherlands | [*CIDR] VK #3'
+  server: apis.stroymatdv.cc
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: firefox
+  tls: true
+  servername: apis.stroymatdv.cc
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇳🇱 The Netherlands [*CIDR] VK #5'
+  server: 185.86.145.183
+  port: 443
+  type: vless
+  uuid: 5d1f603d-34dc-4a38-9d4e-9d55bea241db
+  client-fingerprint: edge
+  tls: true
+  servername: begemotov.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /nl7ws
+    headers:
+      Host: begemotov.cc
+- name: '🇳🇱 The Netherlands [*CIDR] VK #6'
+  server: 185.86.145.37
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: chrome
+  tls: true
+  servername: apis.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+- name: '🇳🇱 The Netherlands [*CIDR] VK #7'
+  server: 185.86.145.37
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: qq
+  tls: true
+  servername: apis.stroymatdv.cc
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+    headers:
+      Host: apis.stroymatdv.cc
+- name: '🇳🇱 The Netherlands [*CIDR] VK #8'
+  server: 185.86.145.37
+  port: 443
+  type: vless
+  uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
+  client-fingerprint: safari
+  tls: true
+  servername: apis.stroymatdv.cc
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /amsws
+- name: '🇳🇱 The Netherlands [*CIDR] VK #9'
+  server: apis.stroymatdv.cc
   port: 443
   type: vless
   uuid: 3a8b464f-3701-40ed-b6b6-b612019e34c1
