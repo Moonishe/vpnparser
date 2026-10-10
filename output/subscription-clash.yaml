@@ -12,66 +12,6 @@ proxies:
   reality-opts:
     public-key: tvc-zUxqKX5P3DrZ2OiLIKHVPeu5MKjFLRWRYcvL3BQ
     short-id: 9b027a0fe332
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: nl-2a972c8052.shamanapp.online
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-    headers:
-      Host: nl-2a972c8052.shamanapp.online
-- name: 🇷🇺 AetrisVPN
-  server: 45.12.75.242
-  port: 26424
-  type: vless
-  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
-  client-fingerprint: chrome
-  tls: true
-  servername: ya.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
-    short-id: 23103e1e
-- name: '🇫🇷 AetrisVPN #2'
-  server: 82.202.178.133
-  port: 31443
-  type: vless
-  uuid: 03218c7c-acd1-45c0-87a1-9cc77101c6b4
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: smartcaptcha.yandexcloud.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: lA0NS88gVVkaZf4qA1aYystzmLsZ5SNzszDsC-8DMSM
-    short-id: e351ebf520
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: nl-2a972c8052.shamanapp.online
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-- name: 🇷🇺 Russia [*CIDR]
-  server: 217.149.30.73
-  port: 8443
-  type: vless
-  uuid: ee18d188-14cc-417e-beb1-70e4add6d023
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: time.nztvpn.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: p87u9cOh91BaXsKS-HoCoOUXxHcOwkM6ByTWmz_6b2Y
-    short-id: 0da7e14db353e7d0
 - name: 🇳🇱 AetrisVPN
   server: 185.86.145.183
   port: 443
@@ -88,19 +28,32 @@ proxies:
     path: /nl7ws
     headers:
       Host: cosmo-pulse.ru
-- name: '🇷🇺 Russia [*CIDR] #2'
+- name: 🇷🇺 Russia [*CIDR]
   server: 217.149.30.73
   port: 8443
   type: vless
   uuid: ee18d188-14cc-417e-beb1-70e4add6d023
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: firefox
   tls: true
   servername: time.nztvpn.com
   skip-cert-verify: true
   reality-opts:
     public-key: p87u9cOh91BaXsKS-HoCoOUXxHcOwkM6ByTWmz_6b2Y
     short-id: 0da7e14db353e7d0
+- name: '🇫🇷 AetrisVPN #2'
+  server: 82.202.178.133
+  port: 31443
+  type: vless
+  uuid: 03218c7c-acd1-45c0-87a1-9cc77101c6b4
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: smartcaptcha.yandexcloud.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: lA0NS88gVVkaZf4qA1aYystzmLsZ5SNzszDsC-8DMSM
+    short-id: e351ebf520
 - name: '🇳🇱 AetrisVPN #2'
   server: 188.225.45.77
   port: 443
@@ -116,7 +69,7 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc
-- name: '🇷🇺 Russia [*CIDR] #3'
+- name: '🇷🇺 Russia [*CIDR] #2'
   server: 217.149.30.73
   port: 8443
   type: vless
@@ -130,21 +83,46 @@ proxies:
     public-key: p87u9cOh91BaXsKS-HoCoOUXxHcOwkM6ByTWmz_6b2Y
     short-id: 0da7e14db353e7d0
 - name: 🇳🇱 The Netherlands [*CIDR]
-  server: 196.240.125.5
+  server: nl.alpheratzz.org
   port: 8443
   type: vless
   uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
   flow: xtls-rprx-vision
-  client-fingerprint: ios
+  client-fingerprint: safari
   tls: true
   servername: api-v1-6ac7858f.vmagnum.win
+  alpn:
+  - h2
   skip-cert-verify: true
-- name: 🇲🇩 Moldova | 🌐 [*CIDR]
+- name: 🇲🇩 Moldova | 🌐 | [*CIDR]-RU
   server: ap2.directly.chat
   port: 443
   type: vless
   uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
-  client-fingerprint: safari
+  client-fingerprint: chrome
+  tls: true
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /md/1
+- name: '🇳🇱 The Netherlands [*CIDR] #2'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: api-v1-6ac9122f.vmagnum.win
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇲🇩 Moldova | 🌐 | [*CIDR]-RU #2'
+  server: ap2.directly.chat
+  port: 443
+  type: vless
+  uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
+  client-fingerprint: chrome
   tls: true
   alpn:
   - h2
@@ -153,8 +131,8 @@ proxies:
   network: ws
   ws-opts:
     path: /md/1
-- name: '🇳🇱 The Netherlands [*CIDR] #2'
-  server: 196.240.125.5
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: nl.alpheratzz.org
   port: 8443
   type: vless
   uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
@@ -163,13 +141,14 @@ proxies:
   tls: true
   servername: api-v1-6ac7858f.vmagnum.win
   skip-cert-verify: true
-- name: '🇲🇩 Moldova | 🌐 [*CIDR] #2'
+- name: '🇲🇩 Moldova | 🌐 | [*CIDR]-RU #3'
   server: ap2.directly.chat
   port: 443
   type: vless
   uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
   client-fingerprint: edge
   tls: true
+  servername: ap2.directly.chat
   alpn:
   - h2
   - http/1.1
@@ -183,46 +162,19 @@ proxies:
   type: vless
   uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
-  servername: api-v1-6ac9122f.vmagnum.win
+  servername: api-v1-6ac7858f.vmagnum.win
   alpn:
   - h2
   skip-cert-verify: true
-- name: 🇲🇩 Moldova | 🌐 | [*CIDR]
+- name: 🇲🇩 Moldova | 🌐 [*CIDR]-RU
   server: ap2.directly.chat
   port: 443
   type: vless
   uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
-  client-fingerprint: chrome
-  tls: true
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /md/1
-- name: '🇳🇱 The Netherlands [*CIDR] #4'
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
-  flow: xtls-rprx-vision
   client-fingerprint: safari
   tls: true
-  servername: api-v1-6ac7858f.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇲🇩 Moldova | 🌐 | [*CIDR] #2'
-  server: ap2.directly.chat
-  port: 443
-  type: vless
-  uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
-  client-fingerprint: chrome
-  tls: true
-  servername: ap2.directly.chat
   alpn:
   - h2
   - http/1.1
@@ -230,110 +182,7 @@ proxies:
   network: ws
   ws-opts:
     path: /md/1
-    headers:
-      Host: ap2.directly.chat
-- name: '🇳🇱 The Netherlands [*CIDR] #5'
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v1-6ac7858f.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇲🇩 Moldova | 🌐 [*CIDR] #3'
-  server: ap2.directly.chat
-  port: 443
-  type: vless
-  uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
-  client-fingerprint: ios
-  tls: true
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /md/1
-- name: '🇳🇱 The Netherlands | [*CIDR] #3'
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: api-v1-6ac7858f.vmagnum.win
-  skip-cert-verify: true
-- name: '🇲🇩 Moldova | 🌐 | [*CIDR] #3'
-  server: ap2.directly.chat
-  port: 443
-  type: vless
-  uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
-  client-fingerprint: chrome
-  tls: true
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /md/1
-- name: '🇳🇱 The Netherlands [*CIDR] #6'
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: api-v1-6ac9122f.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇲🇩 Moldova | 🌐 | [*CIDR] #4'
-  server: ap2.directly.chat
-  port: 443
-  type: vless
-  uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
-  client-fingerprint: edge
-  tls: true
-  servername: ap2.directly.chat
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /md/1
-- name: '🇳🇱 The Netherlands [*CIDR] #7'
-  server: nl.alpheratzz.org
-  port: 8443
-  type: vless
-  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api-v1-6ac7858f.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇲🇩 Moldova | 🌐 | [*CIDR] #5'
-  server: ap2.directly.chat
-  port: 443
-  type: vless
-  uuid: 2f9107cb-9af0-4c94-a89d-50437218e5fa
-  client-fingerprint: chrome
-  tls: true
-  servername: ap2.directly.chat
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /md/1
-- name: '🇳🇱 The Netherlands | [*CIDR] #4'
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
   server: nl.alpheratzz.org
   port: 8443
   type: vless
@@ -343,7 +192,7 @@ proxies:
   tls: true
   servername: api-v1-6ac7858f.vmagnum.win
   skip-cert-verify: true
-- name: '🇷🇺 AetrisVPN #2'
+- name: 🇷🇺 AetrisVPN
   server: 79.174.92.222
   port: 443
   type: vless
@@ -357,7 +206,51 @@ proxies:
     short-id: a1b2c3d4
   network: grpc
   grpc-opts: {}
-- name: '🇳🇱 The Netherlands [*CIDR] #8'
+- name: '🇳🇱 The Netherlands [*CIDR] #4'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: api-v1-6ac7858f.vmagnum.win
+  alpn:
+  - h2
+  skip-cert-verify: true
+- name: '🇷🇺 AetrisVPN #2'
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: chrome
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: '🇳🇱 The Netherlands | [*CIDR] #3'
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api-v1-6ac7858f.vmagnum.win
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #5'
+  server: 196.240.125.5
+  port: 8443
+  type: vless
+  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: api-v1-6ac7858f.vmagnum.win
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #6'
   server: 196.240.125.5
   port: 8443
   type: vless
@@ -367,7 +260,17 @@ proxies:
   tls: true
   servername: api-v1-6ac7858f.vmagnum.win
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #5'
+- name: '🇳🇱 The Netherlands [*CIDR] #7'
+  server: 196.240.125.5
+  port: 8443
+  type: vless
+  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: api-v1-6ac7858f.vmagnum.win
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #4'
   server: nl.alpheratzz.org
   port: 8443
   type: vless
@@ -379,7 +282,29 @@ proxies:
   alpn:
   - h2
   skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #8'
+  server: 196.240.125.251
+  port: 8443
+  type: vless
+  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api-v1-6ac7858f.vmagnum.win
+  alpn:
+  - h2
+  skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #9'
+  server: 196.240.125.5
+  port: 8443
+  type: vless
+  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: api-v1-6ac7858f.vmagnum.win
+  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands [*CIDR] #10'
   server: nl.alpheratzz.org
   port: 8443
   type: vless
@@ -391,27 +316,19 @@ proxies:
   alpn:
   - h2
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #6'
+- name: '🇳🇱 The Netherlands [*CIDR] #11'
   server: nl.alpheratzz.org
   port: 8443
   type: vless
   uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
   flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: ios
   tls: true
-  servername: api-v1-6ac7858f.vmagnum.win
+  servername: api-v1-6ac9122f.vmagnum.win
+  alpn:
+  - h2
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #10'
-  server: 196.240.125.251
-  port: 8443
-  type: vless
-  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: api-v1-6ac7858f.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #11'
+- name: '🇳🇱 The Netherlands [*CIDR] #12'
   server: 196.240.125.251
   port: 8443
   type: vless
@@ -421,8 +338,8 @@ proxies:
   tls: true
   servername: api-v1-6ac7858f.vmagnum.win
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #12'
-  server: 196.240.125.5
+- name: '🇳🇱 The Netherlands | [*CIDR] #5'
+  server: 196.240.125.251
   port: 8443
   type: vless
   uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
@@ -437,11 +354,9 @@ proxies:
   type: vless
   uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
   flow: xtls-rprx-vision
-  client-fingerprint: ios
+  client-fingerprint: chrome
   tls: true
   servername: api-v1-6ac7858f.vmagnum.win
-  alpn:
-  - h2
   skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #14'
   server: 196.240.125.251
@@ -449,29 +364,41 @@ proxies:
   type: vless
   uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: ios
   tls: true
   servername: api-v1-6ac7858f.vmagnum.win
   alpn:
   - h2
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #7'
-  server: 196.240.125.251
-  port: 8443
-  type: vless
-  uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v1-6ac7858f.vmagnum.win
-  skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #6'
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
+    headers:
+      Host: nl-2a972c8052.shamanapp.online
 - name: '🇳🇱 The Netherlands [*CIDR] #15'
   server: 196.240.125.251
   port: 8443
   type: vless
   uuid: 8de76932-518a-4ac8-ac92-be6b1f17ddd8
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: safari
   tls: true
   servername: api-v1-6ac7858f.vmagnum.win
   skip-cert-verify: true
+- name: '🇳🇱 The Netherlands | [*CIDR] #7'
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
