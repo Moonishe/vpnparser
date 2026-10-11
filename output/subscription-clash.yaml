@@ -13,12 +13,12 @@ proxies:
     path: /bKGK1ZI0PzpQz3OeEeq1
     headers:
       Host: spb.ai-boost.tech
-- name: 🇫🇮 AetrisVPN
+- name: 🇫🇮 Finland | 🌐 [*CIDR]
   server: 91.107.126.228
   port: 2096
   type: vless
   uuid: f13b36ac-3765-4458-8a4d-08575038c463
-  client-fingerprint: chrome
+  client-fingerprint: qq
   tls: true
   servername: id.vk.com
   skip-cert-verify: true
@@ -28,18 +28,18 @@ proxies:
   grpc-opts:
     grpc-service-name: vless-grpc-reality
 - name: 🇫🇷 AetrisVPN
-  server: 82.202.178.133
-  port: 31443
+  server: 82.202.179.104
+  port: 9443
   type: vless
-  uuid: 03218c7c-acd1-45c0-87a1-9cc77101c6b4
+  uuid: ccd6419d-6943-4e7c-bc8c-7a157dadff80
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
   servername: smartcaptcha.yandexcloud.net
   skip-cert-verify: true
   reality-opts:
-    public-key: lA0NS88gVVkaZf4qA1aYystzmLsZ5SNzszDsC-8DMSM
-    short-id: e351ebf520
+    public-key: tvc-zUxqKX5P3DrZ2OiLIKHVPeu5MKjFLRWRYcvL3BQ
+    short-id: 9b027a0fe332
 - name: 🌐 Anycast-IP | 🇳🇱 [*CIDR]
   server: 193.233.220.194
   port: 443
@@ -60,18 +60,18 @@ proxies:
   type: vless
   uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
   servername: pl3.richforever.ru
   skip-cert-verify: true
   reality-opts:
     public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
-- name: 🇫🇮 Finland | 🌐 [*CIDR]
+- name: 🇫🇮 AetrisVPN
   server: 91.107.126.228
   port: 2096
   type: vless
   uuid: f13b36ac-3765-4458-8a4d-08575038c463
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
   servername: id.vk.com
   skip-cert-verify: true
@@ -81,45 +81,19 @@ proxies:
   grpc-opts:
     grpc-service-name: vless-grpc-reality
 - name: '🇫🇷 AetrisVPN #2'
-  server: 82.202.179.104
-  port: 9443
+  server: 82.202.178.133
+  port: 31443
   type: vless
-  uuid: ccd6419d-6943-4e7c-bc8c-7a157dadff80
+  uuid: 03218c7c-acd1-45c0-87a1-9cc77101c6b4
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
   servername: smartcaptcha.yandexcloud.net
   skip-cert-verify: true
   reality-opts:
-    public-key: tvc-zUxqKX5P3DrZ2OiLIKHVPeu5MKjFLRWRYcvL3BQ
-    short-id: 9b027a0fe332
+    public-key: lA0NS88gVVkaZf4qA1aYystzmLsZ5SNzszDsC-8DMSM
+    short-id: e351ebf520
 - name: '🇷🇺 Russia [*CIDR] #2'
-  server: pl3.richforever.ru
-  port: 8443
-  type: vless
-  uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: pl3.richforever.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
-- name: 🇫🇮 Finland | 🌐 | [*CIDR]
-  server: ss.ll0ll.vip
-  port: 2096
-  type: vless
-  uuid: f13b36ac-3765-4458-8a4d-08575038c463
-  client-fingerprint: random
-  tls: true
-  servername: id.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-  network: grpc
-  grpc-opts:
-    grpc-service-name: vless-grpc-reality
-- name: '🇷🇺 Russia [*CIDR] #3'
   server: pl3.richforever.ru
   port: 8443
   type: vless
@@ -131,7 +105,7 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
-- name: '🇷🇺 Russia [*CIDR] #4'
+- name: '🇷🇺 Russia [*CIDR] #3'
   server: pl3.richforever.ru
   port: 8443
   type: vless
@@ -143,49 +117,7 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
-- name: 🇷🇺 Russia | [*CIDR]
-  server: pl3.richforever.ru
-  port: 9443
-  type: vless
-  uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
-  client-fingerprint: firefox
-  tls: true
-  servername: pl3.richforever.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-service
-- name: 🇷🇺 AetrisVPN
-  server: 79.174.92.222
-  port: 443
-  type: vless
-  uuid: 03ca8c3f-e777-45b5-a1b1-592094ca99ee
-  client-fingerprint: firefox
-  tls: true
-  servername: m.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: _PYBo3dyZRpGC44vADqcmlBCSeAVh1X8l3mulghVsTI
-    short-id: a1b2c3d4
-  network: grpc
-  grpc-opts: {}
-- name: '🇷🇺 Russia [*CIDR] #5'
-  server: pl3.richforever.ru
-  port: 2096
-  type: vless
-  uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
-  client-fingerprint: ios
-  tls: true
-  servername: pl3.richforever.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
-  network: xhttp
-  xhttp-opts:
-    path: /xhttp
-- name: '🇷🇺 Russia [*CIDR] #6'
+- name: '🇷🇺 Russia [*CIDR] #4'
   server: pl3.richforever.ru
   port: 2096
   type: vless
@@ -199,7 +131,7 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /xhttp
-- name: '🇷🇺 Russia | [*CIDR] #2'
+- name: 🇷🇺 Russia | [*CIDR]
   server: pl3.richforever.ru
   port: 2096
   type: vless
@@ -213,12 +145,26 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /xhttp
-- name: '🇷🇺 Russia | [*CIDR] #3'
+- name: '🇷🇺 Russia | [*CIDR] #2'
   server: pl3.richforever.ru
   port: 9443
   type: vless
   uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
   client-fingerprint: chrome
+  tls: true
+  servername: pl3.richforever.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-service
+- name: '🇷🇺 Russia | [*CIDR] #3'
+  server: pl3.richforever.ru
+  port: 9443
+  type: vless
+  uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
+  client-fingerprint: firefox
   tls: true
   servername: pl3.richforever.ru
   skip-cert-verify: true
@@ -232,20 +178,6 @@ proxies:
   port: 9443
   type: vless
   uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
-  client-fingerprint: safari
-  tls: true
-  servername: pl3.richforever.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc-service
-- name: '🇷🇺 Russia | [*CIDR] #5'
-  server: pl3.richforever.ru
-  port: 9443
-  type: vless
-  uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
   client-fingerprint: qq
   tls: true
   servername: pl3.richforever.ru
@@ -255,7 +187,19 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc-service
-- name: '🇷🇺 AetrisVPN #2'
+- name: '🇷🇺 Russia [*CIDR] #5'
+  server: pl3.richforever.ru
+  port: 8443
+  type: vless
+  uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: pl3.richforever.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
+- name: 🇷🇺 AetrisVPN
   server: 45.12.75.242
   port: 26424
   type: vless
@@ -267,54 +211,82 @@ proxies:
   reality-opts:
     public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
     short-id: 23103e1e
-- name: '🇷🇺 Russia [*CIDR] #7'
-  server: 93.188.184.150
-  port: 443
+- name: '🇷🇺 Russia [*CIDR] #6'
+  server: pl3.richforever.ru
+  port: 2096
   type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: edge
-  tls: true
-  servername: ru-1-2.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇷🇺 Russia [*CIDR] #8'
-  server: ru-1-2.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
   client-fingerprint: ios
   tls: true
-  servername: ru-1-2.unturned-rust-dead.lol
+  servername: pl3.richforever.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇷🇺 Russia | [*CIDR] #6'
-  server: 93.188.184.150
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: random
-  tls: true
-  servername: ru-1-2.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇷🇺 Russia [*CIDR] #9'
+    public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
+  network: xhttp
+  xhttp-opts:
+    path: /xhttp
+- name: '🇷🇺 Russia [*CIDR] #7'
   server: ru-1-2.unturned-rust-dead.lol
   port: 443
   type: vless
   uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
   client-fingerprint: qq
+  tls: true
+  servername: ru-1-2.unturned-rust-dead.lol
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
+  network: grpc
+  grpc-opts:
+    grpc-service-name: ru-api
+- name: '🇷🇺 Russia | [*CIDR] #5'
+  server: pl3.richforever.ru
+  port: 9443
+  type: vless
+  uuid: 7918e6f6-df8f-4a20-9c1d-59dbd1f22770
+  client-fingerprint: safari
+  tls: true
+  servername: pl3.richforever.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: lQcmwpXJsT5tdh9mQhcsDyiDNFe0nAVLvSc_5WnfqSY
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-service
+- name: '🇷🇺 Russia [*CIDR] #8'
+  server: ru-1-2.unturned-rust-dead.lol
+  port: 443
+  type: vless
+  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  client-fingerprint: firefox
+  tls: true
+  servername: ru-1-2.unturned-rust-dead.lol
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
+  network: grpc
+  grpc-opts:
+    grpc-service-name: ru-api
+- name: '🇷🇺 AetrisVPN #2'
+  server: 79.174.92.222
+  port: 443
+  type: vless
+  uuid: 03ca8c3f-e777-45b5-a1b1-592094ca99ee
+  client-fingerprint: firefox
+  tls: true
+  servername: m.vk.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: _PYBo3dyZRpGC44vADqcmlBCSeAVh1X8l3mulghVsTI
+    short-id: a1b2c3d4
+  network: grpc
+  grpc-opts: {}
+- name: '🇷🇺 Russia [*CIDR] #9'
+  server: ru-1-2.unturned-rust-dead.lol
+  port: 443
+  type: vless
+  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  client-fingerprint: ios
   tls: true
   servername: ru-1-2.unturned-rust-dead.lol
   skip-cert-verify: true
@@ -338,11 +310,25 @@ proxies:
   grpc-opts:
     grpc-service-name: ru-api
 - name: '🇷🇺 Russia [*CIDR] #11'
-  server: ru-1-2.unturned-rust-dead.lol
+  server: 93.188.184.150
   port: 443
   type: vless
   uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: firefox
+  client-fingerprint: edge
+  tls: true
+  servername: ru-1-2.unturned-rust-dead.lol
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
+  network: grpc
+  grpc-opts:
+    grpc-service-name: ru-api
+- name: '🇷🇺 Russia | [*CIDR] #6'
+  server: 93.188.184.150
+  port: 443
+  type: vless
+  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  client-fingerprint: random
   tls: true
   servername: ru-1-2.unturned-rust-dead.lol
   skip-cert-verify: true
