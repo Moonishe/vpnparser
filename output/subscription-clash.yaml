@@ -1,17 +1,4 @@
 proxies:
-- name: 🌐 Anycast-IP | 🇩🇪 🇫🇮 | [*CIDR]
-  server: 139.100.212.50
-  port: 443
-  type: vless
-  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
-  client-fingerprint: firefox
-  tls: true
-  servername: sel-spb-1.almazkey.com
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /chain
-    host: sel-spb-1.almazkey.com
 - name: 🇫🇷 AetrisVPN
   server: 79.174.92.222
   port: 443
@@ -26,6 +13,32 @@ proxies:
     short-id: a1b2c3d4
   network: grpc
   grpc-opts: {}
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-NL
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
+    headers:
+      Host: nl-2a972c8052.shamanapp.online
+- name: 🇷🇺 AetrisVPN
+  server: ru-1-3.unturned-rust-dead.lol
+  port: 443
+  type: vless
+  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  client-fingerprint: chrome
+  tls: true
+  servername: ru-1-3.unturned-rust-dead.lol
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
+  network: grpc
+  grpc-opts:
+    grpc-service-name: ru-api
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
@@ -39,33 +52,7 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇷🇺 Russia [*CIDR]
-  server: ru-1-3.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: firefox
-  tls: true
-  servername: ru-1-3.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: nl-2a972c8052.shamanapp.online
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-    headers:
-      Host: nl-2a972c8052.shamanapp.online
-- name: 🇷🇺 AetrisVPN
+- name: '🇷🇺 AetrisVPN #2'
   server: 78.159.250.84
   port: 2053
   type: vless
@@ -81,53 +68,7 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: summerculture.net
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR] VK
-  server: formatno.com
-  port: 443
-  type: vless
-  uuid: a72b971f-2163-48d4-b3a3-6173cee58586
-  client-fingerprint: random
-  tls: true
-  servername: formatno.com
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /nl7ws
-    headers:
-      Host: formatno.com
-- name: '🇷🇺 Russia [*CIDR] #2'
-  server: ru-1-3.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: ios
-  tls: true
-  servername: ru-1-3.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] VK #2'
-  server: formatno.com
-  port: 443
-  type: vless
-  uuid: a72b971f-2163-48d4-b3a3-6173cee58586
-  client-fingerprint: chrome
-  tls: true
-  servername: formatno.com
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /nl7ws
-    headers:
-      Host: formatno.com
-- name: '🇷🇺 AetrisVPN #2'
+- name: '🇷🇺 AetrisVPN #3'
   server: 78.159.246.85
   port: 2053
   type: vless
@@ -143,83 +84,7 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] VK #3'
-  server: formatno.com
-  port: 443
-  type: vless
-  uuid: a72b971f-2163-48d4-b3a3-6173cee58586
-  client-fingerprint: ios
-  tls: true
-  servername: formatno.com
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /nl7ws
-    headers:
-      Host: formatno.com
-- name: '🇷🇺 AetrisVPN #3'
-  server: ru-1-3.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: chrome
-  tls: true
-  servername: ru-1-3.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] VK #4'
-  server: 185.86.145.183
-  port: 443
-  type: vless
-  uuid: a72b971f-2163-48d4-b3a3-6173cee58586
-  client-fingerprint: edge
-  tls: true
-  servername: formatno.com
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /nl7ws
-    headers:
-      Host: formatno.com
-- name: '🇷🇺 Russia [*CIDR] #3'
-  server: ru-1-2.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: chrome
-  tls: true
-  servername: ru-1-2.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] VK #5'
-  server: 185.86.145.183
-  port: 443
-  type: vless
-  uuid: a72b971f-2163-48d4-b3a3-6173cee58586
-  client-fingerprint: ios
-  tls: true
-  servername: formatno.com
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /nl7ws
-    headers:
-      Host: formatno.com
-- name: '🇷🇺 Russia [*CIDR] #4'
+- name: 🇷🇺 Russia [*CIDR]
   server: 159.194.244.247
   port: 443
   type: vless
@@ -241,6 +106,34 @@ proxies:
   client-fingerprint: random
   tls: true
   servername: ru-1-5.unturned-rust-dead.lol
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
+  network: grpc
+  grpc-opts:
+    grpc-service-name: ru-api
+- name: '🇷🇺 Russia [*CIDR] #2'
+  server: ru-1-3.unturned-rust-dead.lol
+  port: 443
+  type: vless
+  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  client-fingerprint: firefox
+  tls: true
+  servername: ru-1-3.unturned-rust-dead.lol
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
+  network: grpc
+  grpc-opts:
+    grpc-service-name: ru-api
+- name: '🇷🇺 Russia [*CIDR] #3'
+  server: ru-1-3.unturned-rust-dead.lol
+  port: 443
+  type: vless
+  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  client-fingerprint: ios
+  tls: true
+  servername: ru-1-3.unturned-rust-dead.lol
   skip-cert-verify: true
   reality-opts:
     public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
