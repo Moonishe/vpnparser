@@ -1,4 +1,33 @@
 proxies:
+- name: 🇩🇪 AetrisVPN
+  server: 91.215.41.42
+  port: 443
+  type: vless
+  uuid: 6e58f644-bc22-4dae-824a-4c3a760dc7a1
+  client-fingerprint: chrome
+  tls: true
+  servername: rwyisq.edge-assets.ru
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/vjycfvml/sync/
+    host: rwyisq.edge-assets.ru
+- name: 🌐 Anycast-IP | 🇫🇮 [*CIDR]
+  server: 139.100.212.53
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: ios
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
 - name: 🇫🇷 AetrisVPN
   server: 79.174.92.222
   port: 443
@@ -13,7 +42,17 @@ proxies:
     short-id: a1b2c3d4
   network: grpc
   grpc-opts: {}
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-NL
+- name: 🇬🇧173Mb
+  server: 206.245.166.249
+  port: 443
+  type: vless
+  uuid: b8254d35-1cb0-4b74-8f7f-d2bc985196a0
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: laga18.api3-max.ru
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands | [*CIDR]
   server: nl-2a972c8052.shamanapp.online
   port: 33736
   type: vmess
@@ -26,33 +65,6 @@ proxies:
     headers:
       Host: nl-2a972c8052.shamanapp.online
 - name: 🇷🇺 AetrisVPN
-  server: ru-1-3.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: chrome
-  tls: true
-  servername: ru-1-3.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: 🇳🇱 AetrisVPN
-  server: 188.225.33.141
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: '🇷🇺 AetrisVPN #2'
   server: 78.159.250.84
   port: 2053
   type: vless
@@ -68,75 +80,266 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: summerculture.net
-- name: '🇷🇺 AetrisVPN #3'
-  server: 78.159.246.85
-  port: 2053
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
+  server: 45.131.212.151
+  port: 443
   type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
+  uuid: 5aefad36-749b-401c-8b3b-547ef7d2253e
+  flow: xtls-rprx-vision
+  client-fingerprint: random
   tls: true
-  servername: fitindoor.net
-  alpn:
-  - h2
-  - http/1.1
+  servername: de.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🌐 Anycast-IP | 🇫🇮 [*CIDR] #2'
+  server: 139.100.212.53
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: random
+  tls: true
+  servername: sel-spb-1.almazkey.com
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
-    path: /api/v1/upload
-    host: fitindoor.net
-- name: 🇷🇺 Russia [*CIDR]
-  server: 159.194.244.247
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: 🇫🇷142Mb
+  server: karta8.api3-max.ru
   port: 443
   type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: ios
-  tls: true
-  servername: ru-1-3.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: 🇷🇺 Russia | [*CIDR]
-  server: ru-1-5.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: random
-  tls: true
-  servername: ru-1-5.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇷🇺 Russia [*CIDR] #2'
-  server: ru-1-3.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  uuid: b8254d35-1cb0-4b74-8f7f-d2bc985196a0
+  flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: ru-1-3.unturned-rust-dead.lol
+  servername: karta8.api3-max.ru
   skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇷🇺 Russia [*CIDR] #3'
-  server: ru-1-3.unturned-rust-dead.lol
+- name: 🇬🇧164Mb
+  server: 206.245.166.203
+  port: 443
+  type: vless
+  uuid: b8254d35-1cb0-4b74-8f7f-d2bc985196a0
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: laga20.api3-max.ru
+  skip-cert-verify: true
+- name: 🇷🇺 Russia [*CIDR]
+  server: ru-1-6.unturned-rust-dead.lol
   port: 443
   type: vless
   uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: ios
+  client-fingerprint: safari
   tls: true
-  servername: ru-1-3.unturned-rust-dead.lol
+  servername: ru-1-6.unturned-rust-dead.lol
   skip-cert-verify: true
   reality-opts:
     public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
   network: grpc
   grpc-opts:
     grpc-service-name: ru-api
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #2'
+  server: 45.131.212.151
+  port: 443
+  type: vless
+  uuid: 5aefad36-749b-401c-8b3b-547ef7d2253e
+  client-fingerprint: random
+  tls: true
+  servername: de-g.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+  network: grpc
+  grpc-opts: {}
+- name: 🇫🇷132Mb
+  server: 45.67.139.128
+  port: 443
+  type: vless
+  uuid: b8254d35-1cb0-4b74-8f7f-d2bc985196a0
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: karta8.api3-max.ru
+  skip-cert-verify: true
+- name: '🇷🇺 Russia [*CIDR] #2'
+  server: 113.30.154.51
+  port: 443
+  type: vless
+  uuid: 5aefad36-749b-401c-8b3b-547ef7d2253e
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: 🇩🇪 Germany [*CIDR]
+  server: renderer-stream-2-114.mirra.now
+  port: 443
+  type: vmess
+  uuid: 8ffa41d4-e6b5-4af5-a8a9-69e26bec75f5
+  alterId: 0
+  cipher: auto
+  tls: true
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/v1/gpu-stream/socket
+- name: '🇫🇷 AetrisVPN #2'
+  server: 82.202.179.107
+  port: 12443
+  type: vless
+  uuid: 8822fe1c-7a83-49c0-af96-c2027cb6ddd5
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: smartcaptcha.yandexcloud.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 6RMior0_TlChA0R_T8yXvjrrpb_nUiS50uRJrLqFeWM
+    short-id: 780f5e
+- name: '🇷🇺 Russia [*CIDR] #3'
+  server: 88.218.67.191
+  port: 443
+  type: vless
+  uuid: 5aefad36-749b-401c-8b3b-547ef7d2253e
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: 🌐 Anycast-IP | 🇩🇪 [*CIDR]
+  server: 139.100.212.51
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: ios
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: '🇷🇺 AetrisVPN #2'
+  server: 185.141.227.190
+  port: 7449
+  type: vless
+  uuid: ab184ddb-459f-4757-bcd6-a4b3fadb9fbe
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: cloud.1c.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: TluV1p0lbKcf1UWlkQQ6T7HiIf5NcBax397uh23tUjw
+    short-id: 315bf0f2ca19696a
+- name: 🌐 Anycast-IP | 🇩🇪 🇳🇱 [*CIDR]
+  server: 139.100.212.50
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: edge
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: '🌐 Anycast-IP | 🇩🇪 🇳🇱 [*CIDR] #2'
+  server: 139.100.212.50
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: random
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: '🌐 Anycast-IP | 🇩🇪 [*CIDR] #2'
+  server: 139.100.212.51
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: random
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: '🌐 Anycast-IP | 🇩🇪 [*CIDR] #3'
+  server: 139.100.212.52
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: safari
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: 🌐 Anycast-IP | 🇩🇪 🇫🇮 🇳🇱 [*CIDR]
+  server: 139.100.212.50
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: qq
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: '🌐 Anycast-IP | 🇩🇪 [*CIDR] #4'
+  server: 139.100.212.52
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  client-fingerprint: random
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: '🌐 Anycast-IP | 🇩🇪 🇳🇱 [*CIDR] #3'
+  server: 139.100.212.50
+  port: 443
+  type: vless
+  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
+  tls: true
+  servername: sel-spb-1.almazkey.com
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chain
+    host: sel-spb-1.almazkey.com
+- name: 🇩🇪 Germany [*CIDR] VK
+  server: n2.185-86-145-142.sslip.io
+  port: 443
+  type: vless
+  uuid: 7832b450-d561-45d6-b425-8527fa8babe0
+  client-fingerprint: random
+  tls: true
+  servername: n2.185-86-145-142.sslip.io
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /e7ws
+    headers:
+      Host: n2.185-86-145-142.sslip.io
