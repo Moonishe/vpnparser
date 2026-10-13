@@ -1,22 +1,4 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR]
-  server: renderer-stream-2-114.mirra.now
-  port: 443
-  type: vmess
-  uuid: 8ffa41d4-e6b5-4af5-a8a9-69e26bec75f5
-  alterId: 0
-  cipher: auto
-  client-fingerprint: firefox
-  tls: true
-  servername: renderer-stream-2-114.mirra.now
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v1/gpu-stream/socket
-    headers:
-      Host: renderer-stream-2-114.mirra.now
 - name: 🇫🇷 AetrisVPN
   server: 79.174.92.222
   port: 443
@@ -31,114 +13,100 @@ proxies:
     short-id: a1b2c3d4
   network: grpc
   grpc-opts: {}
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
-  server: api.mediaprosvet.cc
-  port: 443
-  type: vless
-  uuid: 4d63b928-5068-4f6d-918c-c6fa95d936c5
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api.mediaprosvet.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
+    headers:
+      Host: nl-2a972c8052.shamanapp.online
 - name: 🇷🇺 AetrisVPN
-  server: 78.159.250.84
-  port: 2053
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: firefox
-  tls: true
-  servername: summerculture.net
-  alpn:
-  - h2
-  - +http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: summerculture.net
-- name: 🇫🇷101Mb
-  server: 193.70.85.96
-  port: 443
-  type: vless
-  uuid: 58756a39-0472-5f8a-89e3-a80fa94af59e
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: 7q4eiwcseu-193708596-direct.rahbarii.com
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #2'
-  server: api.mediaprosvet.cc
-  port: 443
-  type: vless
-  uuid: 4d63b928-5068-4f6d-918c-c6fa95d936c5
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: api.mediaprosvet.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇷🇺 AetrisVPN #2'
   server: 78.159.246.85
   port: 2053
   type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
+  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
   client-fingerprint: firefox
   tls: true
   servername: fitindoor.net
   alpn:
-  - h2
   - http/1.1
+  - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: 🌐 Anycast-IP | 🇳🇱 [*CIDR]
-  server: 212.109.196.123
-  port: 443
-  type: vless
-  uuid: 6c21cf57-a9a9-4075-ad9f-631152bd911e
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: maple.hubnori.ink
-  skip-cert-verify: true
-  reality-opts:
-    public-key: IBbBWAFM5_ZvoudwNh_09i461W0SLjLxHeRo1TMWMHY
-    short-id: d574a560c675152e
-- name: 🇷🇺 Russia [*CIDR]
-  server: ru-1-2.unturned-rust-dead.lol
-  port: 443
-  type: vless
-  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
-  client-fingerprint: safari
-  tls: true
-  servername: ru-1-2.unturned-rust-dead.lol
-  skip-cert-verify: true
-  reality-opts:
-    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-api
-- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #3'
-  server: 212.109.196.123
+- name: 🌐 Anycast-IP | 🇫🇷 🇵🇱 | [*CIDR]
+  server: ember.datanexi.store
   port: 443
   type: vless
   uuid: 6c21cf57-a9a9-4075-ad9f-631152bd911e
   flow: xtls-rprx-vision
   client-fingerprint: random
   tls: true
-  servername: maple.hubnori.ink
+  servername: ember.datanexi.store
   skip-cert-verify: true
   reality-opts:
-    public-key: IBbBWAFM5_ZvoudwNh_09i461W0SLjLxHeRo1TMWMHY
-    short-id: d574a560c675152e
+    public-key: irnW7-3RKbH3SLv-RrPR27DQTLiIV8GYj2N8CRVgCBQ
+    short-id: c7e7592543e1fe96
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
+- name: '🇷🇺 AetrisVPN #2'
+  server: ru-1-3.unturned-rust-dead.lol
+  port: 443
+  type: vless
+  uuid: c6e3c24c-ce20-4ad5-8c8c-68cb05890ea8
+  client-fingerprint: chrome
+  tls: true
+  servername: ru-1-3.unturned-rust-dead.lol
+  skip-cert-verify: true
+  reality-opts:
+    public-key: aYz4_13W8gtAXGBrWeqJXtExahAJ9kUPDapqeyAlYCk
+  network: grpc
+  grpc-opts:
+    grpc-service-name: ru-api
+- name: '🌐 Anycast-IP | 🇫🇷 🇵🇱 | [*CIDR] #2'
+  server: ember.datanexi.store
+  port: 443
+  type: vless
+  uuid: 6c21cf57-a9a9-4075-ad9f-631152bd911e
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: ember.datanexi.store
+  skip-cert-verify: true
+  reality-opts:
+    public-key: irnW7-3RKbH3SLv-RrPR27DQTLiIV8GYj2N8CRVgCBQ
+    short-id: c7e7592543e1fe96
+- name: 🇧🇬 AetrisVPN
+  server: 78.159.246.85
+  port: 8443
+  type: vless
+  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
+  client-fingerprint: firefox
+  tls: true
+  servername: fitindoor.net
+  alpn:
+  - http/1.1
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: fitindoor.net
 - name: '🇷🇺 AetrisVPN #3'
   server: 159.194.244.247
   port: 443
@@ -153,38 +121,71 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: ru-api
-- name: 🇷🇺 Russia | 🌐 | [*CIDR]
-  server: cape.flowzari.info
+- name: 🇳🇱 AetrisVPN
+  server: 188.225.33.141
   port: 443
   type: vless
-  uuid: 6c21cf57-a9a9-4075-ad9f-631152bd911e
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
   tls: true
-  servername: cape.flowzari.info
+  servername: wstg.datasynctrue.online
   skip-cert-verify: true
-  reality-opts:
-    public-key: 5DdSLIpnYjqYTI4-yC-ulr8PGMA8YML_EWdKvOjdinc
-    short-id: 693e339ad3613446
-- name: 🇦🇱 Albania | [*CIDR] VK
-  server: 83.166.238.57
-  port: 443
-  type: vless
-  uuid: a16a3e32-8d63-4dec-8c67-1361388a64ca
-  flow: xtls-rprx-vision
-  client-fingerprint: random
-  tls: true
-  servername: eh3.vk.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: QXw5YbUfPssdgGZIfAol5PonYGWSjlWsWpoij93VU20
-    short-id: b276e04195d77f6b
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #2'
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: 🇷🇺 Russia | 🌐 [*CIDR]
   server: 176.124.214.107
   port: 8443
   type: vless
   uuid: ed8704b8-9e9e-48e6-b55b-ae9079ab3a59
   client-fingerprint: random
+  tls: true
+  servername: apple.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: i5a8i2AWUSMZ-rYA6hGBRCBBoe7W5ah33SCdF5JkMk4
+    short-id: 8bcfe256cf216fd8
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇷🇺 AetrisVPN #4'
+  server: 78.159.246.179
+  port: 2053
+  type: vless
+  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
+  client-fingerprint: firefox
+  tls: true
+  servername: randomquaint.net
+  alpn:
+  - http/1.1
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: randomquaint.net
+- name: 🇷🇺 Russia | 🌐 | [*CIDR]
+  server: 176.124.214.107
+  port: 8443
+  type: vless
+  uuid: ed8704b8-9e9e-48e6-b55b-ae9079ab3a59
+  client-fingerprint: firefox
+  tls: true
+  servername: apple.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: i5a8i2AWUSMZ-rYA6hGBRCBBoe7W5ah33SCdF5JkMk4
+    short-id: 8bcfe256cf216fd8
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc-tunnel
+- name: '🇷🇺 Russia | 🌐 [*CIDR] #2'
+  server: 176.124.214.107
+  port: 8443
+  type: vless
+  uuid: ed8704b8-9e9e-48e6-b55b-ae9079ab3a59
+  client-fingerprint: qq
   tls: true
   servername: apple.com
   skip-cert-verify: true
