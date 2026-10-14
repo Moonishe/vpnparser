@@ -1,79 +1,24 @@
 proxies:
-- name: 🇩🇪 Germany [*CIDR] VK
-  server: 185.86.145.142
+- name: 🇨🇦55Mb
+  server: milo.rubinaz.xyz
+  port: 8080
+  type: vless
+  uuid: 6bceb548-d9b6-461f-8e37-a5a7fbcdc2c8
+- name: 🇫🇷 AetrisVPN
+  server: 79.174.92.222
   port: 443
   type: vless
-  uuid: 7832b450-d561-45d6-b425-8527fa8babe0
+  uuid: 03ca8c3f-e777-45b5-a1b1-592094ca99ee
   client-fingerprint: firefox
   tls: true
-  servername: n2.185-86-145-142.sslip.io
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /e7ws
-    headers:
-      Host: n2.185-86-145-142.sslip.io
-- name: 🇫🇷 AetrisVPN
-  server: 82.202.179.107
-  port: 12443
-  type: vless
-  uuid: 8822fe1c-7a83-49c0-af96-c2027cb6ddd5
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: smartcaptcha.yandexcloud.net
+  servername: m.vk.com
   skip-cert-verify: true
   reality-opts:
-    public-key: 6RMior0_TlChA0R_T8yXvjrrpb_nUiS50uRJrLqFeWM
-    short-id: 780f5e
-- name: 🇳🇱 AetrisVPN
-  server: 188.225.33.141
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
+    public-key: _PYBo3dyZRpGC44vADqcmlBCSeAVh1X8l3mulghVsTI
+    short-id: a1b2c3d4
+  network: grpc
+  grpc-opts: {}
 - name: 🇷🇺 AetrisVPN
-  server: 185.141.227.180
-  port: 2053
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: random
-  tls: true
-  servername: dismissaltree.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-- name: '🇩🇪 Germany [*CIDR] VK #2'
-  server: 185.86.145.142
-  port: 443
-  type: vless
-  uuid: 7832b450-d561-45d6-b425-8527fa8babe0
-  client-fingerprint: random
-  tls: true
-  servername: n2.185-86-145-142.sslip.io
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /e7ws
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: nl-2a972c8052.shamanapp.online
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-- name: '🇷🇺 AetrisVPN #2'
   server: 78.159.246.85
   port: 2053
   type: vless
@@ -89,73 +34,89 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: 🇩🇪 AetrisVPN
-  server: 82.202.178.132
-  port: 443
-  type: vless
-  uuid: 03218c7c-acd1-45c0-87a1-9cc77101c6b4
-  client-fingerprint: firefox
-  tls: true
-  servername: mobile-api-12.sova.toys
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1A9loATtqTbKfErpj24clMebWdbmBRDgUIADwtlvtAw
-    short-id: 70c20a2f5a7d542e
-  network: grpc
-  grpc-opts:
-    grpc-service-name: google.storage.v2.Storage
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
-  server: nl-2a972c8052.shamanapp.online
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-    headers:
-      Host: nl-2a972c8052.shamanapp.online
-- name: '🇷🇺 AetrisVPN #3'
+- name: '🇷🇺 AetrisVPN #2'
   server: 78.159.250.84
   port: 2053
   type: vless
   uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: firefox
+  client-fingerprint: random
   tls: true
   servername: summerculture.net
   alpn:
   - h2
-  - +http/1.1
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
     host: summerculture.net
-- name: '🇩🇪 AetrisVPN #2'
-  server: 193.124.125.183
-  port: 443
-  type: vless
-  uuid: a80674d8-c4e8-4af8-914b-9aa919ae7054
-  tls: true
-  servername: vds.promts-ai.cloud
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: trgrpc
-- name: '🇷🇺 AetrisVPN #4'
-  server: 37.18.14.168
+- name: '🇷🇺 AetrisVPN #3'
+  server: 185.141.227.180
   port: 2053
   type: vless
   uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: firefox
+  client-fingerprint: chrome
   tls: true
-  servername: kaoangeltrahnimenya.net
-  alpn:
-  - h2
-  - http/1.1
+  servername: dismissaltree.net
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
-    host: kaoangeltrahnimenya.net
+    host: dismissaltree.net
+- name: 🇷🇺 Russia | 🌐 [*CIDR]
+  server: 45.139.24.74
+  port: 443
+  type: vless
+  uuid: 244d9eab-3311-40c7-b47f-4968dc3088a6
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: tcprus5.figurapn.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ
+    short-id: 868419504747f6de
+- name: 🇷🇺 Russia | [*CIDR]
+  server: storage.fatcutecat.net
+  port: 443
+  type: vless
+  uuid: 81ee7b74-7ccd-4ccb-8f4b-f1bd02f0491e
+  client-fingerprint: firefox
+  tls: true
+  servername: storage.fatcutecat.net
+  skip-cert-verify: true
+- name: 🇷🇺 Russia [*CIDR]
+  server: storage.fatcutecat.net
+  port: 443
+  type: vless
+  uuid: 81ee7b74-7ccd-4ccb-8f4b-f1bd02f0491e
+  client-fingerprint: edge
+  tls: true
+  servername: storage.fatcutecat.net
+  skip-cert-verify: true
+- name: '🇷🇺 Russia | [*CIDR] #2'
+  server: storage.fatcutecat.net
+  port: 443
+  type: vless
+  uuid: 81ee7b74-7ccd-4ccb-8f4b-f1bd02f0491e
+  client-fingerprint: chrome
+  tls: true
+  servername: storage.fatcutecat.net
+  skip-cert-verify: true
+- name: '🇷🇺 Russia [*CIDR] #2'
+  server: storage.fatcutecat.net
+  port: 443
+  type: vless
+  uuid: 81ee7b74-7ccd-4ccb-8f4b-f1bd02f0491e
+  client-fingerprint: safari
+  tls: true
+  servername: storage.fatcutecat.net
+  skip-cert-verify: true
+- name: '🇷🇺 Russia [*CIDR] #3'
+  server: storage.fatcutecat.net
+  port: 443
+  type: vless
+  uuid: 81ee7b74-7ccd-4ccb-8f4b-f1bd02f0491e
+  client-fingerprint: qq
+  tls: true
+  servername: storage.fatcutecat.net
+  skip-cert-verify: true
