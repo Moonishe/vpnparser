@@ -1,107 +1,59 @@
 proxies:
-- name: 🇫🇮 AetrisVPN
-  server: hel.blokanet.icu
-  port: 8080
+- name: 🇩🇪 Germany | 🌐 | [*CIDR]
+  server: ru-sel-01.123ok.uk
+  port: 443
   type: vless
-  uuid: 660e2dcf-c836-425d-bcc9-1d8dca8856e6
-  client-fingerprint: firefox
-  tls: true
-  servername: eh.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: KhpafaT-7xQ9k9d1Q979JtsZRP3c3ESsrg0K1Z6imRg
-    short-id: 6d6f13013d3e1d0c
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: 🇫🇷 AetrisVPN
-  server: 82.202.179.107
-  port: 12443
-  type: vless
-  uuid: 8822fe1c-7a83-49c0-af96-c2027cb6ddd5
+  uuid: e205a26e-e5b3-0003-80a8-2c79dc9db02b
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: smartcaptcha.yandexcloud.net
+  servername: ru-sel-01.123ok.uk
   skip-cert-verify: true
   reality-opts:
-    public-key: 6RMior0_TlChA0R_T8yXvjrrpb_nUiS50uRJrLqFeWM
-    short-id: 780f5e
-- name: 🇳🇱 AetrisVPN
-  server: 188.225.33.141
-  port: 443
+    public-key: fNIWMqyrYtOvMcpNDBqqZ7ZQaCcGAsh83qYirAk11Ws
+    short-id: 3b0dfb074f042a25
+- name: 🇫🇮 Finland | [*CIDR]
+  server: fi-p1.h1cloud.net
+  port: 25635
   type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  uuid: 0c3ad9d5-cffd-4748-b8df-ab145288144b
+  client-fingerprint: chrome
   tls: true
-  servername: wstg.datasynctrue.online
+  servername: www.icloud.com
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 🇷🇺 AetrisVPN
-  server: 78.159.250.84
-  port: 2053
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: firefox
-  tls: true
-  servername: summerculture.net
-  alpn:
-  - h2
-  - +http/1.1
-  skip-cert-verify: true
+  reality-opts:
+    public-key: V_9n2OhujONj4xFMwc_Bf1_sG68R33HaDOHhDTU53QQ
+    short-id: 2b299e5f6fd97fb3
   network: xhttp
   xhttp-opts:
-    path: /api/v1/upload
-    host: summerculture.net
+    path: /098f0b88514e
+- name: 🇫🇷 France | [*CIDR]
+  server: api.videopereval.cc
+  port: 443
+  type: vless
+  uuid: 082f5694-9019-4110-b67b-8125dbb9bab8
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: api.videopereval.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
 - name: 🇧🇬 AetrisVPN
   server: 78.159.246.85
   port: 8443
   type: vless
-  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
-  client-fingerprint: firefox
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: chrome
   tls: true
   servername: fitindoor.net
-  alpn:
-  - http/1.1
-  - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: '🇷🇺 AetrisVPN #2'
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
-  client-fingerprint: firefox
-  tls: true
-  servername: randomquaint.net
-  alpn:
-  - http/1.1
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇷🇺 Russia | 🌐 [*CIDR] CDN
-  server: kaoangeltrahnimenya.net
-  port: 2053
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: safari
-  tls: true
-  servername: kaoangeltrahnimenya.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: kaoangeltrahnimenya.net
-- name: '🇷🇺 AetrisVPN #3'
+- name: 🇷🇺 AetrisVPN
   server: 78.159.246.85
   port: 2053
   type: vless
@@ -117,41 +69,106 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: 🇷🇺 Russia | 🌐 | [*CIDR] CDN
-  server: 37.18.14.168
+- name: 🇺🇸 United States, Secaucus | [BL]
+  server: 45.138.100.248
+  port: 10443
+  type: vless
+  uuid: ae908ff5-f749-402c-af25-e6e9aef4d6bb
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #2'
+  server: ru-sel-01.123ok.uk
+  port: 443
+  type: vless
+  uuid: e205a26e-e5b3-0003-80a8-2c79dc9db02b
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: ru-sel-01.123ok.uk
+  skip-cert-verify: true
+  reality-opts:
+    public-key: fNIWMqyrYtOvMcpNDBqqZ7ZQaCcGAsh83qYirAk11Ws
+    short-id: 3b0dfb074f042a25
+- name: '🇫🇮 Finland | [*CIDR] #2'
+  server: fi-p1.h1cloud.net
+  port: 25635
+  type: vless
+  uuid: 0c3ad9d5-cffd-4748-b8df-ab145288144b
+  client-fingerprint: random
+  tls: true
+  servername: www.icloud.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: V_9n2OhujONj4xFMwc_Bf1_sG68R33HaDOHhDTU53QQ
+    short-id: 2b299e5f6fd97fb3
+  network: xhttp
+  xhttp-opts:
+    path: /098f0b88514e
+- name: '🇷🇺 AetrisVPN #2'
+  server: 78.159.246.179
   port: 2053
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: chrome
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
+  client-fingerprint: firefox
   tls: true
-  servername: kaoangeltrahnimenya.net
+  servername: randomquaint.net
+  alpn:
+  - h2
+  - http/1.1
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
-- name: '🇷🇺 Russia | 🌐 [*CIDR] CDN #2'
-  server: kaoangeltrahnimenya.net
-  port: 2053
+    host: randomquaint.net
+- name: '🇫🇮 Finland | [*CIDR] #3'
+  server: fi-p1.h1cloud.net
+  port: 25634
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  uuid: ec572cf0-1337-4c51-b4ec-ff2f538c1f4c
+  client-fingerprint: ios
+  tls: true
+  servername: www.icloud.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: xjmKTfAwtZNtyMrfGSo1a-Xc807CIdJXsboMsDMROFA
+    short-id: 12e9af979082beab
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 2894574fe211
+- name: 🇷🇺 Russia [*CIDR]
+  server: 37.143.15.206
+  port: 443
+  type: vless
+  uuid: 4599572f-bcfa-461e-bc73-d80e1ea65aa6
+  flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: kaoangeltrahnimenya.net
+  servername: 5post-gate.x5.ru
   skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: kaoangeltrahnimenya.net
-- name: '🇷🇺 AetrisVPN #4'
-  server: 185.141.227.180
-  port: 2053
+  reality-opts:
+    public-key: OCRYYq4e92sQ-wWFRX6WX9pdvuFBWOqybLhpSiv3nFA
+    short-id: '111111'
+- name: 🇷🇺 Russia | [*CIDR]
+  server: 37.143.15.206
+  port: 443
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: chrome
+  uuid: 4599572f-bcfa-461e-bc73-d80e1ea65aa6
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
   tls: true
-  servername: dismissaltree.net
+  servername: 5post-gate.x5.ru
   skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: dismissaltree.net
+  reality-opts:
+    public-key: OCRYYq4e92sQ-wWFRX6WX9pdvuFBWOqybLhpSiv3nFA
+    short-id: '111111'
+- name: '🇷🇺 Russia [*CIDR] #2'
+  server: 37.143.15.206
+  port: 443
+  type: vless
+  uuid: 4599572f-bcfa-461e-bc73-d80e1ea65aa6
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: 5post-gate.x5.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: OCRYYq4e92sQ-wWFRX6WX9pdvuFBWOqybLhpSiv3nFA
+    short-id: '111111'
