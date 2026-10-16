@@ -1,27 +1,30 @@
 proxies:
-- name: 🇩🇪 Germany, Düsseldorf | 🌐 | [BL]
-  server: de.zhou-yufan.com
-  port: 443
-  type: vmess
-  uuid: f38e591d-d13a-4c30-9763-6be3ad65f3ec
-  alterId: 0
-  cipher: auto
-  tls: true
-  servername: de.zhou-yufan.com
-  skip-cert-verify: true
-- name: 🇫🇮 Finland [*CIDR]
-  server: 31.76.227.60
+- name: 🌐 Anycast-IP | 🇫🇮 🇸🇪 | [*CIDR]
+  server: fi.chick-chirik.com
   port: 443
   type: vless
-  uuid: 05c8eabe-96af-4db2-bb2f-a24fa84344ba
+  uuid: 71c8d2c6-a7f1-4c74-b37d-d7f06fef9c04
   flow: xtls-rprx-vision
-  client-fingerprint: randomized
+  client-fingerprint: ios
   tls: true
-  servername: assets-mi-29.spbstudentlife.com
+  servername: fi.chick-chirik.com
   skip-cert-verify: true
   reality-opts:
-    public-key: CcMEJ-JOS4clB3gXbc6wXgzkiJQbyNpKY90I8B6AqyU
-    short-id: 4c188683e2c14a3c
+    public-key: 2v1vd2gw3A9Sw6w36s63QaSeMYnY4DrkEPUdKAbBPzE
+    short-id: 25f11b01338a8963
+- name: 🇫🇷 AetrisVPN
+  server: 82.202.179.107
+  port: 12443
+  type: vless
+  uuid: 8822fe1c-7a83-49c0-af96-c2027cb6ddd5
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: smartcaptcha.yandexcloud.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 6RMior0_TlChA0R_T8yXvjrrpb_nUiS50uRJrLqFeWM
+    short-id: 780f5e
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
@@ -35,93 +38,110 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇷🇺 Russia | 🌐 [*CIDR] CDN
-  server: kaoangeltrahnimenya.net
+- name: 🇱🇻 Latvia | 🌐 | [*CIDR] VK
+  server: lv.chick-chirik.com
+  port: 443
+  type: vless
+  uuid: 71c8d2c6-a7f1-4c74-b37d-d7f06fef9c04
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: lv.chick-chirik.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 2v1vd2gw3A9Sw6w36s63QaSeMYnY4DrkEPUdKAbBPzE
+    short-id: 25f11b01338a8963
+- name: '🌐 Anycast-IP | 🇫🇮 🇸🇪 | [*CIDR] #2'
+  server: fi.chick-chirik.com
+  port: 443
+  type: vless
+  uuid: 71c8d2c6-a7f1-4c74-b37d-d7f06fef9c04
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: fi.chick-chirik.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 2v1vd2gw3A9Sw6w36s63QaSeMYnY4DrkEPUdKAbBPzE
+    short-id: 25f11b01338a8963
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: b3a11068-1a7e-4643-85de-7c82cce46943
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
+- name: '🇱🇻 Latvia | 🌐 | [*CIDR] VK #2'
+  server: lv.chick-chirik.com
+  port: 443
+  type: vless
+  uuid: 71c8d2c6-a7f1-4c74-b37d-d7f06fef9c04
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: lv.chick-chirik.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 2v1vd2gw3A9Sw6w36s63QaSeMYnY4DrkEPUdKAbBPzE
+    short-id: 25f11b01338a8963
+- name: 🌐 Anycast-IP | 🇧🇬 🇳🇱 | [*CIDR]
+  server: bg.chick-chirik.com
+  port: 18569
+  type: vless
+  uuid: 71c8d2c6-a7f1-4c74-b37d-d7f06fef9c04
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: bg.chick-chirik.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 6E5mOchF1kE3xeVVZmdJhmOG1K6zlrovSCvJKmCUxzY
+    short-id: 67ce41457763df90
+- name: 🇷🇺 AetrisVPN
+  server: 78.159.246.85
   port: 2053
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
+  client-fingerprint: firefox
   tls: true
-  servername: kaoangeltrahnimenya.net
+  servername: fitindoor.net
+  alpn:
+  - h2
+  - http/1.1
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
-    host: kaoangeltrahnimenya.net
-- name: 🇩🇪 Germany, Düsseldorf | [BL]
-  server: de.zhou-yufan.com
-  port: 443
-  type: vmess
-  uuid: f38e591d-d13a-4c30-9763-6be3ad65f3ec
-  alterId: 0
-  cipher: auto
-  tls: true
-  servername: de.zhou-yufan.com
-  skip-cert-verify: true
-- name: '🇫🇮 Finland [*CIDR] #2'
-  server: 138.124.255.155
-  port: 25634
+    host: fitindoor.net
+- name: '🇷🇺 AetrisVPN #2'
+  server: 78.159.246.179
+  port: 2053
   type: vless
-  uuid: 0c3ad9d5-cffd-4748-b8df-ab145288144b
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
+  client-fingerprint: firefox
+  tls: true
+  servername: randomquaint.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: randomquaint.net
+- name: 🇷🇺 Russia | [*CIDR] VK
+  server: ru.sparxiecn.com
+  port: 34443
+  type: vless
+  uuid: 71c8d2c6-a7f1-4c74-b37d-d7f06fef9c04
+  flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: www.icloud.com
+  servername: chik-chirikvpn.com
   skip-cert-verify: true
   reality-opts:
-    public-key: xjmKTfAwtZNtyMrfGSo1a-Xc807CIdJXsboMsDMROFA
-    short-id: 12e9af979082beab
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 2894574fe211
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: fru01.tunnely.space
-  port: 443
-  type: vless
-  uuid: 525033a1-1dca-4c0c-91ad-d801af6ed18f
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: f03.tunnely.space
-  skip-cert-verify: true
-  reality-opts:
-    public-key: mChFHtaRmeuO2aDuDPqZvBFaCz6f34sVJIKuJcAR130
-    short-id: d1694c220d4b13e7
-- name: '🇩🇪 Germany, Düsseldorf | 🌐 | [BL] #2'
-  server: de.zhou-yufan.com
-  port: 443
-  type: vmess
-  uuid: f38e591d-d13a-4c30-9763-6be3ad65f3ec
-  alterId: 0
-  cipher: auto
-  tls: true
-  servername: de.zhou-yufan.com
-  skip-cert-verify: true
-- name: '🇫🇮 Finland [*CIDR] #3'
-  server: 138.124.255.155
-  port: 25481
-  type: vless
-  uuid: 68c3d665-b2b5-4ffb-9f37-9f3d8c47324d
-  client-fingerprint: qq
-  tls: true
-  servername: www.bing.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: mhIAHuZIEr2NpdGGSeOxar7VRSgEfVoNwb_G8Y0073E
-    short-id: 3b84fc70657725af
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 8cb5baa18cd7
-- name: '🇫🇮 Finland [*CIDR] #4'
-  server: 138.124.255.155
-  port: 25481
-  type: vless
-  uuid: 68c3d665-b2b5-4ffb-9f37-9f3d8c47324d
-  client-fingerprint: firefox
-  tls: true
-  servername: www.bing.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: mhIAHuZIEr2NpdGGSeOxar7VRSgEfVoNwb_G8Y0073E
-    short-id: 3b84fc70657725af
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 8cb5baa18cd7
+    public-key: NBiCX_Tj3BeMAyG-GbLLKpGjW_qacm3A2Mz5mN8v3Xk
+    short-id: ab532d3308daa67b
