@@ -1,129 +1,68 @@
 proxies:
-- name: 🇩🇪 Germany | 🌐 | [*CIDR]
-  server: ru-sel-01.123ok.uk
+- name: 🇩🇪 Germany, Düsseldorf | 🌐 | [BL]
+  server: de.zhou-yufan.com
+  port: 443
+  type: vmess
+  uuid: f38e591d-d13a-4c30-9763-6be3ad65f3ec
+  alterId: 0
+  cipher: auto
+  tls: true
+  servername: de.zhou-yufan.com
+  skip-cert-verify: true
+- name: 🇫🇮 Finland [*CIDR]
+  server: 31.76.227.60
   port: 443
   type: vless
-  uuid: e205a26e-e5b3-0003-80a8-2c79dc9db02b
+  uuid: 05c8eabe-96af-4db2-bb2f-a24fa84344ba
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: randomized
   tls: true
-  servername: ru-sel-01.123ok.uk
+  servername: assets-mi-29.spbstudentlife.com
   skip-cert-verify: true
   reality-opts:
-    public-key: fNIWMqyrYtOvMcpNDBqqZ7ZQaCcGAsh83qYirAk11Ws
-    short-id: 3b0dfb074f042a25
-- name: 🇫🇮 Finland | [*CIDR]
-  server: fi-p1.h1cloud.net
-  port: 25635
-  type: vless
-  uuid: 0c3ad9d5-cffd-4748-b8df-ab145288144b
-  client-fingerprint: chrome
-  tls: true
-  servername: www.icloud.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: V_9n2OhujONj4xFMwc_Bf1_sG68R33HaDOHhDTU53QQ
-    short-id: 2b299e5f6fd97fb3
-  network: xhttp
-  xhttp-opts:
-    path: /098f0b88514e
-- name: 🇫🇷 France | [*CIDR]
-  server: api.videopereval.cc
+    public-key: CcMEJ-JOS4clB3gXbc6wXgzkiJQbyNpKY90I8B6AqyU
+    short-id: 4c188683e2c14a3c
+- name: 🇳🇱 AetrisVPN
+  server: 188.225.33.141
   port: 443
   type: vless
-  uuid: 082f5694-9019-4110-b67b-8125dbb9bab8
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
   tls: true
-  servername: api.videopereval.cc
+  servername: wstg.datasynctrue.online
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇧🇬 AetrisVPN
-  server: 78.159.246.85
-  port: 8443
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: 🇷🇺 Russia | 🌐 [*CIDR] CDN
+  server: kaoangeltrahnimenya.net
+  port: 2053
   type: vless
   uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: chrome
   tls: true
-  servername: fitindoor.net
+  servername: kaoangeltrahnimenya.net
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
-    host: fitindoor.net
-- name: 🇷🇺 AetrisVPN
-  server: 78.159.246.85
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
-  tls: true
-  servername: fitindoor.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: fitindoor.net
-- name: 🇺🇸 United States, Secaucus | [BL]
-  server: 45.138.100.248
-  port: 10443
-  type: vless
-  uuid: ae908ff5-f749-402c-af25-e6e9aef4d6bb
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #2'
-  server: ru-sel-01.123ok.uk
+    host: kaoangeltrahnimenya.net
+- name: 🇩🇪 Germany, Düsseldorf | [BL]
+  server: de.zhou-yufan.com
   port: 443
-  type: vless
-  uuid: e205a26e-e5b3-0003-80a8-2c79dc9db02b
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
+  type: vmess
+  uuid: f38e591d-d13a-4c30-9763-6be3ad65f3ec
+  alterId: 0
+  cipher: auto
   tls: true
-  servername: ru-sel-01.123ok.uk
+  servername: de.zhou-yufan.com
   skip-cert-verify: true
-  reality-opts:
-    public-key: fNIWMqyrYtOvMcpNDBqqZ7ZQaCcGAsh83qYirAk11Ws
-    short-id: 3b0dfb074f042a25
-- name: '🇫🇮 Finland | [*CIDR] #2'
-  server: fi-p1.h1cloud.net
-  port: 25635
-  type: vless
-  uuid: 0c3ad9d5-cffd-4748-b8df-ab145288144b
-  client-fingerprint: random
-  tls: true
-  servername: www.icloud.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: V_9n2OhujONj4xFMwc_Bf1_sG68R33HaDOHhDTU53QQ
-    short-id: 2b299e5f6fd97fb3
-  network: xhttp
-  xhttp-opts:
-    path: /098f0b88514e
-- name: '🇷🇺 AetrisVPN #2'
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
-  tls: true
-  servername: randomquaint.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: '🇫🇮 Finland | [*CIDR] #3'
-  server: fi-p1.h1cloud.net
+- name: '🇫🇮 Finland [*CIDR] #2'
+  server: 138.124.255.155
   port: 25634
   type: vless
-  uuid: ec572cf0-1337-4c51-b4ec-ff2f538c1f4c
-  client-fingerprint: ios
+  uuid: 0c3ad9d5-cffd-4748-b8df-ab145288144b
+  client-fingerprint: chrome
   tls: true
   servername: www.icloud.com
   skip-cert-verify: true
@@ -133,42 +72,56 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: 2894574fe211
-- name: 🇷🇺 Russia [*CIDR]
-  server: 37.143.15.206
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: fru01.tunnely.space
   port: 443
   type: vless
-  uuid: 4599572f-bcfa-461e-bc73-d80e1ea65aa6
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: 5post-gate.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: OCRYYq4e92sQ-wWFRX6WX9pdvuFBWOqybLhpSiv3nFA
-    short-id: '111111'
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 37.143.15.206
-  port: 443
-  type: vless
-  uuid: 4599572f-bcfa-461e-bc73-d80e1ea65aa6
+  uuid: 525033a1-1dca-4c0c-91ad-d801af6ed18f
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: 5post-gate.x5.ru
+  servername: f03.tunnely.space
   skip-cert-verify: true
   reality-opts:
-    public-key: OCRYYq4e92sQ-wWFRX6WX9pdvuFBWOqybLhpSiv3nFA
-    short-id: '111111'
-- name: '🇷🇺 Russia [*CIDR] #2'
-  server: 37.143.15.206
+    public-key: mChFHtaRmeuO2aDuDPqZvBFaCz6f34sVJIKuJcAR130
+    short-id: d1694c220d4b13e7
+- name: '🇩🇪 Germany, Düsseldorf | 🌐 | [BL] #2'
+  server: de.zhou-yufan.com
   port: 443
-  type: vless
-  uuid: 4599572f-bcfa-461e-bc73-d80e1ea65aa6
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
+  type: vmess
+  uuid: f38e591d-d13a-4c30-9763-6be3ad65f3ec
+  alterId: 0
+  cipher: auto
   tls: true
-  servername: 5post-gate.x5.ru
+  servername: de.zhou-yufan.com
+  skip-cert-verify: true
+- name: '🇫🇮 Finland [*CIDR] #3'
+  server: 138.124.255.155
+  port: 25481
+  type: vless
+  uuid: 68c3d665-b2b5-4ffb-9f37-9f3d8c47324d
+  client-fingerprint: qq
+  tls: true
+  servername: www.bing.com
   skip-cert-verify: true
   reality-opts:
-    public-key: OCRYYq4e92sQ-wWFRX6WX9pdvuFBWOqybLhpSiv3nFA
-    short-id: '111111'
+    public-key: mhIAHuZIEr2NpdGGSeOxar7VRSgEfVoNwb_G8Y0073E
+    short-id: 3b84fc70657725af
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 8cb5baa18cd7
+- name: '🇫🇮 Finland [*CIDR] #4'
+  server: 138.124.255.155
+  port: 25481
+  type: vless
+  uuid: 68c3d665-b2b5-4ffb-9f37-9f3d8c47324d
+  client-fingerprint: firefox
+  tls: true
+  servername: www.bing.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: mhIAHuZIEr2NpdGGSeOxar7VRSgEfVoNwb_G8Y0073E
+    short-id: 3b84fc70657725af
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 8cb5baa18cd7
