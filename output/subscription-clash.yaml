@@ -1,31 +1,74 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 91.240.87.166
+- name: 🇩🇪 Germany | [*CIDR]
+  server: gpt.prem-ai.shop
   port: 443
   type: vless
-  uuid: c5b5ef33-819e-4972-9a5a-4ad91f38507f
-  flow: xtls-rprx-vision
+  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
   client-fingerprint: firefox
   tls: true
-  servername: www.vk.com
+  servername: gpt.prem-ai.shop
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: nkpZyXHfG7nhEh1vjBjEDV-Tn7UhHEb5iN9iA8gc9VE
-    short-id: c31188450fe50718
-- name: 🇫🇷 France | [*CIDR]
-  server: api.videolaguna.cc
+  network: ws
+  ws-opts:
+    path: /stream/v1/session/media
+- name: 🇫🇮 AetrisVPN
+  server: 36a466g.fi1.h1clayd.click
   port: 443
   type: vless
-  uuid: 082f5694-9019-4110-b67b-8125dbb9bab8
-  flow: xtls-rprx-vision
+  uuid: 9a0e84f8-4b58-477f-99da-5fac5a2e58e8
   client-fingerprint: safari
   tls: true
-  servername: api.videolaguna.cc
+  servername: 36a466g.fi1.h1clayd.click
   skip-cert-verify: true
   reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
+    public-key: pAgrBKJCmuSJHIzYkEJTqsOBOVBK_DMtEqFPo-PaTkg
+    short-id: b3c9d0c6bdd114a6
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 0adb9638509b
 - name: 🇪🇺 AetrisVPN
+  server: 168.113.215.6
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
+- name: 🇷🇺 AetrisVPN
+  server: 78.159.250.84
+  port: 2053
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: firefox
+  tls: true
+  servername: summerculture.net
+  alpn:
+  - h2
+  - +http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: summerculture.net
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: gpt.prem-ai.shop
+  port: 443
+  type: vless
+  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
+  client-fingerprint: edge
+  tls: true
+  servername: gpt.prem-ai.shop
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /stream/v1/session/media
+- name: '🇪🇺 AetrisVPN #2'
   server: fitindoor.net
   port: 2053
   type: vless
@@ -37,61 +80,6 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: 🇷🇺 AetrisVPN
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
-  tls: true
-  servername: randomquaint.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: '🇩🇪 AetrisVPN #2'
-  server: 31.177.111.243
-  port: 443
-  type: vless
-  uuid: 329d027c-cc10-469d-95c4-e0318d6a532b
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: smart.heartbeatai.link
-  skip-cert-verify: true
-  reality-opts:
-    public-key: t192lvTN6ZtCch9LSAkLOKnKuyYdLLaTJx8tn3VRHz0
-    short-id: dfdee30a27b11f0f
-- name: '🇫🇷 France | [*CIDR] #2'
-  server: api.videolaguna.cc
-  port: 443
-  type: vless
-  uuid: 082f5694-9019-4110-b67b-8125dbb9bab8
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.videolaguna.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇳🇱 The Netherlands, Amsterdam | [BL]
-  server: 78.17.171.62
-  port: 443
-  type: trojan
-  password: u93yPGuY2zgIsisJZKS2QzJzg
-  tls: true
-  sni: FREETOPLAY-2.TETRIS-GAME.WORLD
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /f2fc2a1f
-    headers:
-      Host: freetoplay-2.tetris-game.world
 - name: '🇷🇺 AetrisVPN #2'
   server: 78.159.246.85
   port: 2053
@@ -108,43 +96,65 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: 🇫🇷 France [*CIDR]
-  server: api.videolaguna.cc
+- name: '🇩🇪 Germany | [*CIDR] #3'
+  server: gpt.prem-ai.shop
   port: 443
   type: vless
-  uuid: 082f5694-9019-4110-b67b-8125dbb9bab8
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
+  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
+  client-fingerprint: safari
   tls: true
-  servername: api.videolaguna.cc
+  servername: gpt.prem-ai.shop
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: '🇳🇱 The Netherlands, Amsterdam | [BL] #2'
-  server: 78.17.171.62
-  port: 443
-  type: trojan
-  password: u93yPGuY2zgIsisJZKS2QzJzg
-  tls: true
-  sni: FREETOPLAY-2.TETRIS-GAME.WORLD
-  skip-cert-verify: true
-- name: '🇷🇺 AetrisVPN #3'
+  network: ws
+  ws-opts:
+    path: /stream/v1/session/media
+- name: 🇧🇬 AetrisVPN
   server: 78.159.250.84
-  port: 2053
+  port: 8443
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: random
+  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
+  client-fingerprint: firefox
   tls: true
   servername: summerculture.net
   alpn:
+  - http/1.1
   - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
     host: summerculture.net
-- name: '🇪🇺 AetrisVPN #2'
+- name: 🇷🇺 Russia | [*CIDR]
+  server: ru8.my-cdn.org
+  port: 443
+  type: vless
+  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
+  client-fingerprint: ios
+  tls: true
+  servername: ru8.my-cdn.org
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: x5.lk.v1.AccountService
+- name: '🇩🇪 Germany | [*CIDR] #4'
+  server: gpt.prem-ai.shop
+  port: 443
+  type: vless
+  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
+  client-fingerprint: android
+  tls: true
+  servername: gpt.prem-ai.shop
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /stream/v1/session/media
+- name: '🇪🇺 AetrisVPN #3'
   server: randomquaint.net
   port: 2053
   type: vless
@@ -156,59 +166,98 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: randomquaint.net
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: 168.113.215.6
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-- name: '🇳🇱 The Netherlands, Amsterdam | [BL] #3'
-  server: 78.17.171.62
+- name: '🇷🇺 Russia | [*CIDR] #2'
+  server: ru8.my-cdn.org
   port: 443
-  type: trojan
-  password: u93yPGuY2zgIsisJZKS2QzJzg
-  client-fingerprint: android
+  type: vless
+  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
+  client-fingerprint: safari
   tls: true
-  sni: FREETOPLAY-2.TETRIS-GAME.WORLD
+  servername: ru8.my-cdn.org
+  alpn:
+  - h2
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /f2fc2a1f
-    headers:
-      Host: freetoplay-2.tetris-game.world
-- name: '🇳🇱 The Netherlands, Amsterdam | [BL] #4'
-  server: 78.17.171.62
+  network: grpc
+  grpc-opts:
+    grpc-service-name: x5.lk.v1.AccountService
+- name: 🌐 Anycast-IP | 🇩🇪 🇷🇺 | [*CIDR]
+  server: 91.240.87.0
   port: 443
-  type: trojan
-  password: u93yPGuY2zgIsisJZKS2QzJzg
-  client-fingerprint: android
+  type: vless
+  uuid: aeffee83-4a56-4e01-ad8b-9bae65cb8d70
+  client-fingerprint: edge
   tls: true
-  sni: FREETOPLAY-2.TETRIS-GAME.WORLD
+  servername: magnit.chronoaudit.ru
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands, Amsterdam | [BL] #5'
-  server: 78.17.171.62
+  reality-opts:
+    public-key: Jde1DJZOlruMw7ZSXiJnz0RY4MoYJ4iV1eQkvIU6Qj0
+    short-id: a3c9e1f04b7d2856
+  network: grpc
+  grpc-opts:
+    grpc-service-name: EventStreamService
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 188.225.78.8
+  port: 12443
+  type: vless
+  uuid: e77680d0-b8d0-47ed-b811-61d58893cf1f
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: yandex.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: oaHOP3_Dv1Kadp45Isz5QxQ4Pf0duSThF1wKlvIUxwE
+- name: '🌐 Anycast-IP | 🇩🇪 🇷🇺 | [*CIDR] #2'
+  server: 91.240.87.0
   port: 443
-  type: trojan
-  password: u93yPGuY2zgIsisJZKS2QzJzg
+  type: vless
+  uuid: aeffee83-4a56-4e01-ad8b-9bae65cb8d70
   client-fingerprint: ios
   tls: true
-  sni: FREETOPLAY-2.TETRIS-GAME.WORLD
+  servername: magnit.chronoaudit.ru
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /f2fc2a1f
-    headers:
-      Host: freetoplay-2.tetris-game.world
-- name: '🇳🇱 The Netherlands, Amsterdam | [BL] #6'
-  server: 78.17.171.62
+  reality-opts:
+    public-key: Jde1DJZOlruMw7ZSXiJnz0RY4MoYJ4iV1eQkvIU6Qj0
+    short-id: a3c9e1f04b7d2856
+  network: grpc
+  grpc-opts:
+    grpc-service-name: EventStreamService
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: 188.225.78.8
+  port: 12443
+  type: vless
+  uuid: e77680d0-b8d0-47ed-b811-61d58893cf1f
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: yandex.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: oaHOP3_Dv1Kadp45Isz5QxQ4Pf0duSThF1wKlvIUxwE
+- name: '🌐 Anycast-IP | 🇩🇪 🇷🇺 | [*CIDR] #3'
+  server: 91.240.87.0
   port: 443
-  type: trojan
-  password: u93yPGuY2zgIsisJZKS2QzJzg
+  type: vless
+  uuid: aeffee83-4a56-4e01-ad8b-9bae65cb8d70
   client-fingerprint: qq
   tls: true
-  sni: FREETOPLAY-2.TETRIS-GAME.WORLD
+  servername: magnit.chronoaudit.ru
   skip-cert-verify: true
+  reality-opts:
+    public-key: Jde1DJZOlruMw7ZSXiJnz0RY4MoYJ4iV1eQkvIU6Qj0
+    short-id: a3c9e1f04b7d2856
+  network: grpc
+  grpc-opts:
+    grpc-service-name: EventStreamService
+- name: '🇳🇱 The Netherlands [*CIDR] #2'
+  server: 188.225.78.8
+  port: 12443
+  type: vless
+  uuid: e77680d0-b8d0-47ed-b811-61d58893cf1f
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: yandex.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: oaHOP3_Dv1Kadp45Isz5QxQ4Pf0duSThF1wKlvIUxwE
