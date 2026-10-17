@@ -1,9 +1,4 @@
 proxies:
-- name: 🇨🇦50Mb
-  server: milo.rubinaz.xyz
-  port: 8080
-  type: vless
-  uuid: 6bceb548-d9b6-461f-8e37-a5a7fbcdc2c8
 - name: 🇩🇪 AetrisVPN
   server: 82.202.178.132
   port: 443
@@ -20,21 +15,21 @@ proxies:
   grpc-opts:
     grpc-service-name: google.storage.v2.Storage
 - name: 🇫🇮 Finland [*CIDR]
-  server: 45.133.151.187
-  port: 443
+  server: 45.133.151.167
+  port: 25481
   type: vless
-  uuid: 9a0e84f8-4b58-477f-99da-5fac5a2e58e8
-  client-fingerprint: ios
+  uuid: 68c3d665-b2b5-4ffb-9f37-9f3d8c47324d
+  client-fingerprint: chrome
   tls: true
-  servername: 36a466g.fi1.h1clayd.click
+  servername: www.bing.com
   skip-cert-verify: true
   reality-opts:
-    public-key: pAgrBKJCmuSJHIzYkEJTqsOBOVBK_DMtEqFPo-PaTkg
-    short-id: b3c9d0c6bdd114a6
+    public-key: mhIAHuZIEr2NpdGGSeOxar7VRSgEfVoNwb_G8Y0073E
+    short-id: 3b84fc70657725af
   network: grpc
   grpc-opts:
-    grpc-service-name: 0adb9638509b
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+    grpc-service-name: 8cb5baa18cd7
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-NL
   server: nl-2a972c8052.shamanapp.online
   port: 33736
   type: vmess
@@ -45,54 +40,6 @@ proxies:
   ws-opts:
     path: /vmess-ws
 - name: 🇷🇺 AetrisVPN
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
-  tls: true
-  servername: randomquaint.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇩🇪 Germany, Frankfurt am Main | [BL]
-  server: 31.76.10.180
-  port: 36508
-  type: trojan
-  password: cMCQxnflDO
-- name: 🇫🇮 Finland | [*CIDR]
-  server: 45.133.151.187
-  port: 443
-  type: vless
-  uuid: 9a0e84f8-4b58-477f-99da-5fac5a2e58e8
-  client-fingerprint: chrome
-  tls: true
-  servername: 36a466g.fi1.h1clayd.click
-  skip-cert-verify: true
-  reality-opts:
-    public-key: pAgrBKJCmuSJHIzYkEJTqsOBOVBK_DMtEqFPo-PaTkg
-    short-id: b3c9d0c6bdd114a6
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 0adb9638509b
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
-  server: nl-2a972c8052.shamanapp.online
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-    headers:
-      Host: nl-2a972c8052.shamanapp.online
-- name: '🇷🇺 AetrisVPN #2'
   server: 78.159.246.85
   port: 2053
   type: vless
@@ -108,7 +55,7 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: '🇫🇮 Finland | [*CIDR] #2'
+- name: 🇫🇮 Finland | [*CIDR]
   server: fi-p1.h1cloud.net
   port: 25481
   type: vless
@@ -123,65 +70,35 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: 8cb5baa18cd7
-- name: 🇳🇱185Mb
-  server: 141.144.207.185
-  port: 62145
-  type: vless
-  uuid: 8fb65472-5957-4f64-ba2d-b5812b2f155a
-- name: '🇷🇺 AetrisVPN #3'
-  server: 45.12.75.242
-  port: 26424
-  type: vless
-  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
-  client-fingerprint: qq
-  tls: true
-  servername: ya.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
-    short-id: 23103e1e
-- name: '🇫🇮 Finland [*CIDR] #2'
-  server: 45.133.151.167
-  port: 25481
-  type: vless
-  uuid: 68c3d665-b2b5-4ffb-9f37-9f3d8c47324d
-  client-fingerprint: chrome
-  tls: true
-  servername: www.bing.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: mhIAHuZIEr2NpdGGSeOxar7VRSgEfVoNwb_G8Y0073E
-    short-id: 3b84fc70657725af
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 8cb5baa18cd7
-- name: 🇧🇬 AetrisVPN
-  server: 78.159.246.85
-  port: 8443
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: chrome
-  tls: true
-  servername: fitindoor.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: fitindoor.net
-- name: '🇷🇺 AetrisVPN #4'
-  server: 185.141.227.180
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-NL #2'
+  server: nl-2a972c8052.shamanapp.online
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
+    headers:
+      Host: nl-2a972c8052.shamanapp.online
+- name: '🇷🇺 AetrisVPN #2'
+  server: 78.159.246.179
   port: 2053
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: chrome
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
+  client-fingerprint: firefox
   tls: true
-  servername: dismissaltree.net
+  servername: randomquaint.net
+  alpn:
+  - h2
+  - http/1.1
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
-    host: dismissaltree.net
-- name: '🇫🇮 Finland | [*CIDR] #3'
+    host: randomquaint.net
+- name: '🇫🇮 Finland | [*CIDR] #2'
   server: 45.133.151.167
   port: 25481
   type: vless
@@ -196,7 +113,7 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: 8cb5baa18cd7
-- name: '🇧🇬 AetrisVPN #2'
+- name: 🇧🇬 AetrisVPN-NL
   server: 78.159.246.179
   port: 8443
   type: vless
@@ -208,3 +125,43 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: randomquaint.net
+- name: '🇷🇺 AetrisVPN #3'
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: qq
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: '🇫🇮 Finland | [*CIDR] #3'
+  server: 45.133.151.187
+  port: 443
+  type: vless
+  uuid: 9a0e84f8-4b58-477f-99da-5fac5a2e58e8
+  client-fingerprint: chrome
+  tls: true
+  servername: 36a466g.fi1.h1clayd.click
+  skip-cert-verify: true
+  reality-opts:
+    public-key: pAgrBKJCmuSJHIzYkEJTqsOBOVBK_DMtEqFPo-PaTkg
+    short-id: b3c9d0c6bdd114a6
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 0adb9638509b
+- name: '🇧🇬 AetrisVPN-NL #2'
+  server: 78.159.246.85
+  port: 8443
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: chrome
+  tls: true
+  servername: fitindoor.net
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: fitindoor.net
