@@ -4,7 +4,7 @@ proxies:
   port: 443
   type: vless
   uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: firefox
+  client-fingerprint: safari
   tls: true
   servername: gpt.prem-ai.shop
   alpn:
@@ -26,11 +26,6 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: 🇮🇪58Mb
-  server: 35.177.104.48
-  port: 22224
-  type: vless
-  uuid: e4514801-0d5a-42ba-869f-39bd605aef9e
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
@@ -44,7 +39,7 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU
   server: 168.113.215.6
   port: 33736
   type: vmess
@@ -59,67 +54,7 @@ proxies:
   port: 443
   type: vless
   uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: safari
-  tls: true
-  servername: gpt.prem-ai.shop
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /stream/v1/session/media
-- name: '🇫🇷 France | [*CIDR] #2'
-  server: api.videolaguna.cc
-  port: 443
-  type: vless
-  uuid: 082f5694-9019-4110-b67b-8125dbb9bab8
-  flow: xtls-rprx-vision
   client-fingerprint: firefox
-  tls: true
-  servername: api.videolaguna.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇮🇪54Mb
-  server: 13.135.17.74
-  port: 22223
-  type: vless
-  uuid: e4514801-0d5a-42ba-869f-39bd605aef9e
-- name: 🇪🇺 AetrisVPN
-  server: randomquaint.net
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  tls: true
-  servername: randomquaint.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇷🇺 AetrisVPN
-  server: 78.159.250.84
-  port: 2053
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: firefox
-  tls: true
-  servername: summerculture.net
-  alpn:
-  - h2
-  - +http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: summerculture.net
-- name: '🇩🇪 Germany [*CIDR] #3'
-  server: gpt.prem-ai.shop
-  port: 443
-  type: vless
-  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: android
   tls: true
   servername: gpt.prem-ai.shop
   alpn:
@@ -141,37 +76,75 @@ proxies:
   reality-opts:
     public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
     short-id: a8
-- name: '🇳🇱 AetrisVPN #2'
-  server: 194.55.239.51
-  port: 443
+- name: 🇪🇺 AetrisVPN-NL
+  server: randomquaint.net
+  port: 2053
   type: vless
-  uuid: aeffee83-4a56-4e01-ad8b-9bae65cb8d70
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
   tls: true
-  servername: 7xncdn.shardtech.pro
+  servername: randomquaint.net
   skip-cert-verify: true
-  reality-opts:
-    public-key: exMJ2DIglSgZ7Ly4qR83kRJs6RGzVk-qJMg7Qz-kCRs
-    short-id: 55901e05c3d5dfd3
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: randomquaint.net
 - name: 🇷🇺 Russia [*CIDR]
   server: 194.67.103.112
   port: 443
   type: vless
   uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: firefox
+  client-fingerprint: ios
   tls: true
   servername: ru8.my-cdn.org
   skip-cert-verify: true
   network: grpc
   grpc-opts:
     grpc-service-name: x5.lk.v1.AccountService
-- name: 🌐 Anycast-IP | 🇩🇪 🇷🇺 | [*CIDR]
+- name: '🇩🇪 Germany [*CIDR] #3'
+  server: gpt.prem-ai.shop
+  port: 443
+  type: vless
+  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
+  client-fingerprint: android
+  tls: true
+  servername: gpt.prem-ai.shop
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /stream/v1/session/media
+- name: '🇫🇷 France | [*CIDR] #2'
+  server: api.videolaguna.cc
+  port: 443
+  type: vless
+  uuid: 082f5694-9019-4110-b67b-8125dbb9bab8
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: api.videolaguna.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
+- name: 🇷🇺 Russia | [*CIDR]
+  server: 194.67.103.112
+  port: 443
+  type: vless
+  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
+  client-fingerprint: chrome
+  tls: true
+  servername: ru8.my-cdn.org
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: x5.lk.v1.AccountService
+- name: 🌐 Anycast-IP | 🇩🇪 🇷🇺 [*CIDR]
   server: 91.240.87.0
   port: 443
   type: vless
   uuid: aeffee83-4a56-4e01-ad8b-9bae65cb8d70
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
   servername: magnit.chronoaudit.ru
   skip-cert-verify: true
@@ -196,101 +169,22 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: api.v1.Sync
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: 45.91.55.86
-  port: 443
+- name: 🇷🇺 AetrisVPN
+  server: 78.159.250.84
+  port: 2053
   type: vless
-  uuid: 9cb8d71c-fe06-4402-a591-eaa1f173b890
-  client-fingerprint: safari
-  tls: true
-  servername: stillroom.10media.top
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: northfeed
-- name: 🇷🇺 Russia | [*CIDR]
-  server: ru8.my-cdn.org
-  port: 443
-  type: vless
-  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
   client-fingerprint: firefox
   tls: true
-  servername: ru8.my-cdn.org
+  servername: summerculture.net
   alpn:
   - h2
+  - +http/1.1
   skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: x5.lk.v1.AccountService
-- name: 🇩🇪 AetrisVPN
-  server: 95.129.236.248
-  port: 443
-  type: vless
-  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: android
-  tls: true
-  servername: gpt.prem-ai.shop
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /stream/v1/session/media
-- name: '🇳🇱 The Netherlands [*CIDR] #2'
-  server: 45.91.55.86
-  port: 443
-  type: vless
-  uuid: 9cb8d71c-fe06-4402-a591-eaa1f173b890
-  client-fingerprint: firefox
-  tls: true
-  servername: stillroom.10media.top
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: northfeed
-- name: '🇷🇺 Russia [*CIDR] #2'
-  server: 194.67.103.112
-  port: 443
-  type: vless
-  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: ios
-  tls: true
-  servername: ru8.my-cdn.org
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: x5.lk.v1.AccountService
-- name: 🌐 Anycast-IP | 🇩🇪 🇷🇺 [*CIDR]
-  server: 91.240.87.0
-  port: 443
-  type: vless
-  uuid: aeffee83-4a56-4e01-ad8b-9bae65cb8d70
-  client-fingerprint: chrome
-  tls: true
-  servername: magnit.chronoaudit.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Jde1DJZOlruMw7ZSXiJnz0RY4MoYJ4iV1eQkvIU6Qj0
-    short-id: a3c9e1f04b7d2856
-  network: grpc
-  grpc-opts:
-    grpc-service-name: EventStreamService
-- name: '🇷🇺 Russia | [*CIDR] #2'
-  server: 194.67.103.112
-  port: 443
-  type: vless
-  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: chrome
-  tls: true
-  servername: ru8.my-cdn.org
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: x5.lk.v1.AccountService
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: summerculture.net
 - name: 🇷🇺 Russia | 🌐 | [*CIDR]
   server: 185.147.27.39
   port: 8443
@@ -307,73 +201,9 @@ proxies:
   type: vless
   uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
   flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: id-6ad3c751.adhil.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #2'
-  server: 185.147.27.39
-  port: 8443
-  type: vless
-  uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: id-6ad3c751.adhil.uk
-  skip-cert-verify: true
-- name: '🇷🇺 Russia | 🌐 | [*CIDR] #3'
-  server: rus.noooo.win
-  port: 8443
-  type: vless
-  uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: id-6ad3c751.adhil.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇷🇺 Russia | 🌐 [*CIDR] #2'
-  server: rus.noooo.win
-  port: 8443
-  type: vless
-  uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
-  flow: xtls-rprx-vision
   client-fingerprint: safari
   tls: true
   servername: id-6ad3c751.adhil.uk
   alpn:
   - h2
   skip-cert-verify: true
-- name: 🇸🇦 Saudi Arabia [*CIDR] VK
-  server: 94.139.247.207
-  port: 23688
-  type: vless
-  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: firefox
-  tls: true
-  servername: apple.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: kbITklNKTdfvB6e3xy97pTV7gjl3Z3irv246oRZ5Gnk
-    short-id: f679b4f2
-  network: grpc
-  grpc-opts:
-    grpc-service-name: awarecricketer
-- name: '🇸🇦 Saudi Arabia [*CIDR] VK #2'
-  server: 94.139.247.207
-  port: 23688
-  type: vless
-  uuid: c19ecc7f-8312-4d9d-90c9-1a997d82d3c5
-  client-fingerprint: edge
-  tls: true
-  servername: apple.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: kbITklNKTdfvB6e3xy97pTV7gjl3Z3irv246oRZ5Gnk
-    short-id: f679b4f2
-  network: grpc
-  grpc-opts:
-    grpc-service-name: awarecricketer
