@@ -12,30 +12,7 @@ proxies:
   reality-opts:
     public-key: vqRiLDLgn_0PWMUvELC0C4JD-a2LUoM0iZ6wdvgMBmQ
     short-id: d0cd6a0b1a18092b
-- name: 🇳🇱 AetrisVPN
-  server: 188.225.33.141
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: 168.113.215.6
-  port: 33736
-  type: vmess
-  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /vmess-ws
-- name: 🇪🇺 AetrisVPN
+- name: 🇪🇺 AetrisVPN-NL
   server: randomquaint.net
   port: 2053
   type: vless
@@ -48,32 +25,6 @@ proxies:
     path: /api/v1/upload
     host: randomquaint.net
 - name: 🇷🇺 AetrisVPN
-  server: 185.141.227.180
-  port: 2053
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: chrome
-  tls: true
-  servername: dismissaltree.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: dismissaltree.net
-- name: '🇪🇺 AetrisVPN #2'
-  server: dismissaltree.net
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: chrome
-  tls: true
-  servername: dismissaltree.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: dismissaltree.net
-- name: '🇷🇺 AetrisVPN #2'
   server: 78.159.250.84
   port: 2053
   type: vless
@@ -90,41 +41,15 @@ proxies:
     path: /api/v1/upload
     host: summerculture.net
 - name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 189.74.114.89
-  port: 443
+  server: 196.240.125.5
+  port: 8443
   type: vless
-  uuid: 08f8c2b1-50ac-4af7-90ae-31f11333d034
-  client-fingerprint: qq
+  uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
   tls: true
-  servername: api.mediaplotina.cc
+  servername: api-v2-6ad3c751.vmagnum.win
   skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: '🇷🇺 AetrisVPN #3'
-  server: 45.12.75.242
-  port: 26424
-  type: vless
-  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
-  tls: true
-  servername: ya.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
-    short-id: 23103e1e
-  client-fingerprint: chrome
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: 189.74.114.89
-  port: 443
-  type: vless
-  uuid: 08f8c2b1-50ac-4af7-90ae-31f11333d034
-  client-fingerprint: ios
-  tls: true
-  servername: api.mediaplotina.cc
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
 - name: 🇷🇺 Russia [*CIDR] Beeline
   server: yt.noooo.win
   port: 8443
@@ -135,8 +60,8 @@ proxies:
   tls: true
   servername: dsapi-v2-6ad3c751.adhil.uk
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #3'
-  server: nl.alpheratzz.org
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: 196.240.125.251
   port: 8443
   type: vless
   uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
@@ -155,31 +80,26 @@ proxies:
   tls: true
   servername: dsapi-v2-6ad3c751.adhil.uk
   skip-cert-verify: true
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: nl.alpheratzz.org
+- name: '🇳🇱 The Netherlands | [*CIDR] #3'
+  server: 196.240.125.5
   port: 8443
   type: vless
   uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: safari
   tls: true
   servername: api-v2-6ad3c751.vmagnum.win
   skip-cert-verify: true
-- name: 🇷🇺 Russia | [*CIDR]
-  server: 104.171.134.165
-  port: 443
-  type: vless
-  uuid: 355a9948-c284-4669-bd57-43fcdc8dd71e
-  client-fingerprint: qq
-  tls: true
-  servername: yt-ru.convertvideo123.online
-  skip-cert-verify: true
-  reality-opts:
-    public-key: H0iW-vqJSN6Q2KYuT1v9-ThYh3lNb-MnHVpuvqPnGDY
-    short-id: 413ebf956c2d8102
-  network: grpc
-  grpc-opts:
-    grpc-service-name: ru-split-test
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU
+  server: 168.113.215.6
+  port: 33736
+  type: vmess
+  uuid: 1281acca-f21d-475c-bf04-eccbee7f8df2
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /vmess-ws
 - name: '🇳🇱 The Netherlands | [*CIDR] #4'
   server: nl.alpheratzz.org
   port: 8443
@@ -190,8 +110,20 @@ proxies:
   tls: true
   servername: api-v2-6ad3c751.vmagnum.win
   skip-cert-verify: true
+- name: '🇷🇺 AetrisVPN #2'
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+  client-fingerprint: chrome
 - name: '🇳🇱 The Netherlands | [*CIDR] #5'
-  server: 196.240.125.5
+  server: nl.alpheratzz.org
   port: 8443
   type: vless
   uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
@@ -206,7 +138,17 @@ proxies:
   type: vless
   uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
   flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: ios
+  tls: true
+  servername: api-v2-6ad3c751.vmagnum.win
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: nl.alpheratzz.org
+  port: 8443
+  type: vless
+  uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
   tls: true
   servername: api-v2-6ad3c751.vmagnum.win
   skip-cert-verify: true
@@ -226,62 +168,20 @@ proxies:
   type: vless
   uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v2-6ad3c751.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #9'
-  server: 196.240.125.251
-  port: 8443
-  type: vless
-  uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
-  flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
   servername: api-v2-6ad3c751.vmagnum.win
   skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #10'
-  server: nl.alpheratzz.org
-  port: 8443
+- name: '🇪🇺 AetrisVPN-NL #2'
+  server: dismissaltree.net
+  port: 2053
   type: vless
-  uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
+  client-fingerprint: chrome
   tls: true
-  servername: api-v2-6ad3c751.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands | [*CIDR] #11'
-  server: 196.240.125.5
-  port: 8443
-  type: vless
-  uuid: b3441cc7-1e5f-4eb6-8207-90788eeca21e
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: api-v2-6ad3c751.vmagnum.win
-  skip-cert-verify: true
-- name: 🇳🇱 The Netherlands [*CIDR] VK
-  server: 185.86.145.142
-  port: 2096
-  type: vless
-  uuid: c1eabfbe-62ef-46a2-9857-9ad3d69e174a
-  client-fingerprint: firefox
-  tls: true
-  servername: apis.heoleti.pro
+  servername: dismissaltree.net
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
-    path: /chxh
-    host: apis.heoleti.pro
-- name: '🇳🇱 The Netherlands | [*CIDR] #12'
-  server: 189.74.114.89
-  port: 443
-  type: vless
-  uuid: 08f8c2b1-50ac-4af7-90ae-31f11333d034
-  client-fingerprint: firefox
-  tls: true
-  servername: api.mediaplotina.cc
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
+    path: /api/v1/upload
+    host: dismissaltree.net
