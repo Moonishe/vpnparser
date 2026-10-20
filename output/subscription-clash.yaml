@@ -1,33 +1,29 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 185.178.208.140
-  port: 443
+- name: 🇩🇪 Germany | [*CIDR]
+  server: 103.24.207.40
+  port: 8443
   type: vless
-  uuid: c31589ca-9d14-4044-a732-bb810bad0bcc
+  uuid: 258d8fc5-206c-48fd-88df-169dbbe44d3f
+  flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: bakarova-top.ru
-- name: 🇫🇮 AetrisVPN
-  server: 78.159.250.88
-  port: 2096
-  type: vless
-  uuid: e667f5c7-6b38-48ef-ab89-40519713afb0
-  client-fingerprint: firefox
-  tls: true
-  servername: id.vk.com
+  servername: edge-fr.extazy.net
   skip-cert-verify: true
   reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-  network: grpc
-  grpc-opts:
-    grpc-service-name: vless-grpc-reality
+    public-key: ygxQyBcJzlLgpSl3MCRDDiFET4TT-3wxa4GdG1obkCY
+- name: 🇫🇷 AetrisVPN
+  server: 82.202.179.111
+  port: 15443
+  type: vless
+  uuid: 1ba0439d-384c-4a6e-9560-0439698beb2a
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: smartcaptcha.yandexcloud.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: MNmqM2p3nUYZIqo0sTMXRXGzB5HquF-czSycvdqn3U4
+    short-id: b74f54b7
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
@@ -41,110 +37,76 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇷🇺 AetrisVPN
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
-  tls: true
-  servername: randomquaint.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇺🇸 United States, Los Angeles (Downtown Los Angeles) | [BL]
-  server: 176.122.134.66
-  port: 26997
+- name: 🇺🇸 United States, Phoenix | [BL]
+  server: 129.146.143.80
+  port: 48111
   type: vmess
-  uuid: dff7cb2c-82b7-400b-b9a1-29b87fa96f26
+  uuid: d4603cc2-e0ee-4651-83f5-1db5b7168177
   alterId: 0
   cipher: auto
-- name: 🇫🇮108Mb
-  server: s9-pan.redmbred.ir
-  port: 52491
+- name: 🇩🇪 AetrisVPN
+  server: 185.141.227.223
+  port: 443
   type: vless
-  uuid: 583c7684-5059-427c-a50e-bdd73e81f24e
-- name: 🇪🇺 AetrisVPN
-  server: randomquaint.net
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
+  uuid: c720cb74-4c84-4fce-b8ae-637dbaa16199
+  client-fingerprint: safari
   tls: true
-  servername: randomquaint.net
+  servername: z1q3pv4g78.rucdncomp.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /useraction/events/b892639b7195/
+    headers:
+      Host: z1q3pv4g78.rucdncomp.pro
+- name: '🇫🇷 AetrisVPN #2'
+  server: 82.202.179.106
+  port: 11443
+  type: vless
+  uuid: 54f22246-cc9c-4315-907a-6c94c901d20f
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: smartcaptcha.yandexcloud.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: WWmwRoB2K7xonT6jzbhKen_Rp-UM7QCr_vMgmNZuggc
+    short-id: 044a5e06faf5
+- name: 🇧🇬 AetrisVPN
+  server: 78.159.246.85
+  port: 8443
+  type: vless
+  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
+  client-fingerprint: firefox
+  tls: true
+  servername: fitindoor.net
+  alpn:
+  - http/1.1
+  - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: api.mediaplotina.cc
+    host: fitindoor.net
+- name: 🇩🇪 Germany [*CIDR]
+  server: 72.56.235.75
   port: 443
   type: vless
-  uuid: f33bee08-ce95-4dbd-bc13-b7f838222d54
+  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
   client-fingerprint: ios
   tls: true
-  servername: api.mediaplotina.cc
-  alpn:
-  - h2
+  servername: renderer-bridge-2-121.mirra.now
   skip-cert-verify: true
   network: grpc
   grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: api.mediaplotina.cc
-  port: 443
-  type: vless
-  uuid: f33bee08-ce95-4dbd-bc13-b7f838222d54
-  client-fingerprint: edge
-  tls: true
-  servername: api.mediaplotina.cc
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: '🇳🇱 The Netherlands [*CIDR] #2'
-  server: api.mediaplotina.cc
-  port: 443
-  type: vless
-  uuid: f33bee08-ce95-4dbd-bc13-b7f838222d54
-  client-fingerprint: chrome
-  tls: true
-  servername: api.mediaplotina.cc
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: '🇳🇱 The Netherlands [*CIDR] #3'
-  server: api.mediaplotina.cc
-  port: 443
-  type: vless
-  uuid: f33bee08-ce95-4dbd-bc13-b7f838222d54
-  client-fingerprint: qq
-  tls: true
-  servername: api.mediaplotina.cc
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: 🇧🇬 AetrisVPN
-  server: 78.159.246.179
+    grpc-service-name: VideoRenderer
+- name: '🇧🇬 AetrisVPN #2'
+  server: 81.94.148.232
   port: 8443
   type: vless
   uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
   client-fingerprint: firefox
   tls: true
-  servername: randomquaint.net
+  servername: windytrout.net
   alpn:
   - h2
   - http/1.1
@@ -152,4 +114,29 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
-    host: randomquaint.net
+    host: windytrout.net
+- name: '🇩🇪 Germany [*CIDR] #2'
+  server: 72.56.235.75
+  port: 443
+  type: vless
+  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
+  client-fingerprint: safari
+  tls: true
+  servername: renderer-bridge-2-121.mirra.now
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: VideoRenderer
+- name: 🇳🇱 The Netherlands, Amsterdam | [BL]
+  server: 78.17.171.106
+  port: 443
+  type: trojan
+  password: u93yPGuY2zgIsisJZKS2QzJzg
+  tls: true
+  sni: 2.HI-L.IM
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /f2fc2a1f
+    headers:
+      Host: 2.hi-l.im
