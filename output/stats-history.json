@@ -1,21 +1,5 @@
 [
  {
-  "ts": 1789243830,
-  "status": "ok",
-  "proxy_count": 36,
-  "proxy_networks": 29,
-  "lists": {
-   "blacklist": {
-    "alive": 104,
-    "checked": 1427
-   },
-   "whitelist": {
-    "alive": 0,
-    "checked": 659
-   }
-  }
- },
- {
   "ts": 1789251085,
   "status": "ok",
   "proxy_count": 33,
@@ -7956,6 +7940,30 @@
     "tcp_checked": 6,
     "tls_alive": 3,
     "tls_checked": 6
+   }
+  }
+ },
+ {
+  "ts": 1792506124,
+  "status": "ok",
+  "proxy_count": 36,
+  "proxy_networks": 30,
+  "lists": {
+   "blacklist": {
+    "alive": 1,
+    "checked": 76,
+    "tcp_alive": 80,
+    "tcp_checked": 84,
+    "tls_alive": 71,
+    "tls_checked": 75
+   },
+   "whitelist": {
+    "alive": 5,
+    "checked": 8,
+    "tcp_alive": 31,
+    "tcp_checked": 36,
+    "tls_alive": 8,
+    "tls_checked": 31
    }
   }
  }
