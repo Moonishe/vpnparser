@@ -1,29 +1,16 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR]
-  server: 103.24.207.40
-  port: 8443
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
+  server: 201.51.30.47
+  port: 443
   type: vless
-  uuid: 258d8fc5-206c-48fd-88df-169dbbe44d3f
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: edge-fr.extazy.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ygxQyBcJzlLgpSl3MCRDDiFET4TT-3wxa4GdG1obkCY
-- name: 🇫🇷 AetrisVPN
-  server: 82.202.179.111
-  port: 15443
-  type: vless
-  uuid: 1ba0439d-384c-4a6e-9560-0439698beb2a
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: smartcaptcha.yandexcloud.net
+  servername: quest.eos-shop.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: MNmqM2p3nUYZIqo0sTMXRXGzB5HquF-czSycvdqn3U4
-    short-id: b74f54b7
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
@@ -37,71 +24,9 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇺🇸 United States, Phoenix | [BL]
-  server: 129.146.143.80
-  port: 48111
-  type: vmess
-  uuid: d4603cc2-e0ee-4651-83f5-1db5b7168177
-  alterId: 0
-  cipher: auto
-- name: 🇩🇪 AetrisVPN
-  server: 185.141.227.223
-  port: 443
-  type: vless
-  uuid: c720cb74-4c84-4fce-b8ae-637dbaa16199
-  client-fingerprint: safari
-  tls: true
-  servername: z1q3pv4g78.rucdncomp.pro
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /useraction/events/b892639b7195/
-    headers:
-      Host: z1q3pv4g78.rucdncomp.pro
-- name: '🇫🇷 AetrisVPN #2'
-  server: 82.202.179.106
-  port: 11443
-  type: vless
-  uuid: 54f22246-cc9c-4315-907a-6c94c901d20f
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: smartcaptcha.yandexcloud.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: WWmwRoB2K7xonT6jzbhKen_Rp-UM7QCr_vMgmNZuggc
-    short-id: 044a5e06faf5
-- name: 🇧🇬 AetrisVPN
-  server: 78.159.246.85
-  port: 8443
-  type: vless
-  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
-  client-fingerprint: firefox
-  tls: true
-  servername: fitindoor.net
-  alpn:
-  - http/1.1
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: fitindoor.net
-- name: 🇩🇪 Germany [*CIDR]
-  server: 72.56.235.75
-  port: 443
-  type: vless
-  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
-  client-fingerprint: ios
-  tls: true
-  servername: renderer-bridge-2-121.mirra.now
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: VideoRenderer
-- name: '🇧🇬 AetrisVPN #2'
+- name: 🇷🇺 AetrisVPN
   server: 81.94.148.232
-  port: 8443
+  port: 2053
   type: vless
   uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
   client-fingerprint: firefox
@@ -115,20 +40,21 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: windytrout.net
-- name: '🇩🇪 Germany [*CIDR] #2'
-  server: 72.56.235.75
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #2'
+  server: dwgurq.edge-assets.ru
   port: 443
   type: vless
-  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
-  client-fingerprint: safari
+  uuid: 1f36039a-6117-4847-bf47-3c7b21d17730
+  client-fingerprint: chrome
   tls: true
-  servername: renderer-bridge-2-121.mirra.now
+  servername: dwgurq.edge-assets.ru
   skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: VideoRenderer
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/nhde5se4/sync/
+    host: dwgurq.edge-assets.ru
 - name: 🇳🇱 The Netherlands, Amsterdam | [BL]
-  server: 78.17.171.106
+  server: 78.17.171.137
   port: 443
   type: trojan
   password: u93yPGuY2zgIsisJZKS2QzJzg
@@ -140,3 +66,110 @@ proxies:
     path: /f2fc2a1f
     headers:
       Host: 2.hi-l.im
+- name: '🇷🇺 AetrisVPN #2'
+  server: 78.159.246.179
+  port: 2053
+  type: vless
+  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
+  client-fingerprint: firefox
+  tls: true
+  servername: randomquaint.net
+  alpn:
+  - http/1.1
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: randomquaint.net
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #3'
+  server: dwgurq.edge-assets.ru
+  port: 443
+  type: vless
+  uuid: 1f36039a-6117-4847-bf47-3c7b21d17730
+  client-fingerprint: safari
+  tls: true
+  servername: dwgurq.edge-assets.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/nhde5se4/sync/
+    host: dwgurq.edge-assets.ru
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: api.mediaklenov.cc
+  port: 443
+  type: vless
+  uuid: 8221d527-431a-4a5d-b45a-1af799ebf5e1
+  client-fingerprint: qq
+  tls: true
+  servername: api.mediaklenov.cc
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 3e99d50d5740985d
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+  server: 77.95.206.236
+  port: 64563
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  client-fingerprint: firefox
+  tls: true
+  servername: www.starlink.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: wtTHheIAfyG6Sis8_GC5aHW06QPs9K-LwTqZ15NHX2M
+    short-id: 04bc4a55875f
+  network: grpc
+  grpc-opts: {}
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #4'
+  server: dwgurq.edge-assets.ru
+  port: 443
+  type: vless
+  uuid: 1f36039a-6117-4847-bf47-3c7b21d17730
+  tls: true
+  servername: dwgurq.edge-assets.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/nhde5se4/sync/
+    host: dwgurq.edge-assets.ru
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #5'
+  server: dwgurq.edge-assets.ru
+  port: 443
+  type: vless
+  uuid: 1f36039a-6117-4847-bf47-3c7b21d17730
+  client-fingerprint: ios
+  tls: true
+  servername: dwgurq.edge-assets.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/nhde5se4/sync/
+    host: dwgurq.edge-assets.ru
+- name: 🇩🇪 Germany [*CIDR]
+  server: dwgurq.edge-assets.ru
+  port: 443
+  type: vless
+  uuid: 1f36039a-6117-4847-bf47-3c7b21d17730
+  client-fingerprint: firefox
+  tls: true
+  servername: dwgurq.edge-assets.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/nhde5se4/sync/
+    host: dwgurq.edge-assets.ru
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #6'
+  server: 147.45.46.148
+  port: 443
+  type: vless
+  uuid: 261160d5-0343-4b85-8c28-3d40dd681559
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: de.ozon.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
