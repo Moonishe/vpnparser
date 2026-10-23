@@ -1,16 +1,32 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR]
-  server: de15.h1cloud.net
-  port: 25362
+- name: 🇩🇪 AetrisVPN
+  server: 217.19.122.156
+  port: 443
   type: vless
-  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
-  client-fingerprint: edge
+  uuid: c720cb74-4c84-4fce-b8ae-637dbaa16199
+  client-fingerprint: safari
   tls: true
-  servername: www.chip.de
+  servername: z1q3pv4g78.rucdncomp.pro
   skip-cert-verify: true
-  reality-opts:
-    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
-    short-id: 23732d14a527990d
+  network: ws
+  ws-opts:
+    path: /useraction/events/b892639b7195/
+    headers:
+      Host: z1q3pv4g78.rucdncomp.pro
+- name: 🇫🇷 AetrisVPN
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: 928a3079-7c20-40cc-9c92-e878ba959dcd
+  client-fingerprint: firefox
+  tls: true
+  servername: smart.werfad.online
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /connect/stream/xk7Qp2mZ
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
@@ -25,46 +41,6 @@ proxies:
     headers:
       Host: wstg.datasynctrue.online
 - name: 🇷🇺 AetrisVPN
-  server: 46.254.17.88
-  port: 30065
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: a3.eosapp.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: de15.h1cloud.net
-  port: 25362
-  type: vless
-  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
-  client-fingerprint: safari
-  tls: true
-  servername: www.chip.de
-  skip-cert-verify: true
-  reality-opts:
-    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
-    short-id: 23732d14a527990d
-- name: 🇧🇬 AetrisVPN
-  server: 81.94.148.232
-  port: 8443
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: firefox
-  tls: true
-  servername: windytrout.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: windytrout.net
-- name: '🇷🇺 AetrisVPN #2'
   server: 45.12.75.242
   port: 26424
   type: vless
@@ -76,220 +52,142 @@ proxies:
   reality-opts:
     public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
     short-id: 23103e1e
-- name: '🇩🇪 Germany | [*CIDR] #3'
-  server: de15.h1cloud.net
-  port: 25362
-  type: vless
-  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
-  client-fingerprint: random
-  tls: true
-  servername: www.chip.de
-  skip-cert-verify: true
-  reality-opts:
-    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
-    short-id: 23732d14a527990d
-- name: '🇩🇪 Germany | [*CIDR] #4'
-  server: de15.h1cloud.net
-  port: 25362
-  type: vless
-  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
-  client-fingerprint: safari
-  tls: true
-  servername: www.chip.de
-  skip-cert-verify: true
-  reality-opts:
-    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
-    short-id: 23732d14a527990d
-- name: '🇩🇪 Germany | [*CIDR] #5'
-  server: de15.h1cloud.net
-  port: 25362
-  type: vless
-  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
+- name: 🇺🇸 United States, Los Angeles | [BL]
+  server: su106.izzzzzi.com
+  port: 20008
+  type: trojan
+  password: 4fd2b10b6a754019
   client-fingerprint: qq
   tls: true
-  servername: www.chip.de
   skip-cert-verify: true
-  reality-opts:
-    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
-    short-id: 23732d14a527990d
-- name: 🇩🇪 Germany | 🌐 | [*CIDR]
-  server: edge.cdnhaven.com
+- name: '🇩🇪 AetrisVPN #2'
+  server: 45.11.27.133
   port: 443
   type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: www.philips.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
-    short-id: d3e4f5a6b7c8d9e0
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #2'
-  server: edge.cdnhaven.com
-  port: 1443
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: sun6-21.userapi.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: _yfkAlX_g-2LBB3CpNqI9sDKz-1OyqwyvbDwD7F8gRo
-    short-id: c2d3e4f5a6b7c8d9
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #3'
-  server: edge.cdnhaven.com
-  port: 2753
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
+  uuid: f1087776-5077-4b2f-9338-687d2787c64e
   client-fingerprint: firefox
   tls: true
-  servername: www.canon.com
+  servername: s3.t2.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
-    short-id: d3e4f5a6b7c8d9e0
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #4'
-  server: edge.cdnhaven.com
-  port: 443
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: www.philips.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
-    short-id: d3e4f5a6b7c8d9e0
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #5'
-  server: edge.cdnhaven.com
-  port: 7443
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: www.acer.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
-    short-id: d3e4f5a6b7c8d9e0
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #6'
-  server: edge.cdnhaven.com
-  port: 443
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: www.intel.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
-    short-id: d3e4f5a6b7c8d9e0
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #7'
-  server: edge.cdnhaven.com
-  port: 443
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: eh.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: N8FJu1pfVv7wRY1AqkCUT_XOcaxFaH4oXh1tzuVNcB0
-    short-id: a77377d70de13390
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #8'
-  server: edge.cdnhaven.com
-  port: 2087
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: m.vk.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: _yfkAlX_g-2LBB3CpNqI9sDKz-1OyqwyvbDwD7F8gRo
-    short-id: c2d3e4f5a6b7c8d9
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #9'
-  server: edge.cdnhaven.com
-  port: 2087
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: m.vk.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: _yfkAlX_g-2LBB3CpNqI9sDKz-1OyqwyvbDwD7F8gRo
-    short-id: c2d3e4f5a6b7c8d9
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #10'
-  server: edge.cdnhaven.com
-  port: 443
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: eh.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: N8FJu1pfVv7wRY1AqkCUT_XOcaxFaH4oXh1tzuVNcB0
-    short-id: a77377d70de13390
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #11'
-  server: edge.cdnhaven.com
-  port: 3553
-  type: vless
-  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: www.epson.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
-    short-id: d3e4f5a6b7c8d9e0
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #12'
-  server: edge.cdnhaven.com
-  port: 443
-  type: trojan
-  password: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  client-fingerprint: safari
-  tls: true
-  sni: cdn.cdnhaven.com
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #13'
-  server: edge.cdnhaven.com
-  port: 443
-  type: trojan
-  password: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
-  client-fingerprint: chrome
-  tls: true
-  sni: cdn.cdnhaven.com
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: 🇩🇪 AetrisVPN
-  server: 193.24.209.39
-  port: 443
-  type: vless
-  uuid: 9c54d883-97a8-4b49-af23-fe052eff2c3a
-  client-fingerprint: chrome
-  tls: true
-  servername: ads.x5.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ti1bwJgCG1bf5Deg-W11xZsKRx5mqlFAG6mDUKJRkwU
-    short-id: 62ce51a1
+    public-key: _bEA-GWmkPW_YITfFaWHogq_5AsYX4zAqomlhRQouS4
+    short-id: 1e853ef7fcad4788
   network: grpc
-  grpc-opts: {}
+  grpc-opts:
+    grpc-service-name: UpdateService
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 200.169.184.168
+  port: 443
+  type: vless
+  uuid: c9d6f7a6-41d7-4bdd-bf3f-7415cc9d7f90
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: net.formatgo.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
+    short-id: 9d0e1b6bf9c5eddb
+- name: '🇺🇸 United States, Los Angeles | [BL] #2'
+  server: ui108.pacemakere.com
+  port: 20008
+  type: trojan
+  password: 6ab93ec68bd94b76
+  client-fingerprint: chrome
+  tls: true
+  skip-cert-verify: true
+- name: '🇩🇪 AetrisVPN #3'
+  server: 82.202.179.110
+  port: 14443
+  type: vless
+  uuid: ccd6419d-6943-4e7c-bc8c-7a157dadff80
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: smartcaptcha.yandexcloud.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: JufPPJ3rmM2jvI9g98K87wgUHroz4C-30NHX21UoZns
+    short-id: d29cbe24661f
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: 200.169.184.168
+  port: 443
+  type: vless
+  uuid: c9d6f7a6-41d7-4bdd-bf3f-7415cc9d7f90
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: net.formatgo.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
+    short-id: 9d0e1b6bf9c5eddb
+- name: '🇺🇸 United States, Los Angeles | [BL] #3'
+  server: ui108.pacemakere.com
+  port: 20008
+  type: trojan
+  password: 6ab93ec68bd94b76
+  client-fingerprint: safari
+  tls: true
+  skip-cert-verify: true
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: 200.169.184.168
+  port: 443
+  type: vless
+  uuid: c9d6f7a6-41d7-4bdd-bf3f-7415cc9d7f90
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: net.formatgo.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
+    short-id: 9d0e1b6bf9c5eddb
+- name: '🇺🇸 United States, Los Angeles | [BL] #4'
+  server: ui108.pacemakere.com
+  port: 20008
+  type: trojan
+  password: 6ab93ec68bd94b76
+  client-fingerprint: edge
+  tls: true
+  skip-cert-verify: true
+- name: '🇺🇸 United States, Los Angeles | [BL] #5'
+  server: ui108.pacemakere.com
+  port: 20008
+  type: trojan
+  password: 6ab93ec68bd94b76
+  client-fingerprint: qq
+  tls: true
+  skip-cert-verify: true
+- name: '🇺🇸 United States, Los Angeles | [BL] #6'
+  server: su106.izzzzzi.com
+  port: 20008
+  type: trojan
+  password: 4fd2b10b6a754019
+  client-fingerprint: safari
+  tls: true
+  skip-cert-verify: true
+- name: '🇺🇸 United States, Los Angeles | [BL] #7'
+  server: su106.izzzzzi.com
+  port: 20008
+  type: trojan
+  password: 4fd2b10b6a754019
+  client-fingerprint: android
+  tls: true
+  skip-cert-verify: true
+- name: '🇺🇸 United States, Los Angeles | [BL] #8'
+  server: su106.izzzzzi.com
+  port: 20008
+  type: trojan
+  password: 4fd2b10b6a754019
+  client-fingerprint: chrome
+  tls: true
+  skip-cert-verify: true
+- name: '🇺🇸 United States, Los Angeles | [BL] #9'
+  server: su106.izzzzzi.com
+  port: 20008
+  type: trojan
+  password: 4fd2b10b6a754019
+  client-fingerprint: firefox
+  tls: true
+  skip-cert-verify: true
