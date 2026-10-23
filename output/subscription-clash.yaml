@@ -1,18 +1,53 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 194.87.29.96
-  port: 8443
+- name: 🇩🇪 Germany | [*CIDR]
+  server: de15.h1cloud.net
+  port: 25362
   type: vless
-  uuid: 9c794bb7-54fe-4acd-844a-a26209af36c3
-  client-fingerprint: firefox
+  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
+  client-fingerprint: edge
   tls: true
-  servername: vk.ru
+  servername: www.chip.de
   skip-cert-verify: true
   reality-opts:
-    public-key: zdUSjR5iPKcmOOUbSFQQ0pCYjGGVJMRBMD6_F3_wBEs
-    short-id: 4d2cf3
-  network: grpc
-  grpc-opts: {}
+    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
+    short-id: 23732d14a527990d
+- name: 🇳🇱 AetrisVPN
+  server: 188.225.33.141
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: 🇷🇺 AetrisVPN
+  server: 46.254.17.88
+  port: 30065
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: a3.eosapp.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: '🇩🇪 Germany | [*CIDR] #2'
+  server: de15.h1cloud.net
+  port: 25362
+  type: vless
+  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
+  client-fingerprint: safari
+  tls: true
+  servername: www.chip.de
+  skip-cert-verify: true
+  reality-opts:
+    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
+    short-id: 23732d14a527990d
 - name: 🇧🇬 AetrisVPN
   server: 81.94.148.232
   port: 8443
@@ -29,80 +64,7 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: windytrout.net
-- name: 🇷🇺 AetrisVPN
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: 6a2aff19-ff1f-4a13-96c8-a4d8986a9699
-  client-fingerprint: firefox
-  tls: true
-  servername: randomquaint.net
-  alpn:
-  - http/1.1
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇩🇪 Germany, Frankfurt am Main | [BL]
-  server: de9.dedushka.top
-  port: 443
-  type: trojan
-  password: 4_VfP9fKaM-3LpSVvoZuc_WUzLoCdHaA
-  client-fingerprint: qq
-  tls: true
-  sni: de9.dedushka.top
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
 - name: '🇷🇺 AetrisVPN #2'
-  server: 46.254.17.88
-  port: 30065
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: a3.eosapp.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇩🇪 Germany, Frankfurt am Main | [BL] #2'
-  server: de9.dedushka.top
-  port: 443
-  type: trojan
-  password: 4_VfP9fKaM-3LpSVvoZuc_WUzLoCdHaA
-  client-fingerprint: android
-  tls: true
-  sni: de9.dedushka.top
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-- name: 🇪🇺 AetrisVPN
-  server: 103.24.207.41
-  port: 444
-  type: vless
-  uuid: 258d8fc5-206c-48fd-88df-169dbbe44d3f
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: vextor.win
-  skip-cert-verify: true
-  reality-opts:
-    public-key: P7F65GjTQGZju-N8CVHtlKNaWebVe_76Xt7Lm00RuH0
-- name: '🇩🇪 Germany, Frankfurt am Main | [BL] #3'
-  server: de9.dedushka.top
-  port: 443
-  type: trojan
-  password: 4_VfP9fKaM-3LpSVvoZuc_WUzLoCdHaA
-  client-fingerprint: ios
-  tls: true
-  sni: de9.dedushka.top
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-- name: '🇷🇺 AetrisVPN #3'
   server: 45.12.75.242
   port: 26424
   type: vless
@@ -114,75 +76,220 @@ proxies:
   reality-opts:
     public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
     short-id: 23103e1e
-- name: '🇩🇪 Germany, Frankfurt am Main | [BL] #4'
-  server: de9.dedushka.top
-  port: 443
-  type: trojan
-  password: 4_VfP9fKaM-3LpSVvoZuc_WUzLoCdHaA
-  client-fingerprint: firefox
-  tls: true
-  sni: de9.dedushka.top
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-- name: '🇩🇪 Germany, Frankfurt am Main | [BL] #5'
-  server: de9.dedushka.top
-  port: 443
-  type: trojan
-  password: 4_VfP9fKaM-3LpSVvoZuc_WUzLoCdHaA
-  client-fingerprint: safari
-  tls: true
-  sni: de9.dedushka.top
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-- name: 🇩🇪 Germany [*CIDR]
-  server: 77.95.206.236
-  port: 64563
+- name: '🇩🇪 Germany | [*CIDR] #3'
+  server: de15.h1cloud.net
+  port: 25362
   type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  client-fingerprint: chrome
+  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
+  client-fingerprint: random
   tls: true
-  servername: www.starlink.com
+  servername: www.chip.de
   skip-cert-verify: true
   reality-opts:
-    public-key: wtTHheIAfyG6Sis8_GC5aHW06QPs9K-LwTqZ15NHX2M
-    short-id: 04bc4a55875f
-  network: grpc
-  grpc-opts: {}
-- name: '🇩🇪 Germany [*CIDR] #2'
-  server: 77.95.206.236
-  port: 64563
+    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
+    short-id: 23732d14a527990d
+- name: '🇩🇪 Germany | [*CIDR] #4'
+  server: de15.h1cloud.net
+  port: 25362
   type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
   client-fingerprint: safari
   tls: true
-  servername: www.starlink.com
+  servername: www.chip.de
   skip-cert-verify: true
   reality-opts:
-    public-key: wtTHheIAfyG6Sis8_GC5aHW06QPs9K-LwTqZ15NHX2M
-    short-id: 04bc4a55875f
-  network: grpc
-  grpc-opts: {}
-- name: '🇩🇪 Germany, Frankfurt am Main | [BL] #6'
-  server: de9.dedushka.top
-  port: 443
-  type: trojan
-  password: 4_VfP9fKaM-3LpSVvoZuc_WUzLoCdHaA
-  client-fingerprint: chrome
+    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
+    short-id: 23732d14a527990d
+- name: '🇩🇪 Germany | [*CIDR] #5'
+  server: de15.h1cloud.net
+  port: 25362
+  type: vless
+  uuid: 36fb6650-8a50-42b5-9f66-06538806f32c
+  client-fingerprint: qq
   tls: true
-  sni: de9.dedushka.top
-  alpn:
-  - http/1.1
+  servername: www.chip.de
   skip-cert-verify: true
-- name: '🇩🇪 Germany, Frankfurt am Main | [BL] #7'
-  server: de9.dedushka.top
+  reality-opts:
+    public-key: hFee7zTreqlv_wccK_8zxN5v23hj9u-DshByvGf-KAA
+    short-id: 23732d14a527990d
+- name: 🇩🇪 Germany | 🌐 | [*CIDR]
+  server: edge.cdnhaven.com
   port: 443
-  type: trojan
-  password: 4_VfP9fKaM-3LpSVvoZuc_WUzLoCdHaA
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
   client-fingerprint: edge
   tls: true
-  sni: de9.dedushka.top
+  servername: www.philips.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
+    short-id: d3e4f5a6b7c8d9e0
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #2'
+  server: edge.cdnhaven.com
+  port: 1443
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: sun6-21.userapi.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: _yfkAlX_g-2LBB3CpNqI9sDKz-1OyqwyvbDwD7F8gRo
+    short-id: c2d3e4f5a6b7c8d9
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #3'
+  server: edge.cdnhaven.com
+  port: 2753
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: www.canon.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
+    short-id: d3e4f5a6b7c8d9e0
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #4'
+  server: edge.cdnhaven.com
+  port: 443
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: www.philips.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
+    short-id: d3e4f5a6b7c8d9e0
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #5'
+  server: edge.cdnhaven.com
+  port: 7443
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: www.acer.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
+    short-id: d3e4f5a6b7c8d9e0
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #6'
+  server: edge.cdnhaven.com
+  port: 443
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: www.intel.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
+    short-id: d3e4f5a6b7c8d9e0
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #7'
+  server: edge.cdnhaven.com
+  port: 443
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: eh.vk.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: N8FJu1pfVv7wRY1AqkCUT_XOcaxFaH4oXh1tzuVNcB0
+    short-id: a77377d70de13390
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #8'
+  server: edge.cdnhaven.com
+  port: 2087
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: m.vk.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: _yfkAlX_g-2LBB3CpNqI9sDKz-1OyqwyvbDwD7F8gRo
+    short-id: c2d3e4f5a6b7c8d9
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #9'
+  server: edge.cdnhaven.com
+  port: 2087
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: m.vk.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: _yfkAlX_g-2LBB3CpNqI9sDKz-1OyqwyvbDwD7F8gRo
+    short-id: c2d3e4f5a6b7c8d9
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #10'
+  server: edge.cdnhaven.com
+  port: 443
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: eh.vk.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: N8FJu1pfVv7wRY1AqkCUT_XOcaxFaH4oXh1tzuVNcB0
+    short-id: a77377d70de13390
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #11'
+  server: edge.cdnhaven.com
+  port: 3553
+  type: vless
+  uuid: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: www.epson.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Q1Fjb64H0fakerSZHytJ7WQkuKeMs13l9kQJ0nywoFo
+    short-id: d3e4f5a6b7c8d9e0
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #12'
+  server: edge.cdnhaven.com
+  port: 443
+  type: trojan
+  password: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  client-fingerprint: safari
+  tls: true
+  sni: cdn.cdnhaven.com
   alpn:
+  - h2
   - http/1.1
   skip-cert-verify: true
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #13'
+  server: edge.cdnhaven.com
+  port: 443
+  type: trojan
+  password: 917a186b-ffa1-4af4-a473-1a8d95f2e37c
+  client-fingerprint: chrome
+  tls: true
+  sni: cdn.cdnhaven.com
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: 🇩🇪 AetrisVPN
+  server: 193.24.209.39
+  port: 443
+  type: vless
+  uuid: 9c54d883-97a8-4b49-af23-fe052eff2c3a
+  client-fingerprint: chrome
+  tls: true
+  servername: ads.x5.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ti1bwJgCG1bf5Deg-W11xZsKRx5mqlFAG6mDUKJRkwU
+    short-id: 62ce51a1
+  network: grpc
+  grpc-opts: {}
