@@ -1,18 +1,17 @@
 proxies:
 - name: 🇩🇪 AetrisVPN
-  server: 217.19.122.156
-  port: 443
+  server: 82.202.179.110
+  port: 14443
   type: vless
-  uuid: c720cb74-4c84-4fce-b8ae-637dbaa16199
-  client-fingerprint: safari
+  uuid: ccd6419d-6943-4e7c-bc8c-7a157dadff80
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
   tls: true
-  servername: z1q3pv4g78.rucdncomp.pro
+  servername: smartcaptcha.yandexcloud.net
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /useraction/events/b892639b7195/
-    headers:
-      Host: z1q3pv4g78.rucdncomp.pro
+  reality-opts:
+    public-key: JufPPJ3rmM2jvI9g98K87wgUHroz4C-30NHX21UoZns
+    short-id: d29cbe24661f
 - name: 🇫🇷 AetrisVPN
   server: 185.178.208.140
   port: 443
@@ -52,30 +51,82 @@ proxies:
   reality-opts:
     public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
     short-id: 23103e1e
-- name: 🇺🇸 United States, Los Angeles | [BL]
-  server: su106.izzzzzi.com
-  port: 20008
-  type: trojan
-  password: 4fd2b10b6a754019
-  client-fingerprint: qq
-  tls: true
-  skip-cert-verify: true
 - name: '🇩🇪 AetrisVPN #2'
-  server: 45.11.27.133
+  server: 217.19.122.156
   port: 443
   type: vless
-  uuid: f1087776-5077-4b2f-9338-687d2787c64e
-  client-fingerprint: firefox
+  uuid: c720cb74-4c84-4fce-b8ae-637dbaa16199
+  client-fingerprint: safari
   tls: true
-  servername: s3.t2.ru
+  servername: z1q3pv4g78.rucdncomp.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /useraction/events/b892639b7195/
+    headers:
+      Host: z1q3pv4g78.rucdncomp.pro
+- name: 🇫🇷 France | 🌐 | [*CIDR]
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: fr.lstu.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: _bEA-GWmkPW_YITfFaWHogq_5AsYX4zAqomlhRQouS4
-    short-id: 1e853ef7fcad4788
-  network: grpc
-  grpc-opts:
-    grpc-service-name: UpdateService
-- name: 🇳🇱 The Netherlands | [*CIDR]
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: 🇳🇱 The Netherlands | 🌐 [*CIDR]
+  server: 200.169.184.168
+  port: 443
+  type: vless
+  uuid: c9d6f7a6-41d7-4bdd-bf3f-7415cc9d7f90
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: net.formatgo.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
+    short-id: 9d0e1b6bf9c5eddb
+- name: 🇱🇻 Latvia | 🌐 | [*CIDR]
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: lv.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: 🌐 Anycast-IP | 🇩🇪 [*CIDR]
+  server: 193.160.140.104
+  port: 443
+  type: vless
+  uuid: 8a1f8853-9a71-4ef2-a64c-4f0a94c2e14b
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: ai.ozon.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+- name: '🇫🇷 France | 🌐 | [*CIDR] #2'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: fr.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇳🇱 The Netherlands | 🌐 [*CIDR] #2'
   server: 200.169.184.168
   port: 443
   type: vless
@@ -88,106 +139,337 @@ proxies:
   reality-opts:
     public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
     short-id: 9d0e1b6bf9c5eddb
-- name: '🇺🇸 United States, Los Angeles | [BL] #2'
-  server: ui108.pacemakere.com
-  port: 20008
-  type: trojan
-  password: 6ab93ec68bd94b76
+- name: '🇱🇻 Latvia | 🌐 | [*CIDR] #2'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
+  servername: lv.lstu.ru
   skip-cert-verify: true
-- name: '🇩🇪 AetrisVPN #3'
-  server: 82.202.179.110
-  port: 14443
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🌐 Anycast-IP | 🇩🇪 [*CIDR] #2'
+  server: 113.30.154.251
+  port: 443
   type: vless
-  uuid: ccd6419d-6943-4e7c-bc8c-7a157dadff80
+  uuid: 8a1f8853-9a71-4ef2-a64c-4f0a94c2e14b
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: smartcaptcha.yandexcloud.net
+  servername: ai.ozon.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: JufPPJ3rmM2jvI9g98K87wgUHroz4C-30NHX21UoZns
-    short-id: d29cbe24661f
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+- name: '🇫🇷 France | 🌐 | [*CIDR] #3'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fr.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
   server: 200.169.184.168
   port: 443
   type: vless
   uuid: c9d6f7a6-41d7-4bdd-bf3f-7415cc9d7f90
   flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: chrome
   tls: true
   servername: net.formatgo.ru
   skip-cert-verify: true
   reality-opts:
     public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
     short-id: 9d0e1b6bf9c5eddb
-- name: '🇺🇸 United States, Los Angeles | [BL] #3'
-  server: ui108.pacemakere.com
-  port: 20008
-  type: trojan
-  password: 6ab93ec68bd94b76
-  client-fingerprint: safari
-  tls: true
-  skip-cert-verify: true
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: 200.169.184.168
+- name: '🇱🇻 Latvia | 🌐 | [*CIDR] #3'
+  server: 193.160.140.49
   port: 443
   type: vless
-  uuid: c9d6f7a6-41d7-4bdd-bf3f-7415cc9d7f90
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: lv.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: 🇩🇪 Germany | 🌐 | [*CIDR]
+  server: 113.30.154.251
+  port: 443
+  type: vless
+  uuid: 8a1f8853-9a71-4ef2-a64c-4f0a94c2e14b
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: ai.ozon.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+- name: '🇫🇷 France | 🌐 | [*CIDR] #4'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: fr.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #2'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: nl.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇱🇻 Latvia | 🌐 | [*CIDR] #4'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: lv.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #2'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: de.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #3'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: nl.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: 🇪🇪 AetrisVPN
+  server: 95.163.250.241
+  port: 8442
+  type: vless
+  uuid: 5af23e36-62b7-4765-b27d-ed070f0535ed
   flow: xtls-rprx-vision
   client-fingerprint: qq
   tls: true
+  servername: eh.vk.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: TRB-7JE8MNZDBFSduYp9syU1AdpLez1MJ7dPrHeGFwg
+    short-id: a7f9106ba66e4796
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #3'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: de.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #4'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: nl.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #4'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: de.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #5'
+  server: qi4abtc36s.rucdncomp.pro
+  port: 443
+  type: vless
+  uuid: fc3a9f6e-4b97-4b26-b9ce-2d58a307e7b5
+  client-fingerprint: firefox
+  tls: true
+  servername: qi4abtc36s.rucdncomp.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /static/collect/324bbd93c0a8/
+    headers:
+      Host: qi4abtc36s.rucdncomp.pro
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #5'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: de.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇳🇱 The Netherlands | 🌐 | [*CIDR] #6'
+  server: 200.169.184.168
+  port: 443
+  type: vless
+  uuid: c9d6f7a6-41d7-4bdd-bf3f-7415cc9d7f90
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
   servername: net.formatgo.ru
   skip-cert-verify: true
   reality-opts:
     public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
     short-id: 9d0e1b6bf9c5eddb
-- name: '🇺🇸 United States, Los Angeles | [BL] #4'
-  server: ui108.pacemakere.com
-  port: 20008
-  type: trojan
-  password: 6ab93ec68bd94b76
+- name: 🌐 Anycast-IP | 🇦🇹 🇩🇪 | [*CIDR]
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
   client-fingerprint: edge
   tls: true
+  servername: at.lstu.ru
   skip-cert-verify: true
-- name: '🇺🇸 United States, Los Angeles | [BL] #5'
-  server: ui108.pacemakere.com
-  port: 20008
-  type: trojan
-  password: 6ab93ec68bd94b76
-  client-fingerprint: qq
-  tls: true
-  skip-cert-verify: true
-- name: '🇺🇸 United States, Los Angeles | [BL] #6'
-  server: su106.izzzzzi.com
-  port: 20008
-  type: trojan
-  password: 4fd2b10b6a754019
-  client-fingerprint: safari
-  tls: true
-  skip-cert-verify: true
-- name: '🇺🇸 United States, Los Angeles | [BL] #7'
-  server: su106.izzzzzi.com
-  port: 20008
-  type: trojan
-  password: 4fd2b10b6a754019
-  client-fingerprint: android
-  tls: true
-  skip-cert-verify: true
-- name: '🇺🇸 United States, Los Angeles | [BL] #8'
-  server: su106.izzzzzi.com
-  port: 20008
-  type: trojan
-  password: 4fd2b10b6a754019
-  client-fingerprint: chrome
-  tls: true
-  skip-cert-verify: true
-- name: '🇺🇸 United States, Los Angeles | [BL] #9'
-  server: su106.izzzzzi.com
-  port: 20008
-  type: trojan
-  password: 4fd2b10b6a754019
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🌐 Anycast-IP | 🇦🇹 🇩🇪 | [*CIDR] #2'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
+  servername: at.lstu.ru
   skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🌐 Anycast-IP | 🇦🇹 🇩🇪 | [*CIDR] #3'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: at.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🌐 Anycast-IP | 🇦🇹 🇩🇪 | [*CIDR] #4'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: at.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+- name: '🇩🇪 AetrisVPN #3'
+  server: 95.163.250.241
+  port: 8447
+  type: vless
+  uuid: 5af23e36-62b7-4765-b27d-ed070f0535ed
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: eh.vk.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: rGeqvmEcctHYxt19USUHXgGzMkUx-Tna8bq5KRNw7EY
+    short-id: b59d33a750d35e66
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #6'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  client-fingerprint: edge
+  tls: true
+  servername: de-g.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+  network: grpc
+  grpc-opts: {}
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #7'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  client-fingerprint: firefox
+  tls: true
+  servername: de-g.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+  network: grpc
+  grpc-opts: {}
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #8'
+  server: 193.223.104.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  client-fingerprint: qq
+  tls: true
+  servername: de-g.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+  network: grpc
+  grpc-opts: {}
+- name: '🇩🇪 Germany | 🌐 | [*CIDR] #9'
+  server: 193.160.140.49
+  port: 443
+  type: vless
+  uuid: 21f5ba17-28ea-4fd0-9c8f-80e2b91df5f1
+  client-fingerprint: firefox
+  tls: true
+  servername: de-g.lstu.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: e0RV9wRJdsQbQ0ugn5QUhJcTgWsSTVsKQTXMKweMDUg
+  network: grpc
+  grpc-opts: {}
