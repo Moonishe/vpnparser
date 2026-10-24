@@ -1,29 +1,5 @@
 [
  {
-  "ts": 1789686332,
-  "status": "ok",
-  "proxy_count": 40,
-  "proxy_networks": 27,
-  "lists": {
-   "blacklist": {
-    "alive": 10,
-    "checked": 10,
-    "tcp_alive": 10,
-    "tcp_checked": 10,
-    "tls_alive": 0,
-    "tls_checked": 0
-   },
-   "whitelist": {
-    "alive": 3,
-    "checked": 6,
-    "tcp_alive": 10,
-    "tcp_checked": 10,
-    "tls_alive": 6,
-    "tls_checked": 10
-   }
-  }
- },
- {
   "ts": 1789694907,
   "status": "ok",
   "proxy_count": 40,
@@ -8060,6 +8036,30 @@
     "tcp_checked": 12,
     "tls_alive": 9,
     "tls_checked": 12
+   }
+  }
+ },
+ {
+  "ts": 1792883562,
+  "status": "ok",
+  "proxy_count": 40,
+  "proxy_networks": 27,
+  "lists": {
+   "blacklist": {
+    "alive": 0,
+    "checked": 56,
+    "tcp_alive": 79,
+    "tcp_checked": 79,
+    "tls_alive": 55,
+    "tls_checked": 79
+   },
+   "whitelist": {
+    "alive": 20,
+    "checked": 21,
+    "tcp_alive": 55,
+    "tcp_checked": 64,
+    "tls_alive": 21,
+    "tls_checked": 55
    }
   }
  }
