@@ -1,16 +1,18 @@
 proxies:
-- name: 🇩🇪 Germany [*CIDR]
-  server: 201.51.8.163
-  port: 443
+- name: 🌐 Anycast-IP | 🇦🇹 🇩🇪 [*CIDR]
+  server: ss.ll0ll.vip
+  port: 2096
   type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
+  uuid: e436321f-24a9-4c38-b935-7d7dee0c3f68
+  client-fingerprint: firefox
   tls: true
-  servername: atk.vkusnews.com
+  servername: id.vk.com
   skip-cert-verify: true
   reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-  client-fingerprint: chrome
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: grpc
+  grpc-opts:
+    grpc-service-name: vless-grpc-reality
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
@@ -30,21 +32,9 @@ proxies:
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
   servername: almata.vkusnews.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇩🇪 Germany [*CIDR] #2'
-  server: 201.51.8.163
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: atk.vkusnews.com
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
@@ -68,21 +58,9 @@ proxies:
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: almata.vkusnews.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇩🇪 Germany [*CIDR] #3'
-  server: 201.51.8.163
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
   client-fingerprint: qq
   tls: true
-  servername: atk.vkusnews.com
+  servername: almata.vkusnews.com
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
@@ -104,33 +82,19 @@ proxies:
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: firefox
   tls: true
   servername: almata.vkusnews.com
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: 🌐 Anycast-IP | 🇦🇹 🇩🇪 [*CIDR]
-  server: ss.ll0ll.vip
-  port: 2096
-  type: vless
-  uuid: e436321f-24a9-4c38-b935-7d7dee0c3f68
-  client-fingerprint: firefox
-  tls: true
-  servername: id.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-  network: grpc
-  grpc-opts:
-    grpc-service-name: vless-grpc-reality
 - name: '🇰🇿 Kazakhstan [*CIDR]-RU #4'
   server: 109.73.192.248
   port: 443
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: ios
+  client-fingerprint: qq
   tls: true
   servername: almata.vkusnews.com
   skip-cert-verify: true
@@ -142,7 +106,7 @@ proxies:
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: ios
   tls: true
   servername: almata.vkusnews.com
   skip-cert-verify: true
