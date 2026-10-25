@@ -1,11 +1,11 @@
 proxies:
-- name: 🇩🇪 Germany | [*CIDR]
+- name: 🇩🇪 Germany [*CIDR]
   server: 5.129.222.115
   port: 443
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
   servername: ad7.vkusnews.com
   skip-cert-verify: true
@@ -24,31 +24,7 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇰🇿 Kazakhstan [*CIDR]-RU
-  server: 109.73.192.248
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: almata.vkusnews.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇩🇪 Germany | [*CIDR] #2'
-  server: 5.129.222.115
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: ad7.vkusnews.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇰🇿 Kazakhstan [*CIDR]-RU #2'
+- name: 🇰🇿 Kazakhstan [*CIDR]
   server: 109.73.192.248
   port: 443
   type: vless
@@ -60,13 +36,80 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇩🇪 Germany | [*CIDR] #3'
-  server: 201.51.8.163
+- name: 🇩🇪 Germany, Frankfurt am Main | 🌐 | [BL]
+  server: 64.118.156.138
+  port: 14081
+  type: vless
+  uuid: 531ce91b-f477-4c15-b68f-948a3eea2f70
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: renderer-bridge-1-881.mirra.now
+  port: 443
+  type: vless
+  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
+  client-fingerprint: safari
+  tls: true
+  servername: renderer-bridge-1-881.mirra.now
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: VideoRenderer
+- name: '🇰🇿 Kazakhstan [*CIDR] #2'
+  server: 109.73.192.248
   port: 443
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
   client-fingerprint: qq
+  tls: true
+  servername: almata.vkusnews.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: '🇩🇪 Germany [*CIDR] #2'
+  server: 201.51.8.163
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  tls: true
+  servername: atk.vkusnews.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+  client-fingerprint: chrome
+- name: '🇳🇱 The Netherlands [*CIDR] #2'
+  server: renderer-bridge-1-881.mirra.now
+  port: 443
+  type: vless
+  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
+  client-fingerprint: firefox
+  tls: true
+  servername: renderer-bridge-1-881.mirra.now
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: VideoRenderer
+- name: '🇰🇿 Kazakhstan [*CIDR] #3'
+  server: 109.73.192.248
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: almata.vkusnews.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: '🇩🇪 Germany [*CIDR] #3'
+  server: 201.51.8.163
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
   tls: true
   servername: atk.vkusnews.com
   skip-cert-verify: true
@@ -88,43 +131,79 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
-- name: 🇩🇪 Germany [*CIDR]
+- name: '🇩🇪 Germany [*CIDR] #4'
   server: 201.51.8.163
   port: 443
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: edge
+  client-fingerprint: qq
   tls: true
   servername: atk.vkusnews.com
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇷🇺 AetrisVPN #2'
-  server: 78.159.246.179
-  port: 2053
+- name: '🇰🇿 Kazakhstan [*CIDR] #4'
+  server: 109.73.192.248
+  port: 443
   type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
   tls: true
-  servername: randomquaint.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇩🇪 AetrisVPN
-  server: pl1.h1cloud.net
-  port: 27591
-  type: vless
-  uuid: 056405e8-de9f-4d0d-8145-956f13cc34da
-  client-fingerprint: chrome
-  tls: true
-  servername: www.samsung.com
+  servername: almata.vkusnews.com
   skip-cert-verify: true
   reality-opts:
-    public-key: LY0H47MWx87_L_JBzxFAuTzKZB53U7MrZQK8-dNnMxM
-    short-id: 6c5c7900406a1ae7
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: 🌐 Anycast-IP | 🇦🇹 🇩🇪 [*CIDR]
+  server: ss.ll0ll.vip
+  port: 2096
+  type: vless
+  uuid: e436321f-24a9-4c38-b935-7d7dee0c3f68
+  client-fingerprint: firefox
+  tls: true
+  servername: id.vk.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
+  network: grpc
+  grpc-opts:
+    grpc-service-name: vless-grpc-reality
+- name: '🇰🇿 Kazakhstan [*CIDR] #5'
+  server: 109.73.192.248
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: almata.vkusnews.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: 🌐 Anycast-IP | 🇩🇪 🇫🇮 [*CIDR]
+  server: ru.dostupnety.website
+  port: 443
+  type: vless
+  uuid: 2c5e1028-528f-4017-8832-addcb6797ddf
+  tls: true
+  servername: ru.dostupnety.website
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /ws-hidden
+- name: 🇨🇾 Cyprus [*CIDR] VK
+  server: router.hermit.pw
+  port: 19133
+  type: vless
+  uuid: 69158986-cfae-4567-8391-0f96d9d985bd
+  client-fingerprint: ios
+  tls: true
+  servername: music.apple.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ud15DX-emDBS7QsLMabJ7CjgIteK61jxwSp1v0Fewxc
+    short-id: 10a59b0a94367ac2
+  network: xhttp
+  xhttp-opts:
+    path: /
