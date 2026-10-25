@@ -5,26 +5,12 @@ proxies:
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: qq
   tls: true
   servername: ad7.vkusnews.com
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: 🇫🇮 Finland | 🌐 | [*CIDR]
-  server: ss.90909.club
-  port: 2096
-  type: vless
-  uuid: eeb96fef-4476-4ab0-915e-32e8f014c3b2
-  client-fingerprint: firefox
-  tls: true
-  servername: id.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-  network: grpc
-  grpc-opts:
-    grpc-service-name: vless-grpc-reality
 - name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
@@ -38,7 +24,7 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇰🇿 Kazakhstan [*CIDR]
+- name: 🇰🇿 Kazakhstan [*CIDR]-RU
   server: 109.73.192.248
   port: 443
   type: vless
@@ -56,27 +42,13 @@ proxies:
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: qq
+  client-fingerprint: chrome
   tls: true
   servername: ad7.vkusnews.com
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: 🇫🇮 Finland | 🌐 [*CIDR]
-  server: ss.90909.club
-  port: 2096
-  type: vless
-  uuid: eeb96fef-4476-4ab0-915e-32e8f014c3b2
-  client-fingerprint: qq
-  tls: true
-  servername: id.vk.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-  network: grpc
-  grpc-opts:
-    grpc-service-name: vless-grpc-reality
-- name: '🇰🇿 Kazakhstan [*CIDR] #2'
+- name: '🇰🇿 Kazakhstan [*CIDR]-RU #2'
   server: 109.73.192.248
   port: 443
   type: vless
@@ -101,34 +73,6 @@ proxies:
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
 - name: 🇷🇺 AetrisVPN
-  server: 78.159.246.179
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
-  tls: true
-  servername: randomquaint.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: 🇩🇪 AetrisVPN
-  server: pl1.h1cloud.net
-  port: 27591
-  type: vless
-  uuid: 056405e8-de9f-4d0d-8145-956f13cc34da
-  client-fingerprint: chrome
-  tls: true
-  servername: www.samsung.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LY0H47MWx87_L_JBzxFAuTzKZB53U7MrZQK8-dNnMxM
-    short-id: 6c5c7900406a1ae7
-- name: '🇷🇺 AetrisVPN #2'
   server: 78.159.246.85
   port: 2053
   type: vless
@@ -156,34 +100,31 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇷🇺 AetrisVPN #3'
-  server: 45.12.75.242
-  port: 26424
+- name: '🇷🇺 AetrisVPN #2'
+  server: 78.159.246.179
+  port: 2053
   type: vless
-  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
+  client-fingerprint: firefox
+  tls: true
+  servername: randomquaint.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: randomquaint.net
+- name: 🇩🇪 AetrisVPN
+  server: pl1.h1cloud.net
+  port: 27591
+  type: vless
+  uuid: 056405e8-de9f-4d0d-8145-956f13cc34da
   client-fingerprint: chrome
   tls: true
-  servername: ya.ru
+  servername: www.samsung.com
   skip-cert-verify: true
   reality-opts:
-    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
-    short-id: 23103e1e
-- name: 🇩🇪123Mb
-  server: 5.175.205.190
-  port: 27774
-  type: vless
-  uuid: 653137c6-474e-4a3d-9a20-5a5afb3d4a4f
-- name: 🌐 Anycast-IP | 🇩🇪 🇫🇮 [*CIDR]
-  server: 88.151.114.24
-  port: 443
-  type: vless
-  uuid: 2c5e1028-528f-4017-8832-addcb6797ddf
-  client-fingerprint: qq
-  tls: true
-  servername: ru.dostupnety.website
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /ws-hidden
-    headers:
-      Host: ru.dostupnety.website
+    public-key: LY0H47MWx87_L_JBzxFAuTzKZB53U7MrZQK8-dNnMxM
+    short-id: 6c5c7900406a1ae7
