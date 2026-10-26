@@ -1,54 +1,30 @@
 proxies:
-- name: 🇩🇪 Germany [*CIDR]
-  server: de12b.h1cloud.net
-  port: 25172
-  type: vless
-  uuid: 5a519754-a673-4462-83f6-5eb25d2af141
-  client-fingerprint: firefox
-  tls: true
-  servername: www.cloudflare.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Xr55Hig_JTeUluiGfSnma6zMHG2Uv5Xu30ZODGF5xGA
-    short-id: f09ac427e1abd14b
-- name: 🇳🇱 AetrisVPN
-  server: 5.129.234.167
-  port: 12213
-  type: vless
-  uuid: 7c464358-6c89-4623-bd20-7c7bcd51bc55
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: music.yandex.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: kTKM-s7XF0s878Ydmq1KeZFiGT6k1Bw_rLE79s1l1jI
-    short-id: 6a29a03b21
-- name: 🇰🇿 Kazakhstan [*CIDR]-RU
-  server: 109.73.192.248
+- name: 🇩🇪 Germany | 🌐 | [*CIDR]
+  server: 129.101.115.181
   port: 443
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: ios
   tls: true
-  servername: almata.vkusnews.com
+  servername: a1.eosshop.net
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇩🇪 Germany [*CIDR] #2'
-  server: de12b.h1cloud.net
-  port: 25172
+- name: 🇫🇷 France | 🌐 | [*CIDR]
+  server: 178.250.157.231
+  port: 443
   type: vless
-  uuid: 5a519754-a673-4462-83f6-5eb25d2af141
-  client-fingerprint: ios
+  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
   tls: true
-  servername: www.cloudflare.com
+  servername: lifeskaterstudent.caskstudio.org
   skip-cert-verify: true
   reality-opts:
-    public-key: Xr55Hig_JTeUluiGfSnma6zMHG2Uv5Xu30ZODGF5xGA
-    short-id: f09ac427e1abd14b
-- name: '🇳🇱 AetrisVPN #2'
+    public-key: pObQ7F063LsHc_lDuUfzPnx83C-goIPyyffMZs1CG0U
+    short-id: c9e5505275320b51
+- name: 🇳🇱 AetrisVPN
   server: 188.225.33.141
   port: 443
   type: vless
@@ -61,7 +37,60 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: '🇰🇿 Kazakhstan [*CIDR]-RU #2'
+- name: 🇰🇿 Kazakhstan | [*CIDR]
+  server: 109.73.192.248
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: almata.vkusnews.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: 🇧🇬 AetrisVPN
+  server: 78.159.246.85
+  port: 8443
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: chrome
+  tls: true
+  servername: fitindoor.net
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: fitindoor.net
+- name: 🇰🇿 Kazakhstan [*CIDR]
+  server: 109.73.192.248
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: almata.vkusnews.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: '🇧🇬 AetrisVPN #2'
+  server: 78.159.246.179
+  port: 8443
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: firefox
+  tls: true
+  servername: randomquaint.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: randomquaint.net
+- name: '🇰🇿 Kazakhstan | [*CIDR] #2'
   server: 109.73.192.248
   port: 443
   type: vless
@@ -73,67 +102,47 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: 85.198.83.46
-  port: 443
+- name: '🇧🇬 AetrisVPN #3'
+  server: 81.94.148.232
+  port: 8443
   type: vless
-  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
-  client-fingerprint: chrome
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: firefox
   tls: true
-  servername: renderer-bridge-1-881.mirra.now
+  servername: windytrout.net
+  alpn:
+  - h2
+  - http/1.1
   skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: VideoRenderer
-- name: '🇰🇿 Kazakhstan [*CIDR]-RU #3'
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: windytrout.net
+- name: '🇰🇿 Kazakhstan [*CIDR] #2'
   server: 109.73.192.248
   port: 443
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: ios
+  client-fingerprint: qq
   tls: true
   servername: almata.vkusnews.com
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇳🇱 The Netherlands [*CIDR] #2'
-  server: 85.198.83.46
-  port: 443
+- name: 🇷🇺 AetrisVPN
+  server: 78.159.246.85
+  port: 2053
   type: vless
-  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
   client-fingerprint: firefox
   tls: true
-  servername: renderer-bridge-1-881.mirra.now
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: VideoRenderer
-- name: '🇳🇱 The Netherlands [*CIDR] #3'
-  server: renderer-bridge-1-881.mirra.now
-  port: 443
-  type: vless
-  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
-  client-fingerprint: ios
-  tls: true
-  servername: renderer-bridge-1-881.mirra.now
+  servername: fitindoor.net
   alpn:
   - h2
+  - http/1.1
   skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: VideoRenderer
-- name: '🇳🇱 The Netherlands [*CIDR] #4'
-  server: renderer-bridge-1-881.mirra.now
-  port: 443
-  type: vless
-  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
-  client-fingerprint: chrome
-  tls: true
-  servername: renderer-bridge-1-881.mirra.now
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: VideoRenderer
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: fitindoor.net
