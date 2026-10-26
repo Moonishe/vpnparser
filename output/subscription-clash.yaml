@@ -1,23 +1,35 @@
 proxies:
-- name: 🇩🇪 Germany | 🌐 | [*CIDR]
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
   server: 129.101.115.181
   port: 443
   type: vless
   uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
   flow: xtls-rprx-vision
-  client-fingerprint: ios
+  client-fingerprint: firefox
   tls: true
   servername: a1.eosshop.net
   skip-cert-verify: true
   reality-opts:
     public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: 🇫🇷 France | 🌐 | [*CIDR]
+- name: 🇫🇮 Finland [*CIDR]
+  server: 94.156.181.168
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: math.videoticher.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: 🇫🇷 France | 🌐 [*CIDR]
   server: 178.250.157.231
   port: 443
   type: vless
   uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: safari
   tls: true
   servername: lifeskaterstudent.caskstudio.org
   skip-cert-verify: true
@@ -37,99 +49,6 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: 🇰🇿 Kazakhstan | [*CIDR]
-  server: 109.73.192.248
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: almata.vkusnews.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: 🇧🇬 AetrisVPN
-  server: 78.159.246.85
-  port: 8443
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: chrome
-  tls: true
-  servername: fitindoor.net
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: fitindoor.net
-- name: 🇰🇿 Kazakhstan [*CIDR]
-  server: 109.73.192.248
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: almata.vkusnews.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇧🇬 AetrisVPN #2'
-  server: 78.159.246.179
-  port: 8443
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: firefox
-  tls: true
-  servername: randomquaint.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: randomquaint.net
-- name: '🇰🇿 Kazakhstan | [*CIDR] #2'
-  server: 109.73.192.248
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: almata.vkusnews.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇧🇬 AetrisVPN #3'
-  server: 81.94.148.232
-  port: 8443
-  type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
-  client-fingerprint: firefox
-  tls: true
-  servername: windytrout.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: windytrout.net
-- name: '🇰🇿 Kazakhstan [*CIDR] #2'
-  server: 109.73.192.248
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: almata.vkusnews.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
 - name: 🇷🇺 AetrisVPN
   server: 78.159.246.85
   port: 2053
@@ -146,3 +65,144 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: fitindoor.net
+- name: 🇩🇪 AetrisVPN
+  server: 217.19.122.156
+  port: 443
+  type: vless
+  uuid: c720cb74-4c84-4fce-b8ae-637dbaa16199
+  client-fingerprint: safari
+  tls: true
+  servername: z1q3pv4g78.rucdncomp.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /useraction/events/b892639b7195/
+    headers:
+      Host: z1q3pv4g78.rucdncomp.pro
+- name: '🇫🇷 France | 🌐 [*CIDR] #2'
+  server: 178.250.157.231
+  port: 443
+  type: vless
+  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
+  flow: xtls-rprx-vision
+  client-fingerprint: qq
+  tls: true
+  servername: lifeskaterstudent.caskstudio.org
+  skip-cert-verify: true
+  reality-opts:
+    public-key: pObQ7F063LsHc_lDuUfzPnx83C-goIPyyffMZs1CG0U
+    short-id: c9e5505275320b51
+- name: 🇧🇬 AetrisVPN
+  server: 78.159.246.179
+  port: 8443
+  type: vless
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: firefox
+  tls: true
+  servername: randomquaint.net
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: randomquaint.net
+- name: 🇰🇿 Kazakhstan [*CIDR]
+  server: 201.34.136.112
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: almatawww.vkusnews.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: 🇩🇪 Germany [*CIDR]
+  server: 144.31.93.165
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: liter.videoticher.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: '🇫🇷 France | 🌐 [*CIDR] #3'
+  server: 178.250.157.231
+  port: 443
+  type: vless
+  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
+  flow: xtls-rprx-vision
+  client-fingerprint: random
+  tls: true
+  servername: lifeskaterstudent.caskstudio.org
+  skip-cert-verify: true
+  reality-opts:
+    public-key: pObQ7F063LsHc_lDuUfzPnx83C-goIPyyffMZs1CG0U
+    short-id: c9e5505275320b51
+- name: 🇳🇱 The Netherlands | 🌐 [*CIDR]
+  server: 31.130.150.37
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: a1a1.vkusnews.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: '🇰🇿 Kazakhstan [*CIDR] #2'
+  server: 31.76.6.36
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: food.videoticher.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: SC6AnZ_BlvDruiGFpDRno9b1V3wMmq9gjB-KEHHUlE4
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #2'
+  server: 129.101.115.181
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: a1.eosshop.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+- name: '🇳🇱 The Netherlands | 🌐 [*CIDR] #2'
+  server: 188.120.234.199
+  port: 443
+  type: vless
+  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: payeeclickerhalogen.berylcord.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: QPfM5knVgOkIykx2AC8S1MvkO_x-T9xMRYJdkF9aEng
+    short-id: fda83f2787e6016d
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #3'
+  server: 129.101.115.181
+  port: 443
+  type: vless
+  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  flow: xtls-rprx-vision
+  tls: true
+  servername: a1.eosshop.net
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+  client-fingerprint: chrome
