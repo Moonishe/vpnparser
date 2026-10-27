@@ -1,35 +1,16 @@
 proxies:
-- name: 🇩🇪 Germany | 🌐 [*CIDR]
-  server: 129.101.115.181
-  port: 443
+- name: 🇩🇪60Mb
+  server: 91.107.128.44
+  port: 46928
   type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  tls: true
-  servername: a1.eosshop.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-  client-fingerprint: chrome
-- name: 🇫🇮 Finland [*CIDR]
-  server: 94.156.181.168
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: math.videoticher.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+  uuid: 6cdfc27b-a0cc-4ea1-802a-e98552be430d
 - name: 🇫🇷 France | 🌐 [*CIDR]
   server: 178.250.157.231
   port: 443
   type: vless
   uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
   flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: random
   tls: true
   servername: lifeskaterstudent.caskstudio.org
   skip-cert-verify: true
@@ -65,36 +46,25 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: randomquaint.net
-- name: '🇩🇪 Germany | 🌐 [*CIDR] #2'
-  server: 129.101.115.181
+- name: '🇫🇷 France | 🌐 [*CIDR] #2'
+  server: 178.250.157.231
   port: 443
   type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: ios
   tls: true
-  servername: a1.eosshop.net
+  servername: lifeskaterstudent.caskstudio.org
   skip-cert-verify: true
   reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇫🇮 Finland [*CIDR] #2'
-  server: 94.156.181.168
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: math.videoticher.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: 🇳🇱 The Netherlands [*CIDR]
+    public-key: pObQ7F063LsHc_lDuUfzPnx83C-goIPyyffMZs1CG0U
+    short-id: c9e5505275320b51
+- name: 🇳🇱 The Netherlands | [*CIDR]
   server: renderer-bridge-1-881.mirra.now
   port: 443
   type: vless
   uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
-  client-fingerprint: chrome
+  client-fingerprint: ios
   tls: true
   servername: renderer-bridge-1-881.mirra.now
   alpn:
@@ -104,13 +74,13 @@ proxies:
   grpc-opts:
     grpc-service-name: VideoRenderer
 - name: '🇷🇺 AetrisVPN #2'
-  server: 81.94.148.232
+  server: 78.159.246.85
   port: 2053
   type: vless
-  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
   client-fingerprint: firefox
   tls: true
-  servername: windytrout.net
+  servername: fitindoor.net
   alpn:
   - h2
   - http/1.1
@@ -118,31 +88,20 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v1/upload
-    host: windytrout.net
-- name: '🇩🇪 Germany | 🌐 [*CIDR] #3'
-  server: 129.101.115.181
+    host: fitindoor.net
+- name: '🇫🇷 France | 🌐 [*CIDR] #3'
+  server: 178.250.157.231
   port: 443
   type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
+  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
   flow: xtls-rprx-vision
-  client-fingerprint: safari
+  client-fingerprint: qq
   tls: true
-  servername: a1.eosshop.net
+  servername: lifeskaterstudent.caskstudio.org
   skip-cert-verify: true
   reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇫🇮 Finland [*CIDR] #3'
-  server: 94.156.181.168
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: math.videoticher.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
+    public-key: pObQ7F063LsHc_lDuUfzPnx83C-goIPyyffMZs1CG0U
+    short-id: c9e5505275320b51
 - name: 🇧🇬 AetrisVPN
   server: 81.94.148.232
   port: 8443
@@ -159,121 +118,115 @@ proxies:
   xhttp-opts:
     path: /api/v1/upload
     host: windytrout.net
-- name: '🇷🇺 AetrisVPN #3'
-  server: 78.159.246.85
-  port: 2053
-  type: vless
-  uuid: 95a608b6-bff1-4e10-bb61-0a39f221bb7d
-  client-fingerprint: firefox
-  tls: true
-  servername: fitindoor.net
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/upload
-    host: fitindoor.net
-- name: '🇩🇪 Germany | 🌐 [*CIDR] #4'
-  server: 129.101.115.181
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: a1.eosshop.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇫🇮 Finland [*CIDR] #4'
-  server: 94.156.181.168
-  port: 443
-  type: vless
-  uuid: 30572b57-f5ab-4eb8-82d4-a24d399b99f6
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: math.videoticher.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Buy9pirx5Ih_LHwc6R3BCmvRL4g4Ljx6B3MEsZfIZhU
-- name: '🇳🇱 The Netherlands [*CIDR] #2'
-  server: renderer-bridge-1-881.mirra.now
-  port: 443
-  type: vless
-  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
-  client-fingerprint: ios
-  tls: true
-  servername: renderer-bridge-1-881.mirra.now
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: VideoRenderer
 - name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
   server: 185.178.208.140
   port: 443
   type: vless
   uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: firefox
+  client-fingerprint: edge
   tls: true
   servername: static.bakarova-top.ru
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v2/events
-- name: 🌐 Anycast-IP | 🇫🇮 [*CIDR]
-  server: 94.228.167.12
+- name: 🇫🇷 France | 🌐 | [*CIDR]
+  server: 178.250.157.231
   port: 443
   type: vless
   uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
   flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: lifeskaterstudent.caskstudio.org
+  skip-cert-verify: true
+  reality-opts:
+    public-key: pObQ7F063LsHc_lDuUfzPnx83C-goIPyyffMZs1CG0U
+    short-id: c9e5505275320b51
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: renderer-bridge-1-881.mirra.now
+  port: 443
+  type: vless
+  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
   client-fingerprint: firefox
   tls: true
-  servername: washingphonicseatable.solsticedigest.me
+  servername: renderer-bridge-1-881.mirra.now
   skip-cert-verify: true
-  reality-opts:
-    public-key: dCaQHVtwEPBeiH3ivVU9ycGJZ8uCO2JaIVjYBnfaTWY
-    short-id: c13c9bd7bd45847d
-- name: 🌐 Anycast-IP | 🇳🇱 [*CIDR]
-  server: 188.120.234.199
+  network: grpc
+  grpc-opts:
+    grpc-service-name: VideoRenderer
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
+  server: 185.178.208.140
   port: 443
   type: vless
-  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
-  flow: xtls-rprx-vision
-  client-fingerprint: random
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: qq
   tls: true
-  servername: payeeclickerhalogen.berylcord.net
+  servername: static.bakarova-top.ru
   skip-cert-verify: true
-  reality-opts:
-    public-key: QPfM5knVgOkIykx2AC8S1MvkO_x-T9xMRYJdkF9aEng
-    short-id: fda83f2787e6016d
-- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #2'
-  server: 188.120.234.199
-  port: 443
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: '🇧🇬 AetrisVPN #2'
+  server: 78.159.246.85
+  port: 8443
   type: vless
-  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
+  uuid: 2c634977-584e-4e1f-b501-1b70c77a6743
+  client-fingerprint: chrome
   tls: true
-  servername: payeeclickerhalogen.berylcord.net
+  servername: fitindoor.net
   skip-cert-verify: true
-  reality-opts:
-    public-key: QPfM5knVgOkIykx2AC8S1MvkO_x-T9xMRYJdkF9aEng
-    short-id: fda83f2787e6016d
-- name: '🌐 Anycast-IP | 🇳🇱 [*CIDR] #3'
-  server: 188.120.234.199
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/upload
+    host: fitindoor.net
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #3'
+  server: 185.178.208.140
   port: 443
   type: vless
-  uuid: 37ca5f34-2531-4fda-a781-20f3845fea88
-  flow: xtls-rprx-vision
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: chrome
+  tls: true
+  servername: static.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: '🇳🇱 The Netherlands | [*CIDR] #3'
+  server: 72.56.242.232
+  port: 443
+  type: vless
+  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
   client-fingerprint: firefox
   tls: true
-  servername: payeeclickerhalogen.berylcord.net
+  servername: renderer-bridge-1-881.mirra.now
   skip-cert-verify: true
-  reality-opts:
-    public-key: QPfM5knVgOkIykx2AC8S1MvkO_x-T9xMRYJdkF9aEng
-    short-id: fda83f2787e6016d
+  network: grpc
+  grpc-opts:
+    grpc-service-name: VideoRenderer
+- name: 🇪🇪 Estonia [*CIDR]
+  server: dropstyle.lol
+  port: 443
+  type: vless
+  uuid: d49f7cc7-0c15-4a49-9644-ef72e00d8e56
+  client-fingerprint: edge
+  tls: true
+  servername: dropstyle.lol
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /player/metrics/97662863db53/
+    headers:
+      Host: dropstyle.lol
+- name: 🇳🇱 The Netherlands [*CIDR]
+  server: 72.56.242.232
+  port: 443
+  type: vless
+  uuid: 27653b37-603c-4c90-b1f5-25c4d23f8932
+  client-fingerprint: chrome
+  tls: true
+  servername: renderer-bridge-1-881.mirra.now
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: VideoRenderer
