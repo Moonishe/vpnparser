@@ -1,16 +1,11 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 185.126.93.226
-  port: 443
-  type: vless
-  uuid: f04cc810-aaf2-4a7b-8cad-356cdd30d394
-  client-fingerprint: firefox
-  tls: true
-  servername: tg1.cdnphotos.org
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/?ed#Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET
+- name: 🇩🇪 Germany, Nuremberg | 🌐 | [BL]
+  server: 92.42.203.240
+  port: 2052
+  type: vmess
+  uuid: 6a9d4c0b-938a-4b58-911d-e3ca45d17ab5
+  alterId: 0
+  cipher: auto
 - name: 🇫🇮 AetrisVPN
   server: 200.165.231.209
   port: 443
@@ -37,18 +32,30 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇷🇺 AetrisVPN
-  server: 45.12.75.242
-  port: 26424
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+  server: 185.178.208.140
+  port: 443
   type: vless
-  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: edge
   tls: true
-  servername: ya.ru
+  servername: static.bakarova-top.ru
   skip-cert-verify: true
-  reality-opts:
-    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
-    short-id: 23103e1e
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: 🇩🇪 Germany [*CIDR] VK
+  server: 217.16.31.218
+  port: 5003
+  type: vless
+  uuid: ddc27ad2-631e-4431-b380-0045547acef4
   client-fingerprint: chrome
+  tls: true
+  servername: de1.frost-api.com
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: media.playback.v1.SessionGateway
 - name: '🇫🇮 AetrisVPN #2'
   server: 188.225.33.141
   port: 443
@@ -75,64 +82,32 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: 3e99d50d5740985d
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
   server: 185.178.208.140
   port: 443
   type: vless
   uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: chrome
+  client-fingerprint: firefox
   tls: true
   servername: static.bakarova-top.ru
-  alpn:
-  - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v2/events
-- name: 🇳🇱 The Netherlands | [*CIDR] VK
-  server: apis.repotraffic.org
-  port: 2096
+- name: '🇩🇪 Germany [*CIDR] VK #2'
+  server: node6.frost-api.com
+  port: 5003
   type: vless
-  uuid: f95ad5b8-32b0-48bc-a639-c229d8c4a684
-  client-fingerprint: ios
+  uuid: ddc27ad2-631e-4431-b380-0045547acef4
+  client-fingerprint: edge
   tls: true
-  servername: apis.repotraffic.org
+  servername: de1.frost-api.com
   skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /chxh
-    host: apis.repotraffic.org
-- name: '🇷🇺 AetrisVPN #2'
-  server: 188.225.77.254
-  port: 8443
-  type: vless
-  uuid: d1f0c6cb-0d8b-4f13-8104-b7c8e8c57110
-  client-fingerprint: ios
-  tls: true
-  servername: io.ozone.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: rJ-fFNYXh7WW9LuYe1N71fh7nAEe5i09Pi5ZDSDlH1s
-    short-id: 4951a2313524dd8f
   network: grpc
   grpc-opts:
-    grpc-service-name: ozone
-- name: '🇳🇱 The Netherlands | [*CIDR] VK #2'
-  server: ararat.rtkdvbr.cc
-  port: 443
-  type: vless
-  uuid: 04b7c62b-762e-4a8c-ba37-8328d25c8d74
-  client-fingerprint: ios
-  tls: true
-  servername: ararat.rtkdvbr.cc
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /amws
-    headers:
-      Host: ararat.rtkdvbr.cc
-- name: '🇳🇱 The Netherlands | [*CIDR] VK #3'
-  server: ararat.rtkdvbr.cc
+    grpc-service-name: media.playback.v1.SessionGateway
+- name: 🇳🇱 The Netherlands [*CIDR] VK
+  server: 185.86.145.37
   port: 443
   type: vless
   uuid: 04b7c62b-762e-4a8c-ba37-8328d25c8d74
@@ -145,3 +120,115 @@ proxies:
     path: /amws
     headers:
       Host: ararat.rtkdvbr.cc
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #3'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: qq
+  tls: true
+  servername: static.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: 🇩🇪 Germany | [*CIDR] VK
+  server: node6.frost-api.com
+  port: 5003
+  type: vless
+  uuid: ddc27ad2-631e-4431-b380-0045547acef4
+  client-fingerprint: firefox
+  tls: true
+  servername: de1.frost-api.com
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: media.playback.v1.SessionGateway
+- name: '🇳🇱 The Netherlands [*CIDR] #2'
+  server: 189.74.114.119
+  port: 443
+  type: vless
+  uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
+  client-fingerprint: safari
+  tls: true
+  servername: api.mediaklenov.cc
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 3e99d50d5740985d
+- name: 🇷🇺 AetrisVPN
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: chrome
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: 189.74.114.119
+  port: 443
+  type: vless
+  uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
+  client-fingerprint: firefox
+  tls: true
+  servername: api.mediaklenov.cc
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 3e99d50d5740985d
+- name: '🇳🇱 AetrisVPN #2'
+  server: 185.86.145.142
+  port: 2096
+  type: vless
+  uuid: f95ad5b8-32b0-48bc-a639-c229d8c4a684
+  tls: true
+  servername: apis.repotraffic.org
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chxh
+    host: apis.repotraffic.org
+- name: '🇳🇱 The Netherlands [*CIDR] VK #2'
+  server: 185.86.145.142
+  port: 2096
+  type: vless
+  uuid: f95ad5b8-32b0-48bc-a639-c229d8c4a684
+  client-fingerprint: qq
+  tls: true
+  servername: apis.repotraffic.org
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chxh
+    host: apis.repotraffic.org
+- name: 🇳🇱 The Netherlands | [*CIDR] VK
+  server: 185.86.145.142
+  port: 2096
+  type: vless
+  uuid: f95ad5b8-32b0-48bc-a639-c229d8c4a684
+  client-fingerprint: ios
+  tls: true
+  servername: apis.repotraffic.org
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chxh
+    host: apis.repotraffic.org
+- name: '🇳🇱 The Netherlands [*CIDR] VK #3'
+  server: 185.86.145.142
+  port: 2096
+  type: vless
+  uuid: f95ad5b8-32b0-48bc-a639-c229d8c4a684
+  client-fingerprint: firefox
+  tls: true
+  servername: apis.repotraffic.org
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chxh
