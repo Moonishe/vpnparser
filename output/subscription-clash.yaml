@@ -1,13 +1,13 @@
 proxies:
 - name: 🇩🇪 AetrisVPN
-  server: 217.198.6.206
+  server: 147.45.245.177
   port: 443
   type: vless
   uuid: 7ad63b26-bf70-4872-8fab-ebaf73a1e19d
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: patch-51.topp-con.xyz
+  servername: media-91.topp-con.xyz
   skip-cert-verify: true
   reality-opts:
     public-key: LEziyH-E4k9hehGRJkVi1FadVObB_NZJy8U7oUCVWXU
@@ -40,18 +40,12 @@ proxies:
     public-key: LEziyH-E4k9hehGRJkVi1FadVObB_NZJy8U7oUCVWXU
     short-id: b9120cd53ffd7bba
 - name: 🇳🇱 AetrisVPN
-  server: 78.159.250.214
-  port: 443
-  type: vless
-  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: qq.utiltools.site
-  skip-cert-verify: true
-  reality-opts:
-    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇩🇰 AetrisVPN
+  server: 193.29.139.197
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇩🇰 AetrisVPN-RU
   server: 5.42.99.64
   port: 8443
   type: vless
@@ -65,14 +59,14 @@ proxies:
     public-key: fSVfR9NB-6J6smrZlavi0GWd8JfDh0aXuEkKbtuFzUI
     short-id: 3cbc3d737fb9c4af
 - name: '🇩🇪 AetrisVPN #2'
-  server: 147.45.245.177
+  server: 217.198.6.206
   port: 443
   type: vless
   uuid: 7ad63b26-bf70-4872-8fab-ebaf73a1e19d
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: media-91.topp-con.xyz
+  servername: patch-51.topp-con.xyz
   skip-cert-verify: true
   reality-opts:
     public-key: LEziyH-E4k9hehGRJkVi1FadVObB_NZJy8U7oUCVWXU
@@ -104,19 +98,37 @@ proxies:
   reality-opts:
     public-key: LEziyH-E4k9hehGRJkVi1FadVObB_NZJy8U7oUCVWXU
     short-id: b9120cd53ffd7bba
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: 189.74.114.119
+- name: '🇳🇱 AetrisVPN #2'
+  server: 78.159.250.214
+  port: 443
+  type: vless
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: qq.utiltools.site
+  skip-cert-verify: true
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+- name: 🇷🇺 AetrisVPN
+  server: msk2.rvpn.app
+  port: 8388
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: MODziWLa9qMuW-4yPa0rfw
+- name: 🇳🇱 The Netherlands | [*CIDR]
+  server: api.mediaklenov.cc
   port: 443
   type: vless
   uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
-  client-fingerprint: firefox
+  client-fingerprint: qq
   tls: true
   servername: api.mediaklenov.cc
   skip-cert-verify: true
   network: grpc
   grpc-opts:
     grpc-service-name: 3e99d50d5740985d
-- name: 🇪🇪 AetrisVPN
+- name: 🇪🇪 AetrisVPN-RU
   server: 81.17.154.181
   port: 443
   type: vless
@@ -131,86 +143,7 @@ proxies:
   xhttp-opts:
     path: /ccxf5snr06b8xxb6
     host: fafeqdhlett2p5la6d.cdn.cachefleet.com
-- name: '🇫🇷 AetrisVPN #3'
-  server: 72.56.11.99
-  port: 443
-  type: vless
-  uuid: 7ad63b26-bf70-4872-8fab-ebaf73a1e19d
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: updates-94.topp-con.xyz
-  skip-cert-verify: true
-  reality-opts:
-    public-key: LEziyH-E4k9hehGRJkVi1FadVObB_NZJy8U7oUCVWXU
-    short-id: b9120cd53ffd7bba
-- name: '🇳🇱 The Netherlands [*CIDR] #2'
-  server: 189.74.114.119
-  port: 443
-  type: vless
-  uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
-  client-fingerprint: safari
-  tls: true
-  servername: api.mediaklenov.cc
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: 🇷🇺 AetrisVPN
-  server: msk2.rvpn.app
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: MODziWLa9qMuW-4yPa0rfw
-- name: '🇳🇱 AetrisVPN #2'
-  server: 186.246.9.29
-  port: 443
-  type: vless
-  uuid: b2847c3b-5278-4b06-9c66-bc919d2dfec7
-  client-fingerprint: firefox
-  tls: true
-  servername: wordpress.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: MPNMomAMn_lu9YMYjD2jAQWrI-rTM4hj9Jgg9d6qzTA
-    short-id: 50ad5564
-- name: 🇳🇱 The Netherlands | [*CIDR]
-  server: 189.74.114.93
-  port: 443
-  type: vless
-  uuid: c6628db6-025d-40e8-b79d-033f4372a6b7
-  client-fingerprint: chrome
-  tls: true
-  servername: api.mediaklenov.cc
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: '🇳🇱 The Netherlands | [*CIDR] #2'
-  server: api.mediaklenov.cc
-  port: 443
-  type: vless
-  uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
-  client-fingerprint: qq
-  tls: true
-  servername: api.mediaklenov.cc
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: '🇳🇱 The Netherlands [*CIDR] #3'
-  server: api.mediaklenov.cc
-  port: 443
-  type: vless
-  uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
-  client-fingerprint: firefox
-  tls: true
-  servername: api.mediaklenov.cc
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 3e99d50d5740985d
-- name: '🇳🇱 The Netherlands [*CIDR] #4'
+- name: 🇳🇱 The Netherlands [*CIDR]
   server: api.mediaklenov.cc
   port: 443
   type: vless
@@ -224,37 +157,19 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: 3e99d50d5740985d
-- name: '🇳🇱 The Netherlands [*CIDR] #5'
+- name: '🇳🇱 The Netherlands [*CIDR] #2'
   server: 189.74.114.119
   port: 443
   type: vless
   uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
-  client-fingerprint: ios
+  client-fingerprint: safari
   tls: true
   servername: api.mediaklenov.cc
   skip-cert-verify: true
   network: grpc
   grpc-opts:
     grpc-service-name: 3e99d50d5740985d
-- name: '🇳🇱 AetrisVPN #3'
-  server: 193.29.139.197
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: 🇳🇱 The Netherlands | 🌐 | [*CIDR]
-  server: 103.88.241.244
-  port: 443
-  type: vless
-  uuid: 27ec8e99-516e-481e-98a4-f192f5805e63
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: ne55d.sonicservice.digital
-  skip-cert-verify: true
-  reality-opts:
-    public-key: z-TKWOWgZLfzQ-wNdwXQqVwaUgCmbchM2Xtrk1NGynU
-- name: '🇳🇱 The Netherlands [*CIDR] #6'
+- name: '🇳🇱 The Netherlands [*CIDR] #3'
   server: api.mediaklenov.cc
   port: 443
   type: vless
@@ -266,3 +181,63 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: 3e99d50d5740985d
+- name: '🇳🇱 The Netherlands [*CIDR] #4'
+  server: 189.74.114.119
+  port: 443
+  type: vless
+  uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
+  client-fingerprint: ios
+  tls: true
+  servername: api.mediaklenov.cc
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 3e99d50d5740985d
+- name: '🇳🇱 The Netherlands [*CIDR] #5'
+  server: api.mediaklenov.cc
+  port: 443
+  type: vless
+  uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
+  client-fingerprint: firefox
+  tls: true
+  servername: api.mediaklenov.cc
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 3e99d50d5740985d
+- name: '🇳🇱 The Netherlands [*CIDR] #6'
+  server: 189.74.114.119
+  port: 443
+  type: vless
+  uuid: abd5755a-8b77-4ed4-afbd-f2ccbc08e6f5
+  client-fingerprint: firefox
+  tls: true
+  servername: api.mediaklenov.cc
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 3e99d50d5740985d
+- name: '🇳🇱 The Netherlands | [*CIDR] #2'
+  server: 189.74.114.93
+  port: 443
+  type: vless
+  uuid: c6628db6-025d-40e8-b79d-033f4372a6b7
+  client-fingerprint: chrome
+  tls: true
+  servername: api.mediaklenov.cc
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 3e99d50d5740985d
+- name: '🇳🇱 AetrisVPN #3'
+  server: 186.246.9.29
+  port: 443
+  type: vless
+  uuid: b2847c3b-5278-4b06-9c66-bc919d2dfec7
+  client-fingerprint: firefox
+  tls: true
+  servername: wordpress.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: MPNMomAMn_lu9YMYjD2jAQWrI-rTM4hj9Jgg9d6qzTA
+    short-id: 50ad5564
