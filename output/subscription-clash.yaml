@@ -12,50 +12,6 @@ proxies:
   xhttp-opts:
     path: /api/v1/?ed#Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET
 - name: 🇫🇮 AetrisVPN
-  server: 91.210.169.181
-  port: 443
-  type: vless
-  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
-  client-fingerprint: firefox
-  tls: true
-  servername: wstg.datasynctrue.online
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/connect
-    headers:
-      Host: wstg.datasynctrue.online
-- name: 🇳🇱 AetrisVPN
-  server: 82.38.31.17
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: 🇷🇺 AetrisVPN
-  server: 147.45.148.6
-  port: 443
-  type: vless
-  uuid: 3bb97d46-789b-4229-88f6-9beb222a4137
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: yoy-api.bachidze.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
-- name: '🇩🇪 AetrisVPN #2'
-  server: 185.126.93.226
-  port: 443
-  type: vless
-  uuid: f04cc810-aaf2-4a7b-8cad-356cdd30d394
-  client-fingerprint: firefox
-  tls: true
-  servername: tg1.cdnphotos.org
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/?ed#Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET
-- name: '🇫🇮 AetrisVPN #2'
   server: 188.225.33.141
   port: 443
   type: vless
@@ -69,90 +25,29 @@ proxies:
     path: /api/connect
     headers:
       Host: wstg.datasynctrue.online
-- name: '🇳🇱 AetrisVPN #2'
-  server: 82.38.31.203
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇷🇺 AetrisVPN #2'
-  server: 85.193.85.231
-  port: 443
-  type: vless
-  uuid: 3bb97d46-789b-4229-88f6-9beb222a4137
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: yoy-api.bachidze.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
-- name: 🇩🇪 Germany | 🌐 [*CIDR]
-  server: 200.169.184.168
-  port: 443
-  type: vless
-  uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: tm6.24convertflow.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 2IylNqpuTBeUvd333tXWY6i0l8nkH6o5qfRVKZm6FA0
-    short-id: e0aadc6f38ff06a8
-- name: '🇳🇱 AetrisVPN #3'
-  server: 82.38.31.180
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: safari
-  tls: true
-  servername: static.bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: static.bakarova-top.ru
-- name: '🇩🇪 Germany | 🌐 [*CIDR] #2'
-  server: 200.169.184.168
-  port: 443
-  type: vless
-  uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: tm6.24convertflow.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 2IylNqpuTBeUvd333tXWY6i0l8nkH6o5qfRVKZm6FA0
-    short-id: e0aadc6f38ff06a8
-- name: '🇳🇱 AetrisVPN #4'
+- name: 🇳🇱 AetrisVPN
   server: 82.38.31.216
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇷🇺 AetrisVPN #3'
-  server: 45.12.75.242
-  port: 26424
+- name: 🇱🇹 Lithuania [*CIDR]-RU
+  server: 185.178.208.167
+  port: 443
   type: vless
-  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
-  client-fingerprint: chrome
+  uuid: 2232d904-8e6a-4202-8240-6efd8aec02e9
+  client-fingerprint: ios
   tls: true
-  servername: ya.ru
+  servername: lorettmay.top
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
-    short-id: 23103e1e
-- name: '🇩🇪 AetrisVPN #3'
+  network: ws
+  ws-opts:
+    path: /blog/posts
+    headers:
+      Host: lorettmay.top
+- name: '🇩🇪 AetrisVPN #2'
   server: 185.126.93.225
   port: 443
   type: vless
@@ -166,18 +61,66 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v1/
-- name: '🇳🇱 AetrisVPN #5'
+- name: '🇫🇮 AetrisVPN #2'
+  server: 91.210.169.181
+  port: 443
+  type: vless
+  uuid: ff0b6ba8-bed0-4c4d-bbc9-23af47582615
+  client-fingerprint: firefox
+  tls: true
+  servername: wstg.datasynctrue.online
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/connect
+    headers:
+      Host: wstg.datasynctrue.online
+- name: '🇳🇱 AetrisVPN #2'
   server: 82.38.31.200
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: 🇱🇹 Lithuania [*CIDR]
+- name: '🇱🇹 Lithuania [*CIDR]-RU #2'
   server: 185.178.208.167
   port: 443
   type: vless
   uuid: 2232d904-8e6a-4202-8240-6efd8aec02e9
   client-fingerprint: chrome
+  tls: true
+  servername: lorettmay.top
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /blog/posts
+    headers:
+      Host: lorettmay.top
+- name: '🇩🇪 AetrisVPN #3'
+  server: 185.126.93.226
+  port: 443
+  type: vless
+  uuid: f04cc810-aaf2-4a7b-8cad-356cdd30d394
+  client-fingerprint: firefox
+  tls: true
+  servername: tg1.cdnphotos.org
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v1/?ed#Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET
+- name: '🇳🇱 AetrisVPN #3'
+  server: 82.38.31.10
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '🇱🇹 Lithuania [*CIDR]-RU #3'
+  server: 185.178.208.167
+  port: 443
+  type: vless
+  uuid: 2232d904-8e6a-4202-8240-6efd8aec02e9
+  client-fingerprint: safari
   tls: true
   servername: lorettmay.top
   alpn:
@@ -197,35 +140,13 @@ proxies:
   tls: true
   sni: www.iloverussia2026.com
   skip-cert-verify: true
-- name: '🇳🇱 AetrisVPN #6'
-  server: 82.38.31.10
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇱🇹 Lithuania [*CIDR] #2'
-  server: 185.178.208.167
-  port: 443
-  type: vless
-  uuid: 2232d904-8e6a-4202-8240-6efd8aec02e9
-  client-fingerprint: ios
-  tls: true
-  servername: lorettmay.top
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /blog/posts
-    headers:
-      Host: lorettmay.top
-- name: '🇳🇱 AetrisVPN #7'
+- name: '🇳🇱 AetrisVPN #4'
   server: 82.38.31.193
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇱🇹 Lithuania [*CIDR] #3'
+- name: '🇱🇹 Lithuania [*CIDR]-RU #4'
   server: 185.178.208.167
   port: 443
   type: vless
@@ -239,13 +160,26 @@ proxies:
     path: /blog/posts
     headers:
       Host: lorettmay.top
-- name: '🇳🇱 AetrisVPN #8'
-  server: 82.38.31.7
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
+  server: 200.169.184.168
+  port: 443
+  type: vless
+  uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
+  flow: xtls-rprx-vision
+  client-fingerprint: ios
+  tls: true
+  servername: tm6.24convertflow.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 2IylNqpuTBeUvd333tXWY6i0l8nkH6o5qfRVKZm6FA0
+    short-id: e0aadc6f38ff06a8
+- name: '🇳🇱 AetrisVPN #5'
+  server: 82.38.31.11
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇱🇹 Lithuania [*CIDR] #4'
+- name: '🇱🇹 Lithuania [*CIDR]-RU #5'
   server: lorettmay.top
   port: 443
   type: vless
@@ -261,35 +195,62 @@ proxies:
     path: /blog/posts
     headers:
       Host: lorettmay.top
-- name: '🇳🇱 AetrisVPN #9'
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #2'
+  server: 200.169.184.168
+  port: 443
+  type: vless
+  uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: tm6.24convertflow.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 2IylNqpuTBeUvd333tXWY6i0l8nkH6o5qfRVKZm6FA0
+    short-id: e0aadc6f38ff06a8
+- name: '🇳🇱 AetrisVPN #6'
+  server: 82.38.31.17
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇷🇺 AetrisVPN
+  server: 147.45.148.6
+  port: 443
+  type: vless
+  uuid: 3bb97d46-789b-4229-88f6-9beb222a4137
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: yoy-api.bachidze.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
+- name: '🇳🇱 AetrisVPN #7'
+  server: 82.38.31.7
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '🇷🇺 AetrisVPN #2'
+  server: 85.193.85.231
+  port: 443
+  type: vless
+  uuid: 3bb97d46-789b-4229-88f6-9beb222a4137
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: yoy-api.bachidze.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
+- name: '🇳🇱 AetrisVPN #8'
   server: 82.38.31.2
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇱🇹 Lithuania [*CIDR] #5'
-  server: 185.178.208.167
-  port: 443
-  type: vless
-  uuid: 2232d904-8e6a-4202-8240-6efd8aec02e9
-  client-fingerprint: safari
-  tls: true
-  servername: lorettmay.top
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /blog/posts
-    headers:
-      Host: lorettmay.top
-- name: '🇳🇱 AetrisVPN #10'
-  server: 82.38.31.185
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU
   server: 185.178.208.140
   port: 443
   type: vless
@@ -302,79 +263,128 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v2/events
-- name: '🇳🇱 AetrisVPN #11'
-  server: 82.38.31.171
-  port: 443
+- name: '🇳🇱 AetrisVPN #9'
+  server: 82.38.31.203
+  port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇷🇺 AetrisVPN #4'
-  server: 185.229.9.135
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #2'
+  server: 185.178.208.140
   port: 443
   type: vless
-  uuid: 4df3e06b-85e9-4b69-b38a-be37bad2fe9d
-  client-fingerprint: qq
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: safari
   tls: true
-  servername: business.lesotorg-kirov.ru
+  servername: static.bakarova-top.ru
   alpn:
-  - http/1.1
+  - h2
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /chws
-    headers:
-      Host: business.lesotorg-kirov.ru
-- name: '🇳🇱 AetrisVPN #12'
-  server: 82.38.31.175
-  port: 443
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇳🇱 AetrisVPN #13'
-  server: 82.38.31.175
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇳🇱 AetrisVPN #14'
-  server: 82.38.31.149
-  port: 443
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇳🇱 AetrisVPN #15'
-  server: 82.38.31.149
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇳🇱 AetrisVPN #16'
-  server: 82.38.31.11
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇳🇱 AetrisVPN #17'
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+    host: static.bakarova-top.ru
+- name: '🇳🇱 AetrisVPN #10'
   server: 82.38.31.207
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇳🇱 AetrisVPN #18'
-  server: 82.38.31.174
-  port: 443
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇳🇱 AetrisVPN #19'
+- name: '🇷🇺 AetrisVPN #3'
+  server: 45.12.75.242
+  port: 26424
+  type: vless
+  uuid: 633f424e-2b11-48da-a6b3-a849dd71456f
+  client-fingerprint: chrome
+  tls: true
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: l8AubqcxQO-HRFJy4pZL1vbLOo-eXit69s-XulSELE0
+    short-id: 23103e1e
+- name: '🇳🇱 AetrisVPN #11'
   server: 82.38.31.174
   port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
-- name: '🇳🇱 AetrisVPN #20'
+- name: '🇳🇱 AetrisVPN #12'
+  server: 82.38.31.175
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '🇳🇱 AetrisVPN #13'
+  server: 82.38.31.175
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '🇳🇱 AetrisVPN #14'
+  server: 82.38.31.174
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '🇳🇱 AetrisVPN #15'
   server: 82.38.31.169
   port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '🇳🇱 AetrisVPN #16'
+  server: 82.38.31.185
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '🇳🇱 AetrisVPN #17'
+  server: 82.38.31.171
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: '🇳🇱 AetrisVPN #18'
+  server: 82.38.31.180
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '🇳🇱 AetrisVPN #19'
+  server: 91.185.83.44
+  port: 443
+  type: vless
+  uuid: 7955bf18-35c4-412d-aabd-c0b36c793063
+  client-fingerprint: firefox
+  tls: true
+  servername: nguyxejonb.rucdncomp.pro
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /service/telemetry/0294da469190/
+    headers:
+      Host: nguyxejonb.rucdncomp.pro
+- name: '🇳🇱 AetrisVPN #20'
+  server: 82.38.31.149
+  port: 443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: oZIoA69Q8yhcQV8ka3Pa3A
+- name: 🇳🇱 The Netherlands [*CIDR] VK
+  server: cdn.freetato-converting.ru
+  port: 2096
+  type: vless
+  uuid: b877b58f-5995-4b25-abec-3213a2f95512
+  tls: true
+  servername: cdn.freetato-converting.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /chxh
+    host: cdn.freetato-converting.ru
+- name: '🇳🇱 AetrisVPN #21'
+  server: 82.38.31.149
+  port: 8080
   type: ss
   cipher: chacha20-ietf-poly1305
   password: oZIoA69Q8yhcQV8ka3Pa3A
@@ -397,7 +407,7 @@ proxies:
   type: vless
   uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: chrome
   tls: true
   servername: net.formatgo.ru
   skip-cert-verify: true
@@ -410,19 +420,13 @@ proxies:
   type: vless
   uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: firefox
   tls: true
   servername: net.formatgo.ru
   skip-cert-verify: true
   reality-opts:
     public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
     short-id: 9d0e1b6bf9c5eddb
-- name: '🇳🇱 AetrisVPN #21'
-  server: 82.38.31.183
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
 - name: '🇳🇱 The Netherlands [*CIDR] #4'
   server: 200.169.184.168
   port: 443
@@ -436,19 +440,13 @@ proxies:
   reality-opts:
     public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
     short-id: 9d0e1b6bf9c5eddb
-- name: '🇳🇱 AetrisVPN #22'
-  server: 82.38.31.182
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
 - name: '🇳🇱 The Netherlands [*CIDR] #5'
   server: 200.169.184.168
   port: 443
   type: vless
   uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: firefox
   tls: true
   servername: net.formatgo.ru
   skip-cert-verify: true
@@ -461,55 +459,20 @@ proxies:
   type: vless
   uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  client-fingerprint: random
   tls: true
   servername: net.formatgo.ru
   skip-cert-verify: true
   reality-opts:
     public-key: QnaizqXrXA0e4XihP_5Nf1z1aOOf0obBoyJ8QY_03kw
     short-id: 9d0e1b6bf9c5eddb
-- name: '🇳🇱 AetrisVPN #23'
-  server: 91.185.83.44
-  port: 443
-  type: vless
-  uuid: 7955bf18-35c4-412d-aabd-c0b36c793063
-  client-fingerprint: firefox
-  tls: true
-  servername: nguyxejonb.rucdncomp.pro
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /service/telemetry/0294da469190/
-    headers:
-      Host: nguyxejonb.rucdncomp.pro
-- name: 🇳🇱 The Netherlands [*CIDR] VK
-  server: cdn.freetato-converting.ru
-  port: 2096
-  type: vless
-  uuid: b877b58f-5995-4b25-abec-3213a2f95512
-  tls: true
-  servername: cdn.freetato-converting.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /chxh
-    host: cdn.freetato-converting.ru
-- name: '🇳🇱 AetrisVPN #24'
-  server: 66.163.127.9
-  port: 443
-  type: trojan
-  password: 0ab6c98dae3b48e8b9c4a776b6c9c19a
-  client-fingerprint: chrome
-  tls: true
-  sni: resources.indyourperfectremotetechjobfromthecomfortofhome.com
-  skip-cert-verify: true
 - name: '🇳🇱 The Netherlands [*CIDR] #7'
   server: 200.169.184.168
   port: 443
   type: vless
   uuid: 6036c28a-8db2-432e-8118-ff0c16641ad0
   flow: xtls-rprx-vision
-  client-fingerprint: random
+  client-fingerprint: chrome
   tls: true
   servername: net.formatgo.ru
   skip-cert-verify: true
