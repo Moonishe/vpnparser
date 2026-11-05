@@ -1,16 +1,4 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 185.126.93.225
-  port: 443
-  type: vless
-  uuid: f04cc810-aaf2-4a7b-8cad-356cdd30d394
-  client-fingerprint: firefox
-  tls: true
-  servername: tg1.cdnphotos.org
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/?ed#Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET
 - name: 🇳🇱 AetrisVPN
   server: 5.129.237.55
   port: 443
@@ -36,72 +24,7 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
-- name: '🇩🇪 AetrisVPN #2'
-  server: 185.126.93.227
-  port: 443
-  type: vless
-  uuid: f04cc810-aaf2-4a7b-8cad-356cdd30d394
-  client-fingerprint: firefox
-  tls: true
-  servername: tg1.cdnphotos.org
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v1/?ed#Telegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET
 - name: '🇷🇺 AetrisVPN #2'
-  server: 147.45.148.6
-  port: 443
-  type: vless
-  uuid: 3bb97d46-789b-4229-88f6-9beb222a4137
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: yoy-api.bachidze.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
-- name: '🇩🇪 AetrisVPN #3'
-  server: 217.19.122.156
-  port: 443
-  type: vless
-  uuid: c720cb74-4c84-4fce-b8ae-637dbaa16199
-  client-fingerprint: firefox
-  tls: true
-  servername: z1q3pv4g78.rucdncomp.pro
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /useraction/events/b892639b7195/
-    headers:
-      Host: z1q3pv4g78.rucdncomp.pro
-- name: '🇷🇺 AetrisVPN #3'
-  server: qq.utiltools.site
-  port: 443
-  type: vless
-  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: qq.utiltools.site
-  skip-cert-verify: true
-  reality-opts:
-    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: '🇷🇺 AetrisVPN #4'
-  server: 78.159.250.214
-  port: 443
-  type: vless
-  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: qq.utiltools.site
-  skip-cert-verify: true
-  reality-opts:
-    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-    short-id: '00000000'
-- name: '🇷🇺 AetrisVPN #5'
   server: 85.193.85.231
   port: 443
   type: vless
@@ -113,12 +36,36 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
+- name: '🇷🇺 AetrisVPN #3'
+  server: 147.45.148.6
+  port: 443
+  type: vless
+  uuid: 3bb97d46-789b-4229-88f6-9beb222a4137
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: yoy-api.bachidze.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
+- name: '🇷🇺 AetrisVPN #4'
+  server: qq.utiltools.site
+  port: 443
+  type: vless
+  uuid: 4054fdc2-ee80-4419-8a8e-d937df4719e2
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: qq.utiltools.site
+  skip-cert-verify: true
+  reality-opts:
+    public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
+- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU
   server: 185.178.208.140
   port: 443
   type: vless
   uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: ios
+  client-fingerprint: firefox
   tls: true
   servername: static.bakarova-top.ru
   alpn:
@@ -128,7 +75,22 @@ proxies:
   xhttp-opts:
     path: /api/v2/events
     host: static.bakarova-top.ru
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #2'
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #2'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: chrome
+  tls: true
+  servername: static.bakarova-top.ru
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+    host: static.bakarova-top.ru
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #3'
   server: 185.178.208.140
   port: 443
   type: vless
@@ -143,12 +105,12 @@ proxies:
   xhttp-opts:
     path: /api/v2/events
     host: static.bakarova-top.ru
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #3'
+- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]-RU #4'
   server: 185.178.208.140
   port: 443
   type: vless
   uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: chrome
+  client-fingerprint: ios
   tls: true
   servername: static.bakarova-top.ru
   alpn:
@@ -158,22 +120,7 @@ proxies:
   xhttp-opts:
     path: /api/v2/events
     host: static.bakarova-top.ru
-- name: '.𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR] #4'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: firefox
-  tls: true
-  servername: static.bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: static.bakarova-top.ru
-- name: 🇪🇪 AetrisVPN
+- name: 🇪🇪 AetrisVPN-RU
   server: 95.129.234.108
   port: 8443
   type: vless
@@ -188,7 +135,7 @@ proxies:
   xhttp-opts:
     path: /ccxf5snr06b8xxb6
     host: fafeqdhlett2p5la6d.cdn.cachefleet.com
-- name: '🇷🇺 AetrisVPN #6'
+- name: '🇷🇺 AetrisVPN #5'
   server: 188.225.79.22
   port: 443
   type: vless
