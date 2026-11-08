@@ -26,11 +26,11 @@ proxies:
     public-key: QjYksCdraKvxMG024774_EOZjxtIB7xHm3GYGx3oN1Y
     short-id: c59bb8af70d9db1e
 - name: 🇳🇱 AetrisVPN
-  server: 216.172.144.199
-  port: 40643
+  server: 156.67.120.205
+  port: 51628
   type: ss
   cipher: chacha20-ietf-poly1305
-  password: Xd4G9xn7AgT88msCYC9MZfavMUqd3dWFNAvswi6KfaD9YcexptMbPn4cSECEMzDgvAMomAWJHyweqJer99ssMVYGH6TK8k4c
+  password: 29ZZXVa34x7sC48w9FKQ54UKHiJJGTVgKFppBRgviLrVCAYVVyKZdD3obbpjCyk31V5b2G2d7xzqmaPBFdcheCVB9UQ4ZghF
 - name: 🇷🇺 AetrisVPN
   server: 46.17.47.58
   port: 18443
@@ -51,63 +51,59 @@ proxies:
     public-key: CfHPtlNvqfK3QPvYfV7u-NjZcQh-buXZTA9gaGwvKmI
     short-id: b781a152ee
 - name: '🇳🇱 AetrisVPN #2'
+  server: 216.172.144.199
+  port: 40643
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: Xd4G9xn7AgT88msCYC9MZfavMUqd3dWFNAvswi6KfaD9YcexptMbPn4cSECEMzDgvAMomAWJHyweqJer99ssMVYGH6TK8k4c
+- name: '🇷🇺 AetrisVPN #2'
+  server: yoy-api.bachidze.com
+  port: 443
+  type: vless
+  uuid: 3bb97d46-789b-4229-88f6-9beb222a4137
+  flow: xtls-rprx-vision
+  client-fingerprint: edge
+  tls: true
+  servername: yoy-api.bachidze.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
+- name: '🇳🇱 AetrisVPN #3'
   server: 194.87.233.93
   port: 46190
   type: ss
   cipher: chacha20-ietf-poly1305
   password: 2Ef8X21WALqK7H6N8A78j5WYtzZ999PP8rF8DaLsb5LLyDLQpf5dGVAjdA3mj1wudigKXTt5heYU9jmaBbfxXBJJAqhPHkxe
-- name: 🇷🇴 Romania [*CIDR]
-  server: 185.178.208.140
+- name: 🇱🇻 AetrisVPN-RU
+  server: 31.130.151.97
   port: 443
   type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: safari
-  tls: true
-  servername: api.bakarova-top.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: 185.178.208.167
-  port: 443
-  type: vless
-  uuid: 18b99163-5196-4ddc-85f8-8fdf5efdcd53
+  uuid: 3f5e89d5-591f-4ac9-b071-b05680b573c3
+  flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: stechnostore.life
-  alpn:
-  - http/1.1
+  servername: addons.mozilla.org
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /player/collect/9c8514f9552d/
-    headers:
-      Host: stechnostore.life
-- name: '🇷🇴 Romania [*CIDR] #2'
+  reality-opts:
+    public-key: 0GBR6DwsCQEYEa7QZHnOqbwmEMr8moms1sFU-wT-bHE
+- name: 🇷🇴 Romania [*CIDR]-RU
   server: 185.178.208.140
   port: 443
   type: vless
   uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: safari
+  client-fingerprint: firefox
   tls: true
   servername: static.bakarova-top.ru
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v2/events
-- name: '🇳🇱 AetrisVPN #3'
-  server: 156.67.120.205
-  port: 51628
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: 29ZZXVa34x7sC48w9FKQ54UKHiJJGTVgKFppBRgviLrVCAYVVyKZdD3obbpjCyk31V5b2G2d7xzqmaPBFdcheCVB9UQ4ZghF
-- name: '🇷🇴 Romania [*CIDR] #3'
+- name: '🇷🇴 Romania [*CIDR]-RU #2'
   server: 185.178.208.140
   port: 443
   type: vless
   uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: chrome
+  client-fingerprint: safari
   tls: true
   servername: static.bakarova-top.ru
   alpn:
@@ -117,20 +113,84 @@ proxies:
   xhttp-opts:
     path: /api/v2/events
     host: static.bakarova-top.ru
-- name: .𖥔 ݁ ˖ִ🛸༄˖°. | [*CIDR]
-  server: msk10.gacvpn.site
+- name: '🇷🇴 Romania [*CIDR]-RU #3'
+  server: 185.178.208.140
   port: 443
   type: vless
-  uuid: 3f5e89d5-591f-4ac9-b071-b05680b573c3
-  flow: xtls-rprx-vision
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: chrome
+  tls: true
+  servername: static.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+    host: static.bakarova-top.ru
+- name: '🇷🇴 Romania [*CIDR]-RU #4'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: ios
+  tls: true
+  servername: static.bakarova-top.ru
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: '🇷🇴 Romania [*CIDR]-RU #5'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: qq
+  tls: true
+  servername: static.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: '🇷🇴 Romania [*CIDR]-RU #6'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
   client-fingerprint: firefox
   tls: true
-  servername: nl3-edge.gacvpn.site
+  servername: api.bakarova-top.ru
   skip-cert-verify: true
-  reality-opts:
-    public-key: Caj4X3VjnHfdRQzWLmjFCiG_CGw0scYYni6UxVfBs38
-    short-id: db6a4219fb
-- name: '🇷🇴 Romania [*CIDR] #4'
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+    host: api.bakarova-top.ru
+- name: '🇷🇴 Romania [*CIDR]-RU #7'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: firefox
+  tls: true
+  servername: static.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+    host: static.bakarova-top.ru
+- name: '🇷🇴 Romania [*CIDR]-RU #8'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: safari
+  tls: true
+  servername: static.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: '🇷🇴 Romania [*CIDR]-RU #9'
   server: 185.178.208.140
   port: 443
   type: vless
@@ -142,7 +202,60 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #5'
+    host: api.bakarova-top.ru
+- name: '🇷🇴 Romania [*CIDR]-RU #10'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: ios
+  tls: true
+  servername: static.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+    host: static.bakarova-top.ru
+- name: '🇷🇴 Romania [*CIDR]-RU #11'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: safari
+  tls: true
+  servername: api.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: '🇷🇴 Romania [*CIDR]-RU #12'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: qq
+  tls: true
+  servername: static.bakarova-top.ru
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+    host: static.bakarova-top.ru
+- name: '🇷🇴 Romania [*CIDR]-RU #13'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: ios
+  tls: true
+  servername: api.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: '🇷🇴 Romania [*CIDR]-RU #14'
   server: 185.178.208.140
   port: 443
   type: vless
@@ -155,20 +268,22 @@ proxies:
   xhttp-opts:
     path: /api/v2/events
     host: static.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #6'
-  server: 185.178.208.140
-  port: 443
+- name: 🇪🇪 AetrisVPN-RU
+  server: 95.129.234.108
+  port: 8443
   type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  uuid: b229d38c-35ec-4a0b-9c86-8fceba243d6c
   client-fingerprint: firefox
   tls: true
-  servername: api.bakarova-top.ru
+  servername: linden-crest.cdn.cachefleet.com
+  alpn:
+  - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
-    path: /api/v2/events
-    host: api.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #7'
+    path: /ccxf5snr06b8xxb6
+    host: fafeqdhlett2p5la6d.cdn.cachefleet.com
+- name: '🇷🇴 Romania [*CIDR]-RU #15'
   server: 185.178.208.140
   port: 443
   type: vless
@@ -183,7 +298,7 @@ proxies:
   xhttp-opts:
     path: /api/v2/events
     host: api.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #8'
+- name: '🇷🇴 Romania [*CIDR]-RU #16'
   server: 185.178.208.140
   port: 443
   type: vless
@@ -196,7 +311,7 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #9'
+- name: '🇷🇴 Romania [*CIDR]-RU #17'
   server: 185.178.208.140
   port: 443
   type: vless
@@ -208,14 +323,19 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /api/v2/events
-    host: static.bakarova-top.ru
-- name: '🇷🇺 AetrisVPN #2'
-  server: 87.228.61.175
-  port: 1443
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: tAGGzgRCi6W95UwG0qerf6
-- name: '🇷🇴 Romania [*CIDR] #10'
+- name: '🇷🇴 Romania [*CIDR]-RU #18'
+  server: 185.178.208.140
+  port: 443
+  type: vless
+  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  client-fingerprint: firefox
+  tls: true
+  servername: api.bakarova-top.ru
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+- name: '🇷🇴 Romania [*CIDR]-RU #19'
   server: 185.178.208.140
   port: 443
   type: vless
@@ -223,198 +343,42 @@ proxies:
   client-fingerprint: chrome
   tls: true
   servername: static.bakarova-top.ru
+  alpn:
+  - h2
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
     path: /api/v2/events
     host: static.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #11'
+- name: '🇷🇴 Romania [*CIDR]-RU #20'
   server: 185.178.208.140
   port: 443
   type: vless
   uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
+  tls: true
+  servername: static.bakarova-top.ru
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /api/v2/events
+    host: static.bakarova-top.ru
+- name: 🇧🇬 AetrisVPN-RU
+  server: 46.243.232.71
+  port: 444
+  type: vless
+  uuid: 37af0181-5598-4aad-a040-d926bcb65757
   client-fingerprint: firefox
   tls: true
-  servername: static.bakarova-top.ru
+  servername: passport.yandex.ru
   skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: static.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #12'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: qq
-  tls: true
-  servername: static.bakarova-top.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: static.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #13'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: chrome
-  tls: true
-  servername: api.bakarova-top.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #14'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: ios
-  tls: true
-  servername: api.bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: api.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #15'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: ios
-  tls: true
-  servername: static.bakarova-top.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #16'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: ios
-  tls: true
-  servername: static.bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #17'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: ios
-  tls: true
-  servername: api.bakarova-top.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: api.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #18'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: firefox
-  tls: true
-  servername: static.bakarova-top.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #19'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: qq
-  tls: true
-  servername: static.bakarova-top.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #20'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: qq
-  tls: true
-  servername: static.bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: static.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #21'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: firefox
-  tls: true
-  servername: static.bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #22'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: firefox
-  tls: true
-  servername: api.bakarova-top.ru
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-- name: '🇷🇴 Romania [*CIDR] #23'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  client-fingerprint: safari
-  tls: true
-  servername: static.bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: static.bakarova-top.ru
-- name: '🇷🇴 Romania [*CIDR] #24'
-  server: 185.178.208.140
-  port: 443
-  type: vless
-  uuid: ea277838-a188-44f1-a2e8-94aa110c4f27
-  tls: true
-  servername: static.bakarova-top.ru
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/v2/events
-    host: static.bakarova-top.ru
-- name: 🇪🇪 AetrisVPN
+  reality-opts:
+    public-key: VHWmCkZwC5XE-ctv0p8BinjoIx4SWgJUIsZPrhNf6TA
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc
+- name: '🇪🇪 AetrisVPN-RU #2'
   server: 62.76.115.227
   port: 8443
   type: vless
@@ -430,68 +394,8 @@ proxies:
     path: /ccxf5snr06b8xxb6
     host: fafeqdhlett2p5la6d.cdn.cachefleet.com
 - name: '🇷🇺 AetrisVPN #3'
-  server: yoy-api.bachidze.com
-  port: 443
-  type: vless
-  uuid: 3bb97d46-789b-4229-88f6-9beb222a4137
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
-  tls: true
-  servername: yoy-api.bachidze.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI
-- name: 🇱🇻 AetrisVPN
-  server: 31.130.151.97
-  port: 443
-  type: vless
-  uuid: 3f5e89d5-591f-4ac9-b071-b05680b573c3
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: addons.mozilla.org
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 0GBR6DwsCQEYEa7QZHnOqbwmEMr8moms1sFU-wT-bHE
-- name: '🇪🇪 AetrisVPN #2'
-  server: 95.129.234.108
-  port: 8443
-  type: vless
-  uuid: b229d38c-35ec-4a0b-9c86-8fceba243d6c
-  client-fingerprint: firefox
-  tls: true
-  servername: linden-crest.cdn.cachefleet.com
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /ccxf5snr06b8xxb6
-    host: fafeqdhlett2p5la6d.cdn.cachefleet.com
-- name: 🇧🇬 AetrisVPN
-  server: 46.243.232.71
-  port: 444
-  type: vless
-  uuid: 37af0181-5598-4aad-a040-d926bcb65757
-  client-fingerprint: firefox
-  tls: true
-  servername: passport.yandex.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: VHWmCkZwC5XE-ctv0p8BinjoIx4SWgJUIsZPrhNf6TA
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc
-- name: '🇱🇻 AetrisVPN #2'
-  server: 78.17.98.192
-  port: 443
-  type: vless
-  uuid: 4d079fbe-33ac-4a80-8441-b0e1818b286a
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: direct.vpndoctor.top
-  skip-cert-verify: true
-  reality-opts:
-    public-key: QPmrizvOUCOOIvlupGnt1reR5bui3U8EZl00VHU4GRA
-    short-id: 3f9537eb0626292b
+  server: 87.228.61.175
+  port: 1443
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: tAGGzgRCi6W95UwG0qerf6
