@@ -1,4 +1,10 @@
 proxies:
+- name: 🇩🇪 AetrisVPN
+  server: 135.220.178.46
+  port: 46303
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: zZMNTGpPl38ASlbI1EKOBJ
 - name: 🇫🇮 AetrisVPN
   server: 176.108.245.237
   port: 443
@@ -11,32 +17,107 @@ proxies:
   - h2
   - http/1.1
   skip-cert-verify: true
-- name: 🇫🇷 AetrisVPN
-  server: 185.147.27.23
-  port: 2083
+- name: 🇫🇷 France [*CIDR]
+  server: eu90.cdn77.icu
+  port: 20028
   type: vless
-  uuid: 7592ca5c-b352-4562-8856-a9c936a3331b
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
+  uuid: 2f094d48-7186-47ca-9e57-e977bbac3b08
+  client-fingerprint: chrome
   tls: true
-  servername: frb1.hat.onl
+  servername: eu64.cdn77.icu
   skip-cert-verify: true
   reality-opts:
-    public-key: LSatvkYtdgq5oND_moM9NRW-ZDbdlTvyX9gzeF9r3W8
-    short-id: 1cfdb63f3b860379
+    public-key: EltWI8AOqkN8lMjRycweRRoFRah5hu6xiKtgBmQOdE8
 - name: 🇳🇱 AetrisVPN
-  server: 216.172.144.199
-  port: 40643
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: Xd4G9xn7AgT88msCYC9MZfavMUqd3dWFNAvswi6KfaD9YcexptMbPn4cSECEMzDgvAMomAWJHyweqJer99ssMVYGH6TK8k4c
+  server: 185.178.208.167
+  port: 443
+  type: vless
+  uuid: 4662bf2b-af58-0001-ae5f-ef3d7d3a624f
+  client-fingerprint: ios
+  tls: true
+  servername: mbr.rkn-pediki.site
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /session
+    headers:
+      Host: mbr.rkn-pediki.site
 - name: 🇷🇺 AetrisVPN
   server: 46.17.47.58
   port: 18443
   type: ss
   cipher: aes-256-gcm
   password: cCMJgJTA3BA489YUYrFq7XHXSiSpWlLa
+- name: 🇩🇪 Germany [*CIDR]
+  server: 189.74.106.141
+  port: 443
+  type: vless
+  uuid: 65a3bcca-4fd7-4898-8e0c-1740d0de7dd3
+  flow: xtls-rprx-vision
+  client-fingerprint: safari
+  tls: true
+  servername: api.setevoypriliv.cc
+  skip-cert-verify: true
+  reality-opts:
+    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
+    short-id: a8
 - name: '🇳🇱 AetrisVPN #2'
+  server: 216.172.144.199
+  port: 40643
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: Xd4G9xn7AgT88msCYC9MZfavMUqd3dWFNAvswi6KfaD9YcexptMbPn4cSECEMzDgvAMomAWJHyweqJer99ssMVYGH6TK8k4c
+- name: 🇬🇷 Greece | 🌐 [*CIDR]
+  server: eu90.cdn77.icu
+  port: 20031
+  type: vless
+  uuid: 2f094d48-7186-47ca-9e57-e977bbac3b08
+  client-fingerprint: chrome
+  tls: true
+  servername: eu64.cdn77.icu
+  skip-cert-verify: true
+  reality-opts:
+    public-key: EltWI8AOqkN8lMjRycweRRoFRah5hu6xiKtgBmQOdE8
+    short-id: 1ed136481e0ede74
+- name: '🇳🇱 AetrisVPN #3'
+  server: 156.67.120.205
+  port: 51628
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: 29ZZXVa34x7sC48w9FKQ54UKHiJJGTVgKFppBRgviLrVCAYVVyKZdD3obbpjCyk31V5b2G2d7xzqmaPBFdcheCVB9UQ4ZghF
+- name: 🇦🇱 Albania [*CIDR]
+  server: eu90.cdn77.icu
+  port: 20002
+  type: vless
+  uuid: 2f094d48-7186-47ca-9e57-e977bbac3b08
+  client-fingerprint: chrome
+  tls: true
+  servername: eu64.cdn77.icu
+  skip-cert-verify: true
+  reality-opts:
+    public-key: EltWI8AOqkN8lMjRycweRRoFRah5hu6xiKtgBmQOdE8
+    short-id: 1ed136481e0ede74
+- name: '🇳🇱 AetrisVPN #4'
+  server: 177.202.64.67
+  port: 1080
+  type: ss
+  cipher: aes-256-gcm
+  password: FJo_V-KMvriDekN0CYkdNH0C
+- name: 🇭🇷 Croatia | 🌐 [*CIDR]
+  server: eu90.cdn77.icu
+  port: 20033
+  type: vless
+  uuid: 2f094d48-7186-47ca-9e57-e977bbac3b08
+  client-fingerprint: chrome
+  tls: true
+  servername: eu64.cdn77.icu
+  skip-cert-verify: true
+  reality-opts:
+    public-key: EltWI8AOqkN8lMjRycweRRoFRah5hu6xiKtgBmQOdE8
+    short-id: 1ed136481e0ede74
+- name: '🇳🇱 AetrisVPN #5'
   server: 78.159.250.107
   port: 443
   type: vless
@@ -48,61 +129,64 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: drY21DHNOr6ezJLA2B10mzTExeJ9-gVBfTBNLwVBtWI
-- name: 🇪🇺 AetrisVPN
-  server: 87.228.61.175
-  port: 1443
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: tAGGzgRCi6W95UwG0qerf6
-- name: '🇳🇱 AetrisVPN #3'
-  server: 177.202.64.67
-  port: 1080
-  type: ss
-  cipher: aes-256-gcm
-  password: FJo_V-KMvriDekN0CYkdNH0C
-- name: '🇷🇺 AetrisVPN #2'
-  server: 45.139.27.125
-  port: 443
+- name: 🇷🇸 Serbia [*CIDR]
+  server: eu90.cdn77.icu
+  port: 20058
   type: vless
-  uuid: 7592ca5c-b352-4562-8856-a9c936a3331b
-  flow: xtls-rprx-vision
-  client-fingerprint: edge
+  uuid: 2f094d48-7186-2710-9e57-e977bbac3b08
+  client-fingerprint: chrome
   tls: true
-  servername: ru1.hat.onl
+  servername: eu64.cdn77.icu
   skip-cert-verify: true
   reality-opts:
-    public-key: obFanw7jqCcrXOlFqJhdOUsduntz_7jte8A11f3MSmQ
-    short-id: 6d0092600a52a7c9
-- name: '🇳🇱 AetrisVPN #4'
-  server: 156.67.120.205
-  port: 51628
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: 29ZZXVa34x7sC48w9FKQ54UKHiJJGTVgKFppBRgviLrVCAYVVyKZdD3obbpjCyk31V5b2G2d7xzqmaPBFdcheCVB9UQ4ZghF
-- name: 🇱🇻 AetrisVPN
-  server: 83.217.201.82
+    public-key: EltWI8AOqkN8lMjRycweRRoFRah5hu6xiKtgBmQOdE8
+    short-id: 1ed136481e0ede74
+- name: 🇳🇱 The Netherlands | 🌐 [*CIDR]
+  server: ru1.cdn-space.org
   port: 443
   type: vless
-  uuid: ebd1c0d6-7ff4-4b9f-8692-237517a27a64
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
+  uuid: f219ffe2-bc36-495f-a83d-8f9ac4af05fd
+  client-fingerprint: chrome
   tls: true
-  servername: skvoz-dpi.com
+  servername: ru1.cdn-space.org
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /assets/api/v3/connect/
+    host: ru1.cdn-space.org
+- name: 🇭🇺 Hungary [*CIDR]
+  server: eu90.cdn77.icu
+  port: 20034
+  type: vless
+  uuid: 2f094d48-7186-206c-9e57-e977bbac3b08
+  client-fingerprint: chrome
+  tls: true
+  servername: eu64.cdn77.icu
   skip-cert-verify: true
   reality-opts:
-    public-key: mza5Hn1aolSz65qu-UwvBP3oesxMe25r11o4nxvikF0
-    short-id: d1579a8745398e34
-- name: '🇷🇺 AetrisVPN #3'
-  server: 185.86.147.175
-  port: 443
+    public-key: EltWI8AOqkN8lMjRycweRRoFRah5hu6xiKtgBmQOdE8
+    short-id: 1ed136481e0ede74
+- name: 🇲🇰 North Macedonia | 🌐 [*CIDR]
+  server: eu90.cdn77.icu
+  port: 20049
   type: vless
-  uuid: 7955bf18-35c4-412d-aabd-c0b36c793063
-  client-fingerprint: firefox
+  uuid: 2f094d48-7186-47ca-9e57-e977bbac3b08
+  client-fingerprint: chrome
   tls: true
-  servername: bhjolq0d0l.flowersgood.top
+  servername: eu64.cdn77.icu
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /service/telemetry/045d381f1166/
-    headers:
-      Host: bhjolq0d0l.flowersgood.top
+  reality-opts:
+    public-key: EltWI8AOqkN8lMjRycweRRoFRah5hu6xiKtgBmQOdE8
+    short-id: 1ed136481e0ede74
+- name: 🇱🇻 Latvia [*CIDR]
+  server: eu90.cdn77.icu
+  port: 20047
+  type: vless
+  uuid: 2f094d48-7186-47ca-9e57-e977bbac3b08
+  client-fingerprint: chrome
+  tls: true
+  servername: eu32.cdn77.icu
+  skip-cert-verify: true
+  reality-opts:
+    public-key: EltWI8AOqkN8lMjRycweRRoFRah5hu6xiKtgBmQOdE8
+    short-id: 1ed136481e0ede74
