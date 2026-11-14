@@ -32,7 +32,7 @@ proxies:
   cipher: aes-256-gcm
   password: NTiHBg64fsY8u8DbGrtypD9gPGSL386p
 - name: '🇳🇱 AetrisVPN #2'
-  server: 51.158.206.25
+  server: 51.158.206.19
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -44,7 +44,7 @@ proxies:
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
-- name: 🇪🇪 AetrisVPN
+- name: 🇪🇪 AetrisVPN-RU
   server: 95.129.234.108
   port: 8443
   type: vless
@@ -60,18 +60,18 @@ proxies:
     path: /ccxf5snr06b8xxb6
     host: fafeqdhlett2p5la6d.cdn.cachefleet.com
 - name: '🇳🇱 AetrisVPN #3'
-  server: 51.158.206.26
+  server: 51.158.206.96
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
   flow: xtls-rprx-vision
-  client-fingerprint: firefox
   tls: true
   servername: fuck.rkn
   skip-cert-verify: true
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
+  client-fingerprint: chrome
 - name: '🇷🇺 AetrisVPN #2'
   server: 129.101.98.60
   port: 443
@@ -86,25 +86,25 @@ proxies:
     public-key: lews1n_fypGexd_dMofEO4Vy1ULsFeVIFa90MMY3pm4
     short-id: 3992cc7fb9fcbe58
 - name: '🇳🇱 AetrisVPN #4'
-  server: 51.158.206.96
+  server: 51.158.206.103
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
   flow: xtls-rprx-vision
+  client-fingerprint: chrome
   tls: true
   servername: fuck.rkn
   skip-cert-verify: true
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
-  client-fingerprint: chrome
 - name: '🇳🇱 AetrisVPN #5'
-  server: 51.158.206.19
+  server: 51.158.206.26
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: firefox
   tls: true
   servername: fuck.rkn
   skip-cert-verify: true
@@ -112,7 +112,7 @@ proxies:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
 - name: '🇳🇱 AetrisVPN #6'
-  server: 51.158.206.103
+  server: 51.158.206.25
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -143,16 +143,3 @@ proxies:
   type: ss
   cipher: chacha20-ietf-poly1305
   password: 29ZZXVa34x7sC48w9FKQ54UKHiJJGTVgKFppBRgviLrVCAYVVyKZdD3obbpjCyk31V5b2G2d7xzqmaPBFdcheCVB9UQ4ZghF
-- name: '🇳🇱 AetrisVPN #9'
-  server: 147.45.111.214
-  port: 443
-  type: vless
-  uuid: 2232d904-8e6a-4202-8240-6efd8aec02e9
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: door.jarbook.net
-  skip-cert-verify: true
-  reality-opts:
-    public-key: eASI5luXjv595NrIxXGrSlcdViOkJkiW2smqpJMonwU
-    short-id: da4ca814
