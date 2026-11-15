@@ -12,15 +12,6 @@ proxies:
     public-key: Tiuy8om5Lk0pWL95-8LaFFTwH0vbURVMoOkaW9xGaiE
     short-id: 670ed9f350bd8ee0
   client-fingerprint: chrome
-- name: 🇫🇮 Finland [*CIDR]
-  server: 165.231.157.148
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  tls: true
-  servername: api-6af74a4f.adhil.uk
-  skip-cert-verify: true
 - name: 🇫🇷 AetrisVPN
   server: 145.223.68.58
   port: 443
@@ -35,7 +26,7 @@ proxies:
     public-key: qc2DcqT9zPPZr6ePZ7ukxACWrYhRNIBjDIjCK7veyQg
     short-id: a44ff7d2e80213c2
 - name: 🇳🇱 AetrisVPN
-  server: 51.158.206.25
+  server: 51.158.206.8
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -47,57 +38,7 @@ proxies:
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
-- name: 🇩🇪 Germany [*CIDR]
-  server: node2.shakalchk.ru
-  port: 443
-  type: vless
-  uuid: 4fb48619-c29d-47f3-8c21-12bdc3286935
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: node2.shakalchk.ru
-  skip-cert-verify: true
-  reality-opts:
-    public-key: bqzRxK5Nr7muCBDtExsYRK4yrxMwVPOH0_avLu27LQI
-    short-id: a132a3
-- name: '🇫🇮 Finland [*CIDR] #2'
-  server: 165.231.157.148
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  tls: true
-  servername: api-6af74a4f.adhil.uk
-  skip-cert-verify: true
 - name: '🇳🇱 AetrisVPN #2'
-  server: 51.158.206.19
-  port: 23576
-  type: vless
-  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: fuck.rkn
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
-    short-id: '01'
-- name: 🇩🇪192Mb
-  server: 159.69.215.129
-  port: 16472
-  type: vless
-  uuid: 022a94af-f0ab-4227-bcee-a23f792f1813
-- name: '🇫🇮 Finland [*CIDR] #3'
-  server: 165.231.157.148
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api-6af74a4f.adhil.uk
-  skip-cert-verify: true
-- name: '🇳🇱 AetrisVPN #3'
   server: 51.158.206.103
   port: 23576
   type: vless
@@ -110,17 +51,7 @@ proxies:
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
-- name: '🇫🇮 Finland [*CIDR] #4'
-  server: 165.231.157.148
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-6af74a4f.adhil.uk
-  skip-cert-verify: true
-- name: '🇳🇱 AetrisVPN #4'
+- name: '🇳🇱 AetrisVPN #3'
   server: 51.158.206.80
   port: 23576
   type: vless
@@ -133,8 +64,21 @@ proxies:
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
+- name: '🇳🇱 AetrisVPN #4'
+  server: 51.158.206.25
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
 - name: '🇳🇱 AetrisVPN #5'
-  server: 51.158.206.8
+  server: 51.158.206.19
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -152,273 +96,7 @@ proxies:
   type: ss
   cipher: chacha20-ietf-poly1305
   password: 29ZZXVa34x7sC48w9FKQ54UKHiJJGTVgKFppBRgviLrVCAYVVyKZdD3obbpjCyk31V5b2G2d7xzqmaPBFdcheCVB9UQ4ZghF
-- name: 🇳🇱 The Netherlands [*CIDR]
-  server: 196.240.125.250
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api-v1-6af87527.vmagnum.win
-  alpn:
-  - '[h2]'
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #2'
-  server: 196.240.125.250
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api-v1-6af87527.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #3'
-  server: 196.240.125.250
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  tls: true
-  servername: api-v1-6af87527.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #4'
-  server: 196.240.125.250
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api-v1-6af87527.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #5'
-  server: 196.240.125.250
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v1-6af87527.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #6'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: qq
-  tls: true
-  servername: api-v1-6af86a96.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #7'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api-v2-6af74a4f.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #8'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api-v1-6af86a96.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #9'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v1-6af86a96.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #10'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  tls: true
-  servername: api-v1-6af86a96.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #11'
-  server: 196.240.125.250
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v1-6af87527.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #12'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v1-6af86f4c.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #13'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: ios
-  tls: true
-  servername: api-v1-6af86a96.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #14'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api-v1-6af86a96.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #15'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api-v1-6af74a4f.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #16'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: safari
-  tls: true
-  servername: api-v1-6af86f4c.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #17'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: api-v1-6af86a96.vmagnum.win
-  alpn:
-  - h2
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #18'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  tls: true
-  servername: api-v1-6af74a4f.vmagnum.win
-  skip-cert-verify: true
-- name: '🇳🇱 The Netherlands [*CIDR] #19'
-  server: 196.240.125.10
-  port: 8443
-  type: vless
-  uuid: 97fd7807-7e2b-49da-8a0e-e40197088f97
-  flow: xtls-rprx-vision
-  tls: true
-  servername: api-v1-6af86a96.vmagnum.win
-  alpn:
-  - '[h2]'
-  skip-cert-verify: true
-- name: 🇮🇱 Israel [*CIDR]
-  server: 83.171.241.192
-  port: 443
-  type: vless
-  uuid: cda0862a-0f87-4be9-8ed8-1d0c9e382839
-  client-fingerprint: firefox
-  tls: true
-  servername: 80cb66x.nl13.h1clayd.click
-  skip-cert-verify: true
-  reality-opts:
-    public-key: jhVdP7NFUaEXGfrmOqJlMCHTvqn3fymbzPfPT6NO4i0
-    short-id: f72d4a2c7cbbacb1
-  network: xhttp
-  xhttp-opts:
-    path: /d610f026b146
-- name: '🇮🇱 Israel [*CIDR] #2'
-  server: 83.171.241.192
-  port: 443
-  type: vless
-  uuid: cda0862a-0f87-4be9-8ed8-1d0c9e382839
-  client-fingerprint: firefox
-  tls: true
-  servername: f0d7aft.nl13.h1clayd.click
-  skip-cert-verify: true
-  reality-opts:
-    public-key: kkCGiCQCKnkozJR1KKCRNtmdBECmThCgI9VSv7iDcWI
-    short-id: 8956c57cb4c4f8d2
-- name: '🇮🇱 Israel [*CIDR] #3'
-  server: 83.171.241.192
-  port: 443
-  type: vless
-  uuid: cda0862a-0f87-4be9-8ed8-1d0c9e382839
-  client-fingerprint: firefox
-  tls: true
-  servername: 961ec0g.nl13.h1clayd.click
-  skip-cert-verify: true
-  reality-opts:
-    public-key: xn7KVKS5MOnsFrYrEeRS04JssBCOxh12rxegaDFyGkA
-    short-id: 6d289ff0f47c0aac
-  network: grpc
-  grpc-opts:
-    grpc-service-name: 7d5abcd7d8a1
-- name: '🇮🇱 Israel [*CIDR] #4'
-  server: 83.171.241.192
-  port: 443
-  type: vless
-  uuid: cda0862a-0f87-4be9-8ed8-1d0c9e382839
-  client-fingerprint: firefox
-  tls: true
-  servername: 80cb66x.nl13.h1clayd.click
-  skip-cert-verify: true
-  reality-opts:
-    public-key: jhVdP7NFUaEXGfrmOqJlMCHTvqn3fymbzPfPT6NO4i0
-    short-id: f72d4a2c7cbbacb1
-  network: xhttp
-  xhttp-opts:
-    path: /d610f026b146
-    host: 80cb66x.nl13.h1clayd.click
-- name: '🇮🇱 Israel [*CIDR] #5'
+- name: 🇮🇱 Israel [*CIDR]-NL
   server: 83.171.241.166
   port: 443
   type: vless
@@ -433,7 +111,7 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /0616f2d729aa
-- name: '🇮🇱 Israel [*CIDR] #6'
+- name: '🇮🇱 Israel [*CIDR]-NL #2'
   server: 83.171.241.166
   port: 443
   type: vless
