@@ -1,85 +1,20 @@
 proxies:
 - name: 🇩🇪 AetrisVPN
-  server: 82.118.19.153
-  port: 443
+  server: 138.16.206.147
+  port: 2096
   type: vless
-  uuid: adcaa148-7c66-4282-a81a-99ec8afa029d
-  flow: xtls-rprx-vision
+  uuid: 6a5b48fe-9a99-4509-9bad-8ad9b44bd56e
+  client-fingerprint: firefox
   tls: true
   servername: www.cloudflare.com
   skip-cert-verify: true
   reality-opts:
-    public-key: Tiuy8om5Lk0pWL95-8LaFFTwH0vbURVMoOkaW9xGaiE
-    short-id: 670ed9f350bd8ee0
-  client-fingerprint: chrome
+    public-key: 4q4qXs-E4wzxXyV4TrOC-mEzx2S6h_LjQ_t_gc4wQEs
+    short-id: 6ba85179e30d4fc2
+  network: grpc
+  grpc-opts:
+    grpc-service-name: inetgrpc
 - name: 🇫🇮 Finland [*CIDR]
-  server: 78ec29x.fi2.h1clayd.click
-  port: 443
-  type: vless
-  uuid: 537d8ade-134d-4ec2-905c-0187e7e1e22e
-  tls: true
-  servername: 78ec29x.fi2.h1clayd.click
-  skip-cert-verify: true
-  reality-opts:
-    public-key: WCuIW5EhUUfvOtDeVO-M7NjwXaE20zinTv3rpQ9erxs
-    short-id: 6f2d8ece33a96159
-  client-fingerprint: chrome
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: 🇫🇷 France [*CIDR]
-  server: 189.74.117.3
-  port: 443
-  type: vless
-  uuid: 239b816e-2095-46fb-a33b-1f565b6ed3ac
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: api.videodolina.cc
-  skip-cert-verify: true
-  reality-opts:
-    public-key: r5WB5FnSCt4eeBC1FJMfkWHbzsMuabo0Rc6wuAhlZUs
-    short-id: a8
-- name: 🇳🇱 AetrisVPN
-  server: 51.158.206.26
-  port: 23576
-  type: vless
-  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: fuck.rkn
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
-    short-id: '01'
-- name: 🇷🇺 AetrisVPN
-  server: ams2.shtil.io
-  port: 444
-  type: vless
-  uuid: 254f28cb-d0c1-41e9-a06b-f2155213ff04
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: ams2.shtil.io
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-- name: '🇩🇪 AetrisVPN #2'
-  server: newerson.online
-  port: 443
-  type: vless
-  uuid: b9abca13-8d45-43db-b0a2-4d26f85380c3
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: newerson.online
-  skip-cert-verify: true
-  reality-opts:
-    public-key: TiKF_6UGMtWhgDiAGLsAtyYwyv-s3HxG6F0P9ltyf1U
-    short-id: 8888265ef63fba6d
-- name: '🇫🇮 Finland [*CIDR] #2'
   server: 78ec29x.fi2.h1clayd.click
   port: 443
   type: vless
@@ -94,8 +29,62 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /
+- name: 🇳🇱 AetrisVPN
+  server: 51.158.206.96
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+  client-fingerprint: chrome
+- name: 🇷🇺 AetrisVPN
+  server: ams2.shtil.io
+  port: 444
+  type: vless
+  uuid: 254f28cb-d0c1-41e9-a06b-f2155213ff04
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: ams2.shtil.io
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+- name: '🇩🇪 AetrisVPN #2'
+  server: 82.118.19.153
+  port: 443
+  type: vless
+  uuid: adcaa148-7c66-4282-a81a-99ec8afa029d
+  flow: xtls-rprx-vision
+  tls: true
+  servername: www.cloudflare.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: Tiuy8om5Lk0pWL95-8LaFFTwH0vbURVMoOkaW9xGaiE
+    short-id: 670ed9f350bd8ee0
+  client-fingerprint: chrome
+- name: '🇫🇮 Finland [*CIDR] #2'
+  server: 78ec29x.fi2.h1clayd.click
+  port: 443
+  type: vless
+  uuid: 537d8ade-134d-4ec2-905c-0187e7e1e22e
+  tls: true
+  servername: 78ec29x.fi2.h1clayd.click
+  skip-cert-verify: true
+  reality-opts:
+    public-key: WCuIW5EhUUfvOtDeVO-M7NjwXaE20zinTv3rpQ9erxs
+    short-id: 6f2d8ece33a96159
+  client-fingerprint: chrome
+  network: xhttp
+  xhttp-opts:
+    path: /
 - name: '🇳🇱 AetrisVPN #2'
-  server: 51.158.206.19
+  server: 51.158.206.8
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -121,20 +110,21 @@ proxies:
     public-key: lews1n_fypGexd_dMofEO4Vy1ULsFeVIFa90MMY3pm4
     short-id: 3992cc7fb9fcbe58
 - name: '🇩🇪 AetrisVPN #3'
-  server: 138.16.206.147
-  port: 2096
+  server: reedbed.filnex.baby
+  port: 443
   type: vless
-  uuid: 6a5b48fe-9a99-4509-9bad-8ad9b44bd56e
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
   client-fingerprint: firefox
   tls: true
-  servername: www.cloudflare.com
+  servername: reedbed.filnex.baby
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: 4q4qXs-E4wzxXyV4TrOC-mEzx2S6h_LjQ_t_gc4wQEs
-    short-id: 6ba85179e30d4fc2
-  network: grpc
-  grpc-opts:
-    grpc-service-name: inetgrpc
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: reedbed.filnex.baby
 - name: '🇫🇮 Finland [*CIDR] #3'
   server: 78ec29x.fi2.h1clayd.click
   port: 443
@@ -151,62 +141,19 @@ proxies:
   xhttp-opts:
     path: /
 - name: '🇳🇱 AetrisVPN #3'
-  server: 51.158.206.96
+  server: 51.158.206.26
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
   flow: xtls-rprx-vision
+  client-fingerprint: firefox
   tls: true
   servername: fuck.rkn
   skip-cert-verify: true
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
-  client-fingerprint: chrome
 - name: '🇷🇺 AetrisVPN #3'
-  server: 201.24.121.243
-  port: 443
-  type: vless
-  uuid: 32b5ca9b-3f81-4031-965d-e8b074216e8d
-  client-fingerprint: firefox
-  tls: true
-  servername: kk-ru24a1.testkknegr.online
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: vlgrpc
-- name: '🇩🇪 AetrisVPN #4'
-  server: reedbed.filnex.baby
-  port: 443
-  type: vless
-  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
-  client-fingerprint: firefox
-  tls: true
-  servername: reedbed.filnex.baby
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/de6/stream
-    headers:
-      Host: reedbed.filnex.baby
-- name: '🇳🇱 AetrisVPN #4'
-  server: 51.158.206.8
-  port: 23576
-  type: vless
-  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: fuck.rkn
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
-    short-id: '01'
-- name: '🇷🇺 AetrisVPN #4'
   server: 201.51.12.98
   port: 443
   type: vless
@@ -232,6 +179,33 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: glush.de3.v1
+- name: '🇳🇱 AetrisVPN #4'
+  server: 51.158.206.25
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+- name: '🇷🇺 AetrisVPN #4'
+  server: 201.24.121.243
+  port: 443
+  type: vless
+  uuid: 32b5ca9b-3f81-4031-965d-e8b074216e8d
+  client-fingerprint: firefox
+  tls: true
+  servername: kk-ru24a1.testkknegr.online
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: vlgrpc
 - name: '🇳🇱 AetrisVPN #5'
   server: 51.158.206.80
   port: 23576
@@ -245,32 +219,7 @@ proxies:
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
-- name: '🇷🇺 AetrisVPN #5'
-  server: 201.24.116.192
-  port: 443
-  type: vless
-  uuid: 38308ff1-5aa9-494f-a25a-0f2870d56b3e
-  client-fingerprint: firefox
-  tls: true
-  servername: vps3.nemnogogo.com
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: mobile.api.Event
-- name: '🇳🇱 AetrisVPN #6'
-  server: 51.158.206.34
-  port: 23576
-  type: vless
-  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: fuck.rkn
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
-    short-id: '01'
-- name: 🇧🇾 AetrisVPN
+- name: 🇧🇾 AetrisVPN-RU
   server: 84.23.52.104
   port: 9079
   type: vless
@@ -285,8 +234,8 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: inetgrpc
-- name: '🇳🇱 AetrisVPN #7'
-  server: 51.158.206.25
+- name: '🇳🇱 AetrisVPN #6'
+  server: 51.158.206.34
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -298,7 +247,7 @@ proxies:
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
-- name: 🇪🇪 AetrisVPN
+- name: 🇪🇪 AetrisVPN-RU
   server: 84.23.52.104
   port: 9009
   type: vless
@@ -313,6 +262,19 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: inetgrpc
+- name: '🇳🇱 AetrisVPN #7'
+  server: 51.158.206.19
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
 - name: '🇳🇱 AetrisVPN #8'
   server: 87.199.205.28
   port: 443
@@ -326,23 +288,6 @@ proxies:
   reality-opts:
     public-key: W-9zyiOq287RtXVTZlTFbSDJ0Mx8joyBLJoA7ZE7eBw
     short-id: ef1d3554c652a436
-- name: 🇳🇱 The Netherlands [*CIDR] CDN
-  server: 37.18.14.177
-  port: 443
-  type: vless
-  uuid: 2232d904-8e6a-4202-8240-6efd8aec02e9
-  client-fingerprint: chrome
-  tls: true
-  servername: exl6vz64yc.deshevayashaurma.icu
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /player/events/8be4cef5ec05/
-    headers:
-      Host: l2hbelfbzv.flowersgood.top
 - name: '🇳🇱 AetrisVPN #9'
   server: 138.16.206.147
   port: 9114
