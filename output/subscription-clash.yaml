@@ -1,22 +1,34 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: clover.filnex.baby
+- name: 🇩🇪 Germany | 🌐 [*CIDR]
+  server: 104.171.139.81
   port: 443
   type: vless
-  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
-  client-fingerprint: firefox
+  uuid: 4b50270b-5caf-4c34-b3da-17b4525604a6
+  client-fingerprint: edge
   tls: true
-  servername: clover.filnex.baby
+  servername: luminexorizon.ink
   alpn:
+  - h2
   - http/1.1
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/de6/stream
-    headers:
-      Host: clover.filnex.baby
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de3.v1
+- name: 🇫🇷 AetrisVPN
+  server: 145.223.68.58
+  port: 443
+  type: vless
+  uuid: edb50d20-2d3e-4c1e-8a75-a17168a89aa5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: www.cloudflare.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: qc2DcqT9zPPZr6ePZ7ukxACWrYhRNIBjDIjCK7veyQg
+    short-id: a44ff7d2e80213c2
 - name: 🇳🇱 AetrisVPN
-  server: 51.158.206.34
+  server: 51.158.206.25
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -42,48 +54,20 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: mobile.api.Event
-- name: 🇩🇪 Germany | 🌐 | [*CIDR]
-  server: 104.171.139.81
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #2'
+  server: luminexorizon.ink
   port: 443
   type: vless
   uuid: 4b50270b-5caf-4c34-b3da-17b4525604a6
-  client-fingerprint: edge
   tls: true
   servername: luminexorizon.ink
   alpn:
   - h2
-  - http/1.1
   skip-cert-verify: true
   network: grpc
   grpc-opts:
     grpc-service-name: glush.de3.v1
 - name: '🇳🇱 AetrisVPN #2'
-  server: 51.158.206.80
-  port: 23576
-  type: vless
-  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: fuck.rkn
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
-    short-id: '01'
-- name: '🇳🇱 AetrisVPN #3'
-  server: 51.158.206.25
-  port: 23576
-  type: vless
-  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: fuck.rkn
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
-    short-id: '01'
-- name: '🇳🇱 AetrisVPN #4'
   server: 51.158.206.26
   port: 23576
   type: vless
@@ -96,7 +80,131 @@ proxies:
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
+- name: '🇷🇺 AetrisVPN #2'
+  server: ru7e2bab87cc39.eu-cdn539.com
+  port: 443
+  type: vless
+  uuid: e75ad2eb-6c1f-45ce-8023-f5f10875df66
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: ru7e2bab87cc39.eu-cdn539.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: lews1n_fypGexd_dMofEO4Vy1ULsFeVIFa90MMY3pm4
+    short-id: 3992cc7fb9fcbe58
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #3'
+  server: reedbed.filnex.baby
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: random
+  tls: true
+  servername: reedbed.filnex.baby
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: reedbed.filnex.baby
+- name: '🇳🇱 AetrisVPN #3'
+  server: 51.158.206.34
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+- name: '🇷🇺 AetrisVPN #3'
+  server: 201.24.116.192
+  port: 443
+  type: vless
+  uuid: 38308ff1-5aa9-494f-a25a-0f2870d56b3e
+  client-fingerprint: firefox
+  tls: true
+  servername: vps3.nemnogogo.com
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: mobile.api.Event
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #4'
+  server: reedbed.filnex.baby
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: ios
+  tls: true
+  servername: reedbed.filnex.baby
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: reedbed.filnex.baby
+- name: '🇳🇱 AetrisVPN #4'
+  server: 51.158.206.103
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #5'
+  server: reedbed.filnex.baby
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  tls: true
+  servername: reedbed.filnex.baby
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: reedbed.filnex.baby
 - name: '🇳🇱 AetrisVPN #5'
+  server: 51.158.206.80
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #6'
+  server: reedbed.filnex.baby
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  tls: true
+  servername: reedbed.filnex.baby
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: reedbed.filnex.baby
+- name: '🇳🇱 AetrisVPN #6'
   server: 87.199.205.28
   port: 443
   type: vless
@@ -109,7 +217,19 @@ proxies:
   reality-opts:
     public-key: W-9zyiOq287RtXVTZlTFbSDJ0Mx8joyBLJoA7ZE7eBw
     short-id: ef1d3554c652a436
-- name: 🇳🇱 The Netherlands | [*CIDR] YA
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #7'
+  server: pebble.gerqix.online
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: firefox
+  tls: true
+  servername: pebble.gerqix.online
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de2.v1
+- name: 🇳🇱 The Netherlands [*CIDR] YA
   server: 92.255.58.59
   port: 443
   type: vless
@@ -124,22 +244,23 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc
-- name: '🇳🇱 The Netherlands | [*CIDR] YA #2'
-  server: 92.255.58.59
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #8'
+  server: rivulet.filnex.baby
   port: 443
   type: vless
-  uuid: a30903dc-1bf0-0001-8b1b-603a3a56211c
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
   client-fingerprint: ios
   tls: true
-  servername: api-gw-cfg.galioncc.com
+  servername: rivulet.filnex.baby
+  alpn:
+  - http/1.1
   skip-cert-verify: true
-  reality-opts:
-    public-key: drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ
-    short-id: 344f83372596eea2
-  network: grpc
-  grpc-opts:
-    grpc-service-name: grpc
-- name: '🇳🇱 The Netherlands | [*CIDR] YA #3'
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: rivulet.filnex.baby
+- name: '🇳🇱 The Netherlands [*CIDR] YA #2'
   server: 92.255.58.59
   port: 443
   type: vless
@@ -154,3 +275,193 @@ proxies:
   network: grpc
   grpc-opts:
     grpc-service-name: grpc
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #9'
+  server: pebble.gerqix.online
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: firefox
+  tls: true
+  servername: pebble.gerqix.online
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de2.v1
+- name: '🇳🇱 The Netherlands [*CIDR] YA #3'
+  server: 92.255.58.59
+  port: 443
+  type: vless
+  uuid: a30903dc-1bf0-0001-8b1b-603a3a56211c
+  client-fingerprint: chrome
+  tls: true
+  servername: api-gw-cfg.galioncc.com
+  skip-cert-verify: true
+  reality-opts:
+    public-key: drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ
+    short-id: 344f83372596eea2
+  network: grpc
+  grpc-opts:
+    grpc-service-name: grpc
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #10'
+  server: linen.gerqix.online
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: firefox
+  tls: true
+  servername: linen.gerqix.online
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de1.v1
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #11'
+  server: clover.filnex.baby
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: chrome
+  tls: true
+  servername: clover.filnex.baby
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: clover.filnex.baby
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #12'
+  server: pebble.gerqix.online
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: safari
+  tls: true
+  servername: pebble.gerqix.online
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de2.v1
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #13'
+  server: linen.gerqix.online
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: random
+  tls: true
+  servername: linen.gerqix.online
+  alpn:
+  - h2
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de1.v1
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #14'
+  server: 201.24.55.217
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: firefox
+  tls: true
+  servername: reedbed.filnex.baby
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: reedbed.filnex.baby
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #15'
+  server: rivulet.filnex.baby
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: safari
+  tls: true
+  servername: rivulet.filnex.baby
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: rivulet.filnex.baby
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #16'
+  server: clover.filnex.baby
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  tls: true
+  servername: clover.filnex.baby
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: clover.filnex.baby
+- name: 🇩🇪 AetrisVPN
+  server: 104.171.139.81
+  port: 443
+  type: vless
+  uuid: 4b50270b-5caf-4c34-b3da-17b4525604a6
+  client-fingerprint: firefox
+  tls: true
+  servername: luminexorizon.ink
+  alpn:
+  - h2%2Chttp/1.1
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de3.v1
+- name: '🇩🇪 AetrisVPN #2'
+  server: rivulet.filnex.baby
+  port: 443
+  type: vless
+  uuid: 80a06811-f74b-4b82-ac99-7e66c2a98e1c
+  client-fingerprint: firefox
+  tls: true
+  servername: rivulet.filnex.baby
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/de6/stream
+    headers:
+      Host: rivulet.filnex.baby
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #17'
+  server: 104.171.139.81
+  port: 443
+  type: vless
+  uuid: 4b50270b-5caf-4c34-b3da-17b4525604a6
+  tls: true
+  servername: luminexorizon.ink
+  alpn:
+  - h2%2Chttp/1.1
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de3.v1
+- name: '🇩🇪 Germany | 🌐 [*CIDR] #18'
+  server: 104.171.139.81
+  port: 443
+  type: vless
+  uuid: 4b50270b-5caf-4c34-b3da-17b4525604a6
+  client-fingerprint: safari
+  tls: true
+  servername: luminexorizon.ink
+  alpn:
+  - h2
+  - http/1.1
+  skip-cert-verify: true
+  network: grpc
+  grpc-opts:
+    grpc-service-name: glush.de3.v1
