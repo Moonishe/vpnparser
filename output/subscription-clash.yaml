@@ -1,17 +1,17 @@
 proxies:
-- name: 🇩🇪 AetrisVPN
-  server: 193.233.198.117
+- name: 🇫🇮 AetrisVPN
+  server: 109.71.245.99
   port: 443
   type: vless
-  uuid: 03786aa4-21a5-4e7c-83d6-873aafc41217
+  uuid: f09ca6e3-c547-4f91-95f5-77f34c4282ac
   flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: de-03.neverspy.tech
+  servername: www.yandex.ru
   skip-cert-verify: true
   reality-opts:
-    public-key: zT-G11tZiOO7DFJD23MCeZC3TwaUJr6NMDHW4CLif1Y
-    short-id: 5eebb4b74e873b14
+    public-key: zICjcFkqI720WzWpHXRLjSFYmcu4Hd0jk1iDEo1nUAU
+    short-id: c27a26812e5d2208
 - name: 🇫🇷 AetrisVPN
   server: 145.223.68.58
   port: 443
@@ -26,12 +26,12 @@ proxies:
     public-key: qc2DcqT9zPPZr6ePZ7ukxACWrYhRNIBjDIjCK7veyQg
     short-id: a44ff7d2e80213c2
 - name: 🇳🇱 AetrisVPN
-  server: 51.158.206.19
+  server: 51.158.206.26
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
   flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  client-fingerprint: firefox
   tls: true
   servername: fuck.rkn
   skip-cert-verify: true
@@ -50,19 +50,6 @@ proxies:
   skip-cert-verify: true
   reality-opts:
     public-key: cYVz2YZI-PELLGGm38rrGcipPvnWcSMswOh4j536bmg
-- name: '🇩🇪 AetrisVPN #2'
-  server: 82.118.19.153
-  port: 443
-  type: vless
-  uuid: adcaa148-7c66-4282-a81a-99ec8afa029d
-  flow: xtls-rprx-vision
-  tls: true
-  servername: www.cloudflare.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: Tiuy8om5Lk0pWL95-8LaFFTwH0vbURVMoOkaW9xGaiE
-    short-id: 670ed9f350bd8ee0
-  client-fingerprint: chrome
 - name: '🇳🇱 AetrisVPN #2'
   server: 51.158.206.96
   port: 23576
@@ -89,24 +76,8 @@ proxies:
   reality-opts:
     public-key: lews1n_fypGexd_dMofEO4Vy1ULsFeVIFa90MMY3pm4
     short-id: 3992cc7fb9fcbe58
-- name: 🇩🇪 Germany | 🌐 | [*CIDR]
-  server: marsh.moltex.click
-  port: 443
-  type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
-  client-fingerprint: qq
-  tls: true
-  servername: marsh.moltex.click
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/de1/sync
-    host: marsh.moltex.click
 - name: '🇳🇱 AetrisVPN #3'
-  server: 51.158.206.34
+  server: 51.158.206.8
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -119,148 +90,80 @@ proxies:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
 - name: '🇷🇺 AetrisVPN #3'
-  server: vps3.nemnogogo.com
+  server: 200.169.179.233
   port: 443
   type: vless
   uuid: 38308ff1-5aa9-494f-a25a-0f2870d56b3e
   client-fingerprint: firefox
   tls: true
   servername: vps3.nemnogogo.com
-  alpn:
-  - h2
   skip-cert-verify: true
   network: grpc
   grpc-opts:
     grpc-service-name: mobile.api.Event
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #2'
-  server: woodgrain.filnex.baby
-  port: 443
+- name: '🇳🇱 AetrisVPN #4'
+  server: 51.158.206.34
+  port: 23576
   type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
-  client-fingerprint: ios
-  tls: true
-  servername: birchshade.elvano.website
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/de2/stream
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #3'
-  server: woodgrain.filnex.baby
-  port: 443
-  type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
-  client-fingerprint: firefox
-  tls: true
-  servername: birchshade.elvano.website
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/de2/stream
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #4'
-  server: willow.filnex.baby
-  port: 443
-  type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
-  client-fingerprint: qq
-  tls: true
-  servername: willowcroft.moltex.click
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/de1/stream
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #5'
-  server: driftwood.elvano.website
-  port: 443
-  type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
-  client-fingerprint: qq
-  tls: true
-  servername: driftwood.elvano.website
-  alpn:
-  - h2
-  - http/1.1
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/de2/sync
-    host: driftwood.elvano.website
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #6'
-  server: driftwood.elvano.website
-  port: 443
-  type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
   client-fingerprint: chrome
   tls: true
-  servername: driftwood.elvano.website
-  alpn:
-  - h2
-  - http/1.1
+  servername: fuck.rkn
   skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /api/de2/sync
-    host: driftwood.elvano.website
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #7'
-  server: driftwood.elvano.website
-  port: 443
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+- name: 🇳🇴 AetrisVPN
+  server: 62.217.181.109
+  port: 8443
   type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
+  uuid: 68a19895-7b8e-8400-8055-6aeab39515b2
+  flow: xtls-rprx-vision
   client-fingerprint: firefox
   tls: true
-  servername: driftwood.elvano.website
+  servername: ya.ru
+  skip-cert-verify: true
+  reality-opts:
+    public-key: _bXTdS7SEP3arribAnbsdiC3VXRhKRVCsYI533sjsCM
+    short-id: 542a83882d6461d5
+- name: '🇳🇱 AetrisVPN #5'
+  server: 51.158.206.25
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+- name: '🇳🇱 AetrisVPN #6'
+  server: 201.51.11.65
+  port: 443
+  type: vless
+  uuid: 1e2b9c0c-4f9b-56f5-a062-1c4f2d2aa200
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: absolute-disaster.org
+  skip-cert-verify: true
+  reality-opts:
+    public-key: GiDgVRVYrTkv1mZJeFVWkr736Iey2kqLM6L0eUbffV8
+- name: '🇳🇱 AetrisVPN #7'
+  server: 95.129.234.113
+  port: 8443
+  type: vless
+  uuid: 88281d02-b387-4fe3-918e-26ed331e6d08
+  client-fingerprint: firefox
+  tls: true
+  servername: tansy-wharf.cdn.cachefleet.com
   alpn:
   - h2
-  - http/1.1
   skip-cert-verify: true
   network: xhttp
   xhttp-opts:
-    path: /api/de2/sync
-    host: driftwood.elvano.website
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #8'
-  server: ledger.filnex.baby
-  port: 443
-  type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
-  client-fingerprint: chrome
-  tls: true
-  servername: copperdell.merlano.monster
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: glush.de2.v1
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #9'
-  server: ledger.filnex.baby
-  port: 443
-  type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
-  client-fingerprint: edge
-  tls: true
-  servername: copperdell.merlano.monster
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: glush.de2.v1
-- name: '🇩🇪 Germany | 🌐 | [*CIDR] #10'
-  server: ledger.filnex.baby
-  port: 443
-  type: vless
-  uuid: 5ef70d03-e0fc-462c-9a04-1441f604fbfb
-  client-fingerprint: qq
-  tls: true
-  servername: copperdell.merlano.monster
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: grpc
-  grpc-opts:
-    grpc-service-name: glush.de2.v1
+    path: /ccxf5snr06b8xxb6
+    host: is-tw-relay.cdn.cachefleet.com
