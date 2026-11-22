@@ -6,58 +6,6 @@ proxies:
   cipher: chacha20-ietf-poly1305
   password: SWBJ2eOCrLJk
 - name: 🇪🇺 AetrisVPN-FI
-  server: 141.227.170.220
-  port: 8443
-  type: vless
-  uuid: 6c077993-952c-4318-9e93-89056a207a9b
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: apple.com
-  skip-cert-verify: true
-  reality-opts:
-    public-key: SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc
-    short-id: 6ba85179e30d4fc2
-- name: 🇫🇷 AetrisVPN
-  server: 172.99.189.142
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: 🇪🇪 AetrisVPN-NL
-  server: 188.164.248.48
-  port: 2083
-  type: vless
-  uuid: a21b9103-1693-49c1-8dc9-e8e8098ee969
-  client-fingerprint: chrome
-  tls: true
-  servername: helloapps.cc.cd
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: helloapps.cc.cd
-- name: 🇷🇺 AetrisVPN
-  server: 144.48.11.146
-  port: 43000
-  type: vless
-  uuid: 4a923161-156f-4914-8cac-762fb2433bfb
-  flow: xtls-rprx-vision
-  client-fingerprint: firefox
-  tls: true
-  servername: 144.48.11.146
-  skip-cert-verify: true
-  reality-opts:
-    public-key: CG0mVPuvPcfZjplA21zehlqoDpGHihJBK8K_u1zfhgQ
-    short-id: ee4ea980
-- name: '🇩🇪 AetrisVPN #2'
-  server: 57.129.113.16
-  port: 8388
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: NcAXc0UZI6yQJE1p8QmOv8
-- name: '🇪🇺 AetrisVPN-FI #2'
   server: durov.sky-vault.top
   port: 8443
   type: vless
@@ -70,32 +18,39 @@ proxies:
   reality-opts:
     public-key: fSVfR9NB-6J6smrZlavi0GWd8JfDh0aXuEkKbtuFzUI
     short-id: 3cbc3d737fb9c4af
-- name: '🇫🇷 AetrisVPN #2'
-  server: 79.137.99.183
+- name: 🇫🇷 AetrisVPN
+  server: 172.99.189.142
   port: 19999
   type: ss
   cipher: aes-256-gcm
   password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: 🌐 Anycast-IP | 🇨🇦 🇮🇪 🇳🇱 [*CIDR]
-  server: 194.93.0.240
+- name: 🇪🇺 AetrisVPN-NL
+  server: 51.158.206.29
+  port: 23576
+  type: vless
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  tls: true
+  servername: fuck.rkn
+  skip-cert-verify: true
+  reality-opts:
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+- name: 🇷🇺 AetrisVPN
+  server: 109.107.189.69
   port: 8443
   type: vless
-  uuid: 5d7b401c-78fa-4254-872e-6d42bf7e75ec
-  client-fingerprint: firefox
+  uuid: cfd6ce74-f4c5-4815-bba4-2fd0fa77bf4e
+  flow: xtls-rprx-vision
+  client-fingerprint: random
   tls: true
-  servername: vp4.1145678.xyz
+  servername: gw-721bd5.dobry.monster
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    headers:
-      Host: vp4.1145678.xyz
-- name: '🇷🇺 AetrisVPN #2'
-  server: 48.103.218.77
-  port: 18443
-  type: ss
-  cipher: aes-256-gcm
-  password: 5mKjXAGrliIAlYwWDeFzkCEMIgQdFQLe
-- name: '🇩🇪 AetrisVPN #3'
+  reality-opts:
+    public-key: q1EhO97gyUBlF7LiAfeAESI0O2Mg95T4yIk7keOnMEE
+    short-id: 0912cc7f28aa26ba
+- name: '🇩🇪 AetrisVPN #2'
   server: 195.63.128.21
   port: 2443
   type: vless
@@ -122,61 +77,26 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /
-- name: '🇫🇷 AetrisVPN #3'
-  server: 167.17.64.175
+- name: '🇫🇷 AetrisVPN #2'
+  server: 79.137.99.183
   port: 19999
   type: ss
   cipher: aes-256-gcm
   password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: 🇳🇱 AetrisVPN
-  server: 193.29.139.212
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: QCXDxuDlTTMD7jtgHUjIoj
-- name: '🇷🇺 AetrisVPN #3'
-  server: 109.107.189.69
-  port: 8443
+- name: '🇪🇺 AetrisVPN-NL #2'
+  server: 51.158.206.34
+  port: 23576
   type: vless
-  uuid: cfd6ce74-f4c5-4815-bba4-2fd0fa77bf4e
+  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
   flow: xtls-rprx-vision
-  client-fingerprint: random
+  client-fingerprint: chrome
   tls: true
-  servername: gw-721bd5.dobry.monster
+  servername: fuck.rkn
   skip-cert-verify: true
   reality-opts:
-    public-key: q1EhO97gyUBlF7LiAfeAESI0O2Mg95T4yIk7keOnMEE
-    short-id: 0912cc7f28aa26ba
-- name: 🇪🇺 AetrisVPN-DE
-  server: afzuv.xiaoyan.io
-  port: 16617
-  type: vmess
-  uuid: 904f0569-8695-466f-97cf-0de2face1b46
-  alterId: 0
-  cipher: auto
-  network: ws
-  ws-opts:
-    path: /
-    headers:
-      Host: f9309cc88637c26f552a1a64fb311cae.mobgslb.tbcache.com
-- name: '🇫🇮 Finland [*CIDR] #2'
-  server: 107.150.93.43
-  port: 443
-  type: vless
-  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
-  client-fingerprint: safari
-  tls: true
-  servername: e9958027.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: '🇳🇱 AetrisVPN #2'
-  server: 193.29.139.223
-  port: 8080
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: k1dBOmOB4oqi7Ump37a1bQ
-- name: '🇷🇺 AetrisVPN #4'
+    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
+    short-id: '01'
+- name: '🇷🇺 AetrisVPN #2'
   server: 87.120.92.186
   port: 2087
   type: vless
@@ -191,57 +111,13 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /v2/sync/6e9367
-- name: 🇩🇪 Germany [*CIDR]
-  server: files-qzgs.login.opendns.stream
-  port: 443
-  type: vless
-  uuid: a71d6c6d-c95e-4ec1-a892-22e21733bf09
-  client-fingerprint: edge
-  tls: true
-  servername: files-qzgs.login.opendns.stream
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /origin/246825491/fetch
-- name: '🇫🇮 Finland [*CIDR] #3'
-  server: 107.150.93.43
-  port: 443
-  type: vless
-  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
-  client-fingerprint: ios
-  tls: true
-  servername: e9958027.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: 🇪🇺 AetrisVPN-NL
-  server: 51.158.206.34
-  port: 23576
-  type: vless
-  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
-  tls: true
-  servername: fuck.rkn
-  skip-cert-verify: true
-  reality-opts:
-    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
-    short-id: '01'
-- name: '🇩🇪 Germany [*CIDR] #2'
-  server: sw-api.telemetryapi.org
-  port: 443
-  type: vless
-  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
-  client-fingerprint: firefox
-  tls: true
-  servername: sw-api.telemetryapi.org
-  alpn:
-  - http%2F1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v2/client/session/connect
-- name: '🇫🇮 Finland [*CIDR] #4'
+- name: '🇩🇪 AetrisVPN #3'
+  server: 193.108.119.3
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: '🇫🇮 Finland [*CIDR] #2'
   server: 107.150.93.43
   port: 443
   type: vless
@@ -254,8 +130,14 @@ proxies:
   xhttp-opts:
     path: /
     host: 107.150.93.43
-- name: '🇪🇺 AetrisVPN-NL #2'
-  server: 51.158.206.29
+- name: '🇫🇷 AetrisVPN #3'
+  server: 167.17.64.175
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: '🇪🇺 AetrisVPN-NL #3'
+  server: 51.158.206.87
   port: 23576
   type: vless
   uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
@@ -267,20 +149,78 @@ proxies:
   reality-opts:
     public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
     short-id: '01'
-- name: '🇩🇪 Germany [*CIDR] #3'
-  server: files-qzgs.login.opendns.stream
+- name: '🇷🇺 AetrisVPN #3'
+  server: 48.103.218.77
+  port: 18443
+  type: ss
+  cipher: aes-256-gcm
+  password: 5mKjXAGrliIAlYwWDeFzkCEMIgQdFQLe
+- name: '🇩🇪 AetrisVPN #4'
+  server: 193.108.117.84
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: '🇫🇮 Finland [*CIDR] #3'
+  server: 107.150.93.43
   port: 443
   type: vless
-  uuid: a71d6c6d-c95e-4ec1-a892-22e21733bf09
-  client-fingerprint: ios
+  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
+  client-fingerprint: safari
   tls: true
-  servername: files-qzgs.login.opendns.stream
-  alpn:
-  - http/1.1
+  servername: e9958027.ferrin.uk
   skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /origin/246825491/fetch
+  network: xhttp
+  xhttp-opts: {}
+- name: 🇳🇱 AetrisVPN
+  server: 77.221.132.206
+  port: 24759
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: hCgbUnMaoAfSgvE8IKdnGu
+- name: '🇷🇺 AetrisVPN #4'
+  server: 144.48.11.146
+  port: 43000
+  type: vless
+  uuid: 4a923161-156f-4914-8cac-762fb2433bfb
+  flow: xtls-rprx-vision
+  client-fingerprint: firefox
+  tls: true
+  servername: 144.48.11.146
+  skip-cert-verify: true
+  reality-opts:
+    public-key: CG0mVPuvPcfZjplA21zehlqoDpGHihJBK8K_u1zfhgQ
+    short-id: ee4ea980
+- name: '🇩🇪 AetrisVPN #5'
+  server: 57.129.83.85
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
+- name: '🇫🇮 Finland [*CIDR] #4'
+  server: 107.150.93.43
+  port: 443
+  type: vless
+  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
+  client-fingerprint: qq
+  tls: true
+  servername: e9958027.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    host: 107.150.93.43
+- name: '🇳🇱 AetrisVPN #2'
+  server: 193.29.139.223
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: k1dBOmOB4oqi7Ump37a1bQ
+- name: '🇩🇪 AetrisVPN #6'
+  server: 57.129.76.233
+  port: 19999
+  type: ss
+  cipher: aes-256-gcm
+  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
 - name: '🇫🇮 Finland [*CIDR] #5'
   server: 107.150.93.43
   port: 443
@@ -295,20 +235,20 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /
-- name: '🇪🇺 AetrisVPN-NL #3'
-  server: 51.158.206.87
-  port: 23576
+- name: 🇳🇱 The Netherlands [*CIDR] Beeline
+  server: 66.90.91.122
+  port: 443
   type: vless
-  uuid: 48ff2b70-e180-582f-8866-d9a2edeed5f5
-  flow: xtls-rprx-vision
-  client-fingerprint: chrome
+  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
+  client-fingerprint: edge
   tls: true
-  servername: fuck.rkn
+  servername: 6b014610-e9958027.ferrin.uk
+  alpn:
+  - h2
   skip-cert-verify: true
-  reality-opts:
-    public-key: 1y5h2FGWKXTJ9xLPCqPo6Mw7RxoZzh6fGkEQKNxpZ3s
-    short-id: '01'
-- name: '🇩🇪 Germany [*CIDR] #4'
+  network: xhttp
+  xhttp-opts: {}
+- name: 🇩🇪 Germany [*CIDR]
   server: 185.178.208.167
   port: 443
   type: vless
@@ -322,138 +262,7 @@ proxies:
     path: /api/v2/client/session/connect
     headers:
       Host: sw-api.telemetryapi.org
-- name: '🇫🇮 Finland [*CIDR] #6'
-  server: 107.150.93.43
-  port: 443
-  type: vless
-  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
-  client-fingerprint: qq
-  tls: true
-  servername: e9958027.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    host: 107.150.93.43
-- name: '🇳🇱 AetrisVPN #3'
-  server: 77.221.132.206
-  port: 24759
-  type: ss
-  cipher: chacha20-ietf-poly1305
-  password: hCgbUnMaoAfSgvE8IKdnGu
-- name: '🇩🇪 Germany [*CIDR] #5'
-  server: sw-api.telemetryapi.org
-  port: 443
-  type: vless
-  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
-  client-fingerprint: qq
-  tls: true
-  servername: sw-api.telemetryapi.org
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v2/client/session/connect
-- name: 🇳🇱 The Netherlands [*CIDR] Beeline
-  server: 66.90.91.122
-  port: 443
-  type: vless
-  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
-  client-fingerprint: firefox
-  tls: true
-  servername: 6b014610-e9958027.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: '🇩🇪 Germany [*CIDR] #6'
-  server: sw-api.telemetryapi.org
-  port: 443
-  type: vless
-  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
-  tls: true
-  servername: sw-api.telemetryapi.org
-  alpn:
-  - http%2F1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v2/client/session/connect
 - name: '🇳🇱 The Netherlands [*CIDR] Beeline #2'
-  server: 66.90.91.122
-  port: 443
-  type: vless
-  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
-  client-fingerprint: chrome
-  tls: true
-  servername: 6b014610-e9958027.ferrin.uk
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts:
-    path: /
-- name: '🇩🇪 Germany [*CIDR] #7'
-  server: files-qzgs.login.opendns.stream
-  port: 443
-  type: vless
-  uuid: a71d6c6d-c95e-4ec1-a892-22e21733bf09
-  client-fingerprint: safari
-  tls: true
-  servername: files-qzgs.login.opendns.stream
-  alpn:
-  - http/1.1
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /origin/246825491/fetch
-- name: '🇳🇱 The Netherlands [*CIDR] Beeline #3'
-  server: 66.90.91.122
-  port: 443
-  type: vless
-  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
-  client-fingerprint: firefox
-  tls: true
-  servername: 6b014610-e9958027.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: '🇩🇪 Germany [*CIDR] #8'
-  server: sw-api.telemetryapi.org
-  port: 443
-  type: vless
-  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
-  tls: true
-  servername: sw-api.telemetryapi.org
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v2/client/session/connect
-- name: '🇳🇱 The Netherlands [*CIDR] Beeline #4'
-  server: 66.90.91.122
-  port: 443
-  type: vless
-  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
-  client-fingerprint: edge
-  tls: true
-  servername: 6b014610-e9958027.ferrin.uk
-  alpn:
-  - h2
-  skip-cert-verify: true
-  network: xhttp
-  xhttp-opts: {}
-- name: '🇩🇪 Germany [*CIDR] #9'
-  server: sw-api.telemetryapi.org
-  port: 443
-  type: vless
-  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
-  client-fingerprint: qq
-  tls: true
-  servername: sw-api.telemetryapi.org
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v2/client/session/connect
-- name: '🇳🇱 The Netherlands [*CIDR] Beeline #5'
   server: 66.90.91.122
   port: 443
   type: vless
@@ -467,64 +276,11 @@ proxies:
   network: xhttp
   xhttp-opts:
     path: /
-- name: '🇩🇪 Germany [*CIDR] #10'
-  server: 185.178.208.167
-  port: 443
-  type: vless
-  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
-  client-fingerprint: edge
-  tls: true
-  servername: sw-api.telemetryapi.org
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /api/v2/client/session/connect
-    headers:
-      Host: sw-api.telemetryapi.org
-- name: '🇩🇪 Germany [*CIDR] #11'
-  server: 95.129.236.239
-  port: 443
-  type: vless
-  uuid: a71d6c6d-c95e-4ec1-a892-22e21733bf09
-  client-fingerprint: firefox
-  tls: true
-  servername: files-qzgs.login.opendns.stream
-  skip-cert-verify: true
-  network: ws
-  ws-opts:
-    path: /origin/246825491/fetch
-    headers:
-      Host: files-qzgs.login.opendns.stream
-- name: '🇩🇪 AetrisVPN #4'
-  server: 193.108.117.84
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '🇩🇪 AetrisVPN #5'
-  server: 57.129.76.233
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '🇩🇪 AetrisVPN #6'
-  server: 193.108.119.3
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '🇩🇪 AetrisVPN #7'
-  server: 57.129.83.85
-  port: 19999
-  type: ss
-  cipher: aes-256-gcm
-  password: ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4=
-- name: '🇩🇪 Germany [*CIDR] #12'
+- name: '🇩🇪 Germany [*CIDR] #2'
   server: sw-api.telemetryapi.org
   port: 443
   type: vless
   uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
-  client-fingerprint: edge
   tls: true
   servername: sw-api.telemetryapi.org
   alpn:
@@ -533,7 +289,60 @@ proxies:
   network: ws
   ws-opts:
     path: /api/v2/client/session/connect
-- name: '🇩🇪 Germany [*CIDR] #13'
+- name: '🇳🇱 AetrisVPN #3'
+  server: 193.29.139.212
+  port: 8080
+  type: ss
+  cipher: chacha20-ietf-poly1305
+  password: QCXDxuDlTTMD7jtgHUjIoj
+- name: 🇪🇺 AetrisVPN-DE
+  server: afzuv.xiaoyan.io
+  port: 16617
+  type: vmess
+  uuid: 904f0569-8695-466f-97cf-0de2face1b46
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /
+    headers:
+      Host: f9309cc88637c26f552a1a64fb311cae.mobgslb.tbcache.com
+- name: '🇳🇱 The Netherlands [*CIDR] Beeline #3'
+  server: 66.90.91.122
+  port: 443
+  type: vless
+  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
+  client-fingerprint: chrome
+  tls: true
+  servername: 6b014610-e9958027.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts:
+    path: /
+- name: 🇰🇬 AetrisVPN-DE
+  server: afzuv.xiaoyan.io
+  port: 16616
+  type: vmess
+  uuid: 904f0569-8695-466f-97cf-0de2face1b46
+  alterId: 0
+  cipher: auto
+  network: ws
+  ws-opts:
+    path: /
+    headers:
+      Host: f9309cc88637c26f552a1a64fb311cae.mobgslb.tbcache.com
+- name: '🇳🇱 The Netherlands [*CIDR] Beeline #4'
+  server: 66.90.91.122
+  port: 443
+  type: vless
+  uuid: e9958027-03be-4eb5-bcec-70415b2e4844
+  client-fingerprint: firefox
+  tls: true
+  servername: 6b014610-e9958027.ferrin.uk
+  skip-cert-verify: true
+  network: xhttp
+  xhttp-opts: {}
+- name: '🇩🇪 Germany [*CIDR] #3'
   server: sw-api.telemetryapi.org
   port: 443
   type: vless
@@ -547,19 +356,21 @@ proxies:
   network: ws
   ws-opts:
     path: /api/v2/client/session/connect
-- name: '🇩🇪 Germany [*CIDR] #14'
+- name: '🇩🇪 Germany [*CIDR] #4'
   server: sw-api.telemetryapi.org
   port: 443
   type: vless
   uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
-  client-fingerprint: android
+  client-fingerprint: firefox
   tls: true
   servername: sw-api.telemetryapi.org
+  alpn:
+  - http%2F1.1
   skip-cert-verify: true
   network: ws
   ws-opts:
     path: /api/v2/client/session/connect
-- name: '🇩🇪 Germany [*CIDR] #15'
+- name: '🇩🇪 Germany [*CIDR] #5'
   server: sw-api.telemetryapi.org
   port: 443
   type: vless
@@ -572,15 +383,57 @@ proxies:
   network: ws
   ws-opts:
     path: /api/v2/client/session/connect
-- name: 🇰🇬 AetrisVPN-DE
-  server: afzuv.xiaoyan.io
-  port: 16616
-  type: vmess
-  uuid: 904f0569-8695-466f-97cf-0de2face1b46
-  alterId: 0
-  cipher: auto
+- name: '🇩🇪 Germany [*CIDR] #6'
+  server: sw-api.telemetryapi.org
+  port: 443
+  type: vless
+  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
+  client-fingerprint: qq
+  tls: true
+  servername: sw-api.telemetryapi.org
+  skip-cert-verify: true
   network: ws
   ws-opts:
-    path: /
+    path: /api/v2/client/session/connect
+- name: '🇩🇪 Germany [*CIDR] #7'
+  server: 185.178.208.167
+  port: 443
+  type: vless
+  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
+  client-fingerprint: edge
+  tls: true
+  servername: sw-api.telemetryapi.org
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/v2/client/session/connect
     headers:
-      Host: f9309cc88637c26f552a1a64fb311cae.mobgslb.tbcache.com
+      Host: sw-api.telemetryapi.org
+- name: '🇩🇪 Germany [*CIDR] #8'
+  server: sw-api.telemetryapi.org
+  port: 443
+  type: vless
+  uuid: 6bd1d88f-0a26-4d21-b325-15d85120b883
+  client-fingerprint: qq
+  tls: true
+  servername: sw-api.telemetryapi.org
+  alpn:
+  - http/1.1
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /api/v2/client/session/connect
+- name: '🇩🇪 Germany [*CIDR] #9'
+  server: 95.129.236.239
+  port: 443
+  type: vless
+  uuid: a71d6c6d-c95e-4ec1-a892-22e21733bf09
+  client-fingerprint: firefox
+  tls: true
+  servername: files-qzgs.login.opendns.stream
+  skip-cert-verify: true
+  network: ws
+  ws-opts:
+    path: /origin/246825491/fetch
+    headers:
+      Host: files-qzgs.login.opendns.stream
